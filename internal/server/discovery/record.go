@@ -26,7 +26,8 @@ var credentialTXTKeys = map[string]struct{}{
 }
 
 // ParseTXT reads `key=value` TXT lines as the announcer emits them.
-// Missing url is not a dialable server.
+// Missing url is not a dialable server. An announcement that carried
+// credential keys is rejected whole — pairing tokens travel out of band.
 func ParseTXT(instanceName string, lines []string) (Record, bool) {
 	attrs := make(map[string]string, len(lines))
 	for _, line := range lines {
@@ -36,7 +37,7 @@ func ParseTXT(instanceName string, lines []string) (Record, bool) {
 		}
 		key := strings.TrimSpace(line[:eq])
 		if _, drop := credentialTXTKeys[strings.ToLower(key)]; drop {
-			continue
+			return Record{}, false
 		}
 		attrs[key] = line[eq+1:]
 	}

@@ -42,6 +42,9 @@
     <string name="settings_connection_state_server">A server is configured. Dictation and the voice agent use it.</string>
     <string name="settings_connection_url">Server address</string>
     <string name="settings_connection_token">Access token (optional)</string>
+    <string name="settings_connection_pairing">Pairing payload</string>
+    <string name="settings_connection_pairing_apply">Apply pairing</string>
+    <string name="settings_connection_pairing_invalid">Pairing payload is invalid. It needs a server URL and token.</string>
     <string name="settings_connection_save">Save</string>
     <string name="settings_connection_test">Test</string>
     <string name="settings_connection_clear">Remove</string>

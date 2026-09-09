@@ -29,6 +29,9 @@
     <string name="settings_connection_state_server">Ein Server ist eingerichtet. Diktat und Sprachassistent nutzen ihn.</string>
     <string name="settings_connection_url">Serveradresse</string>
     <string name="settings_connection_token">Zugriffstoken (optional)</string>
+    <string name="settings_connection_pairing">Pairing-Payload</string>
+    <string name="settings_connection_pairing_apply">Pairing übernehmen</string>
+    <string name="settings_connection_pairing_invalid">Pairing-Payload ungültig. Server-URL und Token sind nötig.</string>
     <string name="settings_connection_save">Speichern</string>
     <string name="settings_connection_test">Testen</string>
     <string name="settings_connection_clear">Entfernen</string>

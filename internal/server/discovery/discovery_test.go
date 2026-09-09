@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
@@ -21,6 +22,26 @@ func TestStartNilConfig(t *testing.T) {
 	a, err := Start(nil, "test", nil)
 	if err != nil || a != nil {
 		t.Fatalf("nil config must be a no-op, got a=%v err=%v", a, err)
+	}
+}
+
+func TestTXTLinesStayCredentialFree(t *testing.T) {
+	lines := txtLines("http://192.168.1.20:8080", "0.60.0", []string{"dictation", "assist", "voiceagent"})
+	rec, ok := ParseTXT("wohnzimmer", lines)
+	if !ok {
+		t.Fatal("announcer TXT must stay dialable")
+	}
+	if rec.URL != "http://192.168.1.20:8080" {
+		t.Fatalf("url = %q", rec.URL)
+	}
+	for _, line := range lines {
+		key, _, found := strings.Cut(line, "=")
+		if !found {
+			continue
+		}
+		if _, bad := credentialTXTKeys[strings.ToLower(key)]; bad {
+			t.Fatalf("announcer emitted credential key %q", key)
+		}
 	}
 }
 

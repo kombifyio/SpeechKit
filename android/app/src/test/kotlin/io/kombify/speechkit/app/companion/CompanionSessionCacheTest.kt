@@ -113,6 +113,63 @@ class CompanionProvisionerTest {
     }
 
     @Test
+    fun unauthorizedCloudCallReprovisionsAndDoesNotKeepTheDeadBearer() {
+        val dead = ConnectionProfile.Server("https://api.kombify.io/v1/speechkit", "dead-jwt")
+        val fresh = ConnectionProfile.Server("https://api.kombify.io/v1/speechkit", "fresh-jwt")
+        val outcome = AtomicReference<CompanionProvision>(CompanionProvision.Session(dead))
+        val provisioner = CompanionProvisioner(
+            installed = { true },
+            binder = { outcome.get() },
+            executor = direct,
+        )
+        provisioner.provisionNow()
+        outcome.set(CompanionProvision.Session(fresh))
+        assertEquals(CompanionProvision.Session(fresh), provisioner.recoverFromUnauthorized(dead))
+        assertEquals(fresh, provisioner.currentSession())
+    }
+
+    @Test
+    fun unauthorizedCloudCallClearsWhenCompanionDoesNotReturnASession() {
+        val dead = ConnectionProfile.Server("https://api.kombify.io/v1/speechkit", "dead-jwt")
+        val outcome = AtomicReference<CompanionProvision>(CompanionProvision.Session(dead))
+        val provisioner = CompanionProvisioner(
+            installed = { true },
+            binder = { outcome.get() },
+            executor = direct,
+        )
+        provisioner.provisionNow()
+        outcome.set(CompanionProvision.Empty)
+        assertEquals(CompanionProvision.Empty, provisioner.recoverFromUnauthorized(dead))
+        assertNull(provisioner.currentSession())
+
+        outcome.set(CompanionProvision.Session(dead))
+        provisioner.provisionNow()
+        outcome.set(CompanionProvision.Rejected)
+        assertEquals(CompanionProvision.Rejected, provisioner.recoverFromUnauthorized(dead))
+        assertNull(provisioner.currentSession())
+
+        outcome.set(CompanionProvision.Session(dead))
+        provisioner.provisionNow()
+        outcome.set(CompanionProvision.Unavailable)
+        assertEquals(CompanionProvision.Unavailable, provisioner.recoverFromUnauthorized(dead))
+        assertNull(provisioner.currentSession())
+    }
+
+    @Test
+    fun aSelfHostUnauthorizedDoesNotDropTheCompanionSession() {
+        val cloud = ConnectionProfile.Server("https://api.kombify.io/v1/speechkit", "user-jwt")
+        val selfHost = ConnectionProfile.Server("http://192.168.1.20:8080", "sk-server-x")
+        val provisioner = CompanionProvisioner(
+            installed = { true },
+            binder = { CompanionProvision.Session(cloud) },
+            executor = direct,
+        )
+        provisioner.provisionNow()
+        assertEquals(CompanionProvision.Unavailable, provisioner.recoverFromUnauthorized(selfHost))
+        assertEquals(cloud, provisioner.currentSession())
+    }
+
+    @Test
     fun signOutDropsTheUserSessionSoTheTesterDefaultCanTakeOver() {
         val session = ConnectionProfile.Server("https://api.kombify.io/v1/speechkit", "user-jwt")
         val outcome = AtomicReference<CompanionProvision>(CompanionProvision.Session(session))

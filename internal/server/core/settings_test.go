@@ -14,6 +14,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/server/middleware"
+	"github.com/kombifyio/SpeechKit/internal/server/pairing"
 )
 
 func serveServerSettingsWithBearer(app *App, req *http.Request) *httptest.ResponseRecorder {
@@ -352,6 +353,8 @@ func TestRegisterServerSettings_PatchGeneratesWriteOnlyServerToken(t *testing.T)
 	}
 	app.Cfg.Server.AuthMode = "bearer"
 	app.Cfg.Server.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
+	app.Cfg.Server.PublicURL = "http://192.168.1.20:8080"
+	app.Cfg.Server.Discovery.InstanceName = "wohnzimmer"
 
 	registerServerSettings(app)
 
@@ -375,6 +378,13 @@ func TestRegisterServerSettings_PatchGeneratesWriteOnlyServerToken(t *testing.T)
 			Env      string `json:"env"`
 			AuthMode string `json:"auth_mode"`
 		} `json:"generated_token"`
+		Pairing struct {
+			V         string `json:"v"`
+			ServerURL string `json:"server_url"`
+			Auth      string `json:"auth"`
+			Token     string `json:"token"`
+			Name      string `json:"name"`
+		} `json:"pairing"`
 		Desired config.ServerModelSettings `json:"desired"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
@@ -385,6 +395,27 @@ func TestRegisterServerSettings_PatchGeneratesWriteOnlyServerToken(t *testing.T)
 	}
 	if body.GeneratedToken.Env != "SPEECHKIT_SERVER_TOKEN" || body.GeneratedToken.AuthMode != "bearer" {
 		t.Fatalf("generated token metadata = env %q auth %q", body.GeneratedToken.Env, body.GeneratedToken.AuthMode)
+	}
+	if body.Pairing.V != "speechkit.pairing.v1" || body.Pairing.Auth != "bearer" {
+		t.Fatalf("pairing contract = v %q auth %q", body.Pairing.V, body.Pairing.Auth)
+	}
+	if body.Pairing.ServerURL != "http://192.168.1.20:8080" {
+		t.Fatalf("pairing server_url = %q", body.Pairing.ServerURL)
+	}
+	if body.Pairing.Token != body.GeneratedToken.Token {
+		t.Fatal("pairing token must be the generated bearer")
+	}
+	if body.Pairing.Name != "wohnzimmer" {
+		t.Fatalf("pairing name = %q", body.Pairing.Name)
+	}
+	var envelope struct {
+		Pairing json.RawMessage `json:"pairing"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("pairing envelope: %v", err)
+	}
+	if _, err := pairing.Parse(envelope.Pairing); err != nil {
+		t.Fatalf("setup pairing payload must parse as speechkit.pairing.v1: %v", err)
 	}
 	if strings.Contains(rec.Body.String(), `"token_value"`) {
 		t.Fatal("PATCH response must not expose server auth token_value")

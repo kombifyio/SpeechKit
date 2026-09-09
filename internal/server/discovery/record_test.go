@@ -33,18 +33,14 @@ func TestParseTXTMissingURL(t *testing.T) {
 	}
 }
 
-func TestParseTXTDropsCredentialKeys(t *testing.T) {
-	rec, ok := ParseTXT("wohnzimmer", []string{
+func TestParseTXTRejectsCredentialKeys(t *testing.T) {
+	if _, ok := ParseTXT("wohnzimmer", []string{
 		"url=http://192.168.1.20:8080",
 		"token=svc-secret",
 		"auth=Bearer abc",
 		"password=nope",
-	})
-	if !ok {
-		t.Fatal("expected a dialable record")
-	}
-	if rec.URL != "http://192.168.1.20:8080" {
-		t.Fatalf("url = %q", rec.URL)
+	}); ok {
+		t.Fatal("an announcement that carried credentials must be rejected whole")
 	}
 }
 

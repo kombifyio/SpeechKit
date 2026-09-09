@@ -45,6 +45,7 @@ import io.kombify.speechkit.domain.ConnectionProfileSource
 import io.kombify.speechkit.net.DictationController
 import io.kombify.speechkit.net.LanServer
 import io.kombify.speechkit.net.NsdLanFinder
+import io.kombify.speechkit.net.PairingRecords
 import io.kombify.speechkit.net.StoredServerProfile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -607,6 +608,7 @@ private fun ServerConnectionCard(
     var token by remember {
         mutableStateOf(prefs.getString(StoredServerProfile.KEY_SERVER_TOKEN, "") ?: "")
     }
+    var pairingPayload by remember { mutableStateOf("") }
     var status by remember { mutableStateOf<String?>(null) }
     var connecting by remember { mutableStateOf(false) }
     var showSelfHost by remember { mutableStateOf(!ShippedDefaults.cloudConnectSupported) }
@@ -803,6 +805,35 @@ private fun ServerConnectionCard(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
+            OutlinedTextField(
+                value = pairingPayload,
+                onValueChange = { pairingPayload = it },
+                label = { Text(stringResource(R.string.settings_connection_pairing)) },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+            )
+            OutlinedButton(
+                onClick = {
+                    val selected = PairingRecords.consume(pairingPayload)
+                    if (selected == null) {
+                        status = context.getString(R.string.settings_connection_pairing_invalid)
+                        return@OutlinedButton
+                    }
+                    StoredServerProfile.saveSelfHost(
+                        context,
+                        selected.profile.baseUrl,
+                        selected.profile.bearerToken,
+                    )
+                    persistMode(ConnectionMode.SELF_HOST)
+                    url = selected.profile.baseUrl
+                    token = selected.profile.bearerToken.orEmpty()
+                    pairingPayload = ""
+                    status = context.getString(R.string.settings_connection_saved)
+                },
+                enabled = pairingPayload.isNotBlank(),
+            ) {
+                Text(stringResource(R.string.settings_connection_pairing_apply))
+            }
             OutlinedButton(
                 onClick = {
                     if (finding) {

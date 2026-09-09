@@ -65,6 +65,31 @@ class CompanionProvisioner internal constructor(
         return outcome
     }
 
+    /**
+     * A 401 on the provisioned Cloud session. Re-invokes Companion
+     * `provision()` and never keeps the dead bearer: Empty, Rejected, and
+     * Unavailable all clear. A failure that was not this Cloud session
+     * (self-host, tester origin) is left alone.
+     */
+    fun recoverFromUnauthorized(failed: ConnectionProfile): CompanionProvision {
+        val server = failed as? ConnectionProfile.Server ?: return CompanionProvision.Unavailable
+        val cached = cache.current()
+        if (cached == null || cached.bearerToken != server.bearerToken) {
+            return CompanionProvision.Unavailable
+        }
+        cache.clear()
+        if (!installed()) return CompanionProvision.Unavailable
+        val outcome = binder()
+        when (outcome) {
+            is CompanionProvision.Session -> cache.offer(outcome.profile)
+            CompanionProvision.Empty,
+            CompanionProvision.Rejected,
+            CompanionProvision.Unavailable,
+            -> Unit
+        }
+        return outcome
+    }
+
     /** Start a bind so the first dictation can already see a user session. */
     fun warm() {
         if (installed()) refresh()

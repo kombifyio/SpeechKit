@@ -17,6 +17,7 @@ import (
 	assistpkg "github.com/kombifyio/SpeechKit/internal/assist"
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/server/middleware"
+	"github.com/kombifyio/SpeechKit/internal/server/pairing"
 	"github.com/kombifyio/SpeechKit/internal/voiceagentprofile"
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
@@ -184,6 +185,9 @@ func handleServerSettingsPatch(w http.ResponseWriter, r *http.Request, app *App)
 			"env":         firstNonEmpty(next.ServerAuth.BearerTokenEnv, "SPEECHKIT_SERVER_TOKEN"),
 			"auth_mode":   "bearer",
 			"header_name": "Authorization",
+		}
+		if payload, err := pairing.New(pairingServerURL(app, r), generatedToken, pairingInstanceName(app.Cfg)); err == nil {
+			response["pairing"] = payload
 		}
 	}
 	if strings.TrimSpace(patch.AdminAuth.PasswordValue) != "" {
@@ -692,6 +696,49 @@ func generateServerBearerToken() (string, error) {
 		return "", err
 	}
 	return "sk-server-" + base64.RawURLEncoding.EncodeToString(random[:]), nil
+}
+
+func pairingServerURL(app *App, r *http.Request) string {
+	var cfg *config.Config
+	if app != nil {
+		cfg = app.Cfg
+	}
+	if cfg != nil {
+		for _, candidate := range []string{
+			cfg.Server.PublicURL,
+			cfg.Server.PublicBaseURL,
+			cfg.Server.Discovery.AdvertiseURL,
+		} {
+			if u := strings.TrimRight(strings.TrimSpace(candidate), "/"); u != "" {
+				return u
+			}
+		}
+	}
+	if r == nil {
+		return ""
+	}
+	host := strings.TrimSpace(r.Host)
+	if host == "" {
+		return ""
+	}
+	scheme := "http"
+	if serverRequestIsSecure(app, r) {
+		scheme = "https"
+	}
+	return scheme + "://" + host
+}
+
+func pairingInstanceName(cfg *config.Config) string {
+	if cfg != nil {
+		if name := strings.TrimSpace(cfg.Server.Discovery.InstanceName); name != "" {
+			return name
+		}
+	}
+	host, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(host)
 }
 
 func applyRuntimeServerAuth(app *App, auth config.ServerAuthSettings) {

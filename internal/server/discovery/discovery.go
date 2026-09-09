@@ -57,11 +57,7 @@ func Start(cfg *config.Config, version string, modes []string) (*Announcer, erro
 		advertise = fmt.Sprintf("http://%s:%d", host, port)
 	}
 
-	txt := []string{
-		"url=" + advertise,
-		"modes=" + strings.Join(modes, ","),
-		"version=" + version,
-	}
+	txt := txtLines(advertise, version, modes)
 
 	service, err := mdns.NewMDNSService(instance, ServiceType, "", "", port, nil, txt)
 	if err != nil {
@@ -83,6 +79,14 @@ func (a *Announcer) Shutdown() {
 	}
 	if err := a.server.Shutdown(); err != nil {
 		slog.Warn("mDNS discovery shutdown", "err", err)
+	}
+}
+
+func txtLines(advertise, version string, modes []string) []string {
+	return []string{
+		"url=" + advertise,
+		"modes=" + strings.Join(modes, ","),
+		"version=" + version,
 	}
 }
 

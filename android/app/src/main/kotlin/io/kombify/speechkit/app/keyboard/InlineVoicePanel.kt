@@ -26,6 +26,7 @@ import helium314.keyboard.latin.SpeechKitVoiceBridge
 import helium314.keyboard.settings.SettingsActivity
 import io.kombify.speechkit.app.companion.CoinstallTurnClient
 import io.kombify.speechkit.app.companion.CoinstallTurnResult
+import io.kombify.speechkit.app.companion.CompanionProvision
 import io.kombify.speechkit.app.companion.CompanionProvisioner
 import io.kombify.speechkit.app.ui.MainActivity
 import io.kombify.speechkit.audio.MicAudioCapture
@@ -41,6 +42,7 @@ import io.kombify.speechkit.ime.ui.VoicePanelUi
 import io.kombify.speechkit.domain.ConnectionProfile
 import io.kombify.speechkit.domain.ConnectionProfileSource
 import io.kombify.speechkit.net.DictationController
+import io.kombify.speechkit.net.SpeechKitApiException
 import io.kombify.speechkit.net.VoiceAgentAudio
 import io.kombify.speechkit.net.VoiceAgentController
 import io.kombify.speechkit.stt.streaming.StreamingSttSession
@@ -669,11 +671,22 @@ class InlineVoicePanel(
         }
     }
 
-    private suspend fun openSession(profile: ConnectionProfile): StreamingSttSession =
-        DictationController(
-            profile = profile,
-            context = application,
-        ).openSession()
+    private suspend fun openSession(profile: ConnectionProfile): StreamingSttSession {
+        return try {
+            DictationController(
+                profile = profile,
+                context = application,
+            ).openSession()
+        } catch (e: SpeechKitApiException) {
+            if (e.httpStatus != 401) throw e
+            val recovered = companion.recoverFromUnauthorized(profile)
+            val next = (recovered as? CompanionProvision.Session)?.profile ?: throw e
+            DictationController(
+                profile = next,
+                context = application,
+            ).openSession()
+        }
+    }
 
     /** What the user asked for when the permission trampoline took over. */
     private data class PendingActivation(
