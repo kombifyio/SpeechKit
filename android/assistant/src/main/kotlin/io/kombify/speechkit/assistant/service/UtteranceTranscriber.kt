@@ -27,6 +27,8 @@ data class UtteranceResult(
         HEARD,
         EMPTY_FINAL,
         NO_SPEECH,
+        MIC_PERMISSION,
+        MIC_UNAVAILABLE,
         TIMEOUT,
         CLOSED,
         STREAM_FAILED,
@@ -65,7 +67,7 @@ class UtteranceTranscriber(
                                 result.complete(
                                     UtteranceResult(
                                         text = "",
-                                        reason = UtteranceResult.Reason.STREAM_FAILED,
+                                        reason = failureReason(event.code),
                                         detail = event.code,
                                     ),
                                 )
@@ -111,6 +113,9 @@ class UtteranceTranscriber(
             outcome
         } catch (e: CancellationException) {
             throw e
+        } catch (e: SecurityException) {
+            VoiceLog.e(VoiceLog.ASSIST, "utterance mic permission denied", e)
+            UtteranceResult("", UtteranceResult.Reason.MIC_PERMISSION, "mic_permission_denied")
         } catch (e: Exception) {
             VoiceLog.e(VoiceLog.ASSIST, "utterance failed", e)
             throw e
@@ -170,6 +175,15 @@ class UtteranceTranscriber(
     )
 
     private companion object {
+        const val CODE_MIC_PERMISSION = "mic_permission_denied"
+        const val CODE_MIC_UNAVAILABLE = "audio_capture_failed"
+
+        fun failureReason(code: String): UtteranceResult.Reason = when (code) {
+            CODE_MIC_PERMISSION -> UtteranceResult.Reason.MIC_PERMISSION
+            CODE_MIC_UNAVAILABLE -> UtteranceResult.Reason.MIC_UNAVAILABLE
+            else -> UtteranceResult.Reason.STREAM_FAILED
+        }
+
         const val LEVEL_PUBLISH_INTERVAL_MS = 50L
         const val SPEECH_PROBABILITY = 0.5f
         const val MIN_SILENCE_MILLIS = 700L

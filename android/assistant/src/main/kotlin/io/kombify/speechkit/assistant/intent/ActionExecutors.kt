@@ -244,8 +244,8 @@ class GeneralQueryExecutor(
     }
 
     private companion object {
-        const val ACTION_FAILED_MESSAGE = "Aktion fehlgeschlagen"
+        const val ACTION_FAILED_MESSAGE = "Action failed"
         const val NO_SERVER_ASSIST_MESSAGE =
-            "Dafür brauche ich einen gekoppelten SpeechKit-Server"
+            "I need a paired SpeechKit server for that"
     }
 }

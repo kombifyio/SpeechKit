@@ -87,7 +87,7 @@ class CompanionProvisioner internal constructor(
 
 }
 
-private const val BIND_TIMEOUT_MS = 5_000L
+
 
 private val companionProvisionExecutor: Executor = Executors.newSingleThreadExecutor { task ->
     Thread(task, "speechkit-companion-provision").apply { isDaemon = true }
@@ -144,7 +144,7 @@ private fun bindCompanion(context: Context): CompanionProvision {
     }.getOrDefault(false)
     if (!bound) return CompanionProvision.Unavailable
     try {
-        if (!ready.await(BIND_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+        if (!ready.await(COMPANION_BIND_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
             return CompanionProvision.Unavailable
         }
     } finally {

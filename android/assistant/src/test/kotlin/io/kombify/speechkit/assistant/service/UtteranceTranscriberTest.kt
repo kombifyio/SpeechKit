@@ -94,4 +94,18 @@ class UtteranceTranscriberTest {
         assertEquals("", outcome.text)
         assertEquals(0, session.finishCalls)
     }
+
+    @Test
+    fun `mic permission codes stay typed and do not look like empty-final`() = runTest {
+        val session = FakeSession(capturesOwnAudio = true)
+        session.channel.trySend(
+            TranscriptEvent.Failure(code = "mic_permission_denied", message = "denied"),
+        )
+        val outcome = UtteranceTranscriber(
+            sessionFactory = { session },
+            audioCapture = AudioCapture { flowOf() },
+        ).transcribe()
+        assertEquals(UtteranceResult.Reason.MIC_PERMISSION, outcome.reason)
+        assertEquals("", outcome.text)
+    }
 }

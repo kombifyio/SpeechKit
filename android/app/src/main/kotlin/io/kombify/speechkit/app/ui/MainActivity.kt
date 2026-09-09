@@ -63,6 +63,7 @@ import io.kombify.speechkit.app.companion.CompanionProvision
 import io.kombify.speechkit.app.companion.CompanionProvisioner
 import io.kombify.speechkit.app.companion.ConnectCloudIntent
 import io.kombify.speechkit.app.companion.cloudConnectUi
+import io.kombify.speechkit.app.companion.cloudModeAfterProvision
 import io.kombify.speechkit.coinstall.v1.CoinstallContract
 import io.kombify.speechkit.domain.ConnectionMode
 import io.kombify.speechkit.domain.fallbackModeAfterDisconnect
@@ -675,7 +676,7 @@ private fun ServerConnectionCard(
             val outcome = runCatching {
                 withContext(Dispatchers.IO) { provisioner.provisionNow() }
             }.getOrDefault(CompanionProvision.Unavailable)
-            if (outcome is CompanionProvision.Session) {
+            if (cloudModeAfterProvision(outcome) == ConnectionMode.KOMBIFY_CLOUD) {
                 persistMode(ConnectionMode.KOMBIFY_CLOUD)
                 onConnectSucceeded()
             }
@@ -831,7 +832,16 @@ private fun ServerConnectionCard(
                     lanServers.forEach { server ->
                         FilterChip(
                             selected = url == server.url,
-                            onClick = { url = server.url },
+                            onClick = {
+                                url = server.url
+                                StoredServerProfile.saveSelfHost(
+                                    context,
+                                    server.url,
+                                    token.trim().ifEmpty { null },
+                                )
+                                persistMode(ConnectionMode.SELF_HOST)
+                                status = context.getString(R.string.settings_connection_saved)
+                            },
                             label = { Text(server.instanceName) },
                         )
                     }
@@ -840,10 +850,11 @@ private fun ServerConnectionCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = {
-                        prefs.edit()
-                            .putString(StoredServerProfile.KEY_SERVER_URL, url.trim())
-                            .putString(StoredServerProfile.KEY_SERVER_TOKEN, token.trim())
-                            .apply()
+                        StoredServerProfile.saveSelfHost(
+                            context,
+                            url.trim(),
+                            token.trim().ifEmpty { null },
+                        )
                         persistMode(ConnectionMode.SELF_HOST)
                         status = context.getString(R.string.settings_connection_saved)
                     },

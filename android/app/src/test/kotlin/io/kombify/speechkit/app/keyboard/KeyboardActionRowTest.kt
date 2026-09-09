@@ -70,14 +70,17 @@ class KeyboardActionRowTest {
             }
     }
 
-    // The hand-off is a written contract and a fixture today: no AIDL, no
-    // binding, no package visibility. The button says so rather than pretending.
     @Test
-    fun `Companion stays blocked even with a server paired`() {
+    fun `Companion stays blocked until a provisioned session exists`() {
         val profile = ConnectionProfile.Server("https://speechkit.example.com")
         assertEquals(
             KeyboardActionBlocker.NoCompanion,
             blocker(profile, KeyboardAction.CompanionApp),
+        )
+        assertNull(
+            keyboardActionRowItems(profile, companionSession = true)
+                .single { it.action == KeyboardAction.CompanionApp }
+                .blocker,
         )
     }
 

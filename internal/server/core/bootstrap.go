@@ -533,26 +533,35 @@ func serveServer(ctx context.Context, cfg *config.Config, app *App) (returnErr e
 		boxMediaErrors = app.BoxMediaRuntime.Errors()
 	}
 	var runtimeErr error
-	select {
-	case <-ctx.Done():
-		slog.Info("shutdown signal received, draining connections")
-	case err, ok := <-serveErr:
-		if err != nil {
-			runtimeErr = fmt.Errorf("core.Run: serve: %w", err)
-		} else if !ok && ctx.Err() == nil {
-			runtimeErr = errors.New("core.Run: main HTTP listener stopped unexpectedly")
-		}
-	case err, ok := <-boxMediaErrors:
-		switch {
-		case err != nil:
-			_, components, _ := app.Health.Snapshot()
-			if entry, exists := components[boxMediaHealthComponent]; !exists || entry.Status != StatusUnavailable {
-				app.Health.SetReady(boxMediaHealthComponent, StatusUnavailable, "runtime dependency failed")
+serveLoop:
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Info("shutdown signal received, draining connections")
+			break serveLoop
+		case err, ok := <-serveErr:
+			if err != nil {
+				runtimeErr = fmt.Errorf("core.Run: serve: %w", err)
+			} else if !ok && ctx.Err() == nil {
+				runtimeErr = errors.New("core.Run: main HTTP listener stopped unexpectedly")
 			}
-			runtimeErr = fmt.Errorf("core.Run: Box media runtime: %w", err)
-		case !ok && ctx.Err() == nil:
-			app.Health.SetReady(boxMediaHealthComponent, StatusUnavailable, "runtime stopped unexpectedly")
-			runtimeErr = errors.New("core.Run: Box media runtime stopped unexpectedly")
+			break serveLoop
+		case err, ok := <-boxMediaErrors:
+			// Box is an optional feature. One dead satellite listener or a
+			// stalled local STT child must not take down dictation, assist,
+			// Voice Agent, Wyoming, or the device-agent bridge.
+			boxMediaErrors = nil
+			switch {
+			case err != nil:
+				_, components, _ := app.Health.Snapshot()
+				if entry, exists := components[boxMediaHealthComponent]; !exists || entry.Status != StatusUnavailable {
+					app.Health.SetReady(boxMediaHealthComponent, StatusUnavailable, "runtime dependency failed")
+				}
+				slog.Error("Box media runtime failed; HTTP server continues", "err", err)
+			case !ok && ctx.Err() == nil:
+				app.Health.SetReady(boxMediaHealthComponent, StatusUnavailable, "runtime stopped unexpectedly")
+				slog.Error("Box media runtime stopped unexpectedly; HTTP server continues")
+			}
 		}
 	}
 

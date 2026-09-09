@@ -6,6 +6,8 @@ import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
 import helium314.keyboard.latin.App
 import helium314.keyboard.latin.SpeechKitVoiceBridge
+import io.kombify.speechkit.app.companion.CoinstallTurnClient
+import io.kombify.speechkit.app.companion.CompanionProvisioner
 import io.kombify.speechkit.app.keyboard.InlineVoicePanel
 import io.kombify.speechkit.app.keyboard.SpeechKitStripLayout
 import io.kombify.speechkit.domain.ConnectionProfileSource
@@ -51,11 +53,13 @@ class SpeechKitApplication : App() {
         // process lifetime: the panel itself is built per activation and takes
         // the InputMethodService it is given, so it holds no service across
         // keyboard restarts.
+        val entry = EntryPointAccessors
+            .fromApplication(this, KeyboardEntryPoint::class.java)
         SpeechKitVoiceBridge.host = InlineVoicePanel(
             application = this,
-            profileSource = EntryPointAccessors
-                .fromApplication(this, KeyboardEntryPoint::class.java)
-                .profileSource(),
+            profileSource = entry.profileSource(),
+            companion = entry.companionProvisioner(),
+            companionTurns = entry.companionTurns(),
         )
     }
 
@@ -68,5 +72,7 @@ class SpeechKitApplication : App() {
     @InstallIn(SingletonComponent::class)
     interface KeyboardEntryPoint {
         fun profileSource(): ConnectionProfileSource
+        fun companionProvisioner(): CompanionProvisioner
+        fun companionTurns(): CoinstallTurnClient
     }
 }

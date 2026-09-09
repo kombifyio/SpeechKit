@@ -40,4 +40,13 @@ object StoredServerProfile {
             .putString(KEY_CONNECTION_MODE, mode.wire)
             .apply()
     }
+
+    fun saveSelfHost(context: Context, url: String, token: String?) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_SERVER_URL, url.trim())
+            .putString(KEY_SERVER_TOKEN, token?.trim().orEmpty())
+            .putString(KEY_CONNECTION_MODE, ConnectionMode.SELF_HOST.wire)
+            .apply()
+    }
 }

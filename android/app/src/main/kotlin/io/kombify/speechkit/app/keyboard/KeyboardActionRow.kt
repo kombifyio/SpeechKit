@@ -38,15 +38,19 @@ data class KeyboardActionItem(
     val enabled: Boolean get() = blocker == null
 }
 
-fun keyboardActionRowItems(profile: ConnectionProfile): List<KeyboardActionItem> {
+fun keyboardActionRowItems(
+    profile: ConnectionProfile,
+    companionSession: Boolean = false,
+): List<KeyboardActionItem> {
     val server = if (profile is ConnectionProfile.Server) null else KeyboardActionBlocker.NoServer
+    val companion = if (companionSession) null else KeyboardActionBlocker.NoCompanion
     return listOf(
         KeyboardActionItem(KeyboardAction.OnDeviceDictation),
         KeyboardActionItem(KeyboardAction.ServerDictation, server),
         KeyboardActionItem(KeyboardAction.AgentDeepgram, server),
         KeyboardActionItem(KeyboardAction.AgentAssemblyAi, server),
         KeyboardActionItem(KeyboardAction.AgentOpenAi, server),
-        KeyboardActionItem(KeyboardAction.CompanionApp, KeyboardActionBlocker.NoCompanion),
+        KeyboardActionItem(KeyboardAction.CompanionApp, companion),
     )
 }
 

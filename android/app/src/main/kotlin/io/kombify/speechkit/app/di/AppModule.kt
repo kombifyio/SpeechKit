@@ -12,7 +12,10 @@ import io.kombify.speechkit.audio.AndroidAudioSession
 import io.kombify.speechkit.audio.AudioSession
 import io.kombify.speechkit.shortcuts.DefaultShortcutResolver
 import io.kombify.speechkit.shortcuts.ShortcutResolver
+import io.kombify.speechkit.app.companion.BinderCoinstallTurnTransport
+import io.kombify.speechkit.app.companion.CoinstallTurnClient
 import io.kombify.speechkit.app.companion.CompanionProvisioner
+import io.kombify.speechkit.assistant.intent.CompanionTurnExecutor
 import io.kombify.speechkit.store.RoomStore
 import io.kombify.speechkit.store.Store
 import javax.inject.Singleton
@@ -29,6 +32,20 @@ object AppModule {
     @Singleton
     fun provideCompanionProvisioner(@ApplicationContext context: Context): CompanionProvisioner =
         CompanionProvisioner(context)
+
+    @Provides
+    @Singleton
+    fun provideCoinstallTurnClient(
+        @ApplicationContext context: Context,
+        companion: CompanionProvisioner,
+    ): CoinstallTurnClient = CoinstallTurnClient(
+        sessionPresent = { companion.currentSession() != null },
+        transport = BinderCoinstallTurnTransport(context),
+    )
+
+    @Provides
+    @Singleton
+    fun provideCompanionTurnExecutor(client: CoinstallTurnClient): CompanionTurnExecutor = client
 
     @Provides
     @Singleton

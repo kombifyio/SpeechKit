@@ -12,7 +12,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import dagger.hilt.android.AndroidEntryPoint
-import io.kombify.speechkit.assistant.intent.AssistantIntent
+import io.kombify.speechkit.assistant.intent.ActionResult
+import io.kombify.speechkit.assistant.intent.CompanionTurnExecutor
 import io.kombify.speechkit.assistant.intent.GeneralQueryExecutor
 import io.kombify.speechkit.assistant.intent.IntentRouter
 import io.kombify.speechkit.assistant.ui.AssistantOverlay
@@ -47,9 +48,10 @@ import javax.inject.Inject
 class SpeechKitAssistantSessionService : VoiceInteractionSessionService() {
 
     @Inject lateinit var profileSource: ConnectionProfileSource
+    @Inject lateinit var companionTurns: CompanionTurnExecutor
 
     override fun onNewSession(args: Bundle?): VoiceInteractionSession =
-        SpeechKitVoiceSession(this, profileSource)
+        SpeechKitVoiceSession(this, profileSource, companionTurns)
 }
 
 /**
@@ -68,6 +70,7 @@ class SpeechKitAssistantSessionService : VoiceInteractionSessionService() {
 class SpeechKitVoiceSession(
     context: Context,
     private val profileSource: ConnectionProfileSource,
+    private val companionTurns: CompanionTurnExecutor? = null,
 ) : VoiceInteractionSession(context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -159,25 +162,47 @@ class SpeechKitVoiceSession(
                 VoiceLog.i(VoiceLog.ASSIST, "listen ${profile.describe()}")
                 _uiState.value = AssistantUiState.Listening()
 
-                val outcome = UtteranceTranscriber(
+                val outcome = AssistantListenTurn(
                     sessionFactory = {
                         DictationController(profile, context = context).openSession()
                     },
                     audioCapture = MicAudioCapture(),
+                    intentRouter = intentRouter,
+                    executeIntent = { intent -> intentRouter.execute(context, intent) },
+                    companionTurn = companionTurns,
                     onLevel = { level ->
                         _uiState.value = AssistantUiState.Listening(level)
                     },
-                ).transcribe()
+                ).run()
 
-                if (outcome.reason != UtteranceResult.Reason.HEARD) {
-                    _uiState.value = AssistantUiState.Error(messageFor(outcome))
-                    return@launch
+                when (outcome) {
+                    is AssistantTurnOutcome.Heard -> {
+                        _uiState.value = AssistantUiState.Transcribed(outcome.text)
+                        VoiceLog.i(
+                            VoiceLog.ASSIST,
+                            "heard chars=${outcome.text.length} assist=${outcome.assist.success}",
+                        )
+                        presentAssist(outcome.assist)
+                    }
+                    AssistantTurnOutcome.EmptyFinal ->
+                        _uiState.value = AssistantUiState.EmptyFinal
+                    AssistantTurnOutcome.NoSpeech ->
+                        _uiState.value = AssistantUiState.Error(NO_SPEECH_MESSAGE)
+                    AssistantTurnOutcome.MicPermissionDenied ->
+                        _uiState.value = AssistantUiState.Error(MIC_PERMISSION_MESSAGE)
+                    AssistantTurnOutcome.MicUnavailable ->
+                        _uiState.value = AssistantUiState.Error(MIC_UNAVAILABLE_MESSAGE)
+                    AssistantTurnOutcome.Timeout ->
+                        _uiState.value = AssistantUiState.Error(TIMEOUT_MESSAGE)
+                    is AssistantTurnOutcome.Closed ->
+                        _uiState.value = AssistantUiState.Error(CLOSED_MESSAGE)
+                    is AssistantTurnOutcome.StreamFailed ->
+                        _uiState.value = AssistantUiState.Error(
+                            outcome.detail?.takeIf { it.isNotBlank() }
+                                ?.let { "$STREAM_FAILED_MESSAGE ($it)" }
+                                ?: STREAM_FAILED_MESSAGE,
+                        )
                 }
-                _uiState.value = AssistantUiState.Transcribed(outcome.text)
-
-                val intent = intentRouter.classify(outcome.text)
-                VoiceLog.i(VoiceLog.ASSIST, "intent ${intent.type} confidence=${intent.confidence}")
-                executeIntent(intent)
             } catch (e: SpeechKitApiException) {
                 VoiceLog.e(
                     VoiceLog.ASSIST,
@@ -192,15 +217,12 @@ class SpeechKitVoiceSession(
         }
     }
 
-    private suspend fun executeIntent(intent: AssistantIntent) {
-        _uiState.value = AssistantUiState.Executing(intent.type.displayName)
-
-        val result = intentRouter.execute(context, intent)
-
+    private suspend fun presentAssist(result: ActionResult) {
+        _uiState.value = AssistantUiState.Executing("Assist")
         _uiState.value = if (result.success) {
             AssistantUiState.Result(result.responseText)
         } else {
-            VoiceLog.w(VoiceLog.ASSIST, "intent failed ${intent.type}")
+            VoiceLog.w(VoiceLog.ASSIST, "assist failed")
             AssistantUiState.Error(result.errorMessage ?: ACTION_FAILED_MESSAGE)
         }
 
@@ -218,26 +240,14 @@ class SpeechKitVoiceSession(
     private companion object {
         const val RESULT_LINGER_MILLIS = 2_000L
 
-        // TODO(i18n): replace with sk.voice.* message IDs once the assistant
-        // adopts the shared catalog; locales/*.json is the parity source.
-        const val NO_SPEECH_MESSAGE = "Keine Sprache erkannt"
-        const val TIMEOUT_MESSAGE = "Transkript kam nicht rechtzeitig"
-        const val CLOSED_MESSAGE = "Verbindung beendet"
-        const val STREAM_FAILED_MESSAGE = "Spracherkennung fehlgeschlagen"
-        const val ACTION_FAILED_MESSAGE = "Aktion fehlgeschlagen"
-        const val GENERIC_ERROR_MESSAGE = "Fehler"
-
-        fun messageFor(outcome: UtteranceResult): String = when (outcome.reason) {
-            UtteranceResult.Reason.HEARD -> outcome.text
-            UtteranceResult.Reason.EMPTY_FINAL,
-            UtteranceResult.Reason.NO_SPEECH,
-            -> NO_SPEECH_MESSAGE
-            UtteranceResult.Reason.TIMEOUT -> TIMEOUT_MESSAGE
-            UtteranceResult.Reason.CLOSED -> CLOSED_MESSAGE
-            UtteranceResult.Reason.STREAM_FAILED ->
-                outcome.detail?.takeIf { it.isNotBlank() }?.let { "$STREAM_FAILED_MESSAGE ($it)" }
-                    ?: STREAM_FAILED_MESSAGE
-        }
+        const val NO_SPEECH_MESSAGE = "No speech heard"
+        const val MIC_PERMISSION_MESSAGE = "Microphone permission denied"
+        const val MIC_UNAVAILABLE_MESSAGE = "Microphone unavailable"
+        const val TIMEOUT_MESSAGE = "Transcript did not arrive in time"
+        const val CLOSED_MESSAGE = "Connection closed"
+        const val STREAM_FAILED_MESSAGE = "Speech recognition failed"
+        const val ACTION_FAILED_MESSAGE = "Action failed"
+        const val GENERIC_ERROR_MESSAGE = "Error"
     }
 }
 
@@ -249,6 +259,7 @@ sealed interface AssistantUiState {
     data class Listening(val level: Float = 0f) : AssistantUiState
     data object Processing : AssistantUiState
     data class Transcribed(val text: String) : AssistantUiState
+    data object EmptyFinal : AssistantUiState
     data class Executing(val actionName: String) : AssistantUiState
     data class Result(val text: String) : AssistantUiState
     data class Error(val message: String) : AssistantUiState

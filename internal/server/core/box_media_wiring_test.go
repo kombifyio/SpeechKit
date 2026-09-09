@@ -156,25 +156,43 @@ func TestWireBoxMediaListenerFailsBlockingReadinessWhenOwnedLocalRuntimeExits(t 
 	if err != nil {
 		t.Fatalf("wireBoxMediaListener: %v", err)
 	}
+	cfg.Server.ListenAddr = freeLoopbackHTTPAddr(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	serveDone := make(chan error, 1)
 	go func() {
-		serveDone <- serveServer(context.Background(), cfg, app)
+		serveDone <- serveServer(ctx, cfg, app)
 	}()
+	waitForCoreListen(t, cfg.Server.ListenAddr)
 	local.runtimeErr = errors.New("whisper child exited")
 	close(local.runtimeDone)
 
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		_, components, _ := app.Health.Snapshot()
+		entry := components[boxMediaHealthComponent]
+		if entry.Status == StatusUnavailable && entry.Blocking && strings.Contains(entry.Detail, "STT runtime stopped") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("Box media health after local exit=%#v", entry)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	select {
 	case serveErr := <-serveDone:
-		if serveErr == nil || !strings.Contains(serveErr.Error(), "Box media runtime: whisper child exited") {
-			t.Fatalf("serveServer error=%v", serveErr)
+		t.Fatalf("HTTP server exited after Box STT death: %v", serveErr)
+	default:
+	}
+	waitForCoreListen(t, cfg.Server.ListenAddr)
+	cancel()
+	select {
+	case serveErr := <-serveDone:
+		if serveErr != nil {
+			t.Fatalf("clean shutdown after Box STT death: %v", serveErr)
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("server did not exit after owned local STT death")
-	}
-	_, components, _ := app.Health.Snapshot()
-	entry := components[boxMediaHealthComponent]
-	if entry.Status != StatusUnavailable || !entry.Blocking || !strings.Contains(entry.Detail, "STT runtime stopped") {
-		t.Fatalf("Box media health after local exit=%#v", entry)
+		t.Fatal("server did not drain after context cancel")
 	}
 	if local.stops.Load() != 1 || local.IsReady() {
 		t.Fatalf("owned local STT stops=%d ready=%v, want 1/false", local.stops.Load(), local.IsReady())
@@ -318,9 +336,9 @@ func TestWireBoxMediaListenerFailsClosedBeforeListen(t *testing.T) {
 	}
 }
 
-func TestServeServerPropagatesBoxMediaListenerFailure(t *testing.T) {
+func TestServeServerBoxMediaListenerFailureKeepsHTTPServing(t *testing.T) {
 	cfg := &config.Config{}
-	cfg.Server.ListenAddr = "127.0.0.1:0"
+	cfg.Server.ListenAddr = freeLoopbackHTTPAddr(t)
 	cfg.Server.AuthMode = "none"
 	app := newServerApp(cfg, RunOptions{})
 	errCh := make(chan error, 1)
@@ -328,16 +346,37 @@ func TestServeServerPropagatesBoxMediaListenerFailure(t *testing.T) {
 	listener := &boxMediaCoreListener{errors: errCh}
 	app.BoxMediaRuntime = &boxMediaServerRuntime{listener: listener}
 
-	err := serveServer(context.Background(), cfg, app)
-	if err == nil || !strings.Contains(err.Error(), "Box media runtime: listener failed") {
-		t.Fatalf("serveServer error=%v", err)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- serveServer(ctx, cfg, app) }()
+	waitForCoreListen(t, cfg.Server.ListenAddr)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		_, components, _ := app.Health.Snapshot()
+		if components[boxMediaHealthComponent].Status == StatusUnavailable {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("failed Box media health=%#v", components[boxMediaHealthComponent])
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	if listener.shutdowns.Load() != 1 {
-		t.Fatalf("Box media listener shutdowns=%d, want 1", listener.shutdowns.Load())
+	select {
+	case err := <-done:
+		t.Fatalf("HTTP server exited after Box listener failure: %v", err)
+	default:
 	}
-	_, components, _ := app.Health.Snapshot()
-	if entry := components[boxMediaHealthComponent]; entry.Status != StatusUnavailable {
-		t.Fatalf("failed Box media health=%#v", entry)
+	waitForCoreListen(t, cfg.Server.ListenAddr)
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("clean shutdown after Box listener failure: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("server did not drain after context cancel")
 	}
 }
 
@@ -559,6 +598,35 @@ func newBoxMediaCoreHA(t *testing.T) *httptest.Server {
 	}))
 	t.Cleanup(server.Close)
 	return server
+}
+
+func freeLoopbackHTTPAddr(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve loopback HTTP address: %v", err)
+	}
+	addr := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatalf("release loopback HTTP address: %v", err)
+	}
+	return addr
+}
+
+func waitForCoreListen(t *testing.T, addr string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		connection, err := net.DialTimeout("tcp", addr, 25*time.Millisecond)
+		if err == nil {
+			_ = connection.Close()
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("main listener did not become reachable: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func freeBoxMediaCoreAddr(t *testing.T) string {

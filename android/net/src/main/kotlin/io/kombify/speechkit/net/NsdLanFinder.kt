@@ -76,6 +76,7 @@ class NsdLanFinder(
                     attributes[key] = String(bytes, StandardCharsets.UTF_8)
                 }
             }
+            if (LanDiscoveryRecords.carriesCredentials(attributes)) return null
             val named = LanDiscoveryRecords.parse(info.serviceName, attributes)
             if (named != null) return named
             val host = info.host?.hostAddress ?: return null

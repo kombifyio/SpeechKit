@@ -8,6 +8,7 @@ import android.graphics.drawable.Drawable
 import android.inputmethodservice.InputMethodService
 import android.os.SystemClock
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.ExtractedTextRequest
 import android.view.View
 import android.view.inputmethod.InputConnection
 import android.widget.FrameLayout
@@ -23,6 +24,9 @@ import androidx.core.content.ContextCompat
 import helium314.keyboard.latin.R
 import helium314.keyboard.latin.SpeechKitVoiceBridge
 import helium314.keyboard.settings.SettingsActivity
+import io.kombify.speechkit.app.companion.CoinstallTurnClient
+import io.kombify.speechkit.app.companion.CoinstallTurnResult
+import io.kombify.speechkit.app.companion.CompanionProvisioner
 import io.kombify.speechkit.app.ui.MainActivity
 import io.kombify.speechkit.audio.MicAudioCapture
 import io.kombify.speechkit.audio.PcmStreamPlayer
@@ -120,6 +124,8 @@ import timber.log.Timber
 class InlineVoicePanel(
     private val application: Application,
     private val profileSource: ConnectionProfileSource,
+    private val companion: CompanionProvisioner,
+    private val companionTurns: CoinstallTurnClient,
 ) : SpeechKitVoiceBridge.Host {
 
     // Outlives every panel activation on purpose: the microphone answer comes
@@ -214,7 +220,10 @@ class InlineVoicePanel(
             action,
             KeyboardAgentPreferences.action(service),
         ) ?: return null
-        val items = keyboardActionRowItems(profileSource.currentProfile())
+        val items = keyboardActionRowItems(
+            profileSource.currentProfile(),
+            companionSession = companion.currentSession() != null,
+        )
         val blocker = items.firstOrNull { it.action == chosen }?.blocker
         if (blocker != null) return service.getString(blocker.reasonResource())
         runCatching { service.perform(chosen) }
@@ -623,7 +632,10 @@ class InlineVoicePanel(
             -> profileSource.currentProfile()
 
             // Nothing to bind to yet; the row renders it disabled.
-            KeyboardAction.CompanionApp -> return
+            KeyboardAction.CompanionApp -> {
+                askCompanion(connection)
+                return
+            }
         }
         open(
             service = this,
@@ -635,6 +647,27 @@ class InlineVoicePanel(
         )
     }
 
+
+    private fun InputMethodService.askCompanion(connection: InputConnection) {
+        val selected = connection.getSelectedText(0)?.toString()
+        val extracted = connection.getExtractedText(ExtractedTextRequest(), 0)?.text?.toString()
+        val text = selected?.trim()?.ifEmpty { null }
+            ?: extracted?.trim()?.ifEmpty { null }
+            ?: return
+        hostScope.launch {
+            when (val outcome = companionTurns.startTurnResult(text)) {
+                is CoinstallTurnResult.Complete -> {
+                    if (outcome.text.isNotBlank()) {
+                        connection.commitText(outcome.text, 1)
+                    }
+                }
+                is CoinstallTurnResult.Failed,
+                CoinstallTurnResult.NoSession,
+                CoinstallTurnResult.Unavailable,
+                -> Unit
+            }
+        }
+    }
 
     private suspend fun openSession(profile: ConnectionProfile): StreamingSttSession =
         DictationController(

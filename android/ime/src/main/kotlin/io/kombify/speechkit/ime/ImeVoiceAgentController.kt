@@ -2,8 +2,8 @@ package io.kombify.speechkit.ime
 
 import io.kombify.speechkit.audio.AudioCapture
 import io.kombify.speechkit.log.VoiceLog
-import io.kombify.speechkit.net.VoiceAgentController
 import io.kombify.speechkit.net.VoiceAgentEvent
+import io.kombify.speechkit.net.VoiceAgentSessionDriver
 import io.kombify.speechkit.net.VoiceAgentStartFrame
 import io.kombify.speechkit.net.VoiceAgentUiState
 import kotlinx.coroutines.CancellationException
@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
  */
 class ImeVoiceAgentController(
     private val scope: CoroutineScope,
-    private val controllerFactory: () -> VoiceAgentController,
+    private val controllerFactory: () -> VoiceAgentSessionDriver,
     private val audioCapture: AudioCapture,
     private val micPermission: MicPermissionGate,
 ) {
@@ -66,7 +66,7 @@ class ImeVoiceAgentController(
     private val _audio = Channel<ByteArray>(Channel.UNLIMITED)
     val audio: Flow<ByteArray> = _audio.receiveAsFlow()
 
-    private var controller: VoiceAgentController? = null
+    private var controller: VoiceAgentSessionDriver? = null
     private var eventsJob: Job? = null
     private var captureJob: Job? = null
 

@@ -54,14 +54,27 @@ data class VoiceAgentUiState(
  * itself would fight whichever one already had it. Callers push captured PCM
  * in with [sendAudio] and take agent audio out of [audio].
  */
+/**
+ * The IME and in-app surfaces drive a conversation through this, so tests
+ * can complete one turn without a live socket.
+ */
+interface VoiceAgentSessionDriver {
+    val state: StateFlow<VoiceAgentUiState>
+    suspend fun start(options: VoiceAgentStartFrame = VoiceAgentStartFrame()): Flow<VoiceAgentEvent>
+    fun accept(event: VoiceAgentEvent)
+    suspend fun sendAudio(pcm: ByteArray)
+    suspend fun endTurn()
+    suspend fun stop()
+}
+
 class VoiceAgentController(
     private val profile: ConnectionProfile,
     private val okHttp: OkHttpClient = SpeechKitServerApi.defaultOkHttpClient(),
     private val client: VoiceAgentWsClient = VoiceAgentWsClient(okHttp),
-) {
+) : VoiceAgentSessionDriver {
 
     private val _state = MutableStateFlow(VoiceAgentUiState())
-    val state: StateFlow<VoiceAgentUiState> = _state.asStateFlow()
+    override val state: StateFlow<VoiceAgentUiState> = _state.asStateFlow()
 
     private var session: VoiceAgentSession? = null
 
@@ -74,7 +87,7 @@ class VoiceAgentController(
      * @throws IllegalStateException on a profile without a server: a realtime
      *   conversation has no on-device tier to fall back to, unlike dictation.
      */
-    suspend fun start(options: VoiceAgentStartFrame = VoiceAgentStartFrame()): Flow<VoiceAgentEvent> {
+    override suspend fun start(options: VoiceAgentStartFrame): Flow<VoiceAgentEvent> {
         val server = profile as? ConnectionProfile.Server
             ?: run {
                 VoiceLog.w(VoiceLog.AGENT, "no server ${profile.describe()}")
@@ -97,7 +110,7 @@ class VoiceAgentController(
      * Folds one event into [state]. Call this for every event the collector
      * receives; audio frames pass through untouched for the caller to play.
      */
-    fun accept(event: VoiceAgentEvent) {
+    override fun accept(event: VoiceAgentEvent) {
         _state.value = when (event) {
             is VoiceAgentEvent.State -> _state.value.copy(phase = event.state.toPhase())
 
@@ -129,7 +142,7 @@ class VoiceAgentController(
     }
 
     /** Streams captured microphone PCM to the agent. */
-    suspend fun sendAudio(pcm: ByteArray) {
+    override suspend fun sendAudio(pcm: ByteArray) {
         session?.sendAudio(pcm)
     }
 
@@ -137,7 +150,7 @@ class VoiceAgentController(
      * Ends the user's turn — the hold-to-talk release. The agent answers and
      * the conversation continues; it does not end the session.
      */
-    suspend fun endTurn() {
+    override suspend fun endTurn() {
         session?.endTurn()
     }
 
@@ -166,7 +179,7 @@ class VoiceAgentController(
     }
 
     /** Ends the conversation and releases the socket. */
-    suspend fun stop() {
+    override suspend fun stop() {
         val live = session ?: return
         session = null
         runCatching { live.close() }

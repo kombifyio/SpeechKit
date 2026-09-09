@@ -76,6 +76,7 @@ fun AssistantOverlay(
                     is AssistantUiState.Listening -> ListeningView(currentState.level)
                     is AssistantUiState.Processing -> ProcessingView()
                     is AssistantUiState.Transcribed -> TranscribedView(currentState.text)
+                    is AssistantUiState.EmptyFinal -> EmptyFinalView(onRetry, onDismiss)
                     is AssistantUiState.Executing -> ExecutingView(currentState.actionName)
                     is AssistantUiState.Result -> ResultView(currentState.text, onDismiss)
                     is AssistantUiState.Error -> ErrorView(currentState.message, onRetry, onDismiss)
@@ -137,6 +138,15 @@ private fun TranscribedView(text: String) {
         Spacer(modifier = Modifier.height(8.dp))
         VoiceAuraOrb(state = VoiceAuraState.PROCESSING, sizeDp = 48, markRes = R.drawable.kombify_ai_mark)
     }
+}
+
+@Composable
+private fun EmptyFinalView(onRetry: () -> Unit, onDismiss: () -> Unit) {
+    ErrorView(
+        message = stringResource(R.string.speechkit_assistant_empty_final),
+        onRetry = onRetry,
+        onDismiss = onDismiss,
+    )
 }
 
 @Composable
