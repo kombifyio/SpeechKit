@@ -188,6 +188,11 @@ func handleServerSettingsPatch(w http.ResponseWriter, r *http.Request, app *App)
 		}
 		if payload, err := pairing.New(pairingServerURL(app, r), generatedToken, pairingInstanceName(app.Cfg)); err == nil {
 			response["pairing"] = payload
+			if raw, err := json.Marshal(payload); err == nil {
+				if svg, err := pairing.QRSVG(string(raw)); err == nil {
+					response["pairing_qr_svg"] = svg
+				}
+			}
 		}
 	}
 	if strings.TrimSpace(patch.AdminAuth.PasswordValue) != "" {

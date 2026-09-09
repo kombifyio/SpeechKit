@@ -19,7 +19,7 @@
     "methods": [
       { "name": "getContractVersion", "returns": "int", "streaming": false },
       { "name": "getCapabilityStatus", "returns": "CapabilityStatus", "streaming": false },
-      { "name": "provision", "returns": "ProvisionResult", "streaming": false, "idempotentPerDevice": true },
+      { "name": "provision", "returns": "ProvisionResult", "streaming": false, "idempotentPerDevice": true, "idempotentWithinValidity": true },
       { "name": "startTurn", "returns": "void", "streaming": true, "callback": "ICoinstallCallback" },
       { "name": "cancelTurn", "returns": "void", "streaming": false, "safeAfterCompletion": true }
     ]
@@ -31,13 +31,29 @@
     "terminalCallbacks": ["onComplete", "onError"],
     "exactlyOneTerminalPerTurn": true
   },
+  "provisionResult": {
+    "fields": ["serverUrl", "bearerToken", "subject", "expiresAtEpochMs"],
+    "expiresAtEpochMs": {
+      "unit": "unix_epoch_ms",
+      "zeroMeansUnspecified": true,
+      "additiveOnV1": true
+    }
+  },
+  "bearerLifetime": {
+    "on401FromProvisionedOrigin": "reprovision",
+    "keepRejectedBearer": false,
+    "provisionIdempotentWithinValidity": true
+  },
   "security": {
     "callerIdentity": "Binder.getCallingUid",
     "packageResolution": "PackageManager.getPackagesForUid",
     "signingCertificatePinning": "PackageManager.hasSigningCertificate",
     "trustCallerSuppliedPackageName": false,
     "rejectionIsTypedError": true,
-    "pinsAreConfiguration": true
+    "pinsAreConfiguration": true,
+    "pinOwner": "callee",
+    "pinChannels": ["debug", "release"],
+    "pinMismatchOutcome": "rejected"
   },
   "scope": {
     "included": ["provisioning", "one_ai_turn", "capability_status"],

@@ -7,6 +7,9 @@ toolchain go1.26.5
 require (
 	cloud.google.com/go/auth v0.21.0
 	cloud.google.com/go/speech v1.35.0
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.1
+	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.1
+	github.com/Azure/azure-sdk-for-go/sdk/azidentity/cache v0.4.0
 	github.com/BurntSushi/toml v1.6.0
 	github.com/chromedp/chromedp v0.15.1
 	github.com/coder/websocket v1.8.15
@@ -27,6 +30,7 @@ require (
 	github.com/livekit/server-sdk-go/v2 v2.17.0
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/pion/webrtc/v4 v4.2.14
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/spf13/cobra v1.10.2
 	github.com/wailsapp/wails/v3 v3.0.0-alpha.86
 	github.com/yalue/onnxruntime_go v1.31.0
@@ -58,9 +62,6 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/longrunning v0.9.0 // indirect
 	dario.cat/mergo v1.0.2 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.1 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.1 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/azidentity/cache v0.4.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0 // indirect
 	github.com/AzureAD/microsoft-authentication-extensions-for-go/cache v0.1.1 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.8.0 // indirect

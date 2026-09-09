@@ -1,6 +1,6 @@
 ---
 title: speechkit.coinstall.v1 — Android co-install contract
-last_verified: 2026-08-12
+last_verified: 2026-09-09
 status: active
 ---
 
@@ -139,11 +139,38 @@ Install and cloud-connect UX is specified in
 [android-connect-distribution-standard.md](../android-connect-distribution-standard.md).
 Companion offers install; SpeechKit finishes Connect on `speechkit://connect/kombify`.
 
+## Bearer lifetime
+
+`ProvisionResult` carries `serverUrl`, `bearerToken`, `subject`, and
+`expiresAtEpochMs` (milliseconds since epoch). Zero means the callee did not
+pin an expiry; the caller may keep a local TTL heuristic. The field is
+additive on contract v1 — do not bump `getContractVersion()` for it, or older
+Companion builds become `Unavailable`.
+
+`provision()` is idempotent for a given `deviceId` while the returned session
+is still valid: a second call returns that session rather than minting a new
+bearer. The callee (Companion) owns minting; SpeechKit is the caller.
+
+A 401 from the provisioned origin is not a silent keep-using-dead-bearer.
+The caller re-invokes `provision()` and must not keep serving the rejected
+token. Empty, rejected, and unavailable outcomes after that re-bind clear the
+cached session. A 401 on a self-host or tester-origin profile is not this
+path. SpeechKit implements the caller rule as
+`CompanionProvisioner.recoverFromUnauthorized`.
+
+## Signing pins
+
+Pins live on the **callee**. This artifact does not ship certificate hashes:
+debug and release SpeechKit signing certificates are Companion configuration,
+so both channels can be represented without a SpeechKit rebuild. Companion
+checks `PackageManager.hasSigningCertificate()` against that pin set.
+
+A mismatch is a typed rejection (`CompanionProvision.Rejected`), not
+`Unavailable`. A debug APK talking to a release Companion is the expected
+failure mode.
+
 ## Open points
 
 - The concrete `TurnRequest` fields follow the assistant-session shape rather
   than being invented here; they are pinned when B-M5's session contract
   settles.
-- Pinned signing certificates differ per build channel. The pin set is
-  configuration, not a constant, and both debug and release pins must be
-  representable.

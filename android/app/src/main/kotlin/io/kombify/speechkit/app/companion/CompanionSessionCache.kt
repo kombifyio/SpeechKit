@@ -14,21 +14,26 @@ internal class CompanionSessionCache(
 ) {
     @Volatile private var value: ConnectionProfile.Server? = null
     @Volatile private var atMs: Long = 0
+    @Volatile private var expiresAtEpochMs: Long = 0
 
     fun current(): ConnectionProfile.Server? = value
 
     fun needsRefresh(): Boolean {
-        val snapshot = value
-        return snapshot == null || nowMs() - atMs >= ttlMs
+        if (value == null) return true
+        val expiry = expiresAtEpochMs
+        if (expiry > 0L) return nowMs() >= expiry
+        return nowMs() - atMs >= ttlMs
     }
 
-    fun offer(session: ConnectionProfile.Server) {
+    fun offer(session: ConnectionProfile.Server, expiresAtEpochMs: Long = 0L) {
         value = session
         atMs = nowMs()
+        this.expiresAtEpochMs = expiresAtEpochMs
     }
 
     fun clear() {
         value = null
         atMs = nowMs()
+        expiresAtEpochMs = 0L
     }
 }

@@ -2,6 +2,7 @@ package io.kombify.speechkit.app.companion
 
 import io.kombify.speechkit.domain.ConnectionProfile
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -10,6 +11,19 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 class CompanionSessionCacheTest {
+
+    @Test
+    fun aPinnedExpiryRefreshesWhenThatTimeIsReached() {
+        var now = 1_000L
+        val cache = CompanionSessionCache(nowMs = { now }, ttlMs = 60_000)
+        val session = ConnectionProfile.Server("https://api.kombify.io/v1/speechkit", "user-jwt")
+        cache.offer(session, expiresAtEpochMs = 5_000)
+        now = 4_999
+        assertFalse(cache.needsRefresh())
+        now = 5_000
+        assertTrue(cache.needsRefresh())
+        assertEquals(session, cache.current())
+    }
 
     @Test
     fun lastKnownSessionStaysWhileARefreshIsDue() {
@@ -110,6 +124,26 @@ class CompanionProvisionerTest {
         )
         assertEquals(CompanionProvision.Session(session), provisioner.provisionNow())
         assertEquals(session, provisioner.currentSession())
+    }
+
+    @Test
+    fun aProvisionedExpiryIsHonouredInsteadOfTheLocalTtl() {
+        var now = 0L
+        val session = ConnectionProfile.Server("https://api.kombify.io/v1/speechkit", "user-jwt")
+        val calls = AtomicInteger()
+        val provisioner = CompanionProvisioner(
+            installed = { true },
+            binder = {
+                calls.incrementAndGet()
+                CompanionProvision.Session(session, expiresAtEpochMs = 50)
+            },
+            cache = CompanionSessionCache(nowMs = { now }, ttlMs = 10),
+            executor = direct,
+        )
+        provisioner.provisionNow()
+        now = 20
+        assertEquals(session, provisioner.currentSession())
+        assertEquals(1, calls.get())
     }
 
     @Test

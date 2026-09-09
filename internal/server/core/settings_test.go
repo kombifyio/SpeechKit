@@ -417,6 +417,15 @@ func TestRegisterServerSettings_PatchGeneratesWriteOnlyServerToken(t *testing.T)
 	if _, err := pairing.Parse(envelope.Pairing); err != nil {
 		t.Fatalf("setup pairing payload must parse as speechkit.pairing.v1: %v", err)
 	}
+	var withQR struct {
+		QR string `json:"pairing_qr_svg"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &withQR); err != nil {
+		t.Fatalf("pairing QR envelope: %v", err)
+	}
+	if !strings.Contains(withQR.QR, "<svg") {
+		t.Fatal("setup must return an SVG pairing QR")
+	}
 	if strings.Contains(rec.Body.String(), `"token_value"`) {
 		t.Fatal("PATCH response must not expose server auth token_value")
 	}

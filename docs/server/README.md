@@ -35,6 +35,7 @@ The server:
 - Takes secrets from environment variables whose names are referenced from config.
 - Exposes the same auth, health, readiness, and API conventions for all modes.
 - Exposes Words/Replacements, Native Templates, Customization Packs, and active template selection so products can combine global defaults with scoped org/user/session rules.
+- Hands homelab clients a `speechkit.pairing.v1` payload and QR from `/setup` ([pairing.md](pairing.md)); LAN DNS-SD never carries the token.
 
 ## Quick start
 

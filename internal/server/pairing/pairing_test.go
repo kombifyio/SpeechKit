@@ -2,6 +2,7 @@ package pairing
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -44,6 +45,33 @@ func TestParseRejectsMissingURLOrToken(t *testing.T) {
 	}
 	if _, err := Parse([]byte(`{"v":"speechkit.pairing.v1","server_url":"http://192.168.1.20:8080","auth":"bearer","token":""}`)); err == nil {
 		t.Fatal("empty token must not parse")
+	}
+}
+
+func TestQRSVGEncodesAPairingPayload(t *testing.T) {
+	payload, err := New("http://192.168.1.20:8080", "sk-server-pairing", "wohnzimmer")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	svg, err := QRSVG(string(raw))
+	if err != nil {
+		t.Fatalf("QRSVG: %v", err)
+	}
+	if !strings.Contains(svg, `<svg xmlns="http://www.w3.org/2000/svg"`) {
+		t.Fatal("pairing QR must be an SVG")
+	}
+	if !strings.Contains(svg, "shape-rendering") {
+		t.Fatal("pairing QR must render as crisp modules")
+	}
+}
+
+func TestQRSVGRejectsEmptyContent(t *testing.T) {
+	if _, err := QRSVG("  "); err == nil {
+		t.Fatal("empty content must not produce a QR")
 	}
 }
 

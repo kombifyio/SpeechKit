@@ -373,6 +373,24 @@
       line-height: 1.35;
     }
 
+    #pairingQr {
+      width: 168px;
+      max-width: 100%;
+      padding: 8px;
+      border-radius: 6px;
+      background: #fff;
+    }
+
+    #pairingQr svg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    #pairingQr.hidden {
+      display: none;
+    }
+
     .badge {
       display: inline-flex;
       align-items: center;
@@ -695,9 +713,10 @@
           </div>
           <div class="token-output hidden" id="pairingPayloadOutput" data-pairing-version="speechkit.pairing.v1">
             <strong>Client pairing payload</strong>
+            <div id="pairingQr" class="hidden" aria-label="Pairing QR"></div>
             <code id="generatedPairingPayload">-</code>
             <button id="copyGeneratedPairingPayload" class="secondary" type="button">Copy pairing payload</button>
-            <small id="generatedPairingHint">Paste this into the SpeechKit Android app. LAN discovery still announces only the URL, never this token.</small>
+            <small id="generatedPairingHint">Scan the QR or paste this into the SpeechKit Android app. LAN discovery still announces only the URL, never this token.</small>
           </div>
         </div>
         <div class="credential-grid">
@@ -1015,17 +1034,27 @@
       updateServerAuthUI();
     }
 
-    function renderPairingPayload(pairing) {
+    function renderPairingPayload(pairing, qrSvg) {
       pairing = pairing || {};
       if (!pairing.v || !pairing.server_url || !pairing.token) {
         if (!generatedPairingPayload) {
           byId("pairingPayloadOutput").classList.add("hidden");
+          byId("pairingQr").classList.add("hidden");
+          byId("pairingQr").replaceChildren();
         }
         return;
       }
       generatedPairingPayload = JSON.stringify(pairing);
       byId("generatedPairingPayload").textContent = generatedPairingPayload;
       byId("pairingPayloadOutput").classList.remove("hidden");
+      const qr = byId("pairingQr");
+      qr.replaceChildren();
+      if (qrSvg && qrSvg.indexOf("<svg") === 0) {
+        qr.innerHTML = qrSvg;
+        qr.classList.remove("hidden");
+      } else {
+        qr.classList.add("hidden");
+      }
     }
 
     function renderSettingsPanels() {
@@ -1344,10 +1373,11 @@
         byId("adminPasswordConfirm").value = "";
         const generated = result.body && result.body.generated_token ? result.body.generated_token : null;
         const pairing = result.body && result.body.pairing ? result.body.pairing : null;
+        const pairingQr = result.body && result.body.pairing_qr_svg ? result.body.pairing_qr_svg : "";
         const message = result.body && result.body.message ? result.body.message : "Saved.";
         await loadServerSettings({ preserveStatus: true });
         renderGeneratedServerToken(generated);
-        renderPairingPayload(pairing);
+        renderPairingPayload(pairing, pairingQr);
         byId("settingsSaveStatus").textContent = message;
         setSetupStatus("Saved", "ok");
       } catch (err) {

@@ -58,7 +58,7 @@ class CompanionProvisioner internal constructor(
         if (!installed()) return CompanionProvision.Unavailable
         val outcome = binder()
         when (outcome) {
-            is CompanionProvision.Session -> cache.offer(outcome.profile)
+            is CompanionProvision.Session -> cache.offer(outcome.profile, outcome.expiresAtEpochMs)
             CompanionProvision.Empty -> cache.clear()
             CompanionProvision.Rejected, CompanionProvision.Unavailable -> Unit
         }
@@ -81,7 +81,7 @@ class CompanionProvisioner internal constructor(
         if (!installed()) return CompanionProvision.Unavailable
         val outcome = binder()
         when (outcome) {
-            is CompanionProvision.Session -> cache.offer(outcome.profile)
+            is CompanionProvision.Session -> cache.offer(outcome.profile, outcome.expiresAtEpochMs)
             CompanionProvision.Empty,
             CompanionProvision.Rejected,
             CompanionProvision.Unavailable,
@@ -100,7 +100,7 @@ class CompanionProvisioner internal constructor(
         executor.execute {
             try {
                 when (val outcome = binder()) {
-                    is CompanionProvision.Session -> cache.offer(outcome.profile)
+                    is CompanionProvision.Session -> cache.offer(outcome.profile, outcome.expiresAtEpochMs)
                     CompanionProvision.Empty -> cache.clear()
                     CompanionProvision.Rejected, CompanionProvision.Unavailable -> Unit
                 }
@@ -146,7 +146,10 @@ private fun bindCompanion(context: Context): CompanionProvision {
                 val token = provisioned?.bearerToken?.trim().orEmpty()
                 outcome.set(
                     if (url.isNotEmpty() && token.isNotEmpty()) {
-                        CompanionProvision.Session(ConnectionProfile.Server(url, token))
+                        CompanionProvision.Session(
+                            ConnectionProfile.Server(url, token),
+                            expiresAtEpochMs = provisioned.expiresAtEpochMs,
+                        )
                     } else {
                         CompanionProvision.Empty
                     },
@@ -179,7 +182,10 @@ private fun bindCompanion(context: Context): CompanionProvision {
 }
 
 sealed interface CompanionProvision {
-    data class Session(val profile: ConnectionProfile.Server) : CompanionProvision
+    data class Session(
+        val profile: ConnectionProfile.Server,
+        val expiresAtEpochMs: Long = 0L,
+    ) : CompanionProvision
     data object Empty : CompanionProvision
 
     /**
