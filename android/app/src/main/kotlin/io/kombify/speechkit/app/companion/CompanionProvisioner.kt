@@ -155,8 +155,8 @@ private fun bindCompanion(context: Context): CompanionProvision {
                     },
                 )
             } catch (_: SecurityException) {
-                // coinstall_caller_rejected: Companion could not match this
-                // APK's signing certificate against its pinned list.
+                // Companion still pins some builds. SpeechKit must not treat
+                // that as a connect failure: independent kombify login runs.
                 outcome.set(CompanionProvision.Rejected)
             } finally {
                 ready.countDown()

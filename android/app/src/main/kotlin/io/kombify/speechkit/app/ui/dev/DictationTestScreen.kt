@@ -28,10 +28,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import io.kombify.speechkit.R
 import io.kombify.speechkit.audio.MicAudioCapture
 import io.kombify.speechkit.domain.ConnectionProfile
 import io.kombify.speechkit.domain.ConnectionProfileSource
@@ -74,7 +76,7 @@ fun DictationTestScreen(profileSource: ConnectionProfileSource) {
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    var status by remember { mutableStateOf("Nicht verbunden") }
+    var status by remember { mutableStateOf(context.getString(R.string.dev_status_disconnected)) }
     var draft by remember { mutableStateOf("") }
     var recording by remember { mutableStateOf(false) }
     var session by remember { mutableStateOf<StreamingSttSession?>(null) }
@@ -105,21 +107,23 @@ fun DictationTestScreen(profileSource: ConnectionProfileSource) {
                     serverUrl,
                     token,
                 )
-                status = "Verbinde…"
+                status = context.getString(R.string.dev_status_connecting)
                 val controller = DictationController(profile, context = context)
                 val open = controller.openSession()
                 session = open
                 status = when (profile) {
-                    is ConnectionProfile.Server -> "Verbunden (${profile.normalizedBaseUrl})"
-                    is ConnectionProfile.SystemOnDevice -> "Verbunden (on device)"
-                    else -> "Verbunden"
+                    is ConnectionProfile.Server ->
+                        context.getString(R.string.dev_connected_url, profile.normalizedBaseUrl)
+                    is ConnectionProfile.SystemOnDevice ->
+                        context.getString(R.string.dev_connected_on_device)
+                    else -> context.getString(R.string.dev_status_connected)
                 }
-                appendLog("Session offen (${open.javaClass.simpleName})")
+                appendLog(context.getString(R.string.dev_session_open, open.javaClass.simpleName))
                 launch {
                     open.events.collect { event ->
                         when (event) {
                             is TranscriptEvent.SegmentReady ->
-                                appendLog("Segment ${event.segmentId} bereit")
+                                appendLog(context.getString(R.string.dev_segment_ready, event.segmentId))
                             is TranscriptEvent.Draft -> draft = event.text
                             is TranscriptEvent.Final -> {
                                 draft = ""
@@ -127,11 +131,14 @@ fun DictationTestScreen(profileSource: ConnectionProfileSource) {
                                 appendLog("Final: ${event.text}")
                             }
                             is TranscriptEvent.SegmentDone ->
-                                appendLog("Segment ${event.segmentId} abgeschlossen")
+                                appendLog(context.getString(R.string.dev_segment_done, event.segmentId))
                             is TranscriptEvent.Failure ->
-                                appendLog("Fehler ${event.code}: ${event.message}")
+                                appendLog(context.getString(R.string.dev_status_error, "${event.code}: ${event.message}"))
                             is TranscriptEvent.Closed -> {
-                                status = "Getrennt (${event.reason ?: "unbekannt"})"
+                                status = context.getString(
+                                    R.string.dev_disconnected_reason,
+                                    event.reason ?: context.getString(R.string.dev_unknown),
+                                )
                                 session = null
                                 recording = false
                                 // The mic loop must die with the session, or
@@ -143,8 +150,8 @@ fun DictationTestScreen(profileSource: ConnectionProfileSource) {
                     }
                 }
             }.onFailure { error ->
-                status = "Fehler: ${error.message}"
-                appendLog("Verbindung fehlgeschlagen: ${error.message}")
+                status = context.getString(R.string.dev_status_error, error.message ?: "")
+                appendLog(context.getString(R.string.dev_connect_failed, error.message ?: ""))
                 VoiceLog.w(VoiceLog.DICTATION, "test connect failed", error)
             }
         }
@@ -164,7 +171,7 @@ fun DictationTestScreen(profileSource: ConnectionProfileSource) {
                 capture.frames().collect { frame -> open.sendAudio(frame) }
             }
             outcome.onFailure { error ->
-                appendLog("Aufnahmefehler: ${error.message}")
+                appendLog(context.getString(R.string.dev_capture_failed, error.message ?: ""))
                 recording = false
                 VoiceLog.w(VoiceLog.AUDIO, "test capture failed", error)
             }
@@ -179,7 +186,7 @@ fun DictationTestScreen(profileSource: ConnectionProfileSource) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            "Streaming-Diktat (Dev)",
+            stringResource(R.string.dev_dictation_title),
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
         )
@@ -192,7 +199,7 @@ fun DictationTestScreen(profileSource: ConnectionProfileSource) {
         OutlinedTextField(
             value = serverUrl,
             onValueChange = { serverUrl = it },
-            label = { Text("Server-URL") },
+            label = { Text(stringResource(R.string.dev_server_url)) },
             placeholder = { Text("http://192.168.1.10:8080") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
@@ -200,16 +207,16 @@ fun DictationTestScreen(profileSource: ConnectionProfileSource) {
         OutlinedTextField(
             value = token,
             onValueChange = { token = it },
-            label = { Text("Bearer-Token (optional)") },
+            label = { Text(stringResource(R.string.dev_bearer_optional)) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
         )
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
-                onClick = { if (status != "Verbinde…") connect() },
-                enabled = session == null && status != "Verbinde…",
-            ) { Text("Verbinden") }
+                onClick = { if (status != context.getString(R.string.dev_status_connecting)) connect() },
+                enabled = session == null && status != context.getString(R.string.dev_status_connecting),
+            ) { Text(stringResource(R.string.dev_connect)) }
             OutlinedButton(
                 onClick = {
                     val open = session ?: return@OutlinedButton
@@ -218,7 +225,7 @@ fun DictationTestScreen(profileSource: ConnectionProfileSource) {
                     scope.launch { runCatching { open.close() } }
                 },
                 enabled = session != null,
-            ) { Text("Trennen") }
+            ) { Text(stringResource(R.string.dev_disconnect)) }
         }
 
         Text(status, style = MaterialTheme.typography.labelLarge)
@@ -228,7 +235,7 @@ fun DictationTestScreen(profileSource: ConnectionProfileSource) {
                 val open = session ?: return@Button
                 if (!recording) {
                     if (!micPermissionGranted()) {
-                        appendLog("Mikrofon-Berechtigung fehlt")
+                        appendLog(context.getString(R.string.dev_status_mic_missing))
                         return@Button
                     }
                     recording = true

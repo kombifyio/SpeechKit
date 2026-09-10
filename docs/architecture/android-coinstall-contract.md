@@ -158,16 +158,20 @@ cached session. A 401 on a self-host or tester-origin profile is not this
 path. SpeechKit implements the caller rule as
 `CompanionProvisioner.recoverFromUnauthorized`.
 
-## Signing pins
+## Signing pins are not a connect gate
 
-Pins live on the **callee**. This artifact does not ship certificate hashes:
-debug and release SpeechKit signing certificates are Companion configuration,
-so both channels can be represented without a SpeechKit rebuild. Companion
-checks `PackageManager.hasSigningCertificate()` against that pin set.
+Both apps connect to kombify independently. Companion must accept every
+SpeechKit caller: debug, release, tester, and sideload. A signing-certificate
+pin must never refuse `provision()` or `startTurn`. Version skew is not a
+failure.
 
-A mismatch is a typed rejection (`CompanionProvision.Rejected`), not
-`Unavailable`. A debug APK talking to a release Companion is the expected
-failure mode.
+SpeechKit treats a pin refusal as "Companion did not provision" and signs in
+through the kombify device grant in the browser. The user is never told to
+install matching builds.
+
+Companion may still *detect* SpeechKit (`io.kombify.speechkit`) and offer to
+install it from Play. Detection and install are Companion capabilities;
+they are not a handshake that can fail Connect.
 
 ## Open points
 

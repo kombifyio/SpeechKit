@@ -1,6 +1,7 @@
 package io.kombify.speechkit.assistant.intent
 
 import android.content.Context
+import io.kombify.speechkit.assistant.R
 import io.kombify.speechkit.log.VoiceLog
 
 /**
@@ -74,7 +75,10 @@ class IntentRouter(
             VoiceLog.w(VoiceLog.ASSIST, "no executor for ${intent.type}")
             return ActionResult(
                 success = false,
-                errorMessage = "Aktion '${intent.type.displayName}' nicht unterstuetzt",
+                errorMessage = context.getString(
+                    R.string.speechkit_assistant_action_unsupported,
+                    intent.type.displayName,
+                ),
             )
         }
 
@@ -84,7 +88,7 @@ class IntentRouter(
             VoiceLog.e(VoiceLog.ASSIST, "intent execution failed ${intent.type}", e)
             ActionResult(
                 success = false,
-                errorMessage = e.message ?: "Unbekannter Fehler",
+                errorMessage = e.message ?: context.getString(R.string.speechkit_assistant_unknown_error),
             )
         }
     }
@@ -162,14 +166,14 @@ data class AssistantIntent(
 
 /** Available intent types. */
 enum class IntentType(val displayName: String) {
-    OPEN_APP("App öffnen"),
-    SET_TIMER("Timer stellen"),
-    SET_ALARM("Wecker stellen"),
-    QUICK_NOTE("Notiz erstellen"),
-    SEARCH_WEB("Websuche"),
-    SEND_MESSAGE("Nachricht senden"),
-    MAKE_CALL("Anruf starten"),
-    GENERAL_QUERY("Allgemeine Frage"),
+    OPEN_APP("Open app"),
+    SET_TIMER("Set timer"),
+    SET_ALARM("Set alarm"),
+    QUICK_NOTE("Create note"),
+    SEARCH_WEB("Web search"),
+    SEND_MESSAGE("Send message"),
+    MAKE_CALL("Start call"),
+    GENERAL_QUERY("General question"),
 }
 
 /** Result of executing an intent action. */

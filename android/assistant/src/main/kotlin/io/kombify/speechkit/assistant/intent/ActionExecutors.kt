@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.AlarmClock
+import io.kombify.speechkit.assistant.R
 import io.kombify.speechkit.domain.ConnectionProfile
 import io.kombify.speechkit.domain.ConnectionProfileSource
 import io.kombify.speechkit.log.VoiceLog
@@ -20,7 +21,8 @@ import io.kombify.speechkit.net.SpeechKitServerApi
 class OpenAppExecutor : ActionExecutor {
     override suspend fun execute(context: Context, intent: AssistantIntent): ActionResult {
         val appName = intent.parameters["app"] ?: return ActionResult(
-            success = false, errorMessage = "Welche App soll ich öffnen?",
+            success = false,
+            errorMessage = context.getString(R.string.speechkit_assistant_open_app_which),
         )
 
         val pm = context.packageManager
@@ -29,9 +31,15 @@ class OpenAppExecutor : ActionExecutor {
         return if (resolvedIntent != null) {
             resolvedIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(resolvedIntent)
-            ActionResult(success = true, responseText = "$appName wird geoeffnet")
+            ActionResult(
+                success = true,
+                responseText = context.getString(R.string.speechkit_assistant_open_app_opening, appName),
+            )
         } else {
-            ActionResult(success = false, errorMessage = "App '$appName' nicht gefunden")
+            ActionResult(
+                success = false,
+                errorMessage = context.getString(R.string.speechkit_assistant_open_app_missing, appName),
+            )
         }
     }
 
@@ -74,7 +82,9 @@ class OpenAppExecutor : ActionExecutor {
 class SetTimerExecutor : ActionExecutor {
     override suspend fun execute(context: Context, intent: AssistantIntent): ActionResult {
         val number = intent.parameters["number"]?.toIntOrNull() ?: return ActionResult(
-            success = false, errorMessage = "Wie viele Minuten?", keepOpen = true,
+            success = false,
+            errorMessage = context.getString(R.string.speechkit_assistant_timer_how_many),
+            keepOpen = true,
         )
         val unit = intent.parameters["unit"] ?: "minutes"
 
@@ -94,9 +104,15 @@ class SetTimerExecutor : ActionExecutor {
 
         return try {
             context.startActivity(timerIntent)
-            ActionResult(success = true, responseText = "Timer auf $number $unit gestellt")
+            ActionResult(
+                success = true,
+                responseText = context.getString(R.string.speechkit_assistant_timer_set, number, unit),
+            )
         } catch (e: Exception) {
-            ActionResult(success = false, errorMessage = "Timer konnte nicht gestellt werden")
+            ActionResult(
+                success = false,
+                errorMessage = context.getString(R.string.speechkit_assistant_timer_failed),
+            )
         }
     }
 }
@@ -110,17 +126,26 @@ class SetAlarmExecutor : ActionExecutor {
                 putExtra(AlarmClock.EXTRA_HOUR, number)
                 putExtra(AlarmClock.EXTRA_MINUTES, 0)
             }
-            putExtra(AlarmClock.EXTRA_MESSAGE, "SpeechKit Wecker")
+            putExtra(AlarmClock.EXTRA_MESSAGE, "SpeechKit alarm")
             putExtra(AlarmClock.EXTRA_SKIP_UI, false)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
 
         return try {
             context.startActivity(alarmIntent)
-            val timeStr = if (number != null) "auf $number Uhr " else ""
-            ActionResult(success = true, responseText = "Wecker ${timeStr}wird gestellt")
+            ActionResult(
+                success = true,
+                responseText = if (number != null) {
+                    context.getString(R.string.speechkit_assistant_alarm_set_hour, number)
+                } else {
+                    context.getString(R.string.speechkit_assistant_alarm_set)
+                },
+            )
         } catch (e: Exception) {
-            ActionResult(success = false, errorMessage = "Wecker konnte nicht gestellt werden")
+            ActionResult(
+                success = false,
+                errorMessage = context.getString(R.string.speechkit_assistant_alarm_failed),
+            )
         }
     }
 }
@@ -134,7 +159,10 @@ class QuickNoteExecutor : ActionExecutor {
 
         return ActionResult(
             success = true,
-            responseText = "Notiz gespeichert: \"${content.take(50)}${if (content.length > 50) "..." else ""}\"",
+            responseText = context.getString(
+                R.string.speechkit_assistant_note_saved,
+                "${content.take(50)}${if (content.length > 50) "..." else ""}",
+            ),
         )
     }
 }
@@ -150,14 +178,20 @@ class SearchWebExecutor : ActionExecutor {
 
         return try {
             context.startActivity(searchIntent)
-            ActionResult(success = true, responseText = "Suche nach: $query")
+            ActionResult(
+                success = true,
+                responseText = context.getString(R.string.speechkit_assistant_searching, query),
+            )
         } catch (e: Exception) {
             // Fallback to browser
             val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${Uri.encode(query)}")).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(browserIntent)
-            ActionResult(success = true, responseText = "Suche nach: $query")
+            ActionResult(
+                success = true,
+                responseText = context.getString(R.string.speechkit_assistant_searching, query),
+            )
         }
     }
 }
@@ -170,7 +204,7 @@ class SendMessageExecutor : ActionExecutor {
         if (target == null) {
             return ActionResult(
                 success = false,
-                errorMessage = "An wen soll die Nachricht gehen?",
+                errorMessage = context.getString(R.string.speechkit_assistant_message_who),
                 keepOpen = true,
             )
         }
@@ -183,12 +217,18 @@ class SendMessageExecutor : ActionExecutor {
         }
 
         return try {
-            context.startActivity(Intent.createChooser(sendIntent, "Nachricht senden").apply {
+            context.startActivity(Intent.createChooser(sendIntent, "Send message").apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             })
-            ActionResult(success = true, responseText = "Nachricht an $target wird vorbereitet")
+            ActionResult(
+                success = true,
+                responseText = context.getString(R.string.speechkit_assistant_message_preparing, target),
+            )
         } catch (e: Exception) {
-            ActionResult(success = false, errorMessage = "Nachricht konnte nicht gesendet werden")
+            ActionResult(
+                success = false,
+                errorMessage = context.getString(R.string.speechkit_assistant_message_failed),
+            )
         }
     }
 }
@@ -196,7 +236,9 @@ class SendMessageExecutor : ActionExecutor {
 class MakeCallExecutor : ActionExecutor {
     override suspend fun execute(context: Context, intent: AssistantIntent): ActionResult {
         val contact = intent.parameters["contact"] ?: return ActionResult(
-            success = false, errorMessage = "Wen soll ich anrufen?", keepOpen = true,
+            success = false,
+            errorMessage = context.getString(R.string.speechkit_assistant_call_who),
+            keepOpen = true,
         )
 
         // Open dialer (does not auto-call -- requires user confirmation)
@@ -207,9 +249,15 @@ class MakeCallExecutor : ActionExecutor {
 
         return try {
             context.startActivity(dialIntent)
-            ActionResult(success = true, responseText = "Anruf an $contact wird vorbereitet")
+            ActionResult(
+                success = true,
+                responseText = context.getString(R.string.speechkit_assistant_call_preparing, contact),
+            )
         } catch (e: Exception) {
-            ActionResult(success = false, errorMessage = "Anruf konnte nicht gestartet werden")
+            ActionResult(
+                success = false,
+                errorMessage = context.getString(R.string.speechkit_assistant_call_failed),
+            )
         }
     }
 }

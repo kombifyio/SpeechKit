@@ -28,9 +28,12 @@ class CloudConnectUiTest {
     }
 
     @Test
-    fun aRejectedCallerIsNotReportedAsSignedOut() {
+    fun aPinMismatchIsNotAConnectFailureAndDoesNotOpenCompanion() {
         val rejected = cloudConnectUi(CompanionProvision.Rejected, companionInstalled = true)
-        val signedOut = cloudConnectUi(CompanionProvision.Empty, companionInstalled = true)
-        assertNotEquals(rejected.messageRes, signedOut.messageRes)
+        assertFalse(rejected.openCompanion)
+        assertNotEquals(
+            cloudConnectUi(CompanionProvision.Empty, companionInstalled = true).messageRes,
+            rejected.messageRes,
+        )
     }
 }

@@ -63,8 +63,10 @@ import io.kombify.speechkit.app.build.ShippedDefaults
 import io.kombify.speechkit.app.companion.CompanionProvision
 import io.kombify.speechkit.app.companion.CompanionProvisioner
 import io.kombify.speechkit.app.companion.ConnectCloudIntent
-import io.kombify.speechkit.app.companion.cloudConnectUi
-import io.kombify.speechkit.app.companion.cloudModeAfterProvision
+import io.kombify.speechkit.app.companion.companionCloudProfile
+import io.kombify.speechkit.app.companion.shouldStartConnectOnResume
+import io.kombify.speechkit.net.KombifyCloudAuth
+import kotlinx.coroutines.delay
 import io.kombify.speechkit.coinstall.v1.CoinstallContract
 import io.kombify.speechkit.domain.ConnectionMode
 import io.kombify.speechkit.domain.fallbackModeAfterDisconnect
@@ -417,25 +419,25 @@ private fun HomeTab(onOpenVoiceAgent: () -> Unit = {}) {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             StatCard("Tastatur", "Aktiv", Modifier.weight(1f))
-            StatCard("Modus", "Dictate", Modifier.weight(1f))
+            StatCard(stringResource(R.string.home_stat_mode), "Dictate", Modifier.weight(1f))
         }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            StatCard("Transkriptionen", "0", Modifier.weight(1f))
-            StatCard("Assist-Anfragen", "0", Modifier.weight(1f))
+            StatCard(stringResource(R.string.home_stat_transcripts), "0", Modifier.weight(1f))
+            StatCard(stringResource(R.string.home_stat_assist), "0", Modifier.weight(1f))
         }
 
         Spacer(Modifier.height(8.dp))
 
         // Quick Actions
-        Text("Schnellzugriff", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+        Text(stringResource(R.string.home_quick_actions), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
 
-        QuickActionRow("Dictate", "Sprache zu Text in jeder App") {}
-        QuickActionRow("Assist", "KI-Antwort auf eine Frage") {}
-        QuickActionRow("Voice Agent", "Auf der Tastatur, nicht als System-Assistent") { onOpenVoiceAgent() }
+        QuickActionRow("Dictate", stringResource(R.string.home_dictate_desc)) {}
+        QuickActionRow("Assist", stringResource(R.string.home_assist_desc)) {}
+        QuickActionRow("Voice Agent", stringResource(R.string.home_voice_agent_desc)) { onOpenVoiceAgent() }
     }
 }
 
@@ -549,11 +551,13 @@ private fun SettingsTab(
                 onDispose { settingsLifecycle.lifecycle.removeObserver(obs) }
             }
             Column(modifier = Modifier.padding(16.dp)) {
-                Text("Tastatur", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.settings_keyboard_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    if (enabled) "SpeechKit Tastatur ist aktiviert"
-                    else "SpeechKit Tastatur ist nicht aktiviert",
+                    stringResource(
+                        if (enabled) R.string.settings_keyboard_enabled
+                        else R.string.settings_keyboard_disabled,
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = if (enabled) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.error,
@@ -564,7 +568,7 @@ private fun SettingsTab(
         // About
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text("Über", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.settings_about), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(4.dp))
                 Text(
                     stringResource(R.string.app_name) + " v" + BuildConfig.VERSION_NAME,
@@ -649,7 +653,9 @@ private fun ServerConnectionCard(
     val mode = remember(modeTick, saved, shippedProfile) {
         StoredServerProfile.resolvedMode(context, saved, shippedProfile)
     }
-    val cloudSession = remember(modeTick) { provisioner.currentSession() }
+    val cloudSession = remember(modeTick) {
+        provisioner.currentSession() ?: StoredServerProfile.loadCloud(context)
+    }
 
     fun persistMode(next: ConnectionMode) {
         StoredServerProfile.saveMode(context, next)
@@ -678,15 +684,54 @@ private fun ServerConnectionCard(
             val outcome = runCatching {
                 withContext(Dispatchers.IO) { provisioner.provisionNow() }
             }.getOrDefault(CompanionProvision.Unavailable)
-            if (cloudModeAfterProvision(outcome) == ConnectionMode.KOMBIFY_CLOUD) {
+            val fromCompanion = companionCloudProfile(outcome)
+            if (fromCompanion != null) {
+                StoredServerProfile.saveKombifyCloud(
+                    context,
+                    fromCompanion.baseUrl,
+                    fromCompanion.bearerToken,
+                )
                 persistMode(ConnectionMode.KOMBIFY_CLOUD)
                 onConnectSucceeded()
+                status = context.getString(R.string.settings_connection_cloud_connected)
+                connecting = false
+                return@launch
             }
-            val ui = cloudConnectUi(outcome, provisioner.isCompanionInstalled())
-            status = context.getString(ui.messageRes)
-            if (ui.openCompanion) {
-                openCompanion()
-                onConnectAbandoned()
+            val clientId = ShippedDefaults.cloudAuthClientId
+            if (clientId.isEmpty()) {
+                status = context.getString(R.string.settings_connection_cloud_browser)
+                connecting = false
+                return@launch
+            }
+            val auth = KombifyCloudAuth(KombifyCloudAuth.Config(clientId = clientId))
+            val started = runCatching { auth.start() }.getOrNull()
+            if (started == null || started.verificationUriComplete.isEmpty()) {
+                status = context.getString(R.string.settings_connection_cloud_browser)
+                connecting = false
+                return@launch
+            }
+            status = context.getString(R.string.settings_connection_cloud_waiting)
+            runCatching {
+                context.startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse(started.verificationUriComplete))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }
+            val tokens = runCatching {
+                auth.waitForTokens(started) { delay(it) }
+            }.getOrNull()
+            if (tokens != null) {
+                StoredServerProfile.saveKombifyCloud(
+                    context,
+                    KombifyCloudAuth.DEFAULT_SERVER_URL,
+                    tokens.accessToken,
+                    tokens.refreshToken,
+                )
+                persistMode(ConnectionMode.KOMBIFY_CLOUD)
+                onConnectSucceeded()
+                status = context.getString(R.string.settings_connection_cloud_connected)
+            } else {
+                status = context.getString(R.string.settings_connection_cloud_browser)
             }
             connecting = false
         }
@@ -699,7 +744,13 @@ private fun ServerConnectionCard(
     val connectLifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current
     DisposableEffect(connectCloudRequested, connectLifecycle) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME && connectCloudRequested) {
+            if (event == Lifecycle.Event.ON_RESUME &&
+                shouldStartConnectOnResume(
+                    requested = connectCloudRequested,
+                    alreadyConnected = mode == ConnectionMode.KOMBIFY_CLOUD && cloudSession != null,
+                    connecting = connecting,
+                )
+            ) {
                 connectCloud()
             }
         }
@@ -747,6 +798,7 @@ private fun ServerConnectionCard(
                         TextButton(
                             onClick = {
                                 provisioner.forgetSession()
+                                StoredServerProfile.clearCloud(context)
                                 persistMode(fallbackModeAfterDisconnect(shippedProfile))
                             },
                             modifier = Modifier.fillMaxWidth(),

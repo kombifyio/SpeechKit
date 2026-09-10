@@ -4,10 +4,8 @@
 // opt into a newer derived patch within the same authored minor line; minor
 // changes and every 1.0+ release remain exact.
 //
-// The anchor is checked for SHAPE only. CI-CD-PLATFORM-STANDARD.md §4.2 makes
-// .kombify/VERSION the line anchor rather than a release counter, so requiring
-// it to equal package.json would enforce exactly the coupling the standard
-// forbids and would push this repository back into minting its own versions.
+// Marked release packages require exact declaration/package/changelog identity
+// and PATCH 0..9. Historical unmarked anchors retain shape-only validation.
 //
 // Usage:
 //   node scripts/release/lint-version-sync.mjs [--allow-derived-pre-1-patch]
@@ -42,12 +40,7 @@ function readLatestChangelogVersion() {
   return sections[0].version
 }
 
-// .kombify/VERSION is the delivery line anchor. Below 1.0.0 the Delivery
-// Platform reads it and derives the delivered version from the first-parent
-// commit count since the anchor last moved, so the file is meant to sit still
-// while the line advances. Its value is never expected to equal package.json.
-// What does have to hold is its shape: a non-suffix-free or
-// non-MAJOR.MINOR.PATCH anchor is a hard delivery failure (§4.2).
+// Read the authored declaration (or historical unmarked line anchor).
 function readProductVersion() {
   const productPath = resolve(repoRoot, '.kombify', 'VERSION')
   if (!existsSync(productPath)) {
@@ -69,7 +62,15 @@ export function evaluateVersionAlignment({
   packageVersion,
   changelogVersion,
   allowDerivedPre1Patch = false,
+  productVersion,
+  releasePackage = false,
 }) {
+  if (releasePackage) {
+    const parts = parseNumericVersion(productVersion)
+    return parts && parts[2] <= 9 && packageVersion === productVersion && changelogVersion === productVersion
+      ? { ok: true, mode: 'exact' }
+      : { ok: false, mode: 'drift' }
+  }
   if (packageVersion === changelogVersion) {
     return { ok: true, mode: 'exact' }
   }
@@ -95,9 +96,19 @@ function run(argv = process.argv.slice(2)) {
   const packageVersion = readPackageVersion()
   const changelogVersion = readLatestChangelogVersion()
   const productVersion = readProductVersion()
+  const policyPath = resolve(repoRoot, '.kombify/version-policy.json')
+  const releasePackage = existsSync(policyPath)
+  if (releasePackage) {
+    const policy = JSON.parse(readFileSync(policyPath, 'utf8'))
+    if (!policy || Object.keys(policy).length !== 1 || policy.mode !== 'release-package-v1') {
+      throw new Error('Unsupported delivery version policy')
+    }
+  }
   const alignment = evaluateVersionAlignment({
     packageVersion,
     changelogVersion,
+    productVersion,
+    releasePackage,
     allowDerivedPre1Patch: argv.includes('--allow-derived-pre-1-patch'),
   })
 
@@ -107,16 +118,15 @@ function run(argv = process.argv.slice(2)) {
         `Version drift detected:`,
         `  package.json version: ${packageVersion}`,
         `  CHANGELOG.md top entry: ${changelogVersion}`,
+        `  .kombify/VERSION: ${productVersion}`,
         ``,
         `These must match before tagging a release, otherwise the Website`,
         `build will surface the wrong version and the documented version`,
         `bump in CHANGELOG.md will not propagate to consumers.`,
         ``,
-        `To fix, either:`,
-        `  - Move the [Unreleased] entry under a ## [${packageVersion}] - YYYY-MM-DD`,
-        `    header that matches package.json, or`,
-        `  - Run \`node scripts/sync-version.mjs --version=${changelogVersion}\``,
-        `    to bump every manifest to the version named in the changelog.`,
+        releasePackage
+          ? 'Align manifests and the changelog to the numeric declaration (PATCH 0..9).'
+          : 'Align package.json and the latest changelog entry.',
         ``,
       ].join('\n'),
     )

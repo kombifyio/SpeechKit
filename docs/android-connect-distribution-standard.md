@@ -30,9 +30,9 @@ installed must not change the mode by itself.
 
 Resolution:
 
-- `kombify_cloud` uses the Companion `provision()` session. If there is no
-  session, stay on-device. Do not fall back to the tester origin or a typed
-  self-host — that would send Cloud-labelled traffic with a service bearer.
+- `kombify_cloud` uses a Companion `provision()` session when one exists,
+  otherwise the independently stored kombify Gateway session. It never
+  falls back to the tester origin or a typed self-host.
 - `self_host` uses the stored URL/token only.
 - `speechkit_origin` uses the shipped tester origin.
 - `on_device` ignores servers.
@@ -111,12 +111,12 @@ Keyboard):
 ## SpeechKit Settings
 
 - Show the active mode.
-- **Connect Kombify Cloud** binds Companion, persists `kombify_cloud`.
-- **Disconnect** returns to `speechkit_origin` when a shipped origin exists,
-  otherwise `on_device`.
-- If Companion is missing, offer to open/install it.
-- If Companion is present but signed out, open Companion so the user can sign
-  in, then return.
+- **Connect kombify Cloud** tries Companion `provision()` when present, then
+  signs in through the browser device grant. Matching Companion/SpeechKit
+  builds are never required. Pin refusal is not an error.
+- **Disconnect** clears the stored Cloud session and returns to
+  `speechkit_origin` when a shipped origin exists, otherwise `on_device`.
+- **Open Companion** is a separate action. Connect does not bounce there.
 - Self-host URL/token/LAN finder stay available.
 
 Inbound finish URI: `speechkit://connect/kombify`. Optional https alias:

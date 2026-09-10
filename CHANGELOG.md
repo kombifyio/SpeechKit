@@ -11,6 +11,18 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## [Unreleased]
 
+## [0.70.0] - 2026-09-10
+
+### Highlights
+
+* **A clearer Library.** Transcriptions, Quick Notes and Voice Sessions have
+  their own tabs. Browse further through your history, expand and copy entries,
+  and pin a transcription you want to keep close.
+* **More dependable first runs on macOS.** SpeechKit selects the audio backend
+  for your platform instead of starting with a Windows-only setting.
+* **Easier release tracking.** Changes now arrive in named release packages
+  with compact patch numbers and a shared summary across distribution channels.
+
 ### Added
 
 * **library:** the Library now gives each mode its own tab — Transcriptions,

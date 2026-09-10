@@ -29,8 +29,8 @@ android {
         applicationId = "io.kombify.speechkit"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6941
-        versionName = "0.69.41"
+        versionCode = 7000
+        versionName = "0.70.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -106,6 +106,12 @@ android {
                 "String",
                 "DEFAULT_SERVER_TOKEN",
                 "\"" + speechKitBuildValue("speechkit.defaultServerToken", "SPEECHKIT_DEFAULT_SERVER_TOKEN") + "\"",
+            )
+            // Public OAuth client id for the RFC 8628 device grant. Not a secret.
+            buildConfigField(
+                "String",
+                "CLOUD_AUTH_CLIENT_ID",
+                "\"" + speechKitBuildValue("speechkit.cloudAuthClientId", "SPEECHKIT_CLOUD_AUTH_CLIENT_ID") + "\"",
             )
         }
     }

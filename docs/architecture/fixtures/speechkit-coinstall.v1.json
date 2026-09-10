@@ -53,7 +53,8 @@
     "pinsAreConfiguration": true,
     "pinOwner": "callee",
     "pinChannels": ["debug", "release"],
-    "pinMismatchOutcome": "rejected"
+    "pinMismatchOutcome": "not_a_connect_failure",
+    "acceptAnySpeechKitCaller": true
   },
   "scope": {
     "included": ["provisioning", "one_ai_turn", "capability_status"],

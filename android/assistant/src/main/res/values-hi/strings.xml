@@ -5,4 +5,24 @@
     <string name="speechkit_assistant_state_processing">प्रोसेस हो रहा है</string>
     <string name="speechkit_assistant_action_close">बंद करें</string>
     <string name="speechkit_assistant_action_retry">फिर से आज़माएँ</string>
+    <string name="speechkit_assistant_empty_final">I heard silence. Try again.</string>
+    <string name="speechkit_assistant_open_app_which">Which app should I open?</string>
+    <string name="speechkit_assistant_open_app_opening">Opening %1$s</string>
+    <string name="speechkit_assistant_open_app_missing">App \'%1$s\' not found</string>
+    <string name="speechkit_assistant_timer_how_many">How many minutes?</string>
+    <string name="speechkit_assistant_timer_set">Timer set for %1$d %2$s</string>
+    <string name="speechkit_assistant_timer_failed">Could not set the timer</string>
+    <string name="speechkit_assistant_alarm_set">Setting an alarm</string>
+    <string name="speechkit_assistant_alarm_set_hour">Alarm set for %1$d o\'clock</string>
+    <string name="speechkit_assistant_alarm_failed">Could not set the alarm</string>
+    <string name="speechkit_assistant_note_saved">Note saved: \"%1$s\"</string>
+    <string name="speechkit_assistant_searching">Searching for: %1$s</string>
+    <string name="speechkit_assistant_message_who">Who should the message go to?</string>
+    <string name="speechkit_assistant_message_preparing">Preparing a message to %1$s</string>
+    <string name="speechkit_assistant_message_failed">Could not send the message</string>
+    <string name="speechkit_assistant_call_who">Who should I call?</string>
+    <string name="speechkit_assistant_call_preparing">Preparing a call to %1$s</string>
+    <string name="speechkit_assistant_call_failed">Could not start the call</string>
+    <string name="speechkit_assistant_action_unsupported">Action \'%1$s\' is not supported</string>
+    <string name="speechkit_assistant_unknown_error">Unknown error</string>
 </resources>

@@ -21,6 +21,9 @@ object ShippedDefaults {
 
     val cloudConnectSupported: Boolean get() = true
 
+    val cloudAuthClientId: String
+        get() = BuildConfig.CLOUD_AUTH_CLIENT_ID.trim()
+
     /** Dev/Voice lab tabs are not a tester surface. */
     val showLabTabs: Boolean get() = false
 

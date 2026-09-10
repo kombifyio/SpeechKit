@@ -81,6 +81,20 @@ class ConnectionProfileResolverTest {
     }
 
     @Test
+    fun cloudUsesAStoredGatewaySessionWhenCompanionIsAbsent() {
+        assertEquals(
+            companion,
+            resolveConnectionProfile(
+                ConnectionMode.KOMBIFY_CLOUD,
+                companion = null,
+                stored = typed,
+                shipped = hosted,
+                cloud = companion,
+            ),
+        )
+    }
+
+    @Test
     fun aCompanionGatewayRootMapsOriginPathsOntoTheSpeechkitPerimeter() {
         val gateway = ConnectionProfile.Server("https://api.kombify.io/v1/speechkit", "user-jwt")
         assertEquals(

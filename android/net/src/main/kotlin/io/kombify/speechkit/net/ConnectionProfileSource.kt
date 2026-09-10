@@ -14,6 +14,9 @@ object StoredServerProfile {
     const val KEY_SERVER_URL = "server_url"
     const val KEY_SERVER_TOKEN = "server_token"
     const val KEY_CONNECTION_MODE = "connection_mode"
+    const val KEY_CLOUD_URL = "cloud_server_url"
+    const val KEY_CLOUD_TOKEN = "cloud_server_token"
+    const val KEY_CLOUD_REFRESH = "cloud_refresh_token"
 
     fun load(context: Context): ConnectionProfile.Server? {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -47,6 +50,37 @@ object StoredServerProfile {
             .putString(KEY_SERVER_URL, url.trim())
             .putString(KEY_SERVER_TOKEN, token?.trim().orEmpty())
             .putString(KEY_CONNECTION_MODE, ConnectionMode.SELF_HOST.wire)
+            .apply()
+    }
+
+    fun loadCloud(context: Context): ConnectionProfile.Server? {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val url = prefs.getString(KEY_CLOUD_URL, null)?.trim().orEmpty()
+        if (url.isEmpty()) return null
+        val token = prefs.getString(KEY_CLOUD_TOKEN, null)?.trim()?.ifEmpty { null }
+        return ConnectionProfile.Server(url, token)
+    }
+
+    fun loadCloudRefreshToken(context: Context): String? =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_CLOUD_REFRESH, null)?.trim()?.ifEmpty { null }
+
+    fun saveKombifyCloud(context: Context, url: String, token: String?, refreshToken: String? = null) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_CLOUD_URL, url.trim())
+            .putString(KEY_CLOUD_TOKEN, token?.trim().orEmpty())
+            .putString(KEY_CLOUD_REFRESH, refreshToken?.trim().orEmpty())
+            .putString(KEY_CONNECTION_MODE, ConnectionMode.KOMBIFY_CLOUD.wire)
+            .apply()
+    }
+
+    fun clearCloud(context: Context) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .remove(KEY_CLOUD_URL)
+            .remove(KEY_CLOUD_TOKEN)
+            .remove(KEY_CLOUD_REFRESH)
             .apply()
     }
 }

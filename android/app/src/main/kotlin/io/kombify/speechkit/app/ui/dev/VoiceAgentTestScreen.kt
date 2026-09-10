@@ -27,7 +27,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import io.kombify.speechkit.R
 import androidx.core.content.ContextCompat
 import io.kombify.speechkit.audio.MicAudioCapture
 import io.kombify.speechkit.audio.PcmStreamPlayer
@@ -82,7 +84,7 @@ fun VoiceAgentTestScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     var controller by remember { mutableStateOf<VoiceAgentController?>(null) }
-    var status by remember { mutableStateOf("Nicht verbunden") }
+    var status by remember { mutableStateOf(context.getString(R.string.dev_status_disconnected)) }
     var holding by remember { mutableStateOf(false) }
     var recordJob by remember { mutableStateOf<Job?>(null) }
     val capture = remember { MicAudioCapture() }
@@ -118,11 +120,11 @@ fun VoiceAgentTestScreen(
                     status = "Voice Agent needs a SpeechKit server (tester origin, Cloud, or self-host)."
                     return@launch
                 }
-                status = "Verbinde…"
+                status = context.getString(R.string.dev_status_connecting)
                 val live = VoiceAgentController(profile)
                 val events = live.start(VoiceAgentStartFrame())
                 controller = live
-                status = "Verbunden"
+                status = context.getString(R.string.dev_status_connected)
                 launch {
                     events.collect { event ->
                         live.accept(event)
@@ -132,7 +134,7 @@ fun VoiceAgentTestScreen(
                     }
                 }
             }.onFailure {
-                status = "Fehler: ${it.message}"
+                status = context.getString(R.string.dev_status_error, it.message ?: "")
                 VoiceLog.w(VoiceLog.AGENT, "test connect failed", it)
             }
         }
@@ -145,7 +147,7 @@ fun VoiceAgentTestScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Voice Agent (Test)", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.dev_va_title), style = MaterialTheme.typography.titleMedium)
         Text(
             "Hold to talk, release for the answer. Uses the same connection as the keyboard. Empty fields keep tester origin or Cloud; a typed URL is a one-shot override and is not saved.",
             style = MaterialTheme.typography.bodySmall,
@@ -154,20 +156,20 @@ fun VoiceAgentTestScreen(
         OutlinedTextField(
             value = serverUrl,
             onValueChange = { serverUrl = it },
-            label = { Text("Server-URL") },
+            label = { Text(stringResource(R.string.dev_server_url)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
         OutlinedTextField(
             value = token,
             onValueChange = { token = it },
-            label = { Text("Token (optional)") },
+            label = { Text(stringResource(R.string.dev_token_optional)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = ::connect, enabled = controller == null) { Text("Verbinden") }
+            Button(onClick = ::connect, enabled = controller == null) { Text(stringResource(R.string.dev_connect)) }
             Button(
                 onClick = {
                     recordJob?.cancel()
@@ -175,10 +177,10 @@ fun VoiceAgentTestScreen(
                     controller = null
                     holding = false
                     scope.launch { runCatching { live?.stop() } }
-                    status = "Beendet"
+                    status = context.getString(R.string.dev_status_ended)
                 },
                 enabled = controller != null,
-            ) { Text("Beenden") }
+            ) { Text(stringResource(R.string.dev_end)) }
         }
 
         val live = controller
@@ -186,7 +188,7 @@ fun VoiceAgentTestScreen(
             Button(
                 onClick = {
                     if (!hasMicPermission(context)) {
-                        status = "Mikrofon-Berechtigung fehlt"
+                        status = context.getString(R.string.dev_status_mic_missing)
                         return@Button
                     }
                     if (holding) {
@@ -199,7 +201,7 @@ fun VoiceAgentTestScreen(
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text(if (holding) "Loslassen (Antwort abrufen)" else "Halten zum Sprechen") }
+            ) { Text(stringResource(if (holding) R.string.dev_release_to_answer else R.string.dev_hold_to_talk)) }
         }
 
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -209,16 +211,16 @@ fun VoiceAgentTestScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 VoiceAuraOrb(state = state.phase.toAuraState(), sizeDp = 96)
-                Text("Status: $status", style = MaterialTheme.typography.bodySmall)
-                Text("Phase: ${state.phase}", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.dev_status_label, status), style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.dev_phase, state.phase.name), style = MaterialTheme.typography.bodySmall)
                 state.error?.let {
-                    Text("Fehler: $it", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.dev_status_error, it), style = MaterialTheme.typography.bodySmall)
                 }
                 if (state.userText.isNotBlank()) {
-                    Text("Du: ${state.userText}", style = MaterialTheme.typography.bodyMedium)
+                    Text("${stringResource(R.string.dev_you)}: ${state.userText}", style = MaterialTheme.typography.bodyMedium)
                 }
                 if (state.agentText.isNotBlank()) {
-                    Text("Agent: ${state.agentText}", style = MaterialTheme.typography.bodyMedium)
+                    Text("${stringResource(R.string.dev_agent)}: ${state.agentText}", style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }

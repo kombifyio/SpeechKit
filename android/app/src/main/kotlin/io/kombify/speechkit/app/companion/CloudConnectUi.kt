@@ -27,7 +27,7 @@ fun cloudConnectUi(
         openCompanion = false,
     )
     CompanionProvision.Rejected -> CloudConnectUi(
-        messageRes = R.string.settings_connection_cloud_rejected,
+        messageRes = R.string.settings_connection_cloud_browser,
         openCompanion = false,
     )
     CompanionProvision.Unavailable -> CloudConnectUi(

@@ -95,9 +95,25 @@ function updateText(filePath, replacements) {
 export function syncVersion(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
   const rootPackage = JSON.parse(fs.readFileSync(rootPackagePath, "utf8"));
-  const version = args.get("version") ?? rootPackage.version;
+  const policyPath = path.join(repoRoot, ".kombify/version-policy.json");
+  const releasePackage = fs.existsSync(policyPath);
+  let declaration;
+  if (releasePackage) {
+    const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));
+    if (!policy || Object.keys(policy).length !== 1 || policy.mode !== "release-package-v1") {
+      throw new Error("Unsupported delivery version policy");
+    }
+    declaration = fs.readFileSync(path.join(repoRoot, ".kombify/VERSION"), "utf8").trim();
+    if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.[0-9]$/.test(declaration)) {
+      throw new Error("Release-package declaration requires numeric SemVer with PATCH 0..9");
+    }
+  }
+  const version = args.get("version") ?? declaration ?? rootPackage.version;
   const targets = resolveTargets(args.get("targets"));
   const metadata = resolveVersionMetadata(version);
+  if (releasePackage && metadata.releaseVersion !== declaration) {
+    throw new Error("Version stamp must match the declared release-package numeric version");
+  }
 
   updateJson("package.json", (data) => {
     data.version = metadata.packageVersion;
@@ -112,16 +128,9 @@ export function syncVersion(argv = process.argv.slice(2)) {
     });
   }
 
-  // CI-CD-PLATFORM-STANDARD.md §4.2: .kombify/VERSION is the line anchor, not
-  // a release counter. Below 1.0.0 the Delivery Platform reads the declared
-  // value and derives the delivered version from the first-parent commit count
-  // since the anchor moved. The anchor standing still while the line advances
-  // is the correct steady state, and a second writer re-anchors the derivation
-  // and throws away every iteration accumulated since the last bump.
-  //
-  // Distribution lanes stamp the already-resolved Delivery v2 version into a
-  // throwaway checkout so every built surface carries one exact identity.
-  if (fs.existsSync(path.join(repoRoot, ".kombify/VERSION"))) {
+  // Marked distribution stamps never rewrite the authored release declaration.
+  // Historical unmarked checkouts retain their original stamping behavior.
+  if (!releasePackage && fs.existsSync(path.join(repoRoot, ".kombify/VERSION"))) {
     updateText(".kombify/VERSION", [[/^.*$/m, metadata.packageVersion]]);
   }
 
@@ -168,9 +177,7 @@ export function syncVersion(argv = process.argv.slice(2)) {
     // SpeechKit.app, the way cmd/speechkit/winres.json is on Windows. Unlike
     // winres.json this stamp does reach the artifact: scripts/build-macos.sh
     // copies the template into the bundle. It then overwrites these same two
-    // keys with the version Delivery v2 resolves for that build, because below
-    // 1.0.0 the delivered patch is the anchor plus the first-parent commit
-    // count and is not knowable at commit time. So this write is what keeps
+    // keys with the version Delivery resolves for that build. This keeps
     // the committed template honest, and the build is what keeps the shipped
     // bundle exact.
     //

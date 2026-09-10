@@ -5,4 +5,24 @@
     <string name="speechkit_assistant_state_processing">Verarbeitet</string>
     <string name="speechkit_assistant_action_close">Schließen</string>
     <string name="speechkit_assistant_action_retry">Erneut versuchen</string>
+    <string name="speechkit_assistant_empty_final">Ich habe Stille gehört. Nochmal versuchen.</string>
+    <string name="speechkit_assistant_open_app_which">Welche App soll ich öffnen?</string>
+    <string name="speechkit_assistant_open_app_opening">Öffne %1$s</string>
+    <string name="speechkit_assistant_open_app_missing">App \'%1$s\' nicht gefunden</string>
+    <string name="speechkit_assistant_timer_how_many">Wie viele Minuten?</string>
+    <string name="speechkit_assistant_timer_set">Timer auf %1$d %2$s gestellt</string>
+    <string name="speechkit_assistant_timer_failed">Timer konnte nicht gestellt werden</string>
+    <string name="speechkit_assistant_alarm_set">Wecker wird gestellt</string>
+    <string name="speechkit_assistant_alarm_set_hour">Wecker auf %1$d Uhr gestellt</string>
+    <string name="speechkit_assistant_alarm_failed">Wecker konnte nicht gestellt werden</string>
+    <string name="speechkit_assistant_note_saved">Notiz gespeichert: \"%1$s\"</string>
+    <string name="speechkit_assistant_searching">Suche nach: %1$s</string>
+    <string name="speechkit_assistant_message_who">An wen soll die Nachricht gehen?</string>
+    <string name="speechkit_assistant_message_preparing">Nachricht an %1$s wird vorbereitet</string>
+    <string name="speechkit_assistant_message_failed">Nachricht konnte nicht gesendet werden</string>
+    <string name="speechkit_assistant_call_who">Wen soll ich anrufen?</string>
+    <string name="speechkit_assistant_call_preparing">Anruf an %1$s wird vorbereitet</string>
+    <string name="speechkit_assistant_call_failed">Anruf konnte nicht gestartet werden</string>
+    <string name="speechkit_assistant_action_unsupported">Aktion \'%1$s\' nicht unterstützt</string>
+    <string name="speechkit_assistant_unknown_error">Unbekannter Fehler</string>
 </resources>

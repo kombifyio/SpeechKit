@@ -62,6 +62,7 @@ object KombifyModule {
                 companion = companion.currentSession(),
                 stored = stored,
                 shipped = shipped,
+                cloud = StoredServerProfile.loadCloud(context),
             )
         }
     }

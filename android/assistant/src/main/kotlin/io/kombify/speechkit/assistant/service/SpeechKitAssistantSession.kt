@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import dagger.hilt.android.AndroidEntryPoint
 import io.kombify.speechkit.assistant.intent.ActionResult
+import io.kombify.speechkit.assistant.intent.CloudSessionRecovery
 import io.kombify.speechkit.assistant.intent.CompanionTurnExecutor
 import io.kombify.speechkit.assistant.intent.GeneralQueryExecutor
 import io.kombify.speechkit.assistant.intent.IntentRouter
@@ -49,9 +50,10 @@ class SpeechKitAssistantSessionService : VoiceInteractionSessionService() {
 
     @Inject lateinit var profileSource: ConnectionProfileSource
     @Inject lateinit var companionTurns: CompanionTurnExecutor
+    @Inject lateinit var cloudRecovery: CloudSessionRecovery
 
     override fun onNewSession(args: Bundle?): VoiceInteractionSession =
-        SpeechKitVoiceSession(this, profileSource, companionTurns)
+        SpeechKitVoiceSession(this, profileSource, companionTurns, cloudRecovery)
 }
 
 /**
@@ -71,6 +73,7 @@ class SpeechKitVoiceSession(
     context: Context,
     private val profileSource: ConnectionProfileSource,
     private val companionTurns: CompanionTurnExecutor? = null,
+    private val cloudRecovery: CloudSessionRecovery? = null,
 ) : VoiceInteractionSession(context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -164,7 +167,12 @@ class SpeechKitVoiceSession(
 
                 val outcome = AssistantListenTurn(
                     sessionFactory = {
-                        DictationController(profile, context = context).openSession()
+                        try {
+                            DictationController(profile, context = context).openSession()
+                        } catch (e: SpeechKitApiException) {
+                            val next = recoveredListenProfile(profile, e, cloudRecovery) ?: throw e
+                            DictationController(next, context = context).openSession()
+                        }
                     },
                     audioCapture = MicAudioCapture(),
                     intentRouter = intentRouter,
