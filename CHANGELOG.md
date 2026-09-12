@@ -9,6 +9,16 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.70.1](https://github.com/kombifyio/SpeechKit/compare/v0.70.0...v0.70.1) (2026-09-12)
+
+
+### Bug Fixes
+
+* **desktop:** one relaunch after Install and restart ([#469](https://github.com/kombifyio/SpeechKit/issues/469)) ([5862ab7](https://github.com/kombifyio/SpeechKit/commit/5862ab70677b0768dc02f803b4d8ee8d143b383b))
+* **dictation:** open the mic before a live-stream handshake ([#480](https://github.com/kombifyio/SpeechKit/issues/480)) ([7250a5a](https://github.com/kombifyio/SpeechKit/commit/7250a5aa3da264d0ccf97df4a4c17cb18aec20e1))
+* **release:** authenticate SpeechKit production publication plans ([#484](https://github.com/kombifyio/SpeechKit/issues/484)) ([1bebb01](https://github.com/kombifyio/SpeechKit/commit/1bebb012a1bbc01b284c9c95fb5ffe6866adbe7f))
+* **release:** bind website refresh to verified public package ([#467](https://github.com/kombifyio/SpeechKit/issues/467)) ([cb4701b](https://github.com/kombifyio/SpeechKit/commit/cb4701ba5246394acb3c616c9083b7fb04244eb2))
+
 ## [Unreleased]
 
 ## [0.70.0] - 2026-09-10

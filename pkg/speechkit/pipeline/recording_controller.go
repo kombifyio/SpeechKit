@@ -18,6 +18,12 @@ import (
 
 const defaultIdleWatchInterval = 1 * time.Second
 
+// providerStreamDialTimeout bounds the native live-dictation handshake so a
+// hung websocket cannot freeze the desktop hotkey loop. The microphone must
+// already be open by then; if the handshake misses this window, Start falls
+// back to transcribing the full capture.
+var providerStreamDialTimeout = 800 * time.Millisecond
+
 // deadCaptureBackstopFloor is the minimum no-frames-at-all duration
 // before the audio-anchored idle watcher force-stops a session. High
 // enough that load-induced delivery stalls (sub-second to a few
@@ -246,28 +252,12 @@ func (c *RecordingController) Start(opts speechkit.RecordingStartOptions) error 
 	}
 	c.mu.Unlock()
 
-	if opts.ProviderStream {
-		nativeStream, err := c.startNativeDictationStream(sessionID, opts)
-		if err != nil {
-			c.onLog(fmt.Sprintf("Provider-stream dictation unavailable; falling back to segment-batch: %v", err), "warn")
-		} else {
-			c.mu.Lock()
-			if c.sessionID == sessionID && c.recording {
-				opts.StreamSegments = false
-				c.current.StreamSegments = false
-				c.nativeStream = nativeStream
-			} else {
-				nativeStream.cancel()
-				_ = nativeStream.stream.Close()
-			}
-			c.mu.Unlock()
-		}
-	}
-
-	c.mu.Lock()
-	hasNativeStream := c.sessionID == sessionID && c.nativeStream != nil
-	c.mu.Unlock()
-	if collector != nil || hasNativeStream {
+	// Install the PCM handler before opening the microphone and before the
+	// provider handshake. A live stream that is still dialing must not
+	// delay capture: the hotkey loop dispatches Start synchronously, and a
+	// hung websocket used to swallow the matching KeyUp so later presses
+	// did nothing.
+	if collector != nil || opts.ProviderStream {
 		handlePCM := func(pcm []byte) {
 			c.mu.Lock()
 			if c.sessionID != sessionID || !c.recording {
@@ -349,6 +339,29 @@ func (c *RecordingController) Start(opts speechkit.RecordingStartOptions) error 
 	c.onState("recording", c.recordingMessage)
 	if opts.Label != "" {
 		c.onLog(opts.Label, "info")
+	}
+
+	if opts.ProviderStream {
+		nativeStream, err := c.startNativeDictationStream(sessionID, opts)
+		if err != nil {
+			c.onLog(fmt.Sprintf("Provider-stream dictation unavailable; falling back to full capture: %v", err), "warn")
+		} else {
+			adopted := false
+			c.mu.Lock()
+			if c.sessionID == sessionID && c.recording && !c.stopping {
+				opts.StreamSegments = false
+				c.current.StreamSegments = false
+				c.nativeStream = nativeStream
+				adopted = true
+			}
+			c.mu.Unlock()
+			if adopted {
+				c.onLog("Provider-stream dictation started", "info")
+			} else {
+				nativeStream.cancel()
+				_ = nativeStream.stream.Close()
+			}
+		}
 	}
 
 	// Arm the silence-based auto-stop watcher when both pieces are
@@ -991,11 +1004,17 @@ func (c *RecordingController) startNativeDictationStream(sessionID uint64, opts 
 		streamOpts.Language = opts.Language
 	}
 	streamOpts.InterimResults = true
-	stream, err := provider.StartDictationStream(streamCtx, streamOpts, speaker.AudioFormat{
+	dialTimeout := providerStreamDialTimeout
+	if dialTimeout <= 0 {
+		dialTimeout = 800 * time.Millisecond
+	}
+	dialCtx, dialCancel := context.WithTimeout(streamCtx, dialTimeout)
+	stream, err := provider.StartDictationStream(dialCtx, streamOpts, speaker.AudioFormat{
 		Encoding:     speaker.AudioEncodingPCM16,
 		SampleRateHz: 16000,
 		Channels:     1,
 	})
+	dialCancel()
 	if err != nil {
 		cancel()
 		return nil, err
@@ -1021,7 +1040,6 @@ func (c *RecordingController) startNativeDictationStream(sessionID uint64, opts 
 	}
 	go runtime.sendLoop(c)
 	go runtime.receiveLoop(c)
-	c.onLog("Provider-stream dictation started", "info")
 	return runtime, nil
 }
 

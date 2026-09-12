@@ -14,6 +14,7 @@
 // configuration problems.
 
 import { existsSync, readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -162,6 +163,12 @@ function run(argv = process.argv.slice(2)) {
     return
   }
 
+  if (releasePackage && argv.includes('--check-release-notes')) {
+    execFileSync(process.execPath, [resolve(moduleDir, 'lint-changelog.mjs'), '--version', productVersion], {
+      cwd: repoRoot,
+      stdio: 'inherit',
+    })
+  }
   process.stdout.write(
     `Version aligned: package.json and CHANGELOG.md both at ${packageVersion}.\n`,
   )

@@ -126,6 +126,33 @@ func (p *fakeDictationStreamProvider) StartDictationStream(_ context.Context, op
 	return p.stream, nil
 }
 
+type blockingDictationStreamProvider struct {
+	block time.Duration
+}
+
+func (p *blockingDictationStreamProvider) StartDictationStream(ctx context.Context, _ speechkit.DictationStreamOptions, _ speaker.AudioFormat) (speechkit.DictationStream, error) {
+	timer := time.NewTimer(p.block)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-timer.C:
+		return newFakeDictationStream(speechkit.DictationStreamEvent{}), nil
+	}
+}
+
+type orderedDictationStreamProvider struct {
+	recorder           *fakeRecorder
+	sawRecorderStarted bool
+}
+
+func (p *orderedDictationStreamProvider) StartDictationStream(_ context.Context, _ speechkit.DictationStreamOptions, _ speaker.AudioFormat) (speechkit.DictationStream, error) {
+	if p.recorder != nil {
+		p.sawRecorderStarted = p.recorder.started
+	}
+	return newFakeDictationStream(speechkit.DictationStreamEvent{}), nil
+}
+
 type fakeDictationStream struct {
 	finalEvent speechkit.DictationStreamEvent
 	events     chan speechkit.DictationStreamEvent
@@ -717,6 +744,55 @@ func TestRecordingControllerProviderStreamCommitsFinalWithoutBatchDuplicate(t *t
 	}
 	if len(provider.opts) != 1 || !provider.opts[0].InterimResults {
 		t.Fatalf("provider opts = %#v, want interim stream opts", provider.opts)
+	}
+}
+
+func TestRecordingControllerProviderStreamDialTimeoutFallsBackWithoutBlockingCapture(t *testing.T) {
+	prev := providerStreamDialTimeout
+	providerStreamDialTimeout = 30 * time.Millisecond
+	t.Cleanup(func() { providerStreamDialTimeout = prev })
+
+	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("z", 6400))}
+	submitter := &fakeSubmitter{}
+	provider := &blockingDictationStreamProvider{block: 5 * time.Second}
+	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, nil)
+	controller.SetDictationStream(provider, &fakeDictationStreamSink{})
+
+	started := time.Now()
+	if err := controller.Start(speechkit.RecordingStartOptions{
+		Language:       "de",
+		ProviderStream: true,
+	}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > 300*time.Millisecond {
+		t.Fatalf("Start blocked %s waiting for provider stream; hotkey loop would miss KeyUp", elapsed)
+	}
+	if !recorder.started {
+		t.Fatal("microphone must open even when the provider stream handshake hangs")
+	}
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+}
+
+func TestRecordingControllerOpensMicrophoneBeforeProviderStreamDial(t *testing.T) {
+	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("z", 6400))}
+	provider := &orderedDictationStreamProvider{recorder: recorder}
+	controller := NewRecordingController(recorder, &fakeSubmitter{}, &fakeObserver{}, nil)
+	controller.SetDictationStream(provider, &fakeDictationStreamSink{})
+
+	if err := controller.Start(speechkit.RecordingStartOptions{
+		Language:       "de",
+		ProviderStream: true,
+	}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if !provider.sawRecorderStarted {
+		t.Fatal("provider stream dialed before the microphone opened")
+	}
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
 	}
 }
 

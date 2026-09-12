@@ -122,3 +122,27 @@ Include:
 - screenshots only when changing visible docs or generated output
 
 Small, focused pull requests are easiest to review.
+
+## Continuous publication authority
+
+Delivery v2 passes `delivery_plan_run_id` and `delivery_plan_artifact_name`
+(`delivery-plan-RUN-ATTEMPT`) to the website and OSS publisher adapters. The
+OSS publisher forwards both unchanged to its website refresh. Before running
+repository code with publication credentials, each adapter authenticates the
+parent Actions artifact and the complete registered SpeechKit plan against its
+source SHA, digest, release identity, profile, and version. The preflight uses
+read-only permissions and the immutable workspace publication verifier in
+verification-only mode; it neither reserves nor changes a version or tag.
+
+The website builds the authenticated source while displaying the latest normal
+public `kombifyio/SpeechKit` release and its authored highlights. A newer public
+release appearing during the build supersedes that website deployment.
+`publish-oss.yml` continues to own the production server-image build and Render
+activation; its common preflight protects that path. Manual dispatches to these
+two adapters require the original parent plan pointers; copying the digest alone
+is insufficient authority.
+
+The separate `deploy-render-server.yml` emergency adapter is unchanged and is
+not covered by this plan admission. Binding its selectable registry image and
+digest to authenticated source provenance remains pending; the ordinary Render
+path uses the image digest produced by `publish-oss.yml` itself.
