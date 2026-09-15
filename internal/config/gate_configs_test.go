@@ -82,10 +82,28 @@ func TestProviderGateConfigsLoadDeterministically(t *testing.T) {
 	})
 }
 
+// TestKombifyProdConfigRejectsRetiredGoogleVoiceAgent is the production
+// image contract: baking gemini as the default Voice Agent makes
+// speechkit-server exit 1 on boot after Google AI retirement.
+func TestKombifyProdConfigRejectsRetiredGoogleVoiceAgent(t *testing.T) {
+	cfg := loadPrivateGateConfig(t, filepath.Join("..", "..", "deploy", "config", "server.kombify-prod.toml"))
+	if cfg.Providers.Google.Enabled {
+		t.Error("production must not enable the retired Google provider")
+	}
+	if got := EffectiveVoiceAgentProvider(cfg); got == "retired-google-ai" {
+		t.Fatalf("production voice agent provider resolved to retired-google-ai from %q", cfg.VoiceAgent.Provider)
+	}
+	if cfg.VoiceAgent.Provider != "deepgram" {
+		t.Errorf("production voice_agent.provider = %q, want deepgram", cfg.VoiceAgent.Provider)
+	}
+	if !cfg.Providers.Deepgram.Enabled || !cfg.Providers.AssemblyAI.Enabled {
+		t.Errorf("production must keep deepgram+assemblyai: dg=%v aai=%v",
+			cfg.Providers.Deepgram.Enabled, cfg.Providers.AssemblyAI.Enabled)
+	}
+}
+
 // TestStagingConfigLoads verifies the Render staging config loads and turns on
-// the v0.43 providers it is meant to exercise (Deepgram STT/TTS/Voice-Agent +
-// AssemblyAI STT). It is baked into the staging image via
-// the Dockerfile CONFIG_FILE build-arg.
+// Deepgram STT/TTS/Voice-Agent plus AssemblyAI STT.
 func TestStagingConfigLoads(t *testing.T) {
 	cfg := loadPrivateGateConfig(t, filepath.Join("..", "..", "deploy", "config", "server.staging.toml"))
 	if !cfg.Providers.Deepgram.Enabled || !cfg.Providers.AssemblyAI.Enabled {
