@@ -234,14 +234,10 @@ func defaults() *Config {
 			},
 		},
 		VoiceAgent: VoiceAgentConfig{
-			Enabled: true,
-			Model:   defaultGeminiNativeAudioModel,
-			// Same-provider Gemini fallback keeps Voice Agent up when the 3.1
-			// preview endpoint has transient issues. Cross-provider fallbacks
-			// can be configured explicitly per deployment via the separate
-			// model_selection section.
-			FallbackModel:          fallbackGeminiNativeAudioModel,
-			Voice:                  "Kore",
+			Enabled:                true,
+			Model:                  "",
+			FallbackModel:          "",
+			Voice:                  "",
 			AgentProfileID:         voiceagentprofile.DefaultID,
 			AgentSequenceID:        "",
 			FrameworkPrompt:        "",
@@ -370,7 +366,7 @@ func defaults() *Config {
 		},
 		HandsFree: HandsFreeConfig{
 			Enabled:                 false,
-			ActivationPhraseID:      "hey_quby",
+			ActivationPhraseID:      "hey_kubi",
 			TargetMode:              HandsFreeTargetVoiceAgent,
 			AutoEndSilenceCutoffSec: 10,
 			VoiceOutputEnabled:      true,
@@ -378,7 +374,7 @@ func defaults() *Config {
 		Wakeword: WakewordConfig{
 			Enabled:              false, // opt-in: mic is only opened when the user explicitly turns this on
 			Backend:              WakewordBackendSherpaKWS,
-			PhraseID:             "hey_quby",
+			PhraseID:             "hey_kubi",
 			Phrase:               "", // empty -> catalog DisplayName for PhraseID is used
 			ModelPath:            "", // empty -> catalog FileName resolved against wake-word models dir
 			MelspecModelPath:     "",

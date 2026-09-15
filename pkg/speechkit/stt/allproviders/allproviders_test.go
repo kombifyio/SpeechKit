@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/allproviders"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/deepgram"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/google"
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
@@ -19,7 +18,6 @@ func TestBuildReturnsProviderPerExecutionMode(t *testing.T) {
 		{speechkit.ExecutionModeHFRouted, "huggingface"},
 		{speechkit.ExecutionModeOpenAI, "openai"},
 		{speechkit.ExecutionModeGroq, "groq"},
-		{speechkit.ExecutionModeGoogle, "google"},
 		{speechkit.ExecutionModeDeepgram, "deepgram"},
 		{speechkit.ExecutionModeAssemblyAI, "assemblyai"},
 		{speechkit.ExecutionModeOpenRouter, "openrouter"},
@@ -109,29 +107,17 @@ func TestBuildAcceptsProfileIDsAsProviderSelectors(t *testing.T) {
 	}
 }
 
-func TestBuildGoogleForwardsStreamingCredentialEnvNames(t *testing.T) {
+func TestBuildRemovedGoogleProviderIsUnsupported(t *testing.T) {
 	_, provider, err := allproviders.Build(allproviders.BuildSpec{
-		Provider:                        "stt.google.latest-long",
-		ModelID:                         "latest_long",
-		APIKey:                          "key",
-		GoogleStreamingCredentialsEnv:   "CUSTOM_GOOGLE_STT_JSON",
-		GoogleApplicationCredentialsEnv: "CUSTOM_GOOGLE_APPLICATION_CREDENTIALS",
+		Provider: "stt.google.latest-long",
+		ModelID:  "latest_long",
+		APIKey:   "key",
 	})
-	if err != nil {
-		t.Fatalf("allproviders.Build(google) returned error: %v", err)
+	if err == nil {
+		t.Fatal("allproviders.Build(google) returned nil error, want unsupported-provider error")
 	}
-	google, ok := provider.(*google.Provider)
-	if !ok {
-		t.Fatalf("allproviders.Build(google) returned %T, want *google.Provider", provider)
-	}
-	if google.Model != "latest_long" {
-		t.Fatalf("google model = %q, want latest_long", google.Model)
-	}
-	if google.STTCredentialsJSONEnv != "CUSTOM_GOOGLE_STT_JSON" {
-		t.Fatalf("google STT credential env = %q", google.STTCredentialsJSONEnv)
-	}
-	if google.ApplicationCredentialsEnv != "CUSTOM_GOOGLE_APPLICATION_CREDENTIALS" {
-		t.Fatalf("google application credentials env = %q", google.ApplicationCredentialsEnv)
+	if provider != nil {
+		t.Fatalf("allproviders.Build(google) returned provider %v, want nil", provider)
 	}
 }
 

@@ -18,7 +18,7 @@ import (
 //
 // Construction order:
 //
-//  1. Build a LiveProvider (e.g. live_gemini.NewLiveProvider(...))
+//  1. Build a LiveProvider (for example a supported realtime adapter)
 //  2. Define your Callbacks (OnAudio for playback, OnError, ...)
 //  3. Build a ToolRegistry and Register each Tool
 //  4. Build LifecycleHooks (optional)

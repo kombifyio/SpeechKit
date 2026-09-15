@@ -32,7 +32,7 @@ var streamPlayerFactory streamPlayerFactoryFunc = newOtoStreamPlayer
 // StreamPlayer plays a continuous stream of PCM audio chunks through a single
 // playback backend. Unlike Player.PlayPCM which stops previous playback on each
 // call, StreamPlayer buffers chunks and plays them sequentially. Designed for
-// real-time voice agent audio output (Gemini Live, OpenAI Realtime).
+// real-time voice agent audio output (for example OpenAI Realtime).
 type StreamPlayer struct {
 	backend streamPlaybackBackend
 }

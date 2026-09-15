@@ -57,7 +57,7 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 	// Cascaded (STT router -> LLM -> TTS). Providers whose keys/deps are
 	// missing are skipped and surfaced in the status line rather than failing
 	// the handler.
-	candidates := dedupeProviders(defaultProvider, ProviderDeepgram, ProviderGemini, ProviderOpenAI, ProviderAssemblyAI, ProviderCascaded, ProviderKombifyAgent)
+	candidates := dedupeProviders(defaultProvider, ProviderDeepgram, ProviderOpenAI, ProviderAssemblyAI, ProviderCascaded, ProviderKombifyAgent)
 	factories := make(map[string]vsserver.ProviderFactory, len(candidates))
 	statusByProvider := make(map[string]string, len(candidates))
 	for _, p := range candidates {
@@ -306,12 +306,7 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 	provider = normalizeVoiceAgentProvider(provider)
 	switch provider {
 	case ProviderGemini:
-		apiKey := resolveRealtimeAPIKey(cfg, provider)
-		status := "ready (gemini)"
-		if apiKey == "" {
-			status = "degraded: no Google API key; Gemini Live sessions will fail at upgrade"
-		}
-		return &geminiProviderFactory{}, status, nil
+		return nil, "unavailable: Google Gemini Live is retired", errors.New("voiceagent: google gemini live is retired")
 
 	case ProviderOpenAI:
 		apiKey := resolveRealtimeAPIKey(cfg, provider)
@@ -639,95 +634,8 @@ func realtimeCredentialTarget(provider string) string {
 	case ProviderAssemblyAI:
 		return "assemblyai"
 	default:
-		return "google"
+		return "openai"
 	}
-}
-
-// ── Gemini Live provider factory + bridge ───────────────────────────────────
-
-type geminiProviderFactory struct{}
-
-func (f *geminiProviderFactory) NewProvider() vsserver.LiveProviderAdapter {
-	return &geminiLiveBridge{inner: vskernel.NewGeminiLive()}
-}
-
-// geminiLiveBridge adapts the Framework kernel's Gemini Live implementation
-// to the narrow interface the WebSocket handler consumes. The translation
-// is mostly field-for-field; kernel enum types are rebuilt from the string
-// fields on vsserver.LiveConfigFrame.
-type geminiLiveBridge struct {
-	inner *vskernel.GeminiLive
-}
-
-func (b *geminiLiveBridge) Connect(ctx context.Context, cfg vsserver.LiveConfigFrame) error {
-	if cfg.APIKey == "" {
-		return errors.New("voiceagent: no Google API key configured for this deployment")
-	}
-	liveCfg := vskernel.LiveConfig{
-		Model:            cfg.Model,
-		FallbackModel:    cfg.FallbackModel,
-		APIKey:           cfg.APIKey,
-		Voice:            cfg.Voice,
-		FrameworkPrompt:  cfg.SystemPrompt,
-		RefinementPrompt: cfg.RefinementPrompt,
-		Locale:           cfg.Locale,
-		Speaker:          cfg.Speaker,
-		Tools:            kernelToolDefinitions(cfg.Tools),
-		Policies: vskernel.LivePolicies{
-			EnableInputAudioTranscription:  true,
-			EnableOutputAudioTranscription: true,
-			ActivityDetection: vskernel.ActivityDetectionPolicy{
-				Automatic:         cfg.Automatic,
-				StartSensitivity:  vskernel.StartSensitivity(strings.ToLower(cfg.StartSensitivity)),
-				EndSensitivity:    vskernel.EndSensitivity(strings.ToLower(cfg.EndSensitivity)),
-				PrefixPaddingMs:   cfg.PrefixPaddingMs,
-				SilenceDurationMs: cfg.SilenceDurationMs,
-				ActivityHandling:  vskernel.ActivityHandling(strings.ToLower(cfg.ActivityHandling)),
-				TurnCoverage:      vskernel.TurnCoverage(strings.ToLower(cfg.TurnCoverage)),
-			},
-		},
-	}
-	if err := b.inner.Connect(ctx, liveCfg); err != nil {
-		slog.Warn("voiceagent: Gemini Live connect failed", "err", err)
-		return err
-	}
-	return nil
-}
-
-func (b *geminiLiveBridge) SendAudio(chunk []byte) error { return b.inner.SendAudio(chunk) }
-func (b *geminiLiveBridge) SendAudioStreamEnd() error    { return b.inner.SendAudioStreamEnd() }
-func (b *geminiLiveBridge) SendText(text string) error   { return b.inner.SendText(text) }
-func (b *geminiLiveBridge) Close() error                 { return b.inner.Close() }
-func (b *geminiLiveBridge) Name() string                 { return b.inner.Name() }
-func (b *geminiLiveBridge) SupportsLiveKitTransport() bool {
-	return true
-}
-
-func (b *geminiLiveBridge) UpdateInstructions(_ context.Context, cfg vsserver.LiveConfigFrame) error {
-	text := vsserver.RenderHostInstructionUpdate(cfg)
-	if text == "" {
-		return nil
-	}
-	return b.inner.SendText(text)
-}
-
-func (b *geminiLiveBridge) SendToolResponse(frame vsserver.ToolResponseFrame) error {
-	return b.inner.SendToolResponse(vskernel.ToolResponse{
-		ID:       frame.ID,
-		Name:     frame.Name,
-		Response: frame.Response,
-	})
-}
-
-func (b *geminiLiveBridge) Receive(ctx context.Context) (*vsserver.LiveMessage, error) {
-	msg, err := b.inner.Receive(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if msg == nil {
-		return nil, nil
-	}
-	return mapKernelLiveMessage(msg), nil
 }
 
 func mapKernelLiveMessage(msg *vskernel.LiveMessage) *vsserver.LiveMessage {
@@ -760,8 +668,8 @@ func mapKernelLiveMessage(msg *vskernel.LiveMessage) *vsserver.LiveMessage {
 }
 
 // kernelToolDefinitions maps server-frame tool definitions (from the tool
-// bridge) onto the kernel's live ToolDefinition type. Used by the gemini and
-// openai live bridges; cascaded has no tool support and skips it.
+// bridge) onto the kernel's live ToolDefinition type. Used by live bridges
+// with tool support; cascaded has no tool support and skips it.
 func kernelToolDefinitions(defs []vsserver.ToolDefinitionFrame) []vskernel.ToolDefinition {
 	if len(defs) == 0 {
 		return nil
@@ -802,9 +710,8 @@ func (f *openaiProviderFactory) NewProvider() vsserver.LiveProviderAdapter {
 }
 
 // openaiLiveBridge adapts the kernel's OpenAILive provider to the narrow
-// interface the WebSocket handler consumes. Same translation pattern as
-// geminiLiveBridge — kernel enum types are rebuilt from string fields on
-// vsserver.LiveConfigFrame.
+// interface the WebSocket handler consumes. Kernel enum types are rebuilt from
+// string fields on vsserver.LiveConfigFrame.
 type openaiLiveBridge struct {
 	inner *vskernel.OpenAILive
 }

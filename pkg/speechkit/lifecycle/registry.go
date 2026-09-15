@@ -130,7 +130,7 @@ func (r *Registry) Register(rt ModeRuntime) error {
 // nothing semantics should compute the rollback themselves from
 // subscriber events; the registry deliberately does not auto-roll-back
 // because partial state may be desirable (e.g. Dictation stays up
-// even if Voice Agent failed to acquire Gemini Live).
+// even if Voice Agent failed to acquire its realtime provider).
 func (r *Registry) Apply(ctx context.Context, target Target) error {
 	return r.ApplyWithOptions(ctx, target, ApplyOptions{})
 }

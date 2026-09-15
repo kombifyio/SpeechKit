@@ -27,7 +27,7 @@ func TestSummarizeFlow_Integration(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 
-	flow := DefineSummarizeFlow(rt.G, rt.UtilityModels())
+	flow := DefineSummarizeFlow(rt.UtilityModels())
 	result, err := flow.Run(context.Background(), SummarizeInput{
 		Text:   "Kubernetes ist ein Open-Source-System zur Automatisierung der Bereitstellung, Skalierung und Verwaltung von containerisierten Anwendungen. Es wurde urspruenglich von Google entworfen und wird nun von der Cloud Native Computing Foundation gepflegt.",
 		Locale: "de",

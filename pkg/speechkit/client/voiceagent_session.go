@@ -69,7 +69,7 @@ type VoiceAgentFrame struct {
 
 // VoiceAgentMessage is a single inbound event. Exactly one of Audio or Frame
 // is set per call to ReadMessage; audio chunks are raw PCM S16LE at 24 kHz
-// mono (Gemini Live native output rate).
+// mono (the SpeechKit Voice Agent output rate).
 type VoiceAgentMessage struct {
 	Audio []byte
 	Frame *VoiceAgentFrame

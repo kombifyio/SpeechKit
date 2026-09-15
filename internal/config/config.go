@@ -59,30 +59,11 @@ const (
 	DefaultAssistPrimaryProfileID     = hostconfig.DefaultAssistPrimaryProfileID
 	DefaultVoiceAgentPrimaryProfileID = hostconfig.DefaultVoiceAgentPrimaryProfileID
 	// DefaultTTSPrimaryProfileID is the Voice-Output profile pre-selected for
-	// fresh installs. Google Studio-O (DE) is the v0.37 recommended baseline
-	// because operators that have already configured a GOOGLE_AI_API_KEY (the
-	// most common cloud-AI key in this stack) get a working voice out of the
-	// box; otherwise the fallback (OpenAI tts-1-hd) takes over once an
-	// OpenAI key is configured.
-	DefaultTTSPrimaryProfileID  = "tts.google.studio-o-de"
+	// fresh installs. Kokoro is the local built-in default after Google TTS
+	// was retired; OpenAI tts-1-hd remains the cloud fallback once a key is
+	// configured.
+	DefaultTTSPrimaryProfileID  = "tts.local.kokoro-82m"
 	DefaultTTSFallbackProfileID = "tts.openai.tts-1-hd"
-
-	// defaultGeminiNativeAudioModel is the primary general-purpose real-time
-	// audio-to-audio dialogue model. As of June 2026 this is Gemini 3.1 Flash
-	// Live (preview) per
-	// https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-live-preview.
-	// Google's Gemini 3.5 Live model is currently exposed as the separate
-	// live-translation profile, not as the default dialogue Voice Agent.
-	//
-	// Note: "preview" means the model ID may change; the stable 2.5 model
-	// below is kept as a same-provider fallback so deployments never break
-	// when 3.1 has upstream hiccups.
-	defaultGeminiNativeAudioModel = "gemini-3.1-flash-live-preview"
-
-	// fallbackGeminiNativeAudioModel is the older same-provider Gemini Live
-	// fallback when gemini-3.1-flash-live-preview is unavailable or the
-	// preview endpoint returns an error.
-	fallbackGeminiNativeAudioModel = "gemini-2.5-flash-native-audio-preview-12-2025"
 )
 
 type Config struct {

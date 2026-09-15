@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/firebase/genkit/go/ai"
-
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
 
@@ -72,21 +70,12 @@ func TestCallOpenAICompatible_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	mr := &ai.ModelRequest{
-		Messages: []*ai.Message{
-			{Role: ai.RoleUser, Content: []*ai.Part{ai.NewTextPart("Hello")}},
-		},
-	}
-
-	resp, err := callOpenAICompatible(context.Background(), testClient(), server.URL, "test-key", "test-model", mr)
+	resp, err := callOpenAICompatible(context.Background(), testClient(), server.URL, "test-key", "test-model", Request{Prompt: "Hello"})
 	if err != nil {
 		t.Fatalf("callOpenAICompatible: %v", err)
 	}
-	if resp.Message == nil {
-		t.Fatal("expected message in response")
-	}
-	if text := resp.Text(); text != "Hi there" {
-		t.Errorf("text = %q, want 'Hi there'", text)
+	if resp.Text != "Hi there" {
+		t.Errorf("text = %q, want 'Hi there'", resp.Text)
 	}
 	if resp.FinishReason != "stop" {
 		t.Errorf("finishReason = %q", resp.FinishReason)
@@ -116,17 +105,11 @@ func TestCallOpenAICompatible_OmitsAuthorizationWhenTokenEmpty(t *testing.T) {
 	}))
 	defer server.Close()
 
-	mr := &ai.ModelRequest{
-		Messages: []*ai.Message{
-			{Role: ai.RoleUser, Content: []*ai.Part{ai.NewTextPart("Hello")}},
-		},
-	}
-
-	resp, err := callOpenAICompatible(context.Background(), testClient(), server.URL, "", "local-model", mr)
+	resp, err := callOpenAICompatible(context.Background(), testClient(), server.URL, "", "local-model", Request{Prompt: "Hello"})
 	if err != nil {
 		t.Fatalf("callOpenAICompatible: %v", err)
 	}
-	if got := resp.Text(); got != "local response" {
+	if got := resp.Text; got != "local response" {
 		t.Fatalf("response text = %q, want %q", got, "local response")
 	}
 }
@@ -162,14 +145,12 @@ func TestCallOpenAICompatible_ModelRoleMapping(t *testing.T) {
 	}))
 	defer server.Close()
 
-	mr := &ai.ModelRequest{
-		Messages: []*ai.Message{
-			{Role: ai.RoleUser, Content: []*ai.Part{ai.NewTextPart("q")}},
-			{Role: ai.RoleModel, Content: []*ai.Part{ai.NewTextPart("a")}},
+	_, err := callOpenAICompatible(context.Background(), testClient(), server.URL, "k", "m", Request{
+		Messages: []Message{
+			{Role: "user", Content: "q"},
+			{Role: "model", Content: "a"},
 		},
-	}
-
-	_, err := callOpenAICompatible(context.Background(), testClient(), server.URL, "k", "m", mr)
+	})
 	if err != nil {
 		t.Fatalf("callOpenAICompatible: %v", err)
 	}
@@ -203,17 +184,12 @@ func TestCallOpenAICompatible_ConfigApplied(t *testing.T) {
 	}))
 	defer server.Close()
 
-	mr := &ai.ModelRequest{
-		Messages: []*ai.Message{
-			{Role: ai.RoleUser, Content: []*ai.Part{ai.NewTextPart("test")}},
-		},
-		Config: &ai.GenerationCommonConfig{
-			MaxOutputTokens: 256,
-			Temperature:     0.7,
-		},
-	}
-
-	_, err := callOpenAICompatible(context.Background(), testClient(), server.URL, "k", "m", mr)
+	temp := 0.7
+	_, err := callOpenAICompatible(context.Background(), testClient(), server.URL, "k", "m", Request{
+		Prompt:      "test",
+		MaxTokens:   256,
+		Temperature: &temp,
+	})
 	if err != nil {
 		t.Fatalf("callOpenAICompatible: %v", err)
 	}
@@ -238,13 +214,7 @@ func TestCallOpenAICompatible_ErrorStatus(t *testing.T) {
 			}))
 			defer server.Close()
 
-			mr := &ai.ModelRequest{
-				Messages: []*ai.Message{
-					{Role: ai.RoleUser, Content: []*ai.Part{ai.NewTextPart("test")}},
-				},
-			}
-
-			_, err := callOpenAICompatible(context.Background(), testClient(), server.URL, "k", "m", mr)
+			_, err := callOpenAICompatible(context.Background(), testClient(), server.URL, "k", "m", Request{Prompt: "test"})
 			if err == nil {
 				t.Fatal("expected error")
 			}
@@ -261,13 +231,7 @@ func TestCallOpenAICompatible_NoChoices(t *testing.T) {
 	}))
 	defer server.Close()
 
-	mr := &ai.ModelRequest{
-		Messages: []*ai.Message{
-			{Role: ai.RoleUser, Content: []*ai.Part{ai.NewTextPart("test")}},
-		},
-	}
-
-	_, err := callOpenAICompatible(context.Background(), testClient(), server.URL, "k", "m", mr)
+	_, err := callOpenAICompatible(context.Background(), testClient(), server.URL, "k", "m", Request{Prompt: "test"})
 	if err == nil {
 		t.Fatal("expected error for empty choices")
 	}
@@ -279,13 +243,7 @@ func TestCallOpenAICompatible_InvalidJSON(t *testing.T) {
 	}))
 	defer server.Close()
 
-	mr := &ai.ModelRequest{
-		Messages: []*ai.Message{
-			{Role: ai.RoleUser, Content: []*ai.Part{ai.NewTextPart("test")}},
-		},
-	}
-
-	_, err := callOpenAICompatible(context.Background(), testClient(), server.URL, "k", "m", mr)
+	_, err := callOpenAICompatible(context.Background(), testClient(), server.URL, "k", "m", Request{Prompt: "test"})
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
 	}
@@ -300,13 +258,7 @@ func TestCallOpenAICompatible_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	mr := &ai.ModelRequest{
-		Messages: []*ai.Message{
-			{Role: ai.RoleUser, Content: []*ai.Part{ai.NewTextPart("test")}},
-		},
-	}
-
-	_, err := callOpenAICompatible(ctx, testClient(), server.URL, "k", "m", mr)
+	_, err := callOpenAICompatible(ctx, testClient(), server.URL, "k", "m", Request{Prompt: "test"})
 	if err == nil {
 		t.Fatal("expected error for cancelled context")
 	}

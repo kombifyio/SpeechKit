@@ -86,11 +86,11 @@ func TestVoiceAgentProtocol_GoldenFixtures(t *testing.T) {
 		PersonaID:      "brainstorm",
 		RoleID:         "moderator",
 		SequenceID:     "seq-1",
-		Provider:       "gemini",
+		Provider:       "openai",
 		MediaTransport: MediaTransportLiveKit,
-		Voice:          "Aoede",
+		Voice:          "marin",
 		Locale:         "de-DE",
-		Model:          "gemini-2.5-flash-native-audio",
+		Model:          "gpt-realtime-2",
 		Thinking:       "low",
 		ActivityDetection: &ActivityDetectionFrame{
 			Automatic:         true,
@@ -195,7 +195,7 @@ func TestVoiceAgentProtocol_GoldenFixtures(t *testing.T) {
 	assertVoiceAgentWireEqual(t, frames, "error", ErrorFrame{
 		Type:        MsgError,
 		Code:        "provider_unavailable",
-		Message:     `provider "gemini" is not configured on this server`,
+		Message:     `provider "openai" is not configured on this server`,
 		Remediation: ErrorRemediation("provider_unavailable"),
 		RequestID:   "01J8ZC0R4M7Q2V",
 	})

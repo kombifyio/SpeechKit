@@ -41,7 +41,6 @@ sqlite_path = "/var/lib/speechkit/data/speechkit.db"
 id               = "game-instructor"
 display_name     = "Game Instructor"
 description      = "Energetic moderator that runs a 15-minute conversational game with a single player."
-voice            = "Puck"
 locale           = "en"
 default_role     = "game-moderator"
 default_sequence = "game-flow-15min"
@@ -77,8 +76,6 @@ thinking_level               = "low"
 automatic_activity_detection = true
 vad_start_sensitivity        = "medium"
 vad_end_sensitivity          = "medium"
-activity_handling            = "start_of_activity_interrupts"
-turn_coverage                = "turn_includes_only_activity"
 context_compression_enabled  = true
 
 # ── Sequence ────────────────────────────────────────────────────────────────

@@ -80,7 +80,7 @@ class ImeVoiceAgentController(
 
     /**
      * Opens a conversation on [provider] — one of the realtime backend names
-     * the server registers ("deepgram", "assemblyai", "gemini", …), or null
+     * the server registers ("deepgram", "assemblyai", "openai", …), or null
      * for whatever that server configured as its default. No-op while a
      * conversation is already live.
      */

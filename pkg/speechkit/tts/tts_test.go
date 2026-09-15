@@ -150,7 +150,7 @@ func TestServiceMergesDefaultAndRequestOptions(t *testing.T) {
 func TestPreferredProviderForProfileID(t *testing.T) {
 	tests := map[string]string{
 		"tts.openai.gpt-4o-mini-tts": "openai",
-		"tts.google.chirp":           "google",
+		"tts.google.chirp":           "retired-google-ai",
 		"tts.huggingface.bark":       "huggingface",
 		"tts.openedai.kokoro":        "kokoro",
 		"tts.local.piper":            "piper",
@@ -165,5 +165,18 @@ func TestPreferredProviderForProfileID(t *testing.T) {
 				t.Fatalf("PreferredProviderForProfileID(%q) = %q, want %q", profileID, got, want)
 			}
 		})
+	}
+}
+
+func TestBuildRouterRejectsRetiredGoogleProfile(t *testing.T) {
+	router, ok, notes := BuildRouter(StrategyCloudFirst, EnabledProviders{
+		OpenAI:             &OpenAIOpts{APIKey: "test-key"},
+		PreferredProfileID: "tts.google.studio-o",
+	})
+	if ok || router != nil {
+		t.Fatalf("BuildRouter() = (%v, %v), want no router for retired profile", router, ok)
+	}
+	if len(notes) != 1 || notes[0] == "" {
+		t.Fatalf("BuildRouter() notes = %v, want retirement explanation", notes)
 	}
 }

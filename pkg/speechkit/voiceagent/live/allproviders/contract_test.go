@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/assemblyai"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/deepgram"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/gemini"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openai"
 	"strings"
 	"testing"
@@ -48,11 +47,9 @@ func TestLiveProviderContractReceiveCancellation(t *testing.T) {
 
 func TestPublicLiveProvidersSatisfyContractInterface(t *testing.T) {
 	var _ live.LiveProvider = deepgram.New()
-	var _ live.LiveProvider = gemini.New()
 	var _ live.LiveProvider = openai.New()
 	var _ live.LiveProvider = assemblyai.New()
 	var _ live.LiveSessionCapabilities = deepgram.New()
-	var _ live.LiveSessionCapabilities = gemini.New()
 	var _ live.LiveSessionCapabilities = openai.New()
 	var _ live.LiveSessionCapabilities = assemblyai.New()
 }

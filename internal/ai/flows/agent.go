@@ -6,9 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/core"
-	"github.com/firebase/genkit/go/genkit"
+	appai "github.com/kombifyio/SpeechKit/internal/ai"
 	"github.com/kombifyio/SpeechKit/internal/ai/generation"
 )
 
@@ -21,8 +19,8 @@ type AgentInput struct {
 	SystemPrompt      string `json:"systemPrompt,omitempty"`
 }
 
-func DefineAgentFlowWithGenerator(g *genkit.Genkit, generator generation.Generator) *core.Flow[AgentInput, AgentOutput, struct{}] {
-	return genkit.DefineFlow(g, "agent", func(ctx context.Context, input AgentInput) (AgentOutput, error) {
+func DefineAgentFlowWithGenerator(generator generation.Generator) *Flow[AgentInput, AgentOutput] {
+	return New(func(ctx context.Context, input AgentInput) (AgentOutput, error) {
 		if input.Utterance == "" {
 			return AgentOutput{}, fmt.Errorf("agent: empty utterance")
 		}
@@ -47,37 +45,32 @@ type AgentOutput struct {
 	Action string `json:"action"` // "paste", "display", "silent"
 }
 
-// DefineAgentFlow creates and registers the agent Genkit flow.
-// The agent can use tools and reason over multiple steps.
-func DefineAgentFlow(g *genkit.Genkit, models []ai.Model, tools ...ai.ToolRef) *core.Flow[AgentInput, AgentOutput, struct{}] {
-	return genkit.DefineFlow(g, "agent", func(ctx context.Context, input AgentInput) (AgentOutput, error) {
+// DefineAgentFlow creates the agent flow.
+func DefineAgentFlow(models []appai.Model) *Flow[AgentInput, AgentOutput] {
+	return New(func(ctx context.Context, input AgentInput) (AgentOutput, error) {
 		if input.Utterance == "" {
 			return AgentOutput{}, fmt.Errorf("agent: empty utterance")
 		}
 
 		systemPrompt := buildAgentSystemPrompt(input)
 		userPrompt := buildAgentUserPrompt(input)
-
-		var generateOpts []ai.GenerateOption
-		generateOpts = append(generateOpts,
-			ai.WithSystem(systemPrompt),
-			ai.WithPrompt(userPrompt),
-		)
-		if len(tools) > 0 {
-			generateOpts = append(generateOpts, ai.WithTools(tools...))
-		}
+		temperature := 0.5
 
 		var lastErr error
 		for _, model := range models {
-			opts := append([]ai.GenerateOption{ai.WithModel(model), generationConfigOption(model, 2048, 0.5)}, generateOpts...)
-			resp, err := genkit.Generate(ctx, g, opts...)
+			resp, err := model.Generate(ctx, appai.Request{
+				System:      systemPrompt,
+				Prompt:      userPrompt,
+				MaxTokens:   2048,
+				Temperature: &temperature,
+			})
 			if err != nil {
 				lastErr = err
 				slog.Warn("agent: model failed", "err", err)
 				continue
 			}
 
-			text := resp.Text()
+			text := resp.Text
 			if text == "" {
 				return AgentOutput{Action: "silent"}, nil
 			}

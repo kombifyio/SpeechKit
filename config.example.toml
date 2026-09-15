@@ -285,7 +285,7 @@ fallback_profile_id = ""
 mode_source = "local"
 
 [model_selection.voice_agent]
-primary_profile_id = "realtime.builtin.pipeline" # Default local Voice Agent pipeline. Enable Gemini / Google AI to use realtime.google.gemini-native-audio or realtime.google.gemini-live-translate.
+primary_profile_id = "realtime.builtin.pipeline" # Default local Voice Agent pipeline. Use realtime.openai.gpt-realtime-2, realtime.deepgram.voice-agent, or realtime.assemblyai.voice-agent for a native backend.
 fallback_profile_id = ""
 mode_source = "local"
 
@@ -416,10 +416,6 @@ enabled = true
 model = "tts-1"               # tts-1 or tts-1-hd
 voice = "nova"                # alloy, echo, fable, onyx, nova, shimmer
 
-[tts.google]
-enabled = false
-voice = "de-DE-Neural2-B"     # Google Cloud TTS voice name
-
 [tts.deepgram]
 enabled = false
 model = "aura-2-thalia-en"    # Deepgram Aura-2 voice id; reuses DEEPGRAM_API_KEY from [providers.deepgram]
@@ -450,14 +446,15 @@ timeout_sec = 30                         # subprocess timeout
 
 # ──────────────────────────────────────────────
 # Voice Agent — realtime live session
-# Gemini Live is the canonical Voice Agent runtime. The Voice Agent contract is realtime-first and separate from Assist.
+# The Voice Agent contract is realtime-first and separate from Assist. Select
+# a supported native backend below, or use the local pipeline profile above.
 # ──────────────────────────────────────────────
 
 [voice_agent]
 enabled = true
-provider = "gemini"                        # Realtime backend: "gemini" (default), "openai", "deepgram", "assemblyai"; Server-Target also accepts "cascaded"/"moshi"
-model = "gemini-3.1-flash-live-preview"    # Recommended general Voice Agent default. Use realtime.google.gemini-live-translate for Gemini 3.5 Live Translate.
-fallback_model = "gemini-2.5-flash-native-audio-preview-12-2025"
+provider = "openai"                         # Realtime backend: "openai", "deepgram", or "assemblyai"; Server-Target also accepts "cascaded"/"moshi"
+model = "gpt-realtime-2"                    # OpenAI Realtime model; provider-native defaults apply when empty.
+fallback_model = ""
 voice = "Kore"                             # Voice for real-time model
 agent_profile_id = "default"               # default, brainstorming_companion, humor_companion, support_companion
 agent_sequence_id = ""                     # Optional workflow sequence override. Empty = selected profile/persona default.
@@ -474,15 +471,15 @@ show_prompter = true                       # Show live transcript window during 
 enable_session_summary = true              # Generate a structured dialogue summary when a session ends
 enable_input_transcript = true             # Server-side transcript of the user's speech
 enable_output_transcript = true            # Server-side transcript of the model's speech
-enable_affective_dialog = false            # Uses Gemini Live v1alpha; not supported on Gemini 3.1 Flash Live
-thinking_enabled = false                   # Enable Gemini thinking for harder tasks
+enable_affective_dialog = false            # Provider-specific optional affective dialogue support
+thinking_enabled = false                   # Enable provider-supported thinking for harder tasks
 include_thoughts = false                   # Include thought traces when the model supports them
 thinking_budget = 0                        # Optional token budget for thinking
 thinking_level = "medium"                  # off, low, medium, high
 context_compression_enabled = true         # Keep long sessions healthy with server-side compression
 context_compression_trigger_tokens = 12000
 context_compression_target_tokens = 6000
-automatic_activity_detection = true        # Gemini Live server-side VAD / turn detection
+automatic_activity_detection = true        # Provider/server-side VAD / turn detection
 activity_handling = "start_of_activity_interrupts" # start_of_activity_interrupts, no_interrupt
 turn_coverage = "turn_includes_only_activity"      # turn_includes_only_activity, turn_includes_all_input, turn_includes_audio_activity
 vad_start_sensitivity = "low"              # low or high
@@ -530,17 +527,6 @@ vad_silence_duration_ms = 700
 # assist_model = "llama-3.3-70b-versatile"
 # agent_model = "llama-3.3-70b-versatile"
 
-# [providers.google]
-# enabled = false
-# api_key_env = "GOOGLE_AI_API_KEY"
-# stt_api_key_env = "SPEECHKIT_GOOGLE_STT_API_KEY"
-# stt_credentials_json_env = "SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON"
-# application_credentials_env = "GOOGLE_APPLICATION_CREDENTIALS"
-# stt_model = "latest_long"
-# utility_model = "gemini-2.5-flash-lite"
-# assist_model = "gemini-2.5-flash"
-# agent_model = "gemini-2.5-pro"
-
 # [providers.deepgram]
 # enabled = false
 # api_key_env = "DEEPGRAM_API_KEY"
@@ -572,7 +558,7 @@ vad_silence_duration_ms = 700
 # llm_gateway_base_url = "https://llm-gateway.assemblyai.com/v1"  # EU: https://llm-gateway.eu.assemblyai.com/v1
 # llm_gateway_utility_model = "qwen3.5-4b-32k-fast"  # live cleanup / short utilities
 # llm_gateway_assist_model = "qwen3-32B"             # summaries and longer write-ups
-# llm_gateway_agent_model = "gemini-2.5-flash"     # agent flows (tool-capable). NOTE: selects the LLM
+# llm_gateway_agent_model = "qwen3-32B"            # agent flows (tool-capable). NOTE: selects the LLM
 #                                                  # Gateway model for Genkit agent/summary flows only;
 #                                                  # the Voice Agents WS API has no per-session model field.
 # streaming_llm = true                               # native LLM Gateway on each Universal-3.5 Pro turn
@@ -725,9 +711,8 @@ vad_silence_duration_ms = 700
 # #   tts.local.piper                     Local Built-in (MIT, HA-compatible voice catalog)
 # #   tts.openedai.kokoro                 Local Provider (OpenAI-compatible Kokoro container)
 # #   tts.huggingface.parler-multilingual Cloud Provider (HF Inference Router)
-# #   tts.google.studio-o-de              Direct Provider (Studio-O DE, default for installs with GOOGLE_AI_API_KEY)
 # #   tts.openai.tts-1-hd                 Direct Provider (OpenAI TTS-1-HD, six voices)
-# primary_profile_id = "tts.google.studio-o-de"
+# primary_profile_id = "tts.openai.tts-1-hd"
 # fallback_profile_id = "tts.local.kokoro-82m"     # Local fallback when cloud is unavailable
 # mode_source = "local"
 

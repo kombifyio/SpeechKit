@@ -22,7 +22,7 @@ func TestValidateProviderURL(t *testing.T) {
 		{"empty", "", ValidationOptions{}, ErrEmptyURL},
 		{"garbage", "::not a url::", ValidationOptions{}, ErrInvalidURL},
 		{"https public ok", "https://api.openai.com", ValidationOptions{}, nil},
-		{"https google", "https://generativelanguage.googleapis.com", ValidationOptions{}, nil},
+		{"https provider", "https://api.openai.com", ValidationOptions{}, nil},
 		{"http public rejected", "http://api.example.com", ValidationOptions{}, ErrInsecureHTTP},
 		{"ftp rejected", "ftp://example.com", ValidationOptions{}, ErrUnsupportedScheme},
 		{"no scheme", "api.example.com/foo", ValidationOptions{}, ErrMissingScheme},

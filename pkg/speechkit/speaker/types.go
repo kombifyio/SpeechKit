@@ -110,7 +110,7 @@ type Speaker struct {
 }
 
 // SpeakerWord is the word-level speaker attribution surface shared by
-// Deepgram, AssemblyAI, and Google. Times are milliseconds from audio start.
+// Deepgram and AssemblyAI. Times are milliseconds from audio start.
 type SpeakerWord struct {
 	Text                  string  `json:"text"`
 	StartMs               int64   `json:"startMs,omitempty"`
@@ -252,41 +252,6 @@ func DefaultProviderProfiles() []ProviderProfile {
 			IdentificationLevel: string(IdentificationDiarization),
 			Capabilities:        []Capability{CapabilityDiarization},
 			RequiredEnvVars:     []string{"ASSEMBLYAI_API_KEY"},
-			Status:              "implemented",
-		},
-		{
-			ID:                  "stt.google.latest-long-diarization",
-			Name:                "Google STT Diarization",
-			Provider:            "Google",
-			Framework:           "Google Cloud Speech-to-Text v1 diarizationConfig",
-			Mode:                "dictation",
-			ProviderKind:        "direct_provider",
-			ExecutionMode:       "google_api",
-			Streaming:           false,
-			Batch:               true,
-			IdentificationLevel: string(IdentificationDiarization),
-			Capabilities:        []Capability{CapabilityDiarization},
-			RequiredEnvVars:     []string{"SPEECHKIT_GOOGLE_STT_API_KEY"},
-			Status:              "implemented",
-		},
-		{
-			// Google STT v2 StreamingRecognize cannot diarize (diarization is
-			// BatchRecognize/Recognize-only per the Chirp-3 docs); this profile is a
-			// realtime TRANSCRIPTION source and advertises no speaker capability. The
-			// diarization limitation is documented in the capability matrix
-			// (speaker_diarization / Google / not_supported).
-			ID:                  "speaker.google.v2-streaming-transcription",
-			Name:                "Google STT v2 Streaming Transcription",
-			Provider:            "Google",
-			Framework:           "Google Cloud Speech-to-Text v2 StreamingRecognize",
-			Mode:                "voice_agent",
-			ProviderKind:        "direct_provider",
-			ExecutionMode:       "google_api",
-			Streaming:           true,
-			Batch:               false,
-			IdentificationLevel: string(IdentificationNone),
-			Capabilities:        []Capability{},
-			RequiredEnvVars:     []string{"GOOGLE_APPLICATION_CREDENTIALS", "SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON"},
 			Status:              "implemented",
 		},
 		{

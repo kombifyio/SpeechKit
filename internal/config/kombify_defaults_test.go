@@ -47,6 +47,9 @@ func TestApplyKombifyDeploymentDefaults_DeepgramKeyFlipsDefaults(t *testing.T) {
 	if got := EffectiveVoiceAgentProfileID(cfg); got != kombifyDeepgramVAProfileID {
 		t.Errorf("effective VA profile = %q, want %q", got, kombifyDeepgramVAProfileID)
 	}
+	if cfg.HandsFree.ActivationPhraseID != "kombify" || cfg.Wakeword.PhraseID != "kombify" {
+		t.Errorf("wake phrase = %q/%q, want kombify", cfg.HandsFree.ActivationPhraseID, cfg.Wakeword.PhraseID)
+	}
 }
 
 func TestApplyKombifyDeploymentDefaults_NoKeyKeepsLocalFirst(t *testing.T) {
@@ -70,6 +73,19 @@ func TestApplyKombifyDeploymentDefaults_NoKeyKeepsLocalFirst(t *testing.T) {
 	}
 	if cfg.VoiceAgent.Provider != "" {
 		t.Errorf("without a Deepgram key, VoiceAgent.Provider should stay empty, got %q", cfg.VoiceAgent.Provider)
+	}
+}
+
+func TestApplyKombifyDeploymentDefaults_MigratesRetiredGoogleVoiceAgentProvider(t *testing.T) {
+	t.Setenv("DEEPGRAM_API_KEY", "dg-test-key")
+
+	cfg := &Config{}
+	cfg.VoiceAgent.Provider = "vertex"
+
+	ApplyKombifyDeploymentDefaults(cfg)
+
+	if got := cfg.VoiceAgent.Provider; got != "deepgram" {
+		t.Errorf("VoiceAgent.Provider = %q, want deepgram", got)
 	}
 }
 

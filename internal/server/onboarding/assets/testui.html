@@ -564,7 +564,7 @@
 
       setTile("tileSTT", sttComponent ? sttComponent.status : "", providerList(stt.providers), componentText(settings, "stt.vps"));
       setTile("tileLLM", llmComponent ? llmComponent.status : "", localLLM.enabled ? "local llama.cpp" : "none", componentText(settings, "llm.local"));
-      setTile("tileVoice", voiceComponent ? voiceComponent.status : "", voice.provider || "gemini", componentText(settings, "mode.voiceagent"));
+      setTile("tileVoice", voiceComponent ? voiceComponent.status : "", voice.provider || "assemblyai", componentText(settings, "mode.voiceagent"));
 
       byId("runtimeMode").textContent = runtime.self_hosted_defaults ? "Self-hosted defaults" : "Custom";
       byId("runtimeDetail").textContent = "Modes: " + providerList(settings.modes) + " | Model dir: " + (runtime.model_dir || "-");

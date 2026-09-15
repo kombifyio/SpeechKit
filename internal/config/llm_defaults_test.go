@@ -43,6 +43,7 @@ func TestApplyAssemblyAILLMDefaultsUpgradesLegacyFlagship(t *testing.T) {
 
 func TestApplyAssemblyAILLMDefaultsSkipsWhenDisabled(t *testing.T) {
 	cfg := &Config{}
+	cfg.VoiceAgent.Provider = "openai"
 	ApplyAssemblyAILLMDefaults(cfg)
 	if cfg.Providers.AssemblyAI.StreamingLLM {
 		t.Fatal("disabled AssemblyAI should not force streaming LLM")

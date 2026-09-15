@@ -1,7 +1,7 @@
 // Package main demonstrates provider/profile/model selection without live
 // credentials. It uses a fake LiveProvider so the example is runnable in a
-// public clone; production hosts can replace fakeProvider with Gemini,
-// Deepgram, AssemblyAI, OpenAI, or a custom implementation.
+// public clone; production hosts can replace fakeProvider with Deepgram,
+// AssemblyAI, OpenAI, or a custom implementation.
 package main
 
 import (
@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	providerID := flag.String("provider", "assemblyai", "provider id: google, deepgram, assemblyai, openai, or auto")
+	providerID := flag.String("provider", "assemblyai", "provider id: deepgram, assemblyai, openai, or auto")
 	modelID := flag.String("model", "", "optional provider model override")
 	preferred := flag.String("preferred", "", "comma-separated provider preference order used when -provider auto")
 	requireNativeKeyterms := flag.Bool("require-native-keyterms", false, "require native vocabulary/keyterms support")

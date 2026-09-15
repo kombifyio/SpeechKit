@@ -706,11 +706,10 @@ func classifyPipelineError(err error) map[string]any {
 	if strings.Contains(lower, "llm failed") || strings.Contains(lower, "no llm flow") || strings.Contains(lower, "no models configured") {
 		details["stage"] = "llm"
 	}
-	if strings.Contains(msg, "Invalid configuration type") || strings.Contains(msg, "GenerateContentConfig") || strings.Contains(msg, "GenerationCommonConfig") {
+	if strings.Contains(lower, "invalid configuration") {
 		details["stage"] = "llm"
 		details["category"] = "provider_config"
 		details["retryable"] = false
-		details["provider"] = "googleai"
 		return details
 	}
 	if strings.Contains(lower, "no llm flow") || strings.Contains(lower, "no models configured") {

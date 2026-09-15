@@ -271,14 +271,14 @@ func sendStart(t *testing.T, conn *websocket.Conn, frame StartFrame) {
 }
 
 func TestAdapterSelectProviderNormalizesPublicAliases(t *testing.T) {
-	gemini := newFakeProvider()
+	deepgram := newFakeProvider()
 	assemblyAI := newFakeProvider()
 	openAI := newFakeProvider()
 	cascaded := newFakeProvider()
 	adapter := &Adapter{
-		DefaultProvider: "google",
+		DefaultProvider: "deepgram",
 		Providers: map[string]ProviderFactory{
-			"gemini":     staticProviderFactory{provider: gemini},
+			"deepgram":   staticProviderFactory{provider: deepgram},
 			"assemblyai": staticProviderFactory{provider: assemblyAI},
 			"openai":     staticProviderFactory{provider: openAI},
 			"cascaded":   staticProviderFactory{provider: cascaded},
@@ -291,9 +291,8 @@ func TestAdapterSelectProviderNormalizesPublicAliases(t *testing.T) {
 		wantName  string
 		want      LiveProviderAdapter
 	}{
-		{name: "default google alias", requested: "", wantName: "gemini", want: gemini},
-		{name: "google alias", requested: "google", wantName: "gemini", want: gemini},
-		{name: "gemini profile id", requested: "realtime.google.gemini-native-audio", wantName: "gemini", want: gemini},
+		{name: "default provider", requested: "", wantName: "deepgram", want: deepgram},
+		{name: "deepgram profile id", requested: "realtime.deepgram.voice-agent", wantName: "deepgram", want: deepgram},
 		{name: "assembly alias", requested: "assembly-ai", wantName: "assemblyai", want: assemblyAI},
 		{name: "assembly profile id", requested: "realtime.assemblyai.voice-agent", wantName: "assemblyai", want: assemblyAI},
 		{name: "openai profile id", requested: "realtime.openai.gpt-realtime-2", wantName: "openai", want: openAI},
@@ -319,7 +318,7 @@ func TestAdapterSelectProviderNormalizesPublicAliases(t *testing.T) {
 func TestAdapterSelectProviderReportsNormalizedUnknownProvider(t *testing.T) {
 	adapter := &Adapter{
 		Providers: map[string]ProviderFactory{
-			"gemini": staticProviderFactory{provider: newFakeProvider()},
+			"deepgram": staticProviderFactory{provider: newFakeProvider()},
 		},
 	}
 
@@ -330,7 +329,7 @@ func TestAdapterSelectProviderReportsNormalizedUnknownProvider(t *testing.T) {
 	if resolved != "assemblyai" {
 		t.Fatalf("resolved = %q, want assemblyai", resolved)
 	}
-	if !strings.Contains(err.Error(), `"assemblyai"`) || !strings.Contains(err.Error(), "gemini") {
+	if !strings.Contains(err.Error(), `"assemblyai"`) || !strings.Contains(err.Error(), "deepgram") {
 		t.Fatalf("error = %q, want normalized provider and configured list", err.Error())
 	}
 }

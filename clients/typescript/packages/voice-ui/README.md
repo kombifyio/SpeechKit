@@ -90,7 +90,7 @@ import { createVoiceAgentUiController } from "@kombifyio/speechkit-voice-ui/voic
 const controller = createVoiceAgentUiController({
   serverUrl: "https://speechkit.example.com",
   token: sessionToken,
-  start: { provider: "gemini", locale: "en-US" },
+  start: { provider: "deepgram", locale: "en-US" },
 });
 ```
 

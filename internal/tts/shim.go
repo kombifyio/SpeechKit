@@ -26,8 +26,6 @@ type (
 type (
 	OpenAI          = pkgtts.OpenAI
 	OpenAIOpts      = pkgtts.OpenAIOpts
-	Google          = pkgtts.Google
-	GoogleOpts      = pkgtts.GoogleOpts
 	Deepgram        = pkgtts.Deepgram
 	DeepgramOpts    = pkgtts.DeepgramOpts
 	HuggingFace     = pkgtts.HuggingFace
@@ -66,7 +64,6 @@ var (
 	ResolveSynthesizeOptions      = pkgtts.ResolveSynthesizeOptions
 	BuildRouter                   = pkgtts.BuildRouter
 	NewOpenAI                     = pkgtts.NewOpenAI
-	NewGoogle                     = pkgtts.NewGoogle
 	NewDeepgram                   = pkgtts.NewDeepgram
 	NewHuggingFace                = pkgtts.NewHuggingFace
 	NewFoundry                    = pkgtts.NewFoundry

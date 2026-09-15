@@ -13,8 +13,8 @@
 #
 # Quick start:
 #   1. Copy .env.example to .env and fill in SPEECHKIT_SERVER_TOKEN plus
-#      whichever provider keys you want enabled (Google for Voice Agent,
-#      OpenAI for Assist, etc.). You may omit SPEECHKIT_SERVER_TOKEN only
+#      whichever supported provider keys you want enabled. You may omit
+#      SPEECHKIT_SERVER_TOKEN only
 #      with a custom loopback/dev config that explicitly sets auth_mode=none.
 #   2. docker compose -f docker-compose.oss.yml up -d
 #   3. curl -fsS http://localhost:8080/healthz
@@ -30,10 +30,6 @@ services:
       # Required by the stock authenticated config; optional only for explicit loopback/dev auth_mode=none.
       SPEECHKIT_SERVER_TOKEN: ${SPEECHKIT_SERVER_TOKEN:-}
       # Optional — enables specific provider features.
-      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}
-      SPEECHKIT_GOOGLE_STT_API_KEY: ${SPEECHKIT_GOOGLE_STT_API_KEY:-}
-      SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON: ${SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON:-}
-      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
       DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
       ASSEMBLYAI_API_KEY: ${ASSEMBLYAI_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

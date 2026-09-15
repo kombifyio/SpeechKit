@@ -26,7 +26,7 @@ type LocalVoiceAgentDeps struct {
 // provider. It wraps a cascaded.Provider and adapts its minimal
 // SessionConfig / Message types to the public live.LiveConfig /
 // live.LiveMessage interface so a Wails session can drive it the same
-// way it drives Gemini Live.
+// way it drives a native realtime adapter.
 type LocalVoiceAgentProvider struct {
 	inner *cascaded.Provider
 }

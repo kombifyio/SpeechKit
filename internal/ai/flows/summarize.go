@@ -6,9 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/core"
-	"github.com/firebase/genkit/go/genkit"
+	appai "github.com/kombifyio/SpeechKit/internal/ai"
 	"github.com/kombifyio/SpeechKit/internal/ai/generation"
 )
 
@@ -46,8 +44,8 @@ type SummarizeInput struct {
 	Locale      string `json:"locale,omitempty"`
 }
 
-func DefineSummarizeFlowWithGenerator(g *genkit.Genkit, generator generation.Generator) *core.Flow[SummarizeInput, string, struct{}] {
-	return genkit.DefineFlow(g, "summarize", func(ctx context.Context, input SummarizeInput) (string, error) {
+func DefineSummarizeFlowWithGenerator(generator generation.Generator) *Flow[SummarizeInput, string] {
+	return New(func(ctx context.Context, input SummarizeInput) (string, error) {
 		if input.Text == "" {
 			return "", fmt.Errorf("summarize: empty text")
 		}
@@ -63,16 +61,17 @@ func DefineSummarizeFlowWithGenerator(g *genkit.Genkit, generator generation.Gen
 	})
 }
 
-// DefineSummarizeFlow creates and registers the summarize Genkit flow.
+// DefineSummarizeFlow creates the summarize flow.
 // Models are tried in order; first successful response wins.
-func DefineSummarizeFlow(g *genkit.Genkit, models []ai.Model) *core.Flow[SummarizeInput, string, struct{}] {
-	return genkit.DefineFlow(g, "summarize", func(ctx context.Context, input SummarizeInput) (string, error) {
+func DefineSummarizeFlow(models []appai.Model) *Flow[SummarizeInput, string] {
+	return New(func(ctx context.Context, input SummarizeInput) (string, error) {
 		if input.Text == "" {
 			return "", fmt.Errorf("summarize: empty text")
 		}
 
 		systemPrompt := buildSummarizeSystemPrompt(input.Locale)
 		userPrompt := buildSummarizeUserPrompt(input)
+		temperature := 0.3
 
 		var lastErr error
 		for _, model := range models {
@@ -83,22 +82,22 @@ func DefineSummarizeFlow(g *genkit.Genkit, models []ai.Model) *core.Flow[Summari
 				}
 				break
 			}
-			resp, err := genkit.Generate(attemptCtx, g,
-				ai.WithModel(model),
-				ai.WithSystem(systemPrompt),
-				ai.WithPrompt(userPrompt),
-				generationConfigOption(model, 512, 0.3),
-			)
+			resp, err := model.Generate(attemptCtx, appai.Request{
+				System:      systemPrompt,
+				Prompt:      userPrompt,
+				MaxTokens:   512,
+				Temperature: &temperature,
+			})
 			cancel()
 			if err != nil {
 				lastErr = err
-				slog.Warn("summarize: model failed", "model", model.Name(), "err", err)
+				slog.Warn("summarize: model failed", "model", model.ID(), "err", err)
 				if ctx.Err() != nil {
 					break // overall budget exhausted — later models would get no time
 				}
 				continue
 			}
-			return resp.Text(), nil
+			return resp.Text, nil
 		}
 
 		if lastErr != nil {

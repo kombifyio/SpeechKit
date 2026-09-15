@@ -8,33 +8,28 @@ import (
 	"net"
 	"strings"
 	"time"
-
-	firebaseai "github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
-	"google.golang.org/genai"
 )
 
-type GenkitModel struct {
-	Model firebaseai.Model
-	Info  Model
+type BoundModel struct {
+	Info Model
+	Call func(context.Context, Request) (Result, error)
 }
 
-type GenkitGenerator struct {
-	runtime *genkit.Genkit
-	models  []GenkitModel
+type BoundGenerator struct {
+	models []BoundModel
 }
 
-func NewGenkit(runtime *genkit.Genkit, models []GenkitModel) *GenkitGenerator {
-	return &GenkitGenerator{runtime: runtime, models: append([]GenkitModel(nil), models...)}
+func NewBound(models []BoundModel) *BoundGenerator {
+	return &BoundGenerator{models: append([]BoundModel(nil), models...)}
 }
 
-func (g *GenkitGenerator) Models(_ context.Context, query ModelQuery) (Catalog, error) {
+func (g *BoundGenerator) Models(_ context.Context, query ModelQuery) (Catalog, error) {
 	if g == nil {
-		return Catalog{}, &Error{Kind: ErrorConfiguration, Operation: "models", Err: errors.New("genkit runtime unavailable")}
+		return Catalog{}, &Error{Kind: ErrorConfiguration, Operation: "models", Err: errors.New("model runtime unavailable")}
 	}
 	catalog := Catalog{Models: make([]Model, 0, len(g.models))}
 	for _, binding := range g.models {
-		if binding.Model == nil || !binding.Info.Supports(query.Purpose) {
+		if binding.Call == nil || !binding.Info.Supports(query.Purpose) {
 			continue
 		}
 		catalog.Models = append(catalog.Models, binding.Info)
@@ -42,55 +37,49 @@ func (g *GenkitGenerator) Models(_ context.Context, query ModelQuery) (Catalog, 
 	return catalog, nil
 }
 
-func (g *GenkitGenerator) Generate(ctx context.Context, request Request) (Result, error) {
-	if g == nil || g.runtime == nil {
-		return Result{}, &Error{Kind: ErrorConfiguration, Operation: "generate", Err: errors.New("genkit runtime unavailable")}
+func (g *BoundGenerator) Generate(ctx context.Context, request Request) (Result, error) {
+	if g == nil {
+		return Result{}, &Error{Kind: ErrorConfiguration, Operation: "generate", Err: errors.New("model runtime unavailable")}
 	}
 	candidates := g.candidates(request)
 	if len(candidates) == 0 {
 		return Result{}, &Error{Kind: ErrorConfiguration, Operation: "generate", Model: request.ModelID, Err: errors.New("no matching model configured")}
 	}
 
+	nativeRequest := request
+	nativeRequest.Prompt = renderPrompt(request)
+	nativeRequest.Messages = nil
+	nativeRequest.StructuredHint = ""
+
 	var lastErr error
 	for _, candidate := range candidates {
 		started := time.Now()
-		options := []firebaseai.GenerateOption{
-			firebaseai.WithModel(candidate.Model),
-			firebaseai.WithSystem(request.System),
-			firebaseai.WithPrompt(renderPrompt(request)),
-			firebaseai.WithConfig(genkitConfig(candidate.Model, request.MaxOutputTokens, request.Temperature)),
-		}
-		response, err := genkit.Generate(ctx, g.runtime, options...)
+		result, err := candidate.Call(ctx, nativeRequest)
 		if err != nil {
-			lastErr = classifyGenkitError(candidate.Info, err)
+			lastErr = classifyGenerateError(candidate.Info, err)
 			if ctx.Err() != nil {
 				return Result{}, lastErr
 			}
 			continue
 		}
-		result := Result{
-			Text:         response.Text(),
-			Provider:     candidate.Info.Provider,
-			Model:        candidate.Info.Name,
-			FinishReason: string(response.FinishReason),
-			Latency:      time.Since(started),
+		if result.Provider == "" {
+			result.Provider = candidate.Info.Provider
 		}
-		if response.Usage != nil {
-			result.Usage = &Usage{
-				InputTokens:  response.Usage.InputTokens,
-				OutputTokens: response.Usage.OutputTokens,
-				TotalTokens:  response.Usage.TotalTokens,
-			}
+		if result.Model == "" {
+			result.Model = candidate.Info.Name
+		}
+		if result.Latency == 0 {
+			result.Latency = time.Since(started)
 		}
 		return result, nil
 	}
 	return Result{}, lastErr
 }
 
-func (g *GenkitGenerator) candidates(request Request) []GenkitModel {
-	out := make([]GenkitModel, 0, len(g.models))
+func (g *BoundGenerator) candidates(request Request) []BoundModel {
+	out := make([]BoundModel, 0, len(g.models))
 	for _, candidate := range g.models {
-		if candidate.Model == nil || !candidate.Info.Supports(request.Purpose) {
+		if candidate.Call == nil || !candidate.Info.Supports(request.Purpose) {
 			continue
 		}
 		if request.ModelID != "" && request.ModelID != candidate.Info.ID {
@@ -116,24 +105,7 @@ func renderPrompt(request Request) string {
 	return out.String()
 }
 
-func genkitConfig(model firebaseai.Model, maxOutputTokens int, temperature float64) any {
-	if maxOutputTokens <= 0 {
-		maxOutputTokens = 1024
-	}
-	if model != nil && strings.HasPrefix(model.Name(), "googleai/") {
-		value := float32(temperature)
-		return &genai.GenerateContentConfig{
-			MaxOutputTokens: int32(maxOutputTokens),
-			Temperature:     &value,
-		}
-	}
-	return &firebaseai.GenerationCommonConfig{
-		MaxOutputTokens: maxOutputTokens,
-		Temperature:     temperature,
-	}
-}
-
-func classifyGenkitError(model Model, err error) error {
+func classifyGenerateError(model Model, err error) error {
 	if err == nil {
 		return nil
 	}

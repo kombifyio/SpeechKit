@@ -7,10 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/core"
-	"github.com/firebase/genkit/go/genkit"
-
+	appai "github.com/kombifyio/SpeechKit/internal/ai"
 	"github.com/kombifyio/SpeechKit/internal/ai/generation"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/meeting"
 )
@@ -49,17 +46,16 @@ type MeetingNotesOutput struct {
 // It merges the transcript, the user's own notes and a template into structured
 // notes where every bullet cites the transcript it came from. Models are tried
 // in order; the first that produces usable output wins.
-func DefineMeetingNotesFlow(g *genkit.Genkit, models []ai.Model) *core.Flow[MeetingNotesInput, MeetingNotesOutput, struct{}] {
-	return DefineMeetingNotesFlowWithGenerator(g, generatorForModels(
-		g,
+func DefineMeetingNotesFlow(models []appai.Model) *Flow[MeetingNotesInput, MeetingNotesOutput] {
+	return DefineMeetingNotesFlowWithGenerator(generatorForModels(
 		models,
 		generation.PurposeMeetingExtraction,
 		generation.PurposeMeetingSynthesis,
 	))
 }
 
-func DefineMeetingNotesFlowWithGenerator(g *genkit.Genkit, generator generation.Generator) *core.Flow[MeetingNotesInput, MeetingNotesOutput, struct{}] {
-	return genkit.DefineFlow(g, "meetingNotes", func(ctx context.Context, input MeetingNotesInput) (MeetingNotesOutput, error) {
+func DefineMeetingNotesFlowWithGenerator(generator generation.Generator) *Flow[MeetingNotesInput, MeetingNotesOutput] {
+	return New(func(ctx context.Context, input MeetingNotesInput) (MeetingNotesOutput, error) {
 		if len(input.Transcript) == 0 && len(input.Anchors) == 0 {
 			return MeetingNotesOutput{}, fmt.Errorf("meeting notes: nothing was captured to write up")
 		}

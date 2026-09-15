@@ -84,11 +84,11 @@ class VoiceAgentFrameCodecTest {
                     personaId = "brainstorm",
                     roleId = "moderator",
                     sequenceId = "seq-1",
-                    provider = "gemini",
+                    provider = "openai",
                     mediaTransport = "livekit",
                     voice = "Aoede",
                     locale = "de-DE",
-                    model = "gemini-2.5-flash-native-audio",
+                    model = "gpt-realtime-2",
                     thinking = "low",
                     activityDetection = VoiceAgentActivityDetection(
                         automatic = true,

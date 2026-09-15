@@ -285,10 +285,9 @@ options.
 | --- | --- |
 | whisper.cpp, OpenAI-compatible, VPS, Ollama | Prompt text through `TranscribeOpts.Prompt`. |
 | Deepgram | Keyterm/keyword options. |
-| Google Cloud STT | `speechContexts.phrases` with boost where available. |
 | AssemblyAI | `word_boost` and boost-level options. |
 | HuggingFace | Prompt where the selected model supports it. |
-| Gemini Live / Voice Agent | Recognition/system prompt hint. |
+| Native Voice Agent | Provider-neutral context prompt where supported. |
 
 Weights map to provider-native boost scales where possible and are ignored
 explicitly where no provider equivalent exists.

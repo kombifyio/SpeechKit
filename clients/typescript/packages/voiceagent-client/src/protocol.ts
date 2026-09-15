@@ -52,7 +52,7 @@ export interface StartFrame {
   role_id?: string;
   sequence_id?: string;
   /**
-   * Selects the realtime backend for THIS session, e.g. "gemini",
+   * Selects the realtime backend for THIS session, e.g. "openai",
    * "openai", "deepgram", "assemblyai", "cascaded". Empty uses the
    * server's configured default. An unknown or unconfigured provider is
    * rejected at start with a provider_unavailable error.

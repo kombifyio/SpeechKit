@@ -84,15 +84,6 @@ func ResolveEnabledProvidersWithAuth(cfg *config.Config, auth Auth) (tts.Enabled
 		}
 	}
 
-	if cloudAllowed && cfg.TTS.Google.Enabled {
-		if apiKey := providerCredential(cfg, "google"); apiKey != "" {
-			enabled.Google = &tts.GoogleOpts{
-				APIKey: apiKey,
-				Voice:  firstNonEmpty(cfg.TTS.Google.Voice, cfg.TTS.Voice),
-			}
-		}
-	}
-
 	// Deepgram Aura reuses the shared DEEPGRAM_API_KEY (no separate credential).
 	if cloudAllowed && cfg.TTS.Deepgram.Enabled {
 		if key := providerCredential(cfg, "deepgram"); key != "" {

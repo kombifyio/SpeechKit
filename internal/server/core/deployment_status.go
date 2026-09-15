@@ -78,12 +78,6 @@ func deploymentStatusSnapshot(app *App) map[string]any {
 			"admin_password_set":   strings.TrimSpace(cfg.Server.AdminPasswordHash) != "",
 		},
 		"providers": map[string]any{
-			"google": map[string]any{
-				"api_key":                 providerEnvStatus(cfg, "google"),
-				"stt_key":                 providerEnvStatus(cfg, "google_stt"),
-				"stt_credentials_json":    envStatus(config.GoogleSTTCredentialsJSONEnvName(cfg)),
-				"application_credentials": envStatus(config.GoogleApplicationCredentialsEnvName(cfg)),
-			},
 			"openai": map[string]any{
 				"api_key": providerEnvStatus(cfg, "openai"),
 			},

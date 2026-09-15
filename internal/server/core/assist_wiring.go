@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/firebase/genkit/go/core"
 	"github.com/kombifyio/SpeechKit/internal/ai"
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
 	"github.com/kombifyio/SpeechKit/internal/assist"
@@ -257,7 +256,7 @@ func buildAssistUtilityRegistry(cfg *config.Config) *assist.UtilityRegistry {
 // agentFlowFromRuntime mirrors assistFlowFromRuntime for the agent flow that
 // the Cascaded Voice Agent provider uses. Returns nil when no agent models
 // are available — the cascaded provider rejects Connect in that state.
-func agentFlowFromRuntime(rt *ai.Runtime) *core.Flow[flows.AgentInput, flows.AgentOutput, struct{}] {
+func agentFlowFromRuntime(rt *ai.Runtime) *flows.Flow[flows.AgentInput, flows.AgentOutput] {
 	if rt == nil {
 		return nil
 	}
@@ -265,7 +264,7 @@ func agentFlowFromRuntime(rt *ai.Runtime) *core.Flow[flows.AgentInput, flows.Age
 	if len(models) == 0 {
 		return nil
 	}
-	return flows.DefineAgentFlow(rt.G, models)
+	return flows.DefineAgentFlow(models)
 }
 
 // buildGenkitRuntime maps config.Config into ai.Config and initializes Genkit.
@@ -283,15 +282,6 @@ func buildGenkitRuntime(ctx context.Context, cfg *config.Config) (*ai.Runtime, [
 		return strings.TrimSpace(key)
 	}
 
-	if cfg.Providers.Google.Enabled {
-		if key := credential("google"); key != "" {
-			aiCfg.GoogleAPIKey = key
-			aiCfg.GoogleUtilityModel = cfg.Providers.Google.UtilityModel
-			aiCfg.GoogleAssistModel = cfg.Providers.Google.AssistModel
-			aiCfg.GoogleAgentModel = cfg.Providers.Google.AgentModel
-			notes = append(notes, "Genkit: Google provider registered")
-		}
-	}
 	if cfg.Providers.OpenAI.Enabled {
 		if key := credential("openai"); key != "" {
 			aiCfg.OpenAIAPIKey = key
@@ -346,7 +336,7 @@ func buildGenkitRuntime(ctx context.Context, cfg *config.Config) (*ai.Runtime, [
 // assistFlowFromRuntime defines the Assist flow only when at least one assist
 // model is available. Returning nil is a valid state — the pipeline still
 // handles codeword shortcuts without an LLM.
-func assistFlowFromRuntime(rt *ai.Runtime) *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}] {
+func assistFlowFromRuntime(rt *ai.Runtime) *flows.Flow[flows.AssistInput, flows.AssistOutput] {
 	if rt == nil {
 		return nil
 	}
@@ -354,7 +344,7 @@ func assistFlowFromRuntime(rt *ai.Runtime) *core.Flow[flows.AssistInput, flows.A
 	if len(models) == 0 {
 		return nil
 	}
-	return flows.DefineAssistFlow(rt.G, models)
+	return flows.DefineAssistFlow(models)
 }
 
 // buildTTSRouter constructs the TTS router from configured providers. Returns

@@ -18,19 +18,16 @@ func DefaultManifests() []ProviderOptionManifest {
 		// "vps" is the self-hosted whisper-server adapter's own identifier, which
 		// is what the resolver looks up; it has no catalog profile of its own.
 		openAISTTManifest("vps", "Self-hosted whisper-server", nil, "https://github.com/ggerganov/whisper.cpp"),
-		googleSTTManifest(),
 		assemblyAISTTManifest(),
 		openRouterSTTManifest(),
 		huggingFaceSTTManifest(),
 		localSTTManifest(),
 		deepgramTTSManifest(),
 		openAITTSManifest(),
-		googleTTSManifest(),
 		huggingFaceTTSManifest(),
 		piperTTSManifest(),
 		deepgramVoiceAgentManifest(),
 		assemblyAIVoiceAgentManifest(),
-		geminiVoiceAgentManifest(),
 		openAIVoiceAgentManifest(),
 	}
 }

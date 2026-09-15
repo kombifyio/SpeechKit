@@ -19,7 +19,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	genkitcore "github.com/firebase/genkit/go/core"
 	"github.com/kombifyio/SpeechKit/internal/ai"
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
 	assistpkg "github.com/kombifyio/SpeechKit/internal/assist"
@@ -80,8 +79,8 @@ type App struct {
 
 	// Shared AI deps — populated by ensureSharedAIDeps on demand.
 	GenkitRuntime *ai.Runtime
-	AssistFlow    *genkitcore.Flow[flows.AssistInput, flows.AssistOutput, struct{}]
-	AgentFlow     *genkitcore.Flow[flows.AgentInput, flows.AgentOutput, struct{}]
+	AssistFlow    *flows.Flow[flows.AssistInput, flows.AssistOutput]
+	AgentFlow     *flows.Flow[flows.AgentInput, flows.AgentOutput]
 	TTSRouter     *tts.Router
 	TTSEnabled    bool
 
@@ -373,7 +372,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			app.Health.SetReady("mode.voiceagent", StatusOK, "listening: "+status)
 		}
 		slog.Info("mode enabled", "mode", "voiceagent",
-			"provider", firstVANonEmpty(cfg.VoiceAgent.Provider, "gemini"),
+			"provider", firstVANonEmpty(cfg.VoiceAgent.Provider, "assemblyai"),
 			"create", "/v1/voiceagent/sessions",
 			"ws", "/v1/voiceagent/sessions/{id}/ws",
 			"status", status)
@@ -750,8 +749,8 @@ func (a *App) ModeEnabled(m Mode) bool {
 
 // needsSTT reports whether any enabled mode depends on the STT router.
 // Dictation always needs it; Assist and Cascaded-VoiceAgent use it for the
-// STT stage of their pipelines; Gemini-VoiceAgent does its own server-side
-// STT inside the realtime provider.
+// STT stage of their pipelines; native realtime Voice Agent providers perform
+// speech handling in their own sessions.
 func needsSTT(modes map[Mode]bool) bool {
 	return modes[ModeDictation] || modes[ModeAssist] || modes[ModeVoiceAgent]
 }

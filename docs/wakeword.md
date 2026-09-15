@@ -69,3 +69,18 @@ Wake-word is opt-in. If a host enables it, the microphone is continuously read
 until the host disables listening. Hosts should show visible listening state,
 avoid recording wake-word audio unless the user explicitly opts in, and keep
 network use explicit in their own privacy policy.
+
+
+## Branded homelab / Home Assistant profile
+
+The [HA/Sonos appliance plan](roadmap/home-assistant-sonos-wakewords.md) uses
+`hey_kombify` by default after the user opts into listening. Bare `kombify` stays
+lab-only until separately qualified and is then an explicit option; do not
+silently change neutral OSS or unrelated desktop defaults. ONNX availability,
+microWakeWord training-tool repair and physical German accuracy are different
+evidence gates. One utterance matching both phrases must produce one turn.
+
+Sonos supplies output only. The microphone host retains detection/capture and
+must respect the remote playback lease; a TTS URL or completed HA action does
+not establish that remote speech has ended. Wake activation is not identity or
+permission to execute administrative homelab actions.

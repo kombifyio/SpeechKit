@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/firebase/genkit/go/ai"
-
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
 
@@ -40,16 +38,21 @@ func TestLiveFoundryChatCompletions(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	ask := func(model string, cfg *ai.GenerationCommonConfig, opts oaiCallOptions) (string, error) {
-		mr := &ai.ModelRequest{
-			Messages: []*ai.Message{{Role: ai.RoleUser, Content: []*ai.Part{ai.NewTextPart("Antworte mit genau einem Wort: Pong")}}},
-			Config:   cfg,
+	ask := func(model string, maxTokens int, temperature float64, opts oaiCallOptions) (string, error) {
+		var temp *float64
+		if temperature > 0 {
+			t := temperature
+			temp = &t
 		}
-		resp, err := callOpenAICompatibleWithOptions(ctx, client, base, model, mr, strict, opts)
+		resp, err := callOpenAICompatibleWithOptions(ctx, client, base, model, Request{
+			Prompt:      "Antworte mit genau einem Wort: Pong",
+			MaxTokens:   maxTokens,
+			Temperature: temp,
+		}, strict, opts)
 		if err != nil {
 			return "", err
 		}
-		return resp.Message.Content[0].Text, nil
+		return resp.Text, nil
 	}
 
 	// The flows always set a token cap and a temperature; the registration
@@ -59,13 +62,13 @@ func TestLiveFoundryChatCompletions(t *testing.T) {
 	if !ok {
 		t.Fatalf("no target for %s", deployment)
 	}
-	text, err := ask(deployment, &ai.GenerationCommonConfig{MaxOutputTokens: 64, Temperature: 0.3}, opts)
+	text, err := ask(deployment, 64, 0.3, opts)
 	if err != nil {
 		t.Fatalf("%s: %v", deployment, err)
 	}
 	t.Logf("%s answered: %q", deployment, text)
 
-	_, err = ask("speechkit-missing-deployment", nil, oaiCallOptions{AuthToken: key})
+	_, err = ask("speechkit-missing-deployment", 0, 0, oaiCallOptions{AuthToken: key})
 	if err == nil || !strings.Contains(err.Error(), "deployment not found") {
 		t.Fatalf("missing deployment must be named in the error, got %v", err)
 	}

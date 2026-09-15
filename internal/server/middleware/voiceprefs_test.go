@@ -17,7 +17,7 @@ import (
 func setVoicePrefHeaders(req *http.Request) {
 	req.Header.Set(VoicePrefHeaderSTTPrimary, "deepgram")
 	req.Header.Set(VoicePrefHeaderSTTSecondary, "assemblyai")
-	req.Header.Set(VoicePrefHeaderVAProvider, "gemini")
+	req.Header.Set(VoicePrefHeaderVAProvider, "deepgram")
 	req.Header.Set(VoicePrefHeaderVAPersona, "concise-de")
 }
 
@@ -68,7 +68,7 @@ func TestAuth_EdgeHMACAttachesSignedVoicePrefs(t *testing.T) {
 	want := VoicePrefs{
 		STTPrimary:   "deepgram",
 		STTSecondary: "assemblyai",
-		VAProvider:   "gemini",
+		VAProvider:   "deepgram",
 		VAPersona:    "concise-de",
 	}
 	handler := Auth(AuthOptions{Mode: "edge_hmac", EdgeSecretEnv: "TEST_EDGE_SECRET"})(prefsProbeHandler(t, want))

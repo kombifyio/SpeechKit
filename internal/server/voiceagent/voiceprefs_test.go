@@ -15,7 +15,7 @@ import (
 
 func TestAdapterApplyVoicePrefDefaults(t *testing.T) {
 	providers := map[string]ProviderFactory{
-		"gemini":     staticProviderFactory{provider: newFakeProvider()},
+		"deepgram":   staticProviderFactory{provider: newFakeProvider()},
 		"assemblyai": staticProviderFactory{provider: newFakeProvider()},
 	}
 
@@ -37,8 +37,8 @@ func TestAdapterApplyVoicePrefDefaults(t *testing.T) {
 		{
 			name:         "explicit start values always win",
 			prefs:        wssession.VoicePrefs{VAProvider: "assemblyai", VAPersona: "concise-de"},
-			start:        StartFrame{Provider: "gemini", PersonaID: "sales"},
-			wantProvider: "gemini",
+			start:        StartFrame{Provider: "deepgram", PersonaID: "sales"},
+			wantProvider: "deepgram",
 			wantPersona:  "sales",
 		},
 		{
@@ -63,7 +63,7 @@ func TestAdapterApplyVoicePrefDefaults(t *testing.T) {
 			adapter := &Adapter{
 				Session:         &ManagedSession{ID: "s1", VoicePrefs: tt.prefs},
 				Providers:       providers,
-				DefaultProvider: "gemini",
+				DefaultProvider: "deepgram",
 			}
 			start := tt.start
 			personaFromPref := adapter.applyVoicePrefDefaults(&start)

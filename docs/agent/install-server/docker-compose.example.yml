@@ -3,7 +3,7 @@
 # Usage:
 #   export SPEECHKIT_SERVER_TOKEN="$(openssl rand -hex 32)"
 #   export SPEECHKIT_PUBLIC_URL="http://localhost:8080"
-#   export GOOGLE_AI_API_KEY="..." # required for Gemini Live Voice Agent
+#   export OPENAI_API_KEY="..." # required for the included OpenAI Realtime example
 #   docker compose -f docker-compose.example.yml up -d
 #
 services:
@@ -13,7 +13,6 @@ services:
       SPEECHKIT_SERVER_TOKEN: ${SPEECHKIT_SERVER_TOKEN:?set SPEECHKIT_SERVER_TOKEN}
       SPEECHKIT_PUBLIC_URL: ${SPEECHKIT_PUBLIC_URL:-http://localhost:8080}
       HF_TOKEN: ${HF_TOKEN:-}
-      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}

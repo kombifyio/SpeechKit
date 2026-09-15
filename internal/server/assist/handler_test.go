@@ -501,7 +501,7 @@ func TestHandler_Pipeline_EmptyOutputMapsTo503(t *testing.T) {
 }
 
 func TestHandler_Pipeline_ConfigErrorClassified(t *testing.T) {
-	fp := &fakeProcessor{err: errors.New("assist: LLM failed: INVALID_ARGUMENT: Invalid configuration type: *ai.GenerationCommonConfig. Expected *genai.GenerateContentConfig")}
+	fp := &fakeProcessor{err: errors.New("assist: LLM failed: invalid configuration")}
 	h := mustHandler(t, Options{Processor: fp})
 	body := []byte(`{"text":"do the thing"}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/assist/process", bytes.NewReader(body))

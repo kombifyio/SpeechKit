@@ -1,23 +1,42 @@
 # SpeechKit
 
-> Agent entrypoint for SpeechKit Server, Framework API, and MCP integration.
+SpeechKit is a local-first voice framework with three explicit voice contracts:
+Dictation turns speech into text, Assist handles a one-shot request with optional
+TTS, and Voice Agent holds a realtime conversation. Meeting is a separate
+recording and notes service alongside those modes.
 
-SpeechKit is a Windows-first voice framework with three strict modes:
-Dictation, Assist, and Voice Agent. (The current release number lives in
-`.kombify/VERSION` and `CHANGELOG.md`.) The v0.48 line added long-form
-dictation and meeting capture on top of the provider-professionalized Go
-framework:
-in-process STT, TTS, Assist, and native Voice Agent packages can run without a
-SpeechKit Server when the host wants local framework integration. Long
-dictation can use stable segmented processing while provider-native streaming
-stays capability-gated. Current realtime baselines are Gemini 3.1 Flash Live,
-Deepgram Flux Voice Agent, AssemblyAI Voice Agent API, OpenAI Realtime,
-Microsoft Foundry Realtime, and cascaded fallback hosts. AssemblyAI realtime STT defaults to
-`universal-3-5-pro`; `u3-rt-pro` remains a legacy fallback. Words and Replacements
-are the customization primitives, with Native Templates selected through
-`active_template_ids` and provider-native keyterms used where supported.
-Hands-Free is an activation and voice-output layer for those modes, not a
-fourth mode.
+Use the Windows desktop app for Dictation, Assist, Voice Agent and Meeting.
+The macOS 14+ Apple Silicon app is an ad-hoc signed, Dictation-only beta.
+Android offers public Kotlin SDK modules and a keyboard/system-assistant
+reference app in testing; Voice Agent needs a SpeechKit Server. Browser clients
+use TypeScript packages and framework-neutral Voice UI components. Linux is a
+self-hosted server target, not a desktop app download.
+
+Embed public Go packages without a SpeechKit Server, or connect clients over
+HTTP/WebSocket. Local Dictation needs a whisper.cpp runtime and model but no
+cloud key. Choose providers through the running catalog and readiness metadata;
+available models and capabilities depend on the configured route. Words and
+Replacements customize recognition and final text. Hands-Free is an activation
+layer for the voice modes.
+
+Meeting on Windows captures microphone and system audio separately, combines
+the transcript with your notes and a template into a Meeting Review, and never
+persists meeting audio. Review generation needs a configured local or cloud
+model. Channel labels do not identify each remote participant. The public
+pkg/speechkit/meeting runtime supports host-owned capture adapters and notes
+helpers; examples/meeting/synthetic-host demonstrates it without devices or
+credentials. Do not assume the full desktop Meeting workflow has a server REST,
+SSE or TypeScript equivalent. Use only endpoints present in the server OpenAPI.
+
+SDK and platform entrypoints:
+
+- SDK quickstart: https://github.com/kombifyio/SpeechKit/blob/main/docs/sdk/README.md
+- Custom providers: https://github.com/kombifyio/SpeechKit/blob/main/docs/sdk/custom-provider.md
+- TypeScript clients and Voice UI: https://github.com/kombifyio/SpeechKit/tree/main/clients/typescript
+- Android SDK: https://github.com/kombifyio/SpeechKit/tree/main/android
+- macOS beta and setup notes: https://github.com/kombifyio/SpeechKit/releases/latest
+- Meeting guide: https://speechkit.cc/modes/meeting
+- Synthetic Meeting Go prompt: https://speechkit.cc/getting-started/agents/meeting-notes-go.md
 
 Use these links first:
 
@@ -56,7 +75,7 @@ Embed a Voice Agent into your own app:
 - Provider-switching reference: `examples/voice-agent/provider-switching/`
   (credential-free fake provider, real public descriptors).
 - One prompt: "Build a 15-minute voice-agent game instructor into my app using SpeechKit. Use `pkg/speechkit/client` (CreateVoiceAgentSession + DialVoiceAgent), reuse the persona/role/sequence IDs `game-instructor` / `game-moderator` / `game-flow-15min`, and feed PCM 16 kHz S16LE mono via SendAudio."
-- Server-side: seed the persona/role/sequence via the TOML at `examples/voice-agent/game-instructor/config.toml` and run `speechkit-server` with `GOOGLE_AI_API_KEY` set. Idle timeout caps each session at 15 min by default.
+- Server-side: seed the persona/role/sequence via the TOML at `examples/voice-agent/game-instructor/config.toml` and run `speechkit-server` with the selected provider credential set. Idle timeout caps each session at 15 min by default.
 
 Embed SpeechKit as a Go framework:
 
@@ -70,13 +89,12 @@ Embed SpeechKit as a Go framework:
   `ResolveProviderIntent`, and `DefaultProviderDescriptors`; inspect
   `SelectedFallbackKind`, `Fallbacks`, and `RejectedProviders` before silently
   changing provider/model behavior.
-- Server-Target Voice Agent WebSocket `start.provider` accepts `gemini`/`google`,
-  `deepgram`, `assemblyai`, `openai`, and `cascaded`; public profile IDs such as
-  `realtime.google.gemini-native-audio`,
-  `realtime.google.gemini-live-translate`, `realtime.deepgram.voice-agent`,
+- Server-Target Voice Agent WebSocket `start.provider` accepts `deepgram`,
+  `assemblyai`, `openai`, and `cascaded`; public profile IDs such as
+  `realtime.deepgram.voice-agent`,
   `realtime.assemblyai.voice-agent`, and `realtime.openai.gpt-realtime-2`
   normalize to the same provider path.
-- The provider live gate covers Deepgram, AssemblyAI, Gemini, and OpenAI with
+- The provider live gate covers Deepgram, AssemblyAI, and OpenAI with
   deterministic gate configs. Missing credentials report `blocked_by_auth` and
   do not count as live proof.
 

@@ -16,11 +16,11 @@
       "persona_id": "brainstorm",
       "role_id": "moderator",
       "sequence_id": "seq-1",
-      "provider": "gemini",
+      "provider": "openai",
       "media_transport": "livekit",
-      "voice": "Aoede",
+      "voice": "marin",
       "locale": "de-DE",
-      "model": "gemini-2.5-flash-native-audio",
+      "model": "gpt-realtime-2",
       "thinking": "low",
       "activity_detection": {
         "automatic": true,
@@ -114,7 +114,7 @@
     "error": {
       "type": "error",
       "code": "provider_unavailable",
-      "message": "provider \"gemini\" is not configured on this server",
+      "message": "provider \"openai\" is not configured on this server",
       "remediation": "start with a provider this server configured, or omit provider to use its default",
       "request_id": "01J8ZC0R4M7Q2V"
     },

@@ -1,5 +1,5 @@
 // Package local implements [voiceagent.Provider] on top of an in-process
-// live session — realtime voice agents (Deepgram Voice Agent, Gemini Live,
+// live session — realtime voice agents (Deepgram Voice Agent,
 // OpenAI Realtime, AssemblyAI, cascaded) without a speechkit-server.
 //
 // It is the composition seam between the embeddable [voiceagent.Service]

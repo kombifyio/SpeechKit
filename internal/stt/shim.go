@@ -13,7 +13,6 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/allproviders"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/assemblyai"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/deepgram"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/google"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/huggingface"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/local"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/openaicompat"
@@ -31,7 +30,6 @@ type (
 	HuggingFaceOpts   = allproviders.HuggingFaceOpts
 	OpenAIOpts        = allproviders.OpenAIOpts
 	GroqOpts          = allproviders.GroqOpts
-	GoogleOpts        = allproviders.GoogleOpts
 	DeepgramOpts      = allproviders.DeepgramOpts
 	AssemblyAIOpts    = allproviders.AssemblyAIOpts
 	OpenRouterOpts    = allproviders.OpenRouterOpts
@@ -56,7 +54,6 @@ type (
 
 // Concrete provider types.
 type (
-	GoogleSTTProvider        = google.Provider
 	DeepgramProvider         = deepgram.Provider
 	DeepgramOptions          = deepgram.Options
 	AssemblyAIProvider       = assemblyai.Provider
@@ -84,7 +81,6 @@ var (
 	ParseDeepgramKeyterms       = deepgram.ParseKeyterms
 	ValidateModelPath           = local.ValidateModelPath
 	FindWhisperBinary           = local.FindWhisperBinary
-	NewGoogleSTTProvider        = google.New
 	NewDeepgramProvider         = deepgram.New
 	NewAssemblyAIProvider       = assemblyai.New
 	NewHuggingFaceProvider      = huggingface.New

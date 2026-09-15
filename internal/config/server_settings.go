@@ -510,10 +510,7 @@ func applyAssistModeSetting(cfg *Config, mode ServerModeSetting) []string {
 				cfg.Providers.OpenRouter.AssistModel = model
 			}
 		case "google":
-			cfg.Providers.Google.Enabled = true
-			if model != "" {
-				cfg.Providers.Google.AssistModel = model
-			}
+			notes = append(notes, "server settings: Google Assist is retired; leaving Assist on the remaining providers")
 		case "groq":
 			cfg.Providers.Groq.Enabled = true
 			if model != "" {
@@ -592,10 +589,10 @@ func applyVoiceAgentModeSetting(cfg *Config, mode ServerModeSetting) []string {
 				cfg.VoiceAgent.Model = model
 			}
 		default:
-			cfg.VoiceAgent.Provider = "gemini"
-			cfg.Providers.Google.Enabled = true
+			cfg.VoiceAgent.Provider = "openai"
+			cfg.Providers.OpenAI.Enabled = true
 			if model != "" {
-				cfg.VoiceAgent.Model = model
+				cfg.Providers.OpenAI.RealtimeModel = model
 			}
 		}
 		notes = append(notes, "server settings: Voice Agent uses "+cfg.VoiceAgent.Provider+" direct provider")
@@ -636,10 +633,8 @@ func directVoiceAgentProviderForProfile(profileID string) string {
 	switch providerForProfileID(profileID) {
 	case "openai", "deepgram", "assemblyai":
 		return providerForProfileID(profileID)
-	case "google":
-		return "gemini"
 	default:
-		return "gemini"
+		return "openai"
 	}
 }
 
@@ -677,10 +672,7 @@ func applyDirectDictationProvider(cfg *Config, provider, model string) {
 			cfg.Providers.Groq.STTModel = model
 		}
 	case "google":
-		cfg.Providers.Google.Enabled = true
-		if model != "" {
-			cfg.Providers.Google.STTModel = model
-		}
+		// Retired. Do not re-enable Google STT from a leftover profile id.
 	case "deepgram":
 		cfg.Providers.Deepgram.Enabled = true
 		if model != "" {

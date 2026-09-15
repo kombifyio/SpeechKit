@@ -27,7 +27,7 @@ func TestAgentFlow_Integration(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 
-	flow := DefineAgentFlow(rt.G, rt.AgentModels())
+	flow := DefineAgentFlow(rt.AgentModels())
 	result, err := flow.Run(context.Background(), AgentInput{
 		Utterance: "Was ist 2 plus 2?",
 		Locale:    "de",

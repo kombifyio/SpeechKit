@@ -82,12 +82,12 @@ func RunTTSRouterParity(t *testing.T, h TTSRouterHarness) {
 	t.Run("cloud_first_falls_back_in_order", func(t *testing.T) {
 		result, err := h.Synthesize(context.Background(), TTSStrategyCloudFirst, []TTSProviderSpec{
 			{Name: "openai", Kind: TTSProviderKindDirectProvider, Err: errors.New("rate limited")},
-			{Name: "google", Kind: TTSProviderKindDirectProvider},
+			{Name: "deepgram", Kind: TTSProviderKindDirectProvider},
 		})
 		if err != nil {
 			t.Fatalf("Synthesize: %v", err)
 		}
-		assertTTSResult(t, result, "google", []string{"openai", "google"})
+		assertTTSResult(t, result, "deepgram", []string{"openai", "deepgram"})
 	})
 
 	t.Run("local_only_with_no_local_provider_returns_no_eligible_error", func(t *testing.T) {

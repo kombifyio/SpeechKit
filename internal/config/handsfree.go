@@ -26,7 +26,7 @@ func normalizeHandsFreeSource(cfg *Config) {
 	cfg.HandsFree.TargetMode = NormalizeHandsFreeTargetMode(cfg.HandsFree.TargetMode)
 	cfg.HandsFree.ActivationPhraseID = strings.TrimSpace(cfg.HandsFree.ActivationPhraseID)
 	if cfg.HandsFree.ActivationPhraseID == "" {
-		cfg.HandsFree.ActivationPhraseID = "hey_quby"
+		cfg.HandsFree.ActivationPhraseID = "hey_kubi"
 	}
 	if cfg.HandsFree.AutoEndSilenceCutoffSec <= 0 {
 		cfg.HandsFree.AutoEndSilenceCutoffSec = defaultHandsFreeAutoEndSilenceCutoffSec
@@ -40,7 +40,7 @@ func deriveHandsFreeFromWakeword(cfg *Config) {
 	cfg.HandsFree.Enabled = cfg.Wakeword.Enabled
 	cfg.HandsFree.ActivationPhraseID = strings.TrimSpace(cfg.Wakeword.PhraseID)
 	if cfg.HandsFree.ActivationPhraseID == "" {
-		cfg.HandsFree.ActivationPhraseID = "hey_quby"
+		cfg.HandsFree.ActivationPhraseID = "hey_kubi"
 	}
 	cfg.HandsFree.TargetMode = WakewordDefaultModeToHandsFreeTarget(cfg.Wakeword.DefaultMode)
 	cfg.HandsFree.AutoEndSilenceCutoffSec = cfg.Wakeword.AutoEnd.SilenceCutoffSec

@@ -1,7 +1,7 @@
 // Package toolbridge adapts Assist-mode tools (assist.ToolMatcher /
 // assist.ToolExecutor — the deterministic skill layer, e.g. the Home
 // Assistant bridge) into agentkit.Tools, so realtime voice agents
-// (Deepgram Voice Agent function calling, Gemini Live tools) can invoke
+// (for example Deepgram Voice Agent function calling) can invoke
 // the same skill implementations that one-shot Assist turns use.
 //
 // One tool vocabulary, two invocation styles: Assist matches on the raw

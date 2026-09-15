@@ -51,7 +51,7 @@ const (
 )
 
 // Provider implements live.LiveProvider against the Deepgram Voice Agent API
-// (WebSocket). It mirrors GeminiLive/OpenAILive's surface so callers don't need
+// (WebSocket). It mirrors the shared provider surface so callers don't need
 // to know which backend is active.
 //
 // The think (LLM) leg is configurable: Deepgram drives the LLM server-side, so

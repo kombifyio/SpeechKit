@@ -88,15 +88,6 @@ func (h *Handler) voices(w http.ResponseWriter, r *http.Request) {
 			"discovery": "configured",
 		})
 	}
-	if h.cfg != nil && h.cfg.TTS.Google.Enabled {
-		voices = append(voices, map[string]any{
-			"provider":  "google",
-			"id":        firstNonEmpty(h.cfg.TTS.Google.Voice, "en-US-Neural2-J"),
-			"locale":    "auto",
-			"default":   len(voices) == 0,
-			"discovery": "configured",
-		})
-	}
 	if h.cfg != nil && h.cfg.TTS.HuggingFace.Enabled {
 		voices = append(voices, map[string]any{
 			"provider":  "huggingface",

@@ -36,7 +36,7 @@ func TestDefaultProviderDescriptorsExposeV47Providers(t *testing.T) {
 		}
 	}
 
-	for _, provider := range []string{"google", "deepgram", "assemblyai", "openai"} {
+	for _, provider := range []string{"deepgram", "assemblyai", "openai"} {
 		if !providers[provider] {
 			t.Fatalf("provider %q missing from descriptors", provider)
 		}
@@ -45,11 +45,9 @@ func TestDefaultProviderDescriptorsExposeV47Providers(t *testing.T) {
 		t.Fatalf("assemblyai profile = %q", got)
 	}
 	for profileID, capability := range map[string]LiveCapabilityFlag{
-		"realtime.assemblyai.voice-agent":       LiveCapabilitySessionResume,
-		"realtime.deepgram.voice-agent":         LiveCapabilityLanguageHints,
-		"realtime.google.gemini-native-audio":   LiveCapabilityReasoningEffort,
-		"realtime.google.gemini-live-translate": LiveCapabilityTranslation,
-		"realtime.openai.gpt-realtime-2":        LiveCapabilityReasoningEffort,
+		"realtime.assemblyai.voice-agent": LiveCapabilitySessionResume,
+		"realtime.deepgram.voice-agent":   LiveCapabilityLanguageHints,
+		"realtime.openai.gpt-realtime-2":  LiveCapabilityReasoningEffort,
 	} {
 		if !byProfile[profileID].HasCapability(capability) {
 			t.Fatalf("%s missing capability %s", profileID, capability)
@@ -99,23 +97,19 @@ func TestDefaultProviderDescriptorsResolveThroughFrameworkCatalog(t *testing.T) 
 		}
 	}
 
-	byProvider, ok := FindProviderDescriptor("google")
-	if !ok || byProvider.ProfileID != "realtime.google.gemini-native-audio" {
-		t.Fatalf("FindProviderDescriptor(google) = %+v, %v; want general Gemini Live descriptor", byProvider, ok)
-	}
 }
 
 func TestSessionCapabilitiesForProviderUsesDescriptorAndDefensiveCopy(t *testing.T) {
-	caps := SessionCapabilitiesForProvider("gemini")
-	if caps.Provider != "google" || caps.ProfileID != "realtime.google.gemini-native-audio" || caps.Model == "" {
-		t.Fatalf("session capabilities = %+v, want normalized google descriptor", caps)
+	caps := SessionCapabilitiesForProvider("openai")
+	if caps.Provider != "openai" || caps.ProfileID != "realtime.openai.gpt-realtime-2" || caps.Model == "" {
+		t.Fatalf("session capabilities = %+v, want normalized openai descriptor", caps)
 	}
 	if !liveCapabilityFlagsContain(caps.Capabilities, LiveCapabilityRealtimeAudio) {
 		t.Fatalf("session capabilities = %+v, want realtime audio", caps.Capabilities)
 	}
 
 	caps.Capabilities[0] = LiveCapabilityMedicalDomain
-	again := SessionCapabilitiesForProvider("google")
+	again := SessionCapabilitiesForProvider("openai")
 	if len(again.Capabilities) == 0 || again.Capabilities[0] == LiveCapabilityMedicalDomain {
 		t.Fatalf("session capabilities should return a defensive descriptor copy: %+v", again.Capabilities)
 	}

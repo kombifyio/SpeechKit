@@ -125,10 +125,10 @@ var (
 // and serves only the openWakeWord artifacts.
 var models = []Model{
 	{
-		ID:               "hey_quby",
-		WakeWord:         "Hey Quby",
-		DisplayName:      "Hey Quby (Cubi / Kubi)",
-		Description:      "SpeechKit brand default. Trained on both Cubi and Kubi pronunciations.",
+		ID:               "hey_kubi",
+		WakeWord:         "Hey Kubi",
+		DisplayName:      "Hey Kubi",
+		Description:      "SpeechKit brand default. Trained on both Cubi and Kubi pronunciations. Existing configs may still say hey_quby; ByID accepts that alias.",
 		TrainedLanguages: []string{"en", "de"},
 		OpenWakeWord: OpenWakeWordArtifact{
 			File:                 FileArtifact{URL: hfBase + "hey_quby.onnx", SHA256: "d2219a70af63a12750b8d0a21fda38688b96841d21f564e57f99af7ba56951a6", SizeBytes: 164_607},
@@ -233,6 +233,9 @@ func All() []Model {
 // was found.
 func ByID(id string) (Model, bool) {
 	want := strings.ToLower(strings.TrimSpace(id))
+	if want == "hey_quby" {
+		want = "hey_kubi"
+	}
 	for _, m := range models {
 		if strings.ToLower(m.ID) == want {
 			return m, true

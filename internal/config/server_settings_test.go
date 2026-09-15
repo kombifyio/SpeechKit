@@ -157,7 +157,7 @@ func TestApplyServerModelSettings_AppliesDirectVoiceAgentProviders(t *testing.T)
 		wantModel       string
 		wantOpenAIModel string
 	}{
-		{name: "gemini", profileID: "realtime.google.gemini-native-audio", model: "gemini-3.1-flash-live-preview", wantProvider: "gemini", wantModel: "gemini-3.1-flash-live-preview"},
+		{name: "retired-google", profileID: "realtime.google.gemini-native-audio", model: "gemini-3.1-flash-live-preview", wantProvider: "openai", wantOpenAIModel: "gemini-3.1-flash-live-preview"},
 		{name: "deepgram", profileID: "realtime.deepgram.voice-agent", model: "flux-general-multi", wantProvider: "deepgram", wantModel: "flux-general-multi"},
 		{name: "assemblyai", profileID: "realtime.assemblyai.voice-agent", model: "assemblyai-voice-agent", wantProvider: "assemblyai", wantModel: "assemblyai-voice-agent"},
 		{name: "openai", profileID: "realtime.openai.gpt-realtime-2", model: "gpt-realtime-2", wantProvider: "openai", wantOpenAIModel: "gpt-realtime-2"},

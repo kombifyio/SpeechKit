@@ -41,18 +41,12 @@ The server:
 
 ```bash
 # 1. Configure credentials for your self-hosted server.
-export GOOGLE_AI_API_KEY="..."   # optional, enables Gemini Assist + Gemini Live
 export HF_TOKEN="..."            # optional, enables Hugging Face STT
 export OPENAI_API_KEY="..."      # optional, enables OpenAI STT/LLM/TTS
 export DEEPGRAM_API_KEY="..."    # optional, enables Deepgram STT + diarization
 export ASSEMBLYAI_API_KEY="..."  # optional, enables AssemblyAI STT + diarization/identification
 # AssemblyAI streaming diarization defaults to wss://streaming.assemblyai.com/v3/ws.
 # Override providers.assemblyai.streaming_base_url for regional or self-hosted data zones.
-# Optional only when Google STT batch/REST is selected for Dictation:
-export SPEECHKIT_GOOGLE_STT_API_KEY="..."
-# Optional only for Google STT v2 streaming diarization:
-export GOOGLE_APPLICATION_CREDENTIALS="/run/secrets/google-stt-service-account.json"
-# or set SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON through your secret manager
 export SPEECHKIT_SERVER_TOKEN="replace-with-a-local-dev-token"
 
 # 2. Start from the published image.
@@ -83,19 +77,14 @@ development placeholders only; production Compose runs must provide real
 secrets explicitly.
 
 For the common web integration profile — Dictation through Hugging Face,
-Assist through Gemini, Voice Agent through Gemini Live, and TTS disabled — set
-`HF_TOKEN`, `GOOGLE_AI_API_KEY`, and `[tts].enabled = false`. Do not set a
-Google STT key unless Dictation actually selects `stt.google.latest-long`.
-`GOOGLE_AI_API_KEY` is for Gemini Assist/Voice and does not make Google STT a
-required provider. Google STT diarization uses the same dedicated
-`SPEECHKIT_GOOGLE_STT_API_KEY`, not `GOOGLE_AI_API_KEY`, for batch/REST.
-Google STT v2 streaming diarization additionally requires service-account/ADC
-auth via `GOOGLE_APPLICATION_CREDENTIALS` or
-`SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON`.
+Assist through a configured local or OpenAI-compatible LLM, Voice Agent through
+OpenAI Realtime, and TTS disabled — set `HF_TOKEN`, `OPENAI_API_KEY`, and
+`[tts].enabled = false`. Provider selection is explicit; retired provider
+settings are ignored and never replaced by another provider.
 
 `/readyz` reports mode readiness for load balancers and ignores non-blocking
 optional provider probes. `/readyz/strict` keeps the diagnostic all-components
-view and may return 503 when an optional provider such as `stt.google` fails.
+view and may return 503 when an optional configured provider fails.
 
 ## Headless deployment contract
 
@@ -238,19 +227,18 @@ deployment can sustain with headroom for `/readyz` and admin traffic.
 
 ## Provider support
 
-| Mode | Self-hosted/local | Gemini | OpenAI | Groq |
+| Mode | Self-hosted/local | OpenAI | Deepgram / AssemblyAI | Groq |
 |---|---|---|---|---|
-| Dictation | `whisper.cpp` sidecar or local desktop STT | Google STT when selected | Whisper API | Whisper-compatible Groq STT |
-| Assist | local LLM sidecar / Ollama-style endpoint | Gemini text models | Chat Completions / Responses models | Groq chat models |
-| Voice Agent | cascaded self-hosted provider for server smoke/dev; no fully local native realtime audio provider in v1 | Gemini Live default | OpenAI Realtime when `[voice_agent].provider = "openai"` | not a native realtime Voice Agent provider |
+| Dictation | `whisper.cpp` sidecar or local desktop STT | Whisper API | Native STT APIs | Whisper-compatible Groq STT |
+| Assist | local LLM sidecar / Ollama-style endpoint | Chat Completions / Responses models | AssemblyAI LLM Gateway | Groq chat models |
+| Voice Agent | cascaded self-hosted provider for server smoke/dev | OpenAI Realtime when `[voice_agent].provider = "openai"` | Deepgram or AssemblyAI native Voice Agent | not a native realtime Voice Agent provider |
 
 Missing-key behavior is explicit: HTTP session creation for Voice Agent still
 returns a session and ticket while the provider is degraded, so clients can
 surface a precise provider error on WebSocket start. `/readyz` reports the
 selected provider as degraded, and the WebSocket emits a
 `provider_connect_failed` style error when the required key, such as
-`GOOGLE_AI_API_KEY` for Gemini Live or `OPENAI_API_KEY` for OpenAI Realtime, is
-absent.
+`OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, or `ASSEMBLYAI_API_KEY`, is absent.
 
 ## Voice Agent workflows
 
@@ -274,15 +262,15 @@ At WebSocket startup, the first client text frame must be `start`. It may carry
 `media_transport` default is `websocket`, preserving the original binary PCM
 audio frames. `media_transport: "livekit"` keeps the WebSocket as the control
 channel and moves microphone/model audio through LiveKit tracks. In v1 that
-LiveKit audio path is limited to native realtime PCM providers, Gemini and
-OpenAI; cascaded providers stay on WebSocket audio until explicit transcoding
+ LiveKit audio path is limited to supported native realtime PCM providers,
+ currently OpenAI; cascaded providers stay on WebSocket audio until explicit transcoding
 is added. When a sequence is active, the server resolves step 0, connects the
 provider with the composed prompt, and emits `sequence_step` with
 `status="entered"`.
 
 | `media_transport` | Control frames | Client audio | Model audio | Provider support |
 |---|---|---|---|---|
-| `websocket` (default) | JSON over SpeechKit WS | binary PCM frames on SpeechKit WS | binary PCM frames on SpeechKit WS | Gemini, Deepgram, AssemblyAI, OpenAI, cascaded providers |
+| `websocket` (default) | JSON over SpeechKit WS | binary PCM frames on SpeechKit WS | binary PCM frames on SpeechKit WS | Deepgram, AssemblyAI, OpenAI, cascaded providers |
 | `livekit` | JSON over SpeechKit WS | LiveKit track | LiveKit track | LiveKit-enabled native realtime providers |
 
 Clients can advance the workflow by sending:

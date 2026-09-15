@@ -739,15 +739,6 @@
             </label>
           </div>
           <div class="credential-card">
-            <label class="inline"><input id="googleEnabled" type="checkbox"> Google</label>
-            <label for="googleEnv">Env
-              <input id="googleEnv" autocomplete="off" value="GOOGLE_AI_API_KEY">
-            </label>
-            <label for="googleKey">API Key
-              <input id="googleKey" autocomplete="off" type="password" placeholder="leave empty to keep the current value">
-            </label>
-          </div>
-          <div class="credential-card">
             <label class="inline"><input id="hfEnabled" type="checkbox"> Hugging Face</label>
             <label for="hfEnv">Env
               <input id="hfEnv" autocomplete="off" value="HF_TOKEN">
@@ -1214,7 +1205,6 @@
       const credentials = desired.credentials || {};
       applyCredentialForm(credentials.openai, "openAIEnabled", "openAIEnv");
       applyCredentialForm(credentials.groq, "groqEnabled", "groqEnv");
-      applyCredentialForm(credentials.google, "googleEnabled", "googleEnv");
       applyCredentialForm(credentials.huggingface, "hfEnabled", "hfEnv");
       applyCredentialForm(credentials.openrouter, "openRouterEnabled", "openRouterEnv");
       applyServerAuthToForm(lastSettings);
@@ -1322,7 +1312,6 @@
         credentials: {
           openai: credentialPayload("openAIEnabled", "openAIEnv", "openAIKey"),
           groq: credentialPayload("groqEnabled", "groqEnv", "groqKey"),
-          google: credentialPayload("googleEnabled", "googleEnv", "googleKey"),
           huggingface: credentialPayload("hfEnabled", "hfEnv", "hfKey"),
           openrouter: credentialPayload("openRouterEnabled", "openRouterEnv", "openRouterKey")
         }
@@ -1366,7 +1355,7 @@
         if (payload.admin_auth && payload.admin_auth.password) {
           await establishAdminSession(payload.admin_auth);
         }
-        ["openAIKey", "groqKey", "googleKey", "hfKey", "openRouterKey"].forEach(function (id) {
+        ["openAIKey", "groqKey", "hfKey", "openRouterKey"].forEach(function (id) {
           byId(id).value = "";
         });
         byId("adminPassword").value = "";

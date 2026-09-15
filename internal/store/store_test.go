@@ -1244,7 +1244,7 @@ func TestVoiceAgentSessionsSaveAndList(t *testing.T) {
 		StartedAt:         startedAt,
 		EndedAt:           endedAt,
 		Language:          "de",
-		ProviderProfileID: "realtime.google.gemini-native-audio",
+		ProviderProfileID: "realtime.openai.gpt-realtime-2",
 		RuntimeKind:       "native_realtime",
 		Transcript:        "User: Idee\nAssistant: Naechster Schritt",
 		Turns: []VoiceAgentTurn{

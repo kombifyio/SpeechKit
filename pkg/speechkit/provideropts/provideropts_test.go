@@ -69,7 +69,7 @@ func TestDefaultManifestsIncludeDeepgramSTT(t *testing.T) {
 // provider's options and the vocabulary-bias router skips it entirely.
 func TestSTTManifestsCoverEveryAdapterProviderID(t *testing.T) {
 	for _, provider := range []string{
-		"deepgram", "openai", "groq", "google", "assemblyai",
+		"deepgram", "openai", "groq", "assemblyai",
 		"openrouter", "huggingface", "local", "ollama", "vps",
 	} {
 		if _, ok := FindManifest(provider, ModalitySTT); !ok {

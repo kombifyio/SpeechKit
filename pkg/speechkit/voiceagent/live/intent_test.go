@@ -42,7 +42,7 @@ func TestResolveProviderIntentHonorsPreferredProviderOrder(t *testing.T) {
 	plan, err := ResolveProviderIntent(ProviderIntent{
 		RequiredCapabilities: []LiveCapabilityFlag{LiveCapabilityRealtimeAudio, LiveCapabilityToolCalling},
 		SelectionPolicy: ProviderSelectionPolicy{
-			PreferredProviders: []string{"openai", "google"},
+			PreferredProviders: []string{"openai", "deepgram"},
 		},
 	}, nil)
 	if err != nil {

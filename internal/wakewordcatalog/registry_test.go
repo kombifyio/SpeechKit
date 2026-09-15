@@ -37,6 +37,26 @@ func TestByIDFindsBrandPhrase(t *testing.T) {
 	}
 }
 
+func TestByIDAliasesHeyQubyToHeyKubi(t *testing.T) {
+	canonical, ok := ByID("hey_kubi")
+	if !ok {
+		t.Fatal("hey_kubi not found in registry")
+	}
+	if canonical.ID != "hey_kubi" {
+		t.Fatalf("canonical id = %q, want hey_kubi", canonical.ID)
+	}
+	aliased, ok := ByID("hey_quby")
+	if !ok {
+		t.Fatal("hey_quby alias must still resolve")
+	}
+	if aliased.ID != "hey_kubi" {
+		t.Fatalf("hey_quby alias id = %q, want hey_kubi", aliased.ID)
+	}
+	if aliased.OpenWakeWord.File.SHA256 != canonical.OpenWakeWord.File.SHA256 {
+		t.Fatal("hey_quby alias must point at the same published ONNX")
+	}
+}
+
 func TestByIDIsCaseInsensitiveAndMissReturnsFalse(t *testing.T) {
 	if _, ok := ByID("HEY_KOMBIFY"); !ok {
 		t.Error("ByID should be case-insensitive")

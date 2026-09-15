@@ -154,8 +154,6 @@ func ProviderIDForExecutionMode(mode speechkit.ExecutionMode) string {
 		return "openai"
 	case speechkit.ExecutionModeGroq:
 		return "groq"
-	case speechkit.ExecutionModeGoogle:
-		return "google"
 	case speechkit.ExecutionModeDeepgram:
 		return "deepgram"
 	case speechkit.ExecutionModeAssemblyAI:
@@ -218,7 +216,7 @@ func DefaultProviderAuthRequirement(profile speechkit.ProviderProfile) string {
 		return ProviderAuthOptionalAPIKey
 	case speechkit.ExecutionModeHFRouted:
 		return ProviderAuthToken
-	case speechkit.ExecutionModeOpenAI, speechkit.ExecutionModeGroq, speechkit.ExecutionModeGoogle, speechkit.ExecutionModeDeepgram,
+	case speechkit.ExecutionModeOpenAI, speechkit.ExecutionModeGroq, speechkit.ExecutionModeDeepgram,
 		speechkit.ExecutionModeAssemblyAI, speechkit.ExecutionModeOpenRouter, speechkit.ExecutionModeFoundry:
 		return ProviderAuthAPIKey
 	default:
@@ -246,7 +244,7 @@ func DefaultProviderTransport(profile speechkit.ProviderProfile) string {
 		return ProviderTransportLocal
 	case speechkit.ExecutionModeOllama, speechkit.ExecutionModeSelfHostedHTTP:
 		return ProviderTransportHTTP
-	case speechkit.ExecutionModeHFRouted, speechkit.ExecutionModeOpenAI, speechkit.ExecutionModeGroq, speechkit.ExecutionModeGoogle,
+	case speechkit.ExecutionModeHFRouted, speechkit.ExecutionModeOpenAI, speechkit.ExecutionModeGroq,
 		speechkit.ExecutionModeDeepgram, speechkit.ExecutionModeAssemblyAI, speechkit.ExecutionModeOpenRouter, speechkit.ExecutionModeFoundry:
 		return ProviderTransportHTTPS
 	default:
@@ -267,11 +265,7 @@ func ProviderCredentialTarget(profile speechkit.ProviderProfile) string {
 	if !ProviderProfileRequiresCredential(profile) {
 		return ""
 	}
-	provider := ProviderIDForProfile(profile)
-	if provider == "google" && speechkit.NormalizeMode(profile.Mode) == speechkit.ModeDictation {
-		return "google_stt"
-	}
-	return provider
+	return ProviderIDForProfile(profile)
 }
 
 func DefaultProviderMatrix() []ProviderMatrixRow {

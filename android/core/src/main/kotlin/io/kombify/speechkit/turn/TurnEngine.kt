@@ -20,7 +20,7 @@ enum class TurnPolicy {
      * This exists so a consumer never has to know which kind of session it
      * opened. A cascaded pipeline never sends a provider turn signal and stays
      * on client-side endpointing forever; a provider with native turn
-     * detection (Deepgram Flux, gpt-realtime, Gemini Live) sends one on the
+     * detection (Deepgram Flux, gpt-realtime) sends one on the
      * first turn and takes over. The consumer forwards the signal
      * unconditionally either way, and writes no branch.
      */

@@ -36,7 +36,8 @@ host: feed the session raw PCM 16 kHz S16LE mono via
 ## Pre-flight
 
 1. Start a self-hosted SpeechKit Server with `deploy/docker/docker-compose.oss.yml`, the published `ghcr.io/kombifyio/speechkit-server` image, or a custom image built from `deploy/docker/Dockerfile.server`.
-2. Provide a Gemini Live API key (`GOOGLE_AI_API_KEY`) and a static bearer
+2. Provide the selected Voice Agent provider credential (the default is
+   `ASSEMBLYAI_API_KEY`) and a static bearer
    token (`SPEECHKIT_SERVER_TOKEN`) through your shell, CI secret store, or
    deployment environment.
 3. Merge `config.example.toml` into the server's config or pass it via `--config`.
@@ -46,7 +47,7 @@ host: feed the session raw PCM 16 kHz S16LE mono via
 ```bash
 # Terminal 1 — server.
 SPEECHKIT_SERVER_TOKEN=devtoken \
-GOOGLE_AI_API_KEY=...           \
+ASSEMBLYAI_API_KEY=...          \
 docker compose -f deploy/docker/docker-compose.oss.yml up -d
 
 # Terminal 2 — embedder.
@@ -84,8 +85,8 @@ fully voice:
 3. Render `msg.Audio` (24 kHz S16LE mono) through any audio sink (oto v3,
    beep, the OS default device).
 4. Leave `automatic_activity_detection = true` on the role (as set in
-   `config.example.toml`); the server handles turn boundaries and barge-in via
-   Gemini Live's VAD.
+   `config.example.toml`); the selected Voice Agent provider handles turn
+   boundaries and barge-in.
 
 ## Knobs you usually want to tune
 
@@ -96,8 +97,8 @@ fully voice:
   Set lower than wall-clock for a snappier game.
 - **Pace**: lower `temperature` for stricter moderation, raise for a livelier
   host. `thinking_level = "low"` keeps end-of-turn latency tight.
-- **Voice**: Gemini Live voice names — see Google's
-  `gemini-3.1-flash-live-preview` docs. The TOML defaults to `Puck`.
+- **Voice**: configure a voice supported by the selected provider in the
+  server's Voice Agent settings.
 
 ## Wire protocol (cheat sheet)
 

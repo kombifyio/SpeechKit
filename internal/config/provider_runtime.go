@@ -376,7 +376,7 @@ func ProviderEnabled(cfg *Config, provider string, mode framework.Mode) bool {
 	case "groq":
 		return cfg.Providers.Groq.Enabled
 	case "google":
-		return cfg.Providers.Google.Enabled
+		return false
 	case "deepgram":
 		return cfg.Providers.Deepgram.Enabled
 	case "assemblyai":
@@ -410,7 +410,10 @@ func SetProviderEnabled(cfg *Config, provider string, enabled bool) error {
 	case "groq":
 		cfg.Providers.Groq.Enabled = enabled
 	case "google":
-		cfg.Providers.Google.Enabled = enabled
+		if enabled {
+			return fmt.Errorf("%w: google AI is retired", ErrUnsupportedProvider)
+		}
+		cfg.Providers.Google.Enabled = false
 	case "openrouter":
 		cfg.Providers.OpenRouter.Enabled = enabled
 		if enabled && strings.TrimSpace(cfg.Providers.OpenRouter.STTModel) == "" {
@@ -500,17 +503,6 @@ var providerRuntimeRegistry = []ProviderRuntime{
 		CredentialTarget:   "openai",
 		CredentialRequired: true,
 		SetupURL:           "https://platform.openai.com/api-keys",
-		SupportedModes:     []framework.Mode{framework.ModeDictation, framework.ModeAssist, framework.ModeVoiceAgent, framework.ModeTTS},
-		UserConfigurable:   true,
-	},
-	{
-		Provider:           "google",
-		DisplayName:        "Gemini / Google AI",
-		ProviderKind:       framework.ProviderKindDirectProvider,
-		IntegrationKind:    ProviderIntegrationDirectAPI,
-		CredentialTarget:   "google",
-		CredentialRequired: true,
-		SetupURL:           "https://aistudio.google.com/apikey",
 		SupportedModes:     []framework.Mode{framework.ModeDictation, framework.ModeAssist, framework.ModeVoiceAgent, framework.ModeTTS},
 		UserConfigurable:   true,
 	},

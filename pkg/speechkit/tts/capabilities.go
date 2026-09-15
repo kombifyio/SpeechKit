@@ -15,6 +15,5 @@ func ttsCapabilities() []speechkit.Capability {
 }
 
 func (*OpenAI) Capabilities() []speechkit.Capability      { return ttsCapabilities() }
-func (*Google) Capabilities() []speechkit.Capability      { return ttsCapabilities() }
 func (*HuggingFace) Capabilities() []speechkit.Capability { return ttsCapabilities() }
 func (*Piper) Capabilities() []speechkit.Capability       { return ttsCapabilities() }

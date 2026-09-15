@@ -6,9 +6,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
+	appai "github.com/kombifyio/SpeechKit/internal/ai"
 )
+
+type stubModel struct {
+	id       string
+	generate func(context.Context, appai.Request) (appai.Response, error)
+}
+
+func (s stubModel) ID() string { return s.id }
+
+func (s stubModel) Generate(ctx context.Context, req appai.Request) (appai.Response, error) {
+	return s.generate(ctx, req)
+}
 
 func TestBuildSummarizeSystemPrompt_German(t *testing.T) {
 	for _, locale := range []string{"de", "de-DE"} {
@@ -52,8 +62,7 @@ func TestBuildSummarizeUserPrompt_NoInstruction(t *testing.T) {
 }
 
 func TestSummarizeFlow_EmptyText(t *testing.T) {
-	g := genkit.Init(context.Background())
-	flow := DefineSummarizeFlow(g, nil)
+	flow := DefineSummarizeFlow(nil)
 
 	_, err := flow.Run(context.Background(), SummarizeInput{Text: ""})
 	if err == nil {
@@ -73,21 +82,20 @@ func TestSummarizeFlow_PerModelTimeoutSkipsHungModel(t *testing.T) {
 	summarizePerModelTimeout = 100 * time.Millisecond
 	defer func() { summarizePerModelTimeout = prev }()
 
-	g := genkit.Init(context.Background())
-	supports := &ai.ModelOptions{Supports: &ai.ModelSupports{Multiturn: true, SystemRole: true}}
-	hung := genkit.DefineModel(g, "test/hung", supports,
-		func(ctx context.Context, _ *ai.ModelRequest, _ ai.ModelStreamCallback) (*ai.ModelResponse, error) {
+	hung := stubModel{
+		id: "test/hung",
+		generate: func(ctx context.Context, _ appai.Request) (appai.Response, error) {
 			<-ctx.Done() // never answers; only the per-attempt deadline releases it
-			return nil, ctx.Err()
-		})
-	healthy := genkit.DefineModel(g, "test/healthy", supports,
-		func(_ context.Context, _ *ai.ModelRequest, _ ai.ModelStreamCallback) (*ai.ModelResponse, error) {
-			return &ai.ModelResponse{Message: &ai.Message{
-				Role:    ai.RoleModel,
-				Content: []*ai.Part{ai.NewTextPart("healthy summary")},
-			}}, nil
-		})
-	flow := DefineSummarizeFlow(g, []ai.Model{hung, healthy})
+			return appai.Response{}, ctx.Err()
+		},
+	}
+	healthy := stubModel{
+		id: "test/healthy",
+		generate: func(_ context.Context, _ appai.Request) (appai.Response, error) {
+			return appai.Response{Text: "healthy summary"}, nil
+		},
+	}
+	flow := DefineSummarizeFlow([]appai.Model{hung, healthy})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -101,8 +109,7 @@ func TestSummarizeFlow_PerModelTimeoutSkipsHungModel(t *testing.T) {
 }
 
 func TestSummarizeFlow_NoModels(t *testing.T) {
-	g := genkit.Init(context.Background())
-	flow := DefineSummarizeFlow(g, nil)
+	flow := DefineSummarizeFlow(nil)
 
 	_, err := flow.Run(context.Background(), SummarizeInput{Text: "hello"})
 	if err == nil {

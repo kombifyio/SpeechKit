@@ -103,7 +103,7 @@ func NewProvider(deps Deps) *Provider {
 }
 
 // Connect validates that the required dependencies are satisfied and
-// starts the processor loop. Unlike Gemini Live, no external handshake
+// starts the processor loop. Unlike a native realtime adapter, no external handshake
 // happens.
 func (p *Provider) Connect(ctx context.Context, cfg SessionConfig) error {
 	if p.stt == nil {

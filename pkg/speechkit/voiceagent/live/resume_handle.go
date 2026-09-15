@@ -6,12 +6,12 @@ import (
 	"time"
 )
 
-// resumeHandleTTL bounds how long a Gemini Live session resumption handle is
+// resumeHandleTTL bounds how long a realtime session-resumption handle is
 // considered valid on the client. Server-side handles can expire even sooner;
 // this cap limits the window of misuse if process memory is ever snapshotted.
 const resumeHandleTTL = 15 * time.Minute
 
-// ResumeHandle stores a Gemini Live session resumption handle with a time-to-
+// ResumeHandle stores a realtime session-resumption handle with a time-to-
 // live and at-rest protection. On Windows the ciphertext is produced by DPAPI
 // (CryptProtectData, user-scope) so a memory dump taken hours later cannot be
 // replayed against the same session. On other platforms the handle is held in

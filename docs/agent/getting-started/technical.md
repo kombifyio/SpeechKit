@@ -2,6 +2,25 @@
 
 This guide is for engineers setting up SpeechKit directly.
 
+## Choose an integration path
+
+- Embedded Go: https://github.com/kombifyio/SpeechKit/blob/main/docs/sdk/README.md.
+  Use `dictation.NewService` with `stt.AsTranscriber`, a recorder and output.
+  Root `pkg/speechkit` holds contracts; orchestration and catalog live in
+  `pipeline` and `catalog`. Local WAV transcription needs a whisper.cpp runtime
+  and model, not a SpeechKit Server or cloud key.
+- TypeScript: https://github.com/kombifyio/SpeechKit/tree/main/clients/typescript.
+  `@kombifyio/speechkit-client` covers REST; `speechkit-voiceagent-client` covers
+  realtime sessions; `speechkit-voice-ui` provides custom elements. Follow each
+  package's installation instructions and pin versions. `/assistant` on a
+  SpeechKit Server provides a ready-to-use voice surface.
+- Android: https://github.com/kombifyio/SpeechKit/tree/main/android. Use public
+  Kotlin `core`, `net`, `domain` and Compose modules via JitPack. The reusable
+  modules are Apache-2.0; the HeliBoard reference APK has a separate GPL boundary.
+- Desktop: Windows supports the full app; macOS 14+ arm64 is a Dictation-only
+  ad-hoc signed beta. Read release notes and macOS setup instructions before
+  installing: https://github.com/kombifyio/SpeechKit/releases/latest.
+
 ## Install the SpeechKit Server
 
 Stable:
@@ -69,7 +88,7 @@ go get github.com/kombifyio/SpeechKit
 
 Use `pkg/speechkit/client` when you want to call a running SpeechKit Server.
 
-Use the v0.48 SDK packages when you embed SpeechKit directly into another Go
+Use the public SDK packages when you embed SpeechKit directly into another Go
 host. Import the smallest public component that matches the job instead of
 loading the whole framework:
 
@@ -95,6 +114,21 @@ Hands-Free is an activation and voice-output layer, not a fourth mode. Voice
 Companions are usually `TargetAssist`; continuous dialogue companions use
 `TargetVoiceAgent`; Dictation uses `TargetDictationUIAssisted` because text
 still needs a visible target or explicit commit surface.
+
+## Embed Meeting
+
+`pkg/speechkit/meeting` owns capture lifecycle and public transcript/notes
+helpers. The host supplies capture pipelines and commits transcript segments.
+From a SpeechKit checkout, run:
+
+```sh
+go run ./examples/meeting/synthetic-host
+```
+
+This is a synthetic composition demo: no microphone, STT call or generated AI
+review. Start with https://speechkit.cc/getting-started/agents/meeting-notes-go.md.
+The full capture, notepad and review workflow is available in the Windows app;
+do not invent Meeting routes on the standard server or assume macOS parity.
 
 ## Use MCP
 

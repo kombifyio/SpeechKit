@@ -228,17 +228,6 @@ tts_model      = "tts-1"
 tts_voice      = "nova"
 realtime_model = "gpt-realtime-2"  # Used when [voice_agent].provider = "openai".
 
-[providers.google]
-enabled        = true
-api_key_env    = "GOOGLE_AI_API_KEY"
-stt_api_key_env = "SPEECHKIT_GOOGLE_STT_API_KEY"
-stt_credentials_json_env = "SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON"
-application_credentials_env = "GOOGLE_APPLICATION_CREDENTIALS"
-stt_model      = "latest_long"
-utility_model  = "gemini-2.5-flash-lite"
-assist_model   = "gemini-2.5-flash"
-agent_model    = "gemini-2.5-pro"
-
 [providers.deepgram]
 enabled           = false
 api_key_env       = "DEEPGRAM_API_KEY"
@@ -304,14 +293,9 @@ enabled = true
 model   = "tts-1"
 voice   = "nova"
 
-[tts.google]
-enabled = false
-voice   = "en-US-Neural2-C"
-
 [voice_agent]
 enabled = true
 # provider selects the backend:
-#   "gemini"   (default) — Google Gemini Live cloud realtime
 #   "openai"   — OpenAI Realtime API (gpt-realtime-2 default; requires
 #                providers.openai.api_key_env populated). 16 kHz mic PCM is
 #                upsampled to 24 kHz inline by the kernel adapter.
@@ -319,11 +303,9 @@ enabled = true
 #                (requires STT + at least one agent-capable LLM + optional TTS;
 #                 no Google API key needed)
 #   "moshi"    — self-hosted Kyutai Moshi realtime Rust server (M9b, pending)
-provider = "gemini"
-# Primary: Gemini 3.1 Flash Live (preview as of April 2026). Reverts to the
-# 2.5-native-audio model below if the preview endpoint becomes unavailable.
-model          = "gemini-3.1-flash-live-preview"
-fallback_model = "gemini-2.5-flash-native-audio-preview-12-2025"
+provider = "openai"
+model          = "gpt-realtime-2"
+fallback_model = ""
 voice          = "Kore"
 framework_prompt                = """
 You are a helpful, concise voice assistant. Always respond in the user's language.

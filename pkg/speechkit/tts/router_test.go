@@ -8,15 +8,15 @@ import (
 
 func TestOrderByPreferredProvider_MovesMatchToFront(t *testing.T) {
 	openai := &mockProvider{name: "openai"}
-	google := &mockProvider{name: "google"}
+	deepgram := &mockProvider{name: "deepgram"}
 	hf := &mockProvider{name: "huggingface"}
 
-	ordered := OrderByPreferredProvider([]Provider{openai, google, hf}, "google")
+	ordered := OrderByPreferredProvider([]Provider{openai, deepgram, hf}, "deepgram")
 	if len(ordered) != 3 {
 		t.Fatalf("expected 3 providers, got %d", len(ordered))
 	}
-	if ordered[0].Name() != "google" {
-		t.Errorf("ordered[0] = %q, want google", ordered[0].Name())
+	if ordered[0].Name() != "deepgram" {
+		t.Errorf("ordered[0] = %q, want deepgram", ordered[0].Name())
 	}
 	// Original relative order of the remaining providers is preserved.
 	if ordered[1].Name() != "openai" || ordered[2].Name() != "huggingface" {
@@ -26,8 +26,8 @@ func TestOrderByPreferredProvider_MovesMatchToFront(t *testing.T) {
 
 func TestOrderByPreferredProvider_EmptyPreferredIsNoOp(t *testing.T) {
 	openai := &mockProvider{name: "openai"}
-	google := &mockProvider{name: "google"}
-	in := []Provider{openai, google}
+	deepgram := &mockProvider{name: "deepgram"}
+	in := []Provider{openai, deepgram}
 	out := OrderByPreferredProvider(in, "")
 	if len(out) != 2 || out[0].Name() != "openai" {
 		t.Errorf("empty preferred should be no-op, got %v", out)
@@ -47,8 +47,8 @@ func TestPreferredProviderForProfileID_MapsCatalogEntries(t *testing.T) {
 	cases := map[string]string{
 		"":                                      "",
 		"tts.openai.tts-1-hd":                   "openai",
-		"tts.google.studio-o-de":                "google",
-		"tts.google.studio-o-de.variant.studio": "google", // prefix match
+		"tts.google.studio-o-de":                "retired-google-ai",
+		"tts.google.studio-o-de.variant.studio": "retired-google-ai", // prefix match
 		"tts.huggingface.parler-multilingual":   "huggingface",
 		"tts.openedai.kokoro":                   "kokoro",
 		"tts.kokoro.82m":                        "kokoro",
@@ -111,7 +111,7 @@ func (m *mockProvider) Health(_ context.Context) error { return m.err }
 
 func TestRouterFallback(t *testing.T) {
 	failing := &mockProvider{name: "openai", err: fmt.Errorf("rate limited")}
-	working := &mockProvider{name: "google"}
+	working := &mockProvider{name: "deepgram"}
 
 	r := NewRouter(StrategyCloudFirst, failing, working)
 
@@ -125,8 +125,8 @@ func TestRouterFallback(t *testing.T) {
 	if !working.called {
 		t.Error("expected working provider to be called")
 	}
-	if result.Provider != "google" {
-		t.Errorf("expected google, got %s", result.Provider)
+	if result.Provider != "deepgram" {
+		t.Errorf("expected deepgram, got %s", result.Provider)
 	}
 }
 
@@ -140,7 +140,7 @@ func TestRouterNoProviders(t *testing.T) {
 
 func TestRouterAllFail(t *testing.T) {
 	p1 := &mockProvider{name: "openai", err: fmt.Errorf("fail1")}
-	p2 := &mockProvider{name: "google", err: fmt.Errorf("fail2")}
+	p2 := &mockProvider{name: "deepgram", err: fmt.Errorf("fail2")}
 
 	r := NewRouter(StrategyCloudFirst, p1, p2)
 	_, err := r.Synthesize(context.Background(), "test", SynthesizeOpts{})
@@ -202,7 +202,7 @@ func TestRouterLocalOnlyAllowsLocalProviderKind(t *testing.T) {
 
 func TestRouterHealthCheck(t *testing.T) {
 	healthy := &mockProvider{name: "openai"}
-	unhealthy := &mockProvider{name: "google", err: fmt.Errorf("no key")}
+	unhealthy := &mockProvider{name: "deepgram", err: fmt.Errorf("no key")}
 
 	r := NewRouter(StrategyCloudFirst, healthy, unhealthy)
 	results := r.HealthCheck(context.Background())
@@ -210,8 +210,8 @@ func TestRouterHealthCheck(t *testing.T) {
 	if results["openai"] != nil {
 		t.Errorf("openai should be healthy")
 	}
-	if results["google"] == nil {
-		t.Errorf("google should be unhealthy")
+	if results["deepgram"] == nil {
+		t.Errorf("deepgram should be unhealthy")
 	}
 }
 

@@ -1,6 +1,6 @@
 // Package cascaded implements a turn-based STT -> LLM -> TTS voice agent
 // provider. It is the self-hosted-friendly alternative to real-time
-// providers like Gemini Live and Moshi.
+// native realtime providers and Moshi.
 //
 // The package is platform-neutral pure Go. Server-Target (Linux container)
 // and Device-Target (Windows Wails reference UI) both wrap it: see

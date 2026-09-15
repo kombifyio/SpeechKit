@@ -4,9 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/firebase/genkit/go/core"
-	"github.com/firebase/genkit/go/genkit"
-
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
 	"github.com/kombifyio/SpeechKit/internal/shortcuts"
 	"github.com/kombifyio/SpeechKit/internal/tts"
@@ -48,11 +45,9 @@ func (m *mockToolExecutor) Execute(_ context.Context, call ToolCall) (ToolResult
 	return m.result, m.err
 }
 
-func fixedAssistFlow(t *testing.T, output flows.AssistOutput) *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}] {
+func fixedAssistFlow(t *testing.T, output flows.AssistOutput) *flows.Flow[flows.AssistInput, flows.AssistOutput] {
 	t.Helper()
-
-	g := genkit.Init(context.Background())
-	return genkit.DefineFlow(g, "test_assist_"+t.Name(), func(context.Context, flows.AssistInput) (flows.AssistOutput, error) {
+	return flows.New(func(context.Context, flows.AssistInput) (flows.AssistOutput, error) {
 		return output, nil
 	})
 }

@@ -6,7 +6,6 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/assemblyai"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/deepgram"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/google"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/huggingface"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/local"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/openaicompat"
@@ -25,7 +24,6 @@ func TestProviderPackagesSatisfyTheContract(t *testing.T) {
 		want string
 		got  stt.STTProvider
 	}{
-		{"stt/google.New", "google", google.New("k", "latest_long")},
 		{"stt/deepgram.New", "deepgram", deepgram.New("k", "nova-3")},
 		{"stt/assemblyai.New", "assemblyai", assemblyai.New("k", "universal")},
 		{"stt/huggingface.New", "huggingface", huggingface.New("m", "t")},

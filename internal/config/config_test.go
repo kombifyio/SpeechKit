@@ -174,11 +174,14 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.HuggingFace.Model != "openai/whisper-large-v3-turbo" {
 		t.Errorf("default HF model = %q", cfg.HuggingFace.Model)
 	}
-	if cfg.VoiceAgent.Model != "gemini-3.1-flash-live-preview" {
-		t.Errorf("default voice agent model = %q, want gemini-3.1-flash-live-preview", cfg.VoiceAgent.Model)
+	if cfg.VoiceAgent.Model != "" {
+		t.Errorf("default voice agent model = %q, want empty after Google Live retirement", cfg.VoiceAgent.Model)
 	}
-	if cfg.VoiceAgent.FallbackModel != "gemini-2.5-flash-native-audio-preview-12-2025" {
-		t.Errorf("default voice agent fallback model = %q, want gemini-2.5-flash-native-audio-preview-12-2025", cfg.VoiceAgent.FallbackModel)
+	if cfg.VoiceAgent.FallbackModel != "" {
+		t.Errorf("default voice agent fallback model = %q, want empty after Google Live retirement", cfg.VoiceAgent.FallbackModel)
+	}
+	if cfg.ModelSelection.TTS.PrimaryProfileID != DefaultTTSPrimaryProfileID {
+		t.Errorf("default TTS primary = %q, want %q", cfg.ModelSelection.TTS.PrimaryProfileID, DefaultTTSPrimaryProfileID)
 	}
 	if cfg.VoiceAgent.FrameworkPrompt != "" {
 		t.Errorf("default voice agent framework prompt = %q, want empty", cfg.VoiceAgent.FrameworkPrompt)
@@ -243,8 +246,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.HandsFree.TargetMode != HandsFreeTargetVoiceAgent {
 		t.Errorf("default hands-free target = %q, want %q", cfg.HandsFree.TargetMode, HandsFreeTargetVoiceAgent)
 	}
-	if cfg.HandsFree.ActivationPhraseID != "hey_quby" {
-		t.Errorf("default hands-free phrase = %q, want hey_quby", cfg.HandsFree.ActivationPhraseID)
+	if cfg.HandsFree.ActivationPhraseID != "hey_kubi" {
+		t.Errorf("default hands-free phrase = %q, want hey_kubi", cfg.HandsFree.ActivationPhraseID)
 	}
 	if cfg.HandsFree.AutoEndSilenceCutoffSec != 10 {
 		t.Errorf("default hands-free auto-end = %d, want 10", cfg.HandsFree.AutoEndSilenceCutoffSec)
@@ -2028,13 +2031,6 @@ func TestEnterprisePresetsLoad(t *testing.T) {
 			wantProv: "local-cascaded",
 			wantUpd:  false,
 			wantStrt: "local-only",
-		},
-		{
-			name:     "cloud-byok profile B",
-			path:     "../../deploy/presets/enterprise-cloud-byok.toml",
-			wantProv: "gemini",
-			wantUpd:  true,
-			wantStrt: "dynamic",
 		},
 	}
 	for _, tc := range cases {

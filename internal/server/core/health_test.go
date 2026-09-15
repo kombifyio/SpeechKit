@@ -49,18 +49,18 @@ func TestHealthRegistry_WorstStatusWins(t *testing.T) {
 func TestHealthRegistry_ReadinessIgnoresNonBlockingComponents(t *testing.T) {
 	r := NewHealthRegistry()
 	r.SetReady("server", StatusOK, "listening")
-	r.SetReadyWithOptions("stt.google", StatusDegraded, "403", ComponentOptions{
+	r.SetReadyWithOptions("stt.deepgram", StatusDegraded, "403", ComponentOptions{
 		Blocking: false,
 		Kind:     "provider",
-		Provider: "google",
+		Provider: "deepgram",
 	})
 
 	strict, components, _ := r.Snapshot()
 	if strict != StatusDegraded {
 		t.Fatalf("strict status = %q, want degraded", strict)
 	}
-	if components["stt.google"].Blocking {
-		t.Fatalf("stt.google should be non-blocking")
+	if components["stt.deepgram"].Blocking {
+		t.Fatalf("stt.deepgram should be non-blocking")
 	}
 
 	ready, _, _ := r.ReadinessSnapshot()
@@ -76,11 +76,11 @@ func TestRegisterHealth_StrictReadinessEndpointsIncludeOptionalFailures(t *testi
 		Version: "test-version",
 	}
 	app.Health.SetReady("server", StatusOK, "listening")
-	app.Health.SetReadyWithOptions("stt.google", StatusDegraded, "403", ComponentOptions{
+	app.Health.SetReadyWithOptions("stt.deepgram", StatusDegraded, "403", ComponentOptions{
 		Blocking: false,
 		Kind:     "provider",
 		Modes:    []string{string(ModeDictation)},
-		Provider: "google",
+		Provider: "deepgram",
 	})
 	registerHealth(app)
 
@@ -93,7 +93,7 @@ func TestRegisterHealth_StrictReadinessEndpointsIncludeOptionalFailures(t *testi
 	if ready.Status != string(StatusOK) || ready.StrictStatus != string(StatusDegraded) {
 		t.Fatalf("/readyz body = %+v, want status ok and strict_status degraded", ready)
 	}
-	if ready.Components["stt.google"].Blocking {
+	if ready.Components["stt.deepgram"].Blocking {
 		t.Fatalf("stt.google should stay visible as non-blocking in /readyz")
 	}
 

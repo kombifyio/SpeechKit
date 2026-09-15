@@ -19,7 +19,7 @@ var (
 const (
 	speakingSettleDelay = 900 * time.Millisecond
 	// DefaultStopCloseTimeout bounds how long Stop waits for provider.Close.
-	// Gemini/Deepgram/AssemblyAI Close has no timeout of its own; holding the
+	// Deepgram/AssemblyAI Close has no timeout of its own; holding the
 	// session mutex across an unbounded close wedged every caller, including
 	// the server target and SDK hosts that do not wrap Stop themselves.
 	DefaultStopCloseTimeout = 3 * time.Second

@@ -20,7 +20,7 @@ type BuildSpec struct {
 	Provider      string
 	ModelID       string
 
-	APIKey  string // cloud API key (OpenAI/Groq/Google/Deepgram/AssemblyAI/OpenRouter)
+	APIKey  string // cloud API key (OpenAI/Groq/Deepgram/AssemblyAI/OpenRouter)
 	Token   string // HuggingFace token
 	BaseURL string // Ollama base URL (optional; defaulted when empty)
 
@@ -28,10 +28,6 @@ type BuildSpec struct {
 	DiarizationModel string
 	// Deepgram forwards provider-specific Listen options (optional).
 	Deepgram DeepgramOptions
-	// Google streaming credential env-var names (optional), forwarded to the
-	// Google provider so realtime transcription can authenticate.
-	GoogleStreamingCredentialsEnv   string
-	GoogleApplicationCredentialsEnv string
 	// FoundrySpeech routes the Foundry provider to Azure Speech (MAI-Transcribe).
 	FoundrySpeech *FoundrySpeechOpts
 	// BearerToken replaces APIKey for Foundry when a Microsoft sign-in is
@@ -43,17 +39,15 @@ type BuildSpec struct {
 // internal ExecutionMode to the framework enum.
 func Build(spec BuildSpec) (string, STTProvider, error) {
 	return allproviders.Build(allproviders.BuildSpec{
-		ExecutionMode:                   framework.ExecutionMode(spec.ExecutionMode),
-		Provider:                        spec.Provider,
-		ModelID:                         spec.ModelID,
-		APIKey:                          spec.APIKey,
-		Token:                           spec.Token,
-		BaseURL:                         spec.BaseURL,
-		DiarizationModel:                spec.DiarizationModel,
-		Deepgram:                        spec.Deepgram,
-		GoogleStreamingCredentialsEnv:   spec.GoogleStreamingCredentialsEnv,
-		GoogleApplicationCredentialsEnv: spec.GoogleApplicationCredentialsEnv,
-		FoundrySpeech:                   spec.FoundrySpeech,
-		BearerToken:                     spec.BearerToken,
+		ExecutionMode:    framework.ExecutionMode(spec.ExecutionMode),
+		Provider:         spec.Provider,
+		ModelID:          spec.ModelID,
+		APIKey:           spec.APIKey,
+		Token:            spec.Token,
+		BaseURL:          spec.BaseURL,
+		DiarizationModel: spec.DiarizationModel,
+		Deepgram:         spec.Deepgram,
+		FoundrySpeech:    spec.FoundrySpeech,
+		BearerToken:      spec.BearerToken,
 	})
 }

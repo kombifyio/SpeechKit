@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/firebase/genkit/go/core"
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
 	"github.com/kombifyio/SpeechKit/internal/shortcuts"
 	"github.com/kombifyio/SpeechKit/internal/tts"
@@ -35,7 +34,7 @@ type Result struct {
 // Pipeline orchestrates the Assist Mode flow.
 type Pipeline struct {
 	router             *Router
-	assistFlow         *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}]
+	assistFlow         *flows.Flow[flows.AssistInput, flows.AssistOutput]
 	executor           ToolExecutor
 	ttsRouter          *tts.Router
 	ttsEnabled         bool
@@ -78,7 +77,7 @@ func WithTTSProviderOptions(options map[string]provideropts.Values) PipelineOpti
 }
 
 // NewPipeline creates an Assist Pipeline.
-func NewPipeline(assistFlow *core.Flow[flows.AssistInput, flows.AssistOutput, struct{}], executor ToolExecutor, ttsRouter *tts.Router, ttsEnabled bool, opts ...PipelineOption) *Pipeline {
+func NewPipeline(assistFlow *flows.Flow[flows.AssistInput, flows.AssistOutput], executor ToolExecutor, ttsRouter *tts.Router, ttsEnabled bool, opts ...PipelineOption) *Pipeline {
 	pipeline := &Pipeline{
 		router:     NewRouter(),
 		assistFlow: assistFlow,

@@ -81,7 +81,7 @@ func ApplyKombifyDeploymentDefaults(cfg *Config) []string {
 	}
 
 	// ── Voice Agent (Deepgram Voice Agent API, audio-to-audio) ──
-	if p := strings.ToLower(strings.TrimSpace(cfg.VoiceAgent.Provider)); p == "" || p == "gemini" {
+	if p := strings.ToLower(strings.TrimSpace(cfg.VoiceAgent.Provider)); p == "" || NormalizeVoiceAgentProviderName(p) == "retired-google-ai" {
 		cfg.VoiceAgent.Provider = "deepgram"
 		notes = append(notes, "kombify defaults: Voice Agent provider = deepgram")
 	}
@@ -94,6 +94,13 @@ func ApplyKombifyDeploymentDefaults(cfg *Config) []string {
 		if setModePrimaryWithFallback(&cfg.ModelSelection.VoiceAgent, kombifyDeepgramVAProfileID, DefaultVoiceAgentPrimaryProfileID) {
 			notes = append(notes, "kombify defaults: Voice Agent primary = "+kombifyDeepgramVAProfileID)
 		}
+	}
+
+	switch strings.ToLower(strings.TrimSpace(cfg.HandsFree.ActivationPhraseID)) {
+	case "", "hey_quby", "hey_kubi":
+		cfg.HandsFree.ActivationPhraseID = "kombify"
+		cfg.Wakeword.PhraseID = "kombify"
+		notes = append(notes, "kombify defaults: wake phrase = kombify")
 	}
 
 	return notes

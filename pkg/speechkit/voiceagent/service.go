@@ -1,7 +1,7 @@
 // Package voiceagent provides an embeddable Voice Agent service.
 //
 // Voice Agent is the realtime audio-to-audio mode: a duplex WebSocket
-// session with the underlying live model (Gemini Live, OpenAI Realtime,
+// session with the underlying live model (for example OpenAI Realtime,
 // or a pipeline fallback) where the user and the agent take audio turns
 // in sequence. Use this when the host needs brainstorming, support, or
 // follow-up dialogue rather than a one-shot result.

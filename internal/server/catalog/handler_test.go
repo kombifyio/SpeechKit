@@ -139,78 +139,6 @@ func TestReadinessSeparatesModeAndProviderMissingReasons(t *testing.T) {
 	}
 }
 
-func TestReadinessGoogleSTTDoesNotUseGeminiKey(t *testing.T) {
-	t.Setenv("GOOGLE_AI_API_KEY", "gemini-key")
-
-	cfg := &config.Config{}
-	cfg.Server.Modes = []string{"dictation"}
-	cfg.ModelSelection.Dictate.PrimaryProfileID = "stt.google.latest-long"
-	cfg.Providers.Google.Enabled = true
-	cfg.Providers.Google.APIKeyEnv = "GOOGLE_AI_API_KEY"
-	cfg.Providers.Google.STTAPIKeyEnv = "SPEECHKIT_TEST_GOOGLE_STT_KEY"
-
-	h := New(cfg, func(component string) string {
-		if component == "mode.dictation" {
-			return "ok"
-		}
-		return ""
-	}, "test")
-
-	ready := getReadiness(t, h, "/v1/catalog/profiles/stt.google.latest-long/readiness")
-	if ready.CredentialsReady || ready.Configured || ready.Ready {
-		t.Fatalf("readiness = %+v, want Google STT not ready with Gemini key only", ready)
-	}
-	if !slices.Contains(ready.Missing, "credentials") {
-		t.Fatalf("Missing = %v, want credentials", ready.Missing)
-	}
-}
-
-func TestReadinessGoogleSTTUsesDedicatedKey(t *testing.T) {
-	t.Setenv("GOOGLE_AI_API_KEY", "gemini-key")
-	t.Setenv("SPEECHKIT_TEST_GOOGLE_STT_KEY", "speech-key")
-
-	cfg := &config.Config{}
-	cfg.Server.Modes = []string{"dictation"}
-	cfg.ModelSelection.Dictate.PrimaryProfileID = "stt.google.latest-long"
-	cfg.Providers.Google.Enabled = true
-	cfg.Providers.Google.APIKeyEnv = "GOOGLE_AI_API_KEY"
-	cfg.Providers.Google.STTAPIKeyEnv = "SPEECHKIT_TEST_GOOGLE_STT_KEY"
-
-	h := New(cfg, func(component string) string {
-		if component == "mode.dictation" {
-			return "ok"
-		}
-		return ""
-	}, "test")
-
-	ready := getReadiness(t, h, "/v1/catalog/profiles/stt.google.latest-long/readiness")
-	if !ready.CredentialsReady || !ready.Configured || !ready.Ready {
-		t.Fatalf("readiness = %+v, want Google STT ready with dedicated key", ready)
-	}
-}
-
-func TestReadinessGoogleSTTAcceptsLegacyProfileID(t *testing.T) {
-	t.Setenv("SPEECHKIT_TEST_GOOGLE_STT_KEY", "speech-key")
-
-	cfg := &config.Config{}
-	cfg.Server.Modes = []string{"dictation"}
-	cfg.ModelSelection.Dictate.PrimaryProfileID = "stt.google.chirp-3"
-	cfg.Providers.Google.Enabled = true
-	cfg.Providers.Google.STTAPIKeyEnv = "SPEECHKIT_TEST_GOOGLE_STT_KEY"
-
-	h := New(cfg, func(component string) string {
-		if component == "mode.dictation" {
-			return "ok"
-		}
-		return ""
-	}, "test")
-
-	ready := getReadiness(t, h, "/v1/catalog/profiles/stt.google.chirp-3/readiness")
-	if ready.ProfileID != "stt.google.latest-long" || !ready.Ready {
-		t.Fatalf("readiness = %+v, want legacy ID to resolve to latest-long ready profile", ready)
-	}
-}
-
 // Voice Agent Active must follow the provider that actually serves a default
 // session (cfg.VoiceAgent.Provider), not ModelSelection.VoiceAgent — serving
 // never reads the latter (kombify-SpeechKit-5nt5).
@@ -235,22 +163,22 @@ func TestReadinessVoiceAgentActiveFollowsServingProviderKombifyShape(t *testing.
 	}
 }
 
-func TestReadinessVoiceAgentActiveFollowsServingProviderVanillaShape(t *testing.T) {
+func TestReadinessVoiceAgentActiveFollowsServingProviderDefaultShape(t *testing.T) {
 	cfg := &config.Config{}
-	// Vanilla deployment shape: no provider configured serves Gemini Live,
-	// while ModelSelection.VoiceAgent defaults to the builtin pipeline.
-	cfg.Providers.Google.Enabled = true
+	// The default runtime serves AssemblyAI while ModelSelection.VoiceAgent
+	// remains the built-in pipeline.
+	cfg.Providers.AssemblyAI.Enabled = true
 	cfg.ModelSelection.VoiceAgent.PrimaryProfileID = config.DefaultVoiceAgentPrimaryProfileID
 
 	h := New(cfg, func(string) string { return "ok" }, "test")
 
-	gemini := getReadiness(t, h, "/v1/catalog/profiles/realtime.google.gemini-native-audio/readiness")
-	if !gemini.Active {
-		t.Fatalf("gemini voice-agent profile Active = false, want true (empty provider serves Gemini Live): %+v", gemini)
+	assemblyAI := getReadiness(t, h, "/v1/catalog/profiles/realtime.assemblyai.voice-agent/readiness")
+	if !assemblyAI.Active {
+		t.Fatalf("assemblyai voice-agent profile Active = false, want true (it serves default sessions): %+v", assemblyAI)
 	}
 	pipeline := getReadiness(t, h, "/v1/catalog/profiles/realtime.builtin.pipeline/readiness")
 	if pipeline.Active {
-		t.Fatalf("builtin pipeline Active = true although gemini serves default sessions: %+v", pipeline)
+		t.Fatalf("builtin pipeline Active = true although AssemblyAI serves default sessions: %+v", pipeline)
 	}
 }
 

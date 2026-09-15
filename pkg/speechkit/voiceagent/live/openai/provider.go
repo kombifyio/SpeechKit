@@ -41,7 +41,7 @@ const (
 )
 
 // Provider implements live.LiveProvider against the OpenAI Realtime API
-// (WebSocket). It mirrors GeminiLive's surface so callers don't need to
+// (WebSocket). It mirrors the shared provider surface so callers don't need to
 // know which backend is active.
 type Provider struct {
 	// DialURL builds the WebSocket URL from the resolved base URL and the
@@ -563,7 +563,7 @@ func endpointingMsToInt32(value int) int32 {
 
 // firstNonEmptyOpenAIVoice maps the kernel's voice name to a value the
 // Realtime API accepts. OpenAI exposes a fixed set of named voices. Unknown
-// SpeechKit/Gemini voice names intentionally fall back to alloy so switching
+// Unsupported SpeechKit voice names intentionally fall back to alloy so switching
 // provider=OpenAI does not turn a valid server config into a failed session.
 func firstNonEmptyOpenAIVoice(voice string) string {
 	v := strings.ToLower(strings.TrimSpace(voice))
@@ -631,7 +631,7 @@ func buildOpenAITools(defs []live.ToolDefinition) []map[string]any {
 	return out
 }
 
-// live.ShouldTryFallback (defined in live_gemini.go) is reused here intentionally —
+// live.ShouldTryFallback is reused here intentionally —
 // the same "primary != fallback, both non-empty" rule applies for OpenAI.
 // No re-declaration; relying on package-level visibility.
 

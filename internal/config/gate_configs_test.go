@@ -80,41 +80,17 @@ func TestProviderGateConfigsLoadDeterministically(t *testing.T) {
 			t.Errorf("providers.openai.realtime_model = %q, want gpt-realtime-2", cfg.Providers.OpenAI.RealtimeModel)
 		}
 	})
-
-	t.Run("gemini", func(t *testing.T) {
-		cfg := loadPrivateGateConfig(t, filepath.Join("..", "..", "deploy", "config", "server.gemini-gate.toml"))
-		if !cfg.Providers.Google.Enabled {
-			t.Error("google provider must be enabled for Gemini Live")
-		}
-		assertProvidersDisabled(t, "gemini gate", map[string]bool{
-			"deepgram":    cfg.Providers.Deepgram.Enabled,
-			"assemblyai":  cfg.Providers.AssemblyAI.Enabled,
-			"openai":      cfg.Providers.OpenAI.Enabled,
-			"groq":        cfg.Providers.Groq.Enabled,
-			"huggingface": cfg.HuggingFace.Enabled,
-		})
-		if cfg.Routing.Strategy != "cloud-only" {
-			t.Errorf("routing.strategy = %q, want cloud-only", cfg.Routing.Strategy)
-		}
-		if cfg.VoiceAgent.Provider != "gemini" {
-			t.Errorf("voice_agent.provider = %q, want gemini", cfg.VoiceAgent.Provider)
-		}
-		if cfg.VoiceAgent.Model != "gemini-3.1-flash-live-preview" {
-			t.Errorf("voice_agent.model = %q, want gemini-3.1-flash-live-preview", cfg.VoiceAgent.Model)
-		}
-		assertModes(t, cfg.Server.Modes, map[string]bool{"voiceagent": true})
-	})
 }
 
 // TestStagingConfigLoads verifies the Render staging config loads and turns on
 // the v0.43 providers it is meant to exercise (Deepgram STT/TTS/Voice-Agent +
-// AssemblyAI STT + Google Assist LLM). It is baked into the staging image via
+// AssemblyAI STT). It is baked into the staging image via
 // the Dockerfile CONFIG_FILE build-arg.
 func TestStagingConfigLoads(t *testing.T) {
 	cfg := loadPrivateGateConfig(t, filepath.Join("..", "..", "deploy", "config", "server.staging.toml"))
-	if !cfg.Providers.Deepgram.Enabled || !cfg.Providers.AssemblyAI.Enabled || !cfg.Providers.Google.Enabled {
-		t.Errorf("staging must enable deepgram+assemblyai+google: dg=%v aai=%v google=%v",
-			cfg.Providers.Deepgram.Enabled, cfg.Providers.AssemblyAI.Enabled, cfg.Providers.Google.Enabled)
+	if !cfg.Providers.Deepgram.Enabled || !cfg.Providers.AssemblyAI.Enabled {
+		t.Errorf("staging must enable deepgram+assemblyai: dg=%v aai=%v",
+			cfg.Providers.Deepgram.Enabled, cfg.Providers.AssemblyAI.Enabled)
 	}
 	if !cfg.TTS.Deepgram.Enabled {
 		t.Error("staging must enable Deepgram Aura TTS")

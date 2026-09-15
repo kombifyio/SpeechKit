@@ -41,7 +41,6 @@ const (
 	ExecutionModeHFInference    = speechkit.ExecutionModeHFRouted // Legacy alias.
 	ExecutionModeOpenAI         = speechkit.ExecutionModeOpenAI
 	ExecutionModeGroq           = speechkit.ExecutionModeGroq
-	ExecutionModeGoogle         = speechkit.ExecutionModeGoogle
 	ExecutionModeDeepgram       = speechkit.ExecutionModeDeepgram
 	ExecutionModeAssemblyAI     = speechkit.ExecutionModeAssemblyAI
 	ExecutionModeOllama         = speechkit.ExecutionModeOllama
@@ -218,19 +217,6 @@ func supportProfiles() []Profile {
 			Capabilities:   []Capability{CapabilityLLM, CapabilityToolCalling, CapabilitySessionSummary},
 			AdapterKind:    "genkit_llm",
 			AllowInference: true,
-		},
-		{
-			ID:             "embedding.google.gemini-embedding-2",
-			Name:           "Gemini Embedding 2",
-			Modality:       ModalityEmbedding,
-			ProviderKind:   ProviderKindDirectProvider,
-			ExecutionMode:  ExecutionModeGoogle,
-			ModelID:        "gemini-embedding-2",
-			Source:         "Google",
-			License:        "proprietary",
-			AllowInference: true,
-			Default:        true,
-			Recommended:    true,
 		},
 		{
 			ID:             "embedding.routed.bge-m3",

@@ -1,12 +1,12 @@
-// Package ai wires the Genkit runtime and the SpeechKit model catalog into
-// a single LLM/embedding/reranker surface used by Assist and the Voice
-// Agent pipeline-fallback path.
+// Package ai wires SpeechKit's model catalog into a single LLM surface used
+// by Assist, summaries, meeting notes, and the Voice Agent pipeline-fallback
+// path.
 //
-// It owns provider keys, model selection, OpenAI-compatible model
-// registration, and the per-Modality plumbing (Utility, Assist, Agent).
-// Routing decisions live in [github.com/kombifyio/SpeechKit/internal/router]
-// and [github.com/kombifyio/SpeechKit/internal/tts]; this package
-// is the model substrate they call into.
+// It owns provider keys, model selection, OpenAI-compatible execution, and
+// the per-modality plumbing (Utility, Assist, Agent). Routing decisions live
+// in [github.com/kombifyio/SpeechKit/internal/router] and
+// [github.com/kombifyio/SpeechKit/internal/tts]; this package is the
+// model substrate they call into.
 package ai
 
 import (
@@ -14,20 +14,44 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-
-	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/core/api"
-	"github.com/firebase/genkit/go/genkit"
-	"github.com/firebase/genkit/go/plugins/googlegenai"
-	"github.com/firebase/genkit/go/plugins/ollama"
+	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/ai/generation"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
-// Config holds all provider API keys and model selections for Genkit initialization.
+// Message is one text-only turn sent to a model boundary.
+type Message struct {
+	Role    string
+	Content string
+}
+
+// Request is the provider-neutral generation contract used by SpeechKit
+// flows. It deliberately excludes provider credentials and routing controls.
+type Request struct {
+	System      string
+	Prompt      string
+	Messages    []Message
+	MaxTokens   int
+	Temperature *float64
+}
+
+// Response is the text result returned by a model boundary.
+type Response struct {
+	Text         string
+	FinishReason string
+	Usage        *generation.Usage
+}
+
+// Model is the only model capability SpeechKit flows require.
+type Model interface {
+	ID() string
+	Generate(context.Context, Request) (Response, error)
+}
+
+// Config holds all provider API keys and model selections for runtime
+// initialization.
 type Config struct {
-	GoogleAPIKey     string
 	OpenAIAPIKey     string
 	GroqAPIKey       string
 	HuggingFaceToken string
@@ -39,9 +63,6 @@ type Config struct {
 	// leaves the transport as built.
 	LocalLLMTransport func(next http.RoundTripper) http.RoundTripper
 
-	GoogleUtilityModel          string
-	GoogleAssistModel           string
-	GoogleAgentModel            string
 	OpenAIUtilityModel          string
 	OpenAIAssistModel           string
 	OpenAIAgentModel            string
@@ -110,57 +131,64 @@ type ModelInfo struct {
 	Tier     string `json:"tier"` // e.g. "utility", "assist", "agent", "utility+assist", or "all"
 }
 
-// Runtime holds the Genkit instance and categorized model references.
+// Runtime groups model choices by SpeechKit modality. It contains no
+// framework state.
 type Runtime struct {
-	G             *genkit.Genkit
-	utilityModels []ai.Model
-	assistModels  []ai.Model
-	agentModels   []ai.Model
-	allModels     map[string]ai.Model
+	utilityModels []Model
+	assistModels  []Model
+	agentModels   []Model
+	allModels     map[string]Model
 	modelInfos    []ModelInfo
 }
 
 // UtilityModels returns the models configured for utility tasks (summarize, codewords).
-func (r *Runtime) UtilityModels() []ai.Model { return r.utilityModels }
+func (r *Runtime) UtilityModels() []Model { return r.utilityModels }
 
 // AssistModels returns the models configured for direct Assist replies.
-func (r *Runtime) AssistModels() []ai.Model { return r.assistModels }
+func (r *Runtime) AssistModels() []Model { return r.assistModels }
 
 // AgentModels returns the models configured for agent tasks (reasoning, autonomous).
-func (r *Runtime) AgentModels() []ai.Model { return r.agentModels }
+func (r *Runtime) AgentModels() []Model { return r.agentModels }
 
 // AllModels returns all registered models keyed by their full ID.
-func (r *Runtime) AllModels() map[string]ai.Model { return r.allModels }
+func (r *Runtime) AllModels() map[string]Model {
+	if r == nil {
+		return nil
+	}
+	return r.allModels
+}
 
 // ModelInfos returns metadata about all registered models for the UI.
-func (r *Runtime) ModelInfos() []ModelInfo { return r.modelInfos }
+func (r *Runtime) ModelInfos() []ModelInfo {
+	if r == nil {
+		return nil
+	}
+	return r.modelInfos
+}
 
 // Generator exposes the configured model pool through SpeechKit's
 // provider-neutral generation boundary.
 func (r *Runtime) Generator() generation.Generator {
 	if r == nil {
-		return generation.NewGenkit(nil, nil)
+		return generation.NewBound(nil)
 	}
-	bindings := make([]generation.GenkitModel, 0, len(r.modelInfos))
+	bindings := make([]generation.BoundModel, 0, len(r.modelInfos))
 	for _, info := range r.modelInfos {
 		model := r.allModels[info.ID]
 		if model == nil {
 			continue
 		}
-		bindings = append(bindings, generation.GenkitModel{
-			Model: model,
-			Info: generation.Model{
-				ID:                       info.ID,
-				Provider:                 info.Provider,
-				Name:                     info.Name,
-				Purposes:                 generationPurposes(info.Tier),
-				ContextWindowTokens:      generation.ConservativeContextWindow(info.Provider, info.Name),
-				SupportsStructuredOutput: true,
-				Cloud:                    info.Provider != "local" && info.Provider != "ollama",
-			},
-		})
+		bindings = append(bindings, bindNativeModel(model, generation.Model{
+			ID:                       info.ID,
+			Provider:                 info.Provider,
+			Name:                     info.Name,
+			Purposes:                 generationPurposes(info.Tier),
+			ContextWindowTokens:      generation.ConservativeContextWindow(info.Provider, info.Name),
+			SupportsStructuredOutput: true,
+			Cloud:                    info.Provider != "local" && info.Provider != "ollama",
+		}))
 	}
-	return generation.NewGenkit(r.G, bindings)
+	return generation.NewBound(bindings)
 }
 
 func generationPurposes(tier string) []generation.Purpose {
@@ -181,116 +209,121 @@ func generationPurposes(tier string) []generation.Purpose {
 	return purposes
 }
 
-// Init creates a Genkit instance with all configured providers and returns a Runtime.
-func Init(ctx context.Context, cfg Config) (*Runtime, error) {
-	g := genkit.Init(ctx, genkit.WithPlugins(configuredPlugins(cfg)...))
-	registerConfiguredProviderModels(g, cfg)
-
-	rt := &Runtime{
-		G:         g,
-		allModels: make(map[string]ai.Model),
+func bindNativeModel(model Model, info generation.Model) generation.BoundModel {
+	return generation.BoundModel{
+		Info: info,
+		Call: func(ctx context.Context, req generation.Request) (generation.Result, error) {
+			started := time.Now()
+			native := Request{
+				System:    req.System,
+				Prompt:    req.Prompt,
+				MaxTokens: req.MaxOutputTokens,
+			}
+			if req.Temperature != 0 {
+				temp := req.Temperature
+				native.Temperature = &temp
+			}
+			for _, message := range req.Messages {
+				native.Messages = append(native.Messages, Message{
+					Role:    string(message.Role),
+					Content: message.Content,
+				})
+			}
+			resp, err := model.Generate(ctx, native)
+			if err != nil {
+				return generation.Result{}, err
+			}
+			return generation.Result{
+				Text:         resp.Text,
+				Provider:     info.Provider,
+				Model:        info.Name,
+				FinishReason: resp.FinishReason,
+				Latency:      time.Since(started),
+				Usage:        resp.Usage,
+			}, nil
+		},
 	}
+}
+
+// Init resolves configured models. Network requests happen only in Model.Generate.
+func Init(_ context.Context, cfg Config) (*Runtime, error) {
+	rt := &Runtime{allModels: make(map[string]Model)}
 
 	for _, spec := range tierModelSpecs(cfg, "utility") {
 		if !spec.enabled {
 			continue
 		}
-		m := genkit.LookupModel(g, spec.provider+"/"+spec.model)
-		if m == nil {
-			slog.Warn("utility model not found", "provider", spec.provider, "model", spec.model)
-			continue
-		}
-		rt.utilityModels = append(rt.utilityModels, m)
-		registerModelInfo(rt, spec.provider, spec.model, m, "utility")
-		slog.Info("utility model registered", "provider", spec.provider, "model", spec.model)
+		rt.register(cfg, spec.provider, spec.model, "utility", &rt.utilityModels)
 	}
 
-	resolveOrderedOrLegacyModels(rt, g, "assist", cfg.UseOrderedAssistModels, cfg.OrderedAssistModels, tierModelSpecs(cfg, "assist"), func(model ai.Model) {
-		rt.assistModels = append(rt.assistModels, model)
-	})
-
-	resolveOrderedOrLegacyModels(rt, g, "agent", cfg.UseOrderedAgentModels, cfg.OrderedAgentModels, tierModelSpecs(cfg, "agent"), func(model ai.Model) {
-		rt.agentModels = append(rt.agentModels, model)
-	})
+	resolveOrderedOrLegacyModels(rt, cfg, "assist", cfg.UseOrderedAssistModels, cfg.OrderedAssistModels, tierModelSpecs(cfg, "assist"), &rt.assistModels)
+	resolveOrderedOrLegacyModels(rt, cfg, "agent", cfg.UseOrderedAgentModels, cfg.OrderedAgentModels, tierModelSpecs(cfg, "agent"), &rt.agentModels)
 
 	return rt, nil
 }
 
-func configuredPlugins(cfg Config) []api.Plugin {
-	var plugins []api.Plugin
-	if cfg.GoogleAPIKey != "" {
-		plugins = append(plugins, &googlegenai.GoogleAI{APIKey: cfg.GoogleAPIKey})
+func resolveOrderedOrLegacyModels(
+	rt *Runtime,
+	cfg Config,
+	tier string,
+	useOrdered bool,
+	ordered []OrderedModelSelection,
+	legacy []modelSpec,
+	destination *[]Model,
+) {
+	if useOrdered {
+		for _, spec := range ordered {
+			rt.register(cfg, spec.Provider, spec.Model, tier, destination)
+		}
+		return
 	}
-	if cfg.OllamaBaseURL != "" {
-		plugins = append(plugins, &ollama.Ollama{ServerAddress: cfg.OllamaBaseURL})
-	}
-	return plugins
-}
 
-func registerConfiguredProviderModels(g *genkit.Genkit, cfg Config) {
-	if cfg.OpenAIAPIKey != "" {
-		registerOpenAIModels(g, cfg.OpenAIAPIKey)
-	}
-	if cfg.GroqAPIKey != "" {
-		registerGroqModels(g, cfg.GroqAPIKey)
-	}
-	if cfg.HuggingFaceToken != "" {
-		registerHFModels(g, cfg.HuggingFaceToken)
-	}
-	if cfg.OpenRouterAPIKey != "" {
-		registerOpenRouterModels(g, cfg.OpenRouterAPIKey)
-	}
-	if cfg.AssemblyAIAPIKey != "" {
-		registerAssemblyAILLMModels(g, cfg.AssemblyAIAPIKey, cfg.AssemblyAILLMGatewayBaseURL, []string{
-			cfg.AssemblyAIUtilityModel,
-			cfg.AssemblyAIAssistModel,
-			cfg.AssemblyAIAgentModel,
-		})
-	}
-	if cfg.CloudflareAPIKey != "" && cfg.CloudflareAccountID != "" {
-		registerCloudflareAIGatewayModels(g, cfg.CloudflareAPIKey, cfg.CloudflareAccountID, cfg.CloudflareGatewayID, []string{
-			cfg.CloudflareUtilityModel,
-			cfg.CloudflareAssistModel,
-			cfg.CloudflareAgentModel,
-		})
-	}
-	if foundryModelEnabled(cfg) {
-		registerFoundryModels(g, foundryRegistration{
-			APIKey:      cfg.FoundryAPIKey,
-			BearerToken: cfg.FoundryBearerToken,
-			BaseURL:     cfg.FoundryBaseURL,
-			MAIBaseURL:  cfg.FoundryMAIBaseURL,
-			Deployments: []string{
-				cfg.FoundryUtilityModel,
-				cfg.FoundryAssistModel,
-				cfg.FoundryAgentModel,
-			},
-		})
-	}
-	if cfg.LocalLLMBaseURL != "" {
-		registerLocalLLMModels(g, cfg.LocalLLMBaseURL, localLLMModelNames(cfg), cfg.LocalLLMTransport)
+	for _, spec := range legacy {
+		if !spec.enabled {
+			continue
+		}
+		rt.register(cfg, spec.provider, spec.model, tier, destination)
 	}
 }
 
-func localLLMModelNames(cfg Config) []string {
-	names := []string{
-		cfg.LocalLLMUtilityModel,
-		cfg.LocalLLMAssistModel,
-		cfg.LocalLLMAgentModel,
+func (rt *Runtime) register(cfg Config, provider, model, tier string, destination *[]Model) {
+	provider = strings.TrimSpace(provider)
+	model = strings.TrimSpace(model)
+	if provider == "" || model == "" {
+		return
 	}
-	for _, spec := range append(cfg.OrderedAssistModels, cfg.OrderedAgentModels...) {
-		if strings.TrimSpace(spec.Provider) == "local" {
-			names = append(names, spec.Model)
+	key := provider + "/" + model
+	resolved, ok := rt.allModels[key]
+	if !ok {
+		var err error
+		resolved, err = newModel(cfg, provider, model)
+		if err != nil {
+			slog.Warn(tier+" model configuration ignored", "provider", provider, "model", model, "reason", err)
+			return
+		}
+		rt.allModels[key] = resolved
+		rt.modelInfos = append(rt.modelInfos, ModelInfo{
+			ID:       key,
+			Provider: provider,
+			Name:     model,
+			Tier:     tier,
+		})
+	} else {
+		for i := range rt.modelInfos {
+			if rt.modelInfos[i].ID == key {
+				rt.modelInfos[i].Tier = mergeModelTier(rt.modelInfos[i].Tier, tier)
+				break
+			}
 		}
 	}
-	return names
+	*destination = append(*destination, resolved)
+	slog.Info(tier+" model registered", "provider", provider, "model", model)
 }
 
 func tierModelSpecs(cfg Config, tier string) []modelSpec {
 	switch tier {
 	case "utility":
 		return []modelSpec{
-			{"googleai", cfg.GoogleUtilityModel, cfg.GoogleAPIKey != "" && cfg.GoogleUtilityModel != ""},
 			{"openai", cfg.OpenAIUtilityModel, cfg.OpenAIAPIKey != "" && cfg.OpenAIUtilityModel != ""},
 			{"groq", cfg.GroqUtilityModel, cfg.GroqAPIKey != "" && cfg.GroqUtilityModel != ""},
 			{"huggingface", cfg.HFUtilityModel, cfg.HuggingFaceToken != "" && cfg.HFUtilityModel != ""},
@@ -303,7 +336,6 @@ func tierModelSpecs(cfg Config, tier string) []modelSpec {
 		}
 	case "assist":
 		return []modelSpec{
-			{"googleai", cfg.GoogleAssistModel, cfg.GoogleAPIKey != "" && cfg.GoogleAssistModel != ""},
 			{"openai", cfg.OpenAIAssistModel, cfg.OpenAIAPIKey != "" && cfg.OpenAIAssistModel != ""},
 			{"groq", cfg.GroqAssistModel, cfg.GroqAPIKey != "" && cfg.GroqAssistModel != ""},
 			{"huggingface", cfg.HFAssistModel, cfg.HuggingFaceToken != "" && cfg.HFAssistModel != ""},
@@ -316,7 +348,6 @@ func tierModelSpecs(cfg Config, tier string) []modelSpec {
 		}
 	case "agent":
 		return []modelSpec{
-			{"googleai", cfg.GoogleAgentModel, cfg.GoogleAPIKey != "" && cfg.GoogleAgentModel != ""},
 			{"openai", cfg.OpenAIAgentModel, cfg.OpenAIAPIKey != "" && cfg.OpenAIAgentModel != ""},
 			{"groq", cfg.GroqAgentModel, cfg.GroqAPIKey != "" && cfg.GroqAgentModel != ""},
 			{"huggingface", cfg.HFAgentModel, cfg.HuggingFaceToken != "" && cfg.HFAgentModel != ""},
@@ -338,69 +369,6 @@ func cloudflareModelEnabled(cfg Config) bool {
 
 func foundryModelEnabled(cfg Config) bool {
 	return (cfg.FoundryAPIKey != "" || cfg.FoundryBearerToken != nil) && cfg.FoundryBaseURL != ""
-}
-
-func resolveOrderedOrLegacyModels(
-	rt *Runtime,
-	g *genkit.Genkit,
-	tier string,
-	useOrdered bool,
-	ordered []OrderedModelSelection,
-	legacy []modelSpec,
-	appendModel func(ai.Model),
-) {
-	if useOrdered {
-		for _, spec := range ordered {
-			registerResolvedModel(rt, g, spec.Provider, spec.Model, tier, appendModel)
-		}
-		return
-	}
-
-	for _, spec := range legacy {
-		if !spec.enabled {
-			continue
-		}
-		registerResolvedModel(rt, g, spec.provider, spec.model, tier, appendModel)
-	}
-}
-
-func registerResolvedModel(
-	rt *Runtime,
-	g *genkit.Genkit,
-	provider string,
-	model string,
-	tier string,
-	appendModel func(ai.Model),
-) {
-	m := genkit.LookupModel(g, provider+"/"+model)
-	if m == nil {
-		slog.Warn(tier+" model not found", "provider", provider, "model", model)
-		return
-	}
-	appendModel(m)
-	registerModelInfo(rt, provider, model, m, tier)
-	slog.Info(tier+" model registered", "provider", provider, "model", model)
-}
-
-func registerModelInfo(rt *Runtime, provider, model string, m ai.Model, tier string) {
-	id := provider + "/" + model
-	if _, ok := rt.allModels[id]; ok {
-		for i := range rt.modelInfos {
-			if rt.modelInfos[i].ID == id {
-				rt.modelInfos[i].Tier = mergeModelTier(rt.modelInfos[i].Tier, tier)
-				return
-			}
-		}
-		return
-	}
-
-	rt.allModels[id] = m
-	rt.modelInfos = append(rt.modelInfos, ModelInfo{
-		ID:       id,
-		Provider: provider,
-		Name:     model,
-		Tier:     tier,
-	})
 }
 
 func mergeModelTier(existing, added string) string {

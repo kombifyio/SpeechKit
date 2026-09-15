@@ -54,7 +54,6 @@ const (
 	ExecutionModeHFRouted       ExecutionMode = "hf_routed"
 	ExecutionModeOpenAI         ExecutionMode = "openai_api"
 	ExecutionModeGroq           ExecutionMode = "groq_api"
-	ExecutionModeGoogle         ExecutionMode = "google_api"
 	ExecutionModeDeepgram       ExecutionMode = "deepgram_api"
 	ExecutionModeAssemblyAI     ExecutionMode = "assemblyai_api"
 	ExecutionModeOllama         ExecutionMode = "ollama_local"
@@ -197,10 +196,6 @@ type ProviderProfile struct {
 func NormalizeProviderProfileID(profileID string) string {
 	profileID = strings.TrimSpace(profileID)
 	switch profileID {
-	case "stt.google.chirp-3":
-		return "stt.google.latest-long"
-	case "stt.google.chirp-3-diarization":
-		return "stt.google.latest-long-diarization"
 	case "assist.foundry.gpt-5.1":
 		// The Foundry assist profile moved to the GPT-5.6 family; configs
 		// written before that keep resolving to the same profile.

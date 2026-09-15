@@ -54,7 +54,7 @@ func TestResolveLiveOptionsKeepsProseHintOutOfKeyterms(t *testing.T) {
 }
 
 func TestResolveLiveOptionsReportsUnsupportedEndpointing(t *testing.T) {
-	resolved := ResolveLiveOptions("google", "realtime.google.gemini-native-audio", LiveConfig{
+	resolved := ResolveLiveOptions("assemblyai", "realtime.assemblyai.voice-agent", LiveConfig{
 		Options: provideropts.Values{
 			provideropts.OptionEndpointingMs: 450,
 		},
@@ -69,7 +69,7 @@ func TestResolveLiveOptionsReportsUnsupportedEndpointing(t *testing.T) {
 }
 
 func TestResolveLiveOptionsGlobalTurnDetectionFalseIsEffective(t *testing.T) {
-	resolved := ResolveLiveOptions("google", "realtime.google.gemini-native-audio", LiveConfig{
+	resolved := ResolveLiveOptions("assemblyai", "realtime.assemblyai.voice-agent", LiveConfig{
 		Options: provideropts.Values{
 			provideropts.OptionTurnDetection: false,
 		},

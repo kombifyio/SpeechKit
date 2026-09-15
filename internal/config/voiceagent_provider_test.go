@@ -6,12 +6,12 @@ import "testing"
 // this derivation while session serving reads the same value — both sides of
 // the kombify-SpeechKit-5nt5 contract hang off these two functions.
 func TestEffectiveVoiceAgentProviderMatchesServingDefault(t *testing.T) {
-	if got := EffectiveVoiceAgentProvider(nil); got != "gemini" {
-		t.Errorf("nil config = %q, want gemini", got)
+	if got := EffectiveVoiceAgentProvider(nil); got != "assemblyai" {
+		t.Errorf("nil config = %q, want assemblyai", got)
 	}
 	vanilla := &Config{}
-	if got := EffectiveVoiceAgentProvider(vanilla); got != "gemini" {
-		t.Errorf("vanilla config = %q, want gemini (empty provider serves Gemini Live)", got)
+	if got := EffectiveVoiceAgentProvider(vanilla); got != "assemblyai" {
+		t.Errorf("vanilla config = %q, want assemblyai (empty provider serves AssemblyAI)", got)
 	}
 	aliased := &Config{}
 	aliased.VoiceAgent.Provider = "realtime.deepgram.voice-agent"
@@ -25,7 +25,9 @@ func TestEffectiveVoiceAgentProfileIDFollowsProvider(t *testing.T) {
 		provider string
 		want     string
 	}{
-		{"", "realtime.google.gemini-native-audio"},
+		{"", "realtime.assemblyai.voice-agent"},
+		{"google", ""},
+		{"vertex", ""},
 		{"deepgram", "realtime.deepgram.voice-agent"},
 		{"openai", "realtime.openai.gpt-realtime-2"},
 		{"assemblyai", "realtime.assemblyai.voice-agent"},

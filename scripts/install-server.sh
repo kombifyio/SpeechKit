@@ -104,7 +104,7 @@ fi
 
 if [ "$STRICT_LOCAL_ONLY" = "true" ]; then
   local_only_failed=0
-  for key in GOOGLE_AI_API_KEY OPENAI_API_KEY GROQ_API_KEY OPENROUTER_API_KEY HF_TOKEN GOOGLE_STT_API_KEY; do
+  for key in OPENAI_API_KEY GROQ_API_KEY OPENROUTER_API_KEY HF_TOKEN; do
     val=$(printenv "$key" 2>/dev/null || true)
     if [ -n "$val" ]; then
       echo "strict-local-only: $key is set in env; install-server.sh refuses to write a non-local config" >&2
@@ -186,7 +186,6 @@ upsert_env "SPEECHKIT_SERVER_SETTINGS_WRITE" "$ONBOARDING_UI"
 ensure_blank_env "SPEECHKIT_SERVER_TOKEN"
 ensure_blank_env "EDGE_AUTH_SECRET"
 ensure_blank_env "HF_TOKEN"
-ensure_blank_env "GOOGLE_AI_API_KEY"
 ensure_blank_env "OPENAI_API_KEY"
 ensure_blank_env "GROQ_API_KEY"
 ensure_blank_env "OPENROUTER_API_KEY"

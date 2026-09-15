@@ -4,8 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-
-	"github.com/firebase/genkit/go/genkit"
 )
 
 func TestBuildAgentSystemPrompt_German(t *testing.T) {
@@ -57,8 +55,7 @@ func TestBuildAgentUserPrompt(t *testing.T) {
 }
 
 func TestAgentFlow_EmptyUtterance(t *testing.T) {
-	g := genkit.Init(context.Background())
-	flow := DefineAgentFlow(g, nil)
+	flow := DefineAgentFlow(nil)
 
 	_, err := flow.Run(context.Background(), AgentInput{})
 	if err == nil {
@@ -70,8 +67,7 @@ func TestAgentFlow_EmptyUtterance(t *testing.T) {
 }
 
 func TestAgentFlow_NoModels(t *testing.T) {
-	g := genkit.Init(context.Background())
-	flow := DefineAgentFlow(g, nil)
+	flow := DefineAgentFlow(nil)
 
 	_, err := flow.Run(context.Background(), AgentInput{Utterance: "hello"})
 	if err == nil {

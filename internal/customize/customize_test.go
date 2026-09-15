@@ -36,7 +36,7 @@ func TestBuildProviderBiasRoutesNativeKeyterms(t *testing.T) {
 		{Term: "Kombify", Enabled: true},
 		{Term: "SpeechKit", Enabled: true},
 	})
-	for _, provider := range []string{"deepgram", "assemblyai", "google"} {
+	for _, provider := range []string{"deepgram", "assemblyai"} {
 		values := bias.ByProvider[provider]
 		if values == nil {
 			t.Fatalf("missing provider bias for %s: %+v", provider, bias.ByProvider)
@@ -66,8 +66,8 @@ func TestBuildProviderBiasForVoiceAgentRoutesDeepgramKeyterms(t *testing.T) {
 	if got := values.StringList(provideropts.OptionKeyterms); len(got) != 2 || got[0] != "Kombify" || got[1] != "SpeechKit" {
 		t.Fatalf("deepgram voice agent keyterms = %v", got)
 	}
-	if _, ok := bias.ByProvider["google"]; ok {
-		t.Fatalf("google voice agent bias = %+v, want no structured keyterms", bias.ByProvider["google"])
+	if _, ok := bias.ByProvider["openai"]; ok {
+		t.Fatalf("openai voice agent bias = %+v, want no unsupported structured keyterms", bias.ByProvider["openai"])
 	}
 }
 

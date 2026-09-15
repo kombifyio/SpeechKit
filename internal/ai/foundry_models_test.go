@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/firebase/genkit/go/ai"
 )
 
 func TestFoundryModelTargetSplitsMAIFromOpenAIDeployments(t *testing.T) {
@@ -50,18 +48,18 @@ func TestCallOpenAICompatibleWithOptions_MAIShapeAndBearer(t *testing.T) {
 	}))
 	defer server.Close()
 
-	mr := &ai.ModelRequest{
-		Messages: []*ai.Message{{Role: ai.RoleUser, Content: []*ai.Part{ai.NewTextPart("q")}}},
-		Config:   &ai.GenerationCommonConfig{MaxOutputTokens: 321},
-	}
-	mr.Config = &ai.GenerationCommonConfig{MaxOutputTokens: 321, Temperature: 0.4}
+	temp := 0.4
 	opts := oaiCallOptions{
 		AuthToken:              "static-key",
 		BearerToken:            func(ctx context.Context) (string, error) { return "minted-token", nil },
 		UseMaxCompletionTokens: true,
 		OmitTemperature:        true,
 	}
-	if _, err := callOpenAICompatibleWithOptions(context.Background(), testClient(), server.URL, "MAI-Thinking-1", mr, AICallValidation, opts); err != nil {
+	if _, err := callOpenAICompatibleWithOptions(context.Background(), testClient(), server.URL, "MAI-Thinking-1", Request{
+		Prompt:      "q",
+		MaxTokens:   321,
+		Temperature: &temp,
+	}, AICallValidation, opts); err != nil {
 		t.Fatalf("call: %v", err)
 	}
 	if gotAuth != "Bearer minted-token" {

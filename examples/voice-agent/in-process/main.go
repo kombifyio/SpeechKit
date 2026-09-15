@@ -3,7 +3,7 @@
 // This is the in-process counterpart to examples/voice-agent/game-instructor
 // (which drives a running speechkit-server over WebSocket). Here the realtime
 // provider runs inside this binary: we construct a live.LiveProvider directly
-// (Gemini Live), wrap it in a live.Session, and drive a text dialogue. The
+// (OpenAI Realtime), wrap it in a live.Session, and drive a text dialogue. The
 // provider connects straight to the model's realtime API — STT, the LLM turn,
 // and TTS all happen provider-side, so a host needs no separate STT/TTS wiring.
 //
@@ -14,7 +14,7 @@
 //
 // Run:
 //
-//	GOOGLE_AI_API_KEY=... go run ./examples/voice-agent/in-process
+//	OPENAI_API_KEY=... go run ./examples/voice-agent/in-process
 //
 // Then type a line and press Enter. Empty input or EOF (Ctrl-D / Ctrl-Z) ends
 // the session. Audio frames from the model are counted, not played, so the
@@ -34,7 +34,7 @@ import (
 	"time"
 
 	live "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/gemini"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openai"
 )
 
 func main() {
@@ -45,9 +45,9 @@ func main() {
 }
 
 func run() error {
-	apiKey := strings.TrimSpace(os.Getenv("GOOGLE_AI_API_KEY"))
+	apiKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
 	if apiKey == "" {
-		return errors.New("set GOOGLE_AI_API_KEY (a Google AI Studio key with Gemini Live access)")
+		return errors.New("set OPENAI_API_KEY (an OpenAI key with Realtime access)")
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -104,11 +104,10 @@ func run() error {
 		OnSessionEnd: func() { signalTurnDone() },
 	}
 
-	provider := gemini.New()
+	provider := openai.New()
 	session := live.NewSession(provider, callbacks)
 
 	cfg := live.LiveConfig{
-		// Model empty → the kernel default Gemini Live model is used.
 		APIKey:          apiKey,
 		Locale:          "en",
 		FrameworkPrompt: "You are a concise in-process Voice Agent demo. Answer in one short spoken sentence.",
@@ -118,7 +117,7 @@ func run() error {
 	}
 	defer session.Stop()
 
-	fmt.Println("connected to Gemini Live in-process. Type a line and press Enter (empty line or Ctrl-Z+Enter to quit):")
+	fmt.Println("connected to OpenAI Realtime in-process. Type a line and press Enter (empty line or Ctrl-Z+Enter to quit):")
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
 		fmt.Print("> ")

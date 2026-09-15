@@ -17,7 +17,7 @@
 //
 //	# 1. Start a speechkit-server seeded with this directory's config.toml
 //	SPEECHKIT_SERVER_TOKEN=devtoken \
-//	GOOGLE_AI_API_KEY=...           \
+//	ASSEMBLYAI_API_KEY=...          \
 //	speechkit-server --config examples/voice-agent/game-instructor/config.example.toml
 //
 //	# 2. In another terminal, run the embedder.
@@ -244,7 +244,6 @@ func ensureGameInstructor(ctx context.Context, c *client.Client) error {
 		"id":               personaID,
 		"display_name":     "Game Instructor",
 		"description":      "Energetic moderator running a 15-min trivia game with one player.",
-		"voice":            "Puck",
 		"locale":           "en",
 		"default_role":     roleID,
 		"default_sequence": sequenceID,
@@ -266,8 +265,6 @@ func ensureGameInstructor(ctx context.Context, c *client.Client) error {
 		"automatic_activity_detection": true,
 		"vad_start_sensitivity":        "medium",
 		"vad_end_sensitivity":          "medium",
-		"activity_handling":            "start_of_activity_interrupts",
-		"turn_coverage":                "turn_includes_only_activity",
 		"context_compression_enabled":  true,
 	}
 	sequence := map[string]any{

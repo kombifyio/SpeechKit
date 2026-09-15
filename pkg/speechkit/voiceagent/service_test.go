@@ -44,7 +44,7 @@ func TestServiceWrapsProvider(t *testing.T) {
 	var callbackText string
 	service, err := NewService(Options{
 		Config: Config{
-			ProviderProfileID: "realtime.google.gemini-native-audio",
+			ProviderProfileID: "realtime.openai.gpt-realtime-2",
 			Locale:            "de",
 		},
 		Callbacks: Callbacks{

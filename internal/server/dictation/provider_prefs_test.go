@@ -113,7 +113,7 @@ func TestHandler_PrefPrimaryUsedWhenAvailable(t *testing.T) {
 func TestHandler_PrefFallsBackToSecondaryWhenPrimaryUnavailable(t *testing.T) {
 	fake := &fakeRouterWithProviders{
 		fakeRouter: fakeRouter{result: okResult()},
-		providers:  []string{"assemblyai", "google"},
+		providers:  []string{"assemblyai", "openai"},
 	}
 	h := mustHandler(t, fake)
 
@@ -131,11 +131,11 @@ func TestHandler_PrefFallsBackToSecondaryWhenPrimaryUnavailable(t *testing.T) {
 func TestHandler_UnsatisfiablePrefFallsBackToModelSelectionDefault(t *testing.T) {
 	fake := &fakeRouterWithProviders{
 		fakeRouter: fakeRouter{result: okResult()},
-		providers:  []string{"google"},
+		providers:  []string{"openai"},
 	}
 	h, err := New(Options{
 		Router:                   fake,
-		DefaultProviderProfileID: "stt.google.latest-long",
+		DefaultProviderProfileID: "stt.openai.whisper-1",
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)

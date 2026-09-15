@@ -129,14 +129,14 @@ func TestClearNamedSecretFallsBackToEnvResolver(t *testing.T) {
 	restore := UseMemoryStoreForTests()
 	defer restore()
 
-	if err := SetNamedSecret("google", "stored-token"); err != nil {
+	if err := SetNamedSecret("deepgram", "stored-token"); err != nil {
 		t.Fatalf("set named secret: %v", err)
 	}
-	if err := ClearNamedSecret("google"); err != nil {
+	if err := ClearNamedSecret("deepgram"); err != nil {
 		t.Fatalf("clear named secret: %v", err)
 	}
 
-	token, status, err := ResolveNamedSecret("google", func() string { return "env-token" })
+	token, status, err := ResolveNamedSecret("deepgram", func() string { return "env-token" })
 	if err != nil {
 		t.Fatalf("resolve named secret: %v", err)
 	}

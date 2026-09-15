@@ -1,7 +1,7 @@
 // Package live exposes the low-level Voice Agent realtime-protocol types.
 //
 // This is the public-API surface for building custom realtime providers
-// (Gemini Live, OpenAI Realtime, or a third-party WebSocket model) and
+// (OpenAI Realtime or a third-party WebSocket model) and
 // for libraries that drive a SpeechKit session directly without going
 // through the higher-level [Service] in the parent package.
 //
@@ -32,7 +32,7 @@ const (
 	StateDeactivating State = "deactivating"
 )
 
-// ThinkingLevel controls how much deliberate reasoning Gemini Live should spend.
+// ThinkingLevel controls how much deliberate reasoning a provider should spend.
 type ThinkingLevel string
 
 const (
@@ -60,7 +60,7 @@ const (
 	EndSensitivityHigh   EndSensitivity = "high"
 )
 
-// ActivityHandling controls what Gemini Live should do when new activity starts.
+// ActivityHandling controls what the provider should do when new activity starts.
 type ActivityHandling string
 
 const (
@@ -79,7 +79,7 @@ const (
 	TurnCoverageTurnIncludesAudioActivity TurnCoverage = "turn_includes_audio_activity"
 )
 
-// ThinkingPolicy defines optional Gemini Live thinking behavior.
+// ThinkingPolicy defines optional provider thinking behavior.
 type ThinkingPolicy struct {
 	Enabled         bool
 	IncludeThoughts bool
@@ -202,9 +202,9 @@ type LiveReconnector interface {
 
 // LiveConfig configures a real-time session.
 type LiveConfig struct {
-	Provider  string // e.g. "google", "deepgram", "assemblyai", "openai"
-	ProfileID string // e.g. "realtime.google.gemini-native-audio"
-	Model     string // e.g. "gemini-3.1-flash-live-preview"
+	Provider  string // e.g. "deepgram", "assemblyai", "openai"
+	ProfileID string // e.g. "realtime.openai.gpt-realtime-2"
+	Model     string // provider-specific realtime model id
 	// FallbackModel is tried when the primary Model's Connect fails. Empty
 	// disables the fallback. Typical pairing in 2026: a preview model as
 	// Model + the last GA model as FallbackModel, so transient preview
@@ -230,16 +230,9 @@ type LiveConfig struct {
 	RefinementPrompt string
 	VocabularyHint   string
 	Locale           string
-	// Region is the Google Cloud region the caller's API key / project is
-	// pinned to (e.g. "europe-west3", "us-central1"). Used by providers that
-	// support regional endpoints. For Gemini Live (as of May 2026) the API
-	// exposes a single global WebSocket endpoint, so this field does NOT
-	// redirect traffic — it is logged at connect time for compliance evidence
-	// (byok.key_updated audit event) and reserved for future regional routing
-	// once Google publishes per-region hostnames. Data residency is controlled
-	// at the Google Cloud project level; both the project region AND this field
-	// must agree for audit records to be accurate.
-	// See docs/compliance/byok-gemini-region-pinning.md.
+	// Region is retained for legacy configuration decoding only. Current
+	// providers in SpeechKit do not use it and it must not select a retired
+	// resources or route AI traffic.
 	Region          string
 	Policies        LivePolicies
 	Tools           []ToolDefinition

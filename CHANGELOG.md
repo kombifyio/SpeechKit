@@ -9,6 +9,27 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.70.2](https://github.com/kombifyio/SpeechKit/compare/v0.70.1...v0.70.2) (2026-09-14)
+
+
+### Bug Fixes
+
+* **config:** stop defaulting onto retired Google providers ([#492](https://github.com/kombifyio/SpeechKit/issues/492)) ([b9dce1c](https://github.com/kombifyio/SpeechKit/commit/b9dce1c8e3d657fe2d51310a33229eef4995c6f3))
+* remove Google AI STT/TTS and Gemini Live ([#485](https://github.com/kombifyio/SpeechKit/issues/485)) ([134cc86](https://github.com/kombifyio/SpeechKit/commit/134cc86f793167ccc273b1df4ab46e79d89065db))
+* **wakeword:** hey_kubi default with hey_quby alias ([#489](https://github.com/kombifyio/SpeechKit/issues/489)) ([649a0c8](https://github.com/kombifyio/SpeechKit/commit/649a0c8b19dabab8b3f08466e595a5200d768ab8))
+
+
+### Changed
+
+* **website:** SpeechKit now explains the Windows, macOS beta, Android, browser
+  and server paths, introduces Meeting notes and reviews, and provides updated
+  developer guides and a Meeting starter prompt in the existing site design. ([#486](https://github.com/kombifyio/SpeechKit/issues/486)) ([0a10bd5](https://github.com/kombifyio/SpeechKit/commit/0a10bd59520b3aae30278dce9ae38a90ecd2b05d))
+
+
+### Performance Improvements
+
+* **delivery:** adopt consolidated source runner ([#487](https://github.com/kombifyio/SpeechKit/issues/487)) ([d0230c3](https://github.com/kombifyio/SpeechKit/commit/d0230c3949a2d041184ec21e06563c997d4f3d6d))
+
 ## [0.70.1](https://github.com/kombifyio/SpeechKit/compare/v0.70.0...v0.70.1) (2026-09-12)
 
 

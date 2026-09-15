@@ -302,7 +302,6 @@ func serverSettingsSnapshot(app *App) map[string]any {
 			"cloud": map[string]any{
 				"openai":      providerConfigured(cfg, "openai", cfg.Providers.OpenAI.Enabled),
 				"groq":        providerConfigured(cfg, "groq", cfg.Providers.Groq.Enabled),
-				"google":      providerConfigured(cfg, "google", cfg.Providers.Google.Enabled),
 				"open_router": providerConfigured(cfg, "openrouter", cfg.Providers.OpenRouter.Enabled),
 			},
 		},
@@ -310,11 +309,6 @@ func serverSettingsSnapshot(app *App) map[string]any {
 			"provider":         effectiveVoiceAgentProvider(cfg),
 			"agent_profile_id": voiceagentprofile.NormalizeID(cfg.VoiceAgent.AgentProfileID),
 			"agent_profiles":   voiceAgentProfileCatalog(),
-			"gemini": map[string]any{
-				"configured": providerConfigured(cfg, "google", true)["configured"],
-				"model":      cfg.VoiceAgent.Model,
-				"fallback":   cfg.VoiceAgent.FallbackModel,
-			},
 			"cascaded": map[string]any{
 				"stt_ready":   app.STTRouter != nil,
 				"agent_ready": app.AgentFlow != nil,
@@ -478,12 +472,12 @@ func providerConfigured(cfg *config.Config, target string, enabled bool) map[str
 
 func effectiveVoiceAgentProvider(cfg *config.Config) string {
 	if cfg == nil {
-		return "gemini"
+		return "assemblyai"
 	}
 	if provider := strings.TrimSpace(cfg.VoiceAgent.Provider); provider != "" {
 		return normalizeVoiceAgentProvider(provider)
 	}
-	return "gemini"
+	return "assemblyai"
 }
 
 func activeServerAuthSettings(cfg *config.Config) config.ServerAuthSettings {
@@ -604,7 +598,6 @@ func mergeServerModelSettings(base, patch config.ServerModelSettings) config.Ser
 	base.Modes.VoiceAgent = mergeServerModeSetting(base.Modes.VoiceAgent, patch.Modes.VoiceAgent)
 	base.Credentials.OpenAI = mergeServerCredentialSetting(base.Credentials.OpenAI, patch.Credentials.OpenAI)
 	base.Credentials.Groq = mergeServerCredentialSetting(base.Credentials.Groq, patch.Credentials.Groq)
-	base.Credentials.Google = mergeServerCredentialSetting(base.Credentials.Google, patch.Credentials.Google)
 	base.Credentials.Deepgram = mergeServerCredentialSetting(base.Credentials.Deepgram, patch.Credentials.Deepgram)
 	base.Credentials.AssemblyAI = mergeServerCredentialSetting(base.Credentials.AssemblyAI, patch.Credentials.AssemblyAI)
 	base.Credentials.HuggingFace = mergeServerCredentialSetting(base.Credentials.HuggingFace, patch.Credentials.HuggingFace)
@@ -838,8 +831,6 @@ func activeVoiceAgentModeSetting(cfg *config.Config) config.ServerModeSetting {
 	}
 	provider := effectiveVoiceAgentProvider(cfg)
 	switch provider {
-	case ProviderGemini:
-		return serverModeSettingFromProvider("google", framework.ModeVoiceAgent, firstNonEmpty(cfg.VoiceAgent.Model, liveDefaultModel(provider)))
 	case ProviderDeepgram:
 		return serverModeSettingFromProvider("deepgram", framework.ModeVoiceAgent, firstNonEmpty(cfg.VoiceAgent.Model, liveDefaultModel(provider)))
 	case ProviderAssemblyAI:
@@ -898,7 +889,6 @@ func activeServerCredentialSettings(cfg *config.Config) config.ServerCredentialS
 	return config.ServerCredentialSettings{
 		OpenAI:      activeCredential(cfg.Providers.OpenAI.Enabled, config.ProviderCredentialEnvName(cfg, "openai")),
 		Groq:        activeCredential(cfg.Providers.Groq.Enabled, config.ProviderCredentialEnvName(cfg, "groq")),
-		Google:      activeCredential(cfg.Providers.Google.Enabled, config.ProviderCredentialEnvName(cfg, "google")),
 		Deepgram:    activeCredential(cfg.Providers.Deepgram.Enabled, config.ProviderCredentialEnvName(cfg, "deepgram")),
 		AssemblyAI:  activeCredential(cfg.Providers.AssemblyAI.Enabled, config.ProviderCredentialEnvName(cfg, "assemblyai")),
 		HuggingFace: activeCredential(cfg.HuggingFace.Enabled, config.ProviderCredentialEnvName(cfg, "huggingface")),

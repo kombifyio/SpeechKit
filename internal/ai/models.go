@@ -4,15 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
-
+	"github.com/kombifyio/SpeechKit/internal/ai/generation"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
@@ -56,134 +55,73 @@ func newLocalAIClient(validation *netsec.ValidationOptions) *http.Client {
 	return netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Minute, DialValidation: validation})
 }
 
-// registerOpenAIModels registers OpenAI models as custom Genkit models.
-func registerOpenAIModels(g *genkit.Genkit, apiKey string) {
-	client := newAIClient(&AICallValidation)
-	models := []string{
-		"gpt-5.4-mini-2026-03-17",
-		"gpt-5.4-2026-03-05",
-		"gpt-4o-mini",
-		"gpt-4o",
-		"gpt-4-turbo",
-	}
-
-	for _, name := range models {
-		// The GPT-5 family on OpenAI has the same request rules as on Foundry:
-		// max_completion_tokens only, default temperature only.
+func newModel(cfg Config, provider, name string) (Model, error) {
+	switch strings.TrimSpace(provider) {
+	case "openai":
+		opts := oaiCallOptions{AuthToken: cfg.OpenAIAPIKey}
 		if reasoningModelFamily(name) {
-			registerOpenAICompatibleModelWithOptions(g, "openai", name, openAIBaseURL, client, true, AICallValidation, oaiCallOptions{
-				AuthToken:              apiKey,
-				UseMaxCompletionTokens: true,
-				OmitTemperature:        true,
-			})
-			continue
+			opts.UseMaxCompletionTokens = true
+			opts.OmitTemperature = true
 		}
-		registerOpenAICompatibleModel(g, "openai", name, openAIBaseURL, apiKey, client, true)
-	}
-}
-
-// registerGroqModels registers Groq models as custom Genkit models.
-// Groq uses an OpenAI-compatible API.
-func registerGroqModels(g *genkit.Genkit, apiKey string) {
-	client := newAIClient(&AICallValidation)
-	models := []string{
-		"llama-3.1-8b-instant",
-		"llama-3.3-70b-versatile",
-		"llama-3.1-70b-versatile",
-		"gemma2-9b-it",
-		"mixtral-8x7b-32768",
-	}
-
-	for _, name := range models {
-		registerOpenAICompatibleModel(g, "groq", name, groqBaseURL, apiKey, client, true)
-	}
-}
-
-// registerHFModels registers HuggingFace Inference API models as custom Genkit models.
-// HF uses an OpenAI-compatible chat completions endpoint.
-func registerHFModels(g *genkit.Genkit, token string) {
-	client := newAIClient(&AICallValidation)
-	models := []string{
-		"Qwen/Qwen3.5-9B",
-		"Qwen/Qwen3.5-27B",
-		"Qwen/Qwen2.5-7B-Instruct",
-		"Qwen/Qwen2.5-32B-Instruct",
-		"meta-llama/Llama-3.1-8B-Instruct",
-	}
-
-	for _, name := range models {
-		registerOpenAICompatibleModel(g, "huggingface", name, hfBaseURL, token, client, false)
-	}
-}
-
-// registerAssemblyAILLMModels registers AssemblyAI LLM Gateway models.
-// Chat completions are OpenAI-compatible; Qwen 3.5 4B Fast has no tool calling.
-func registerAssemblyAILLMModels(g *genkit.Genkit, apiKey, baseURL string, extra []string) {
-	if strings.TrimSpace(baseURL) == "" {
-		baseURL = assemblyAILLMGatewayBaseURL
-	}
-	client := newAIClient(&AICallValidation)
-	names := []string{
-		"qwen3.5-4b-32k-fast",
-		"qwen3-32B",
-		"gemini-2.5-flash",
-	}
-	names = append(names, extra...)
-	seen := map[string]bool{}
-	for _, raw := range names {
-		name := strings.TrimSpace(raw)
-		if name == "" || seen[name] {
-			continue
+		return newOpenAICompatibleModel("openai", name, openAIBaseURL, newAIClient(&AICallValidation), AICallValidation, opts), nil
+	case "groq":
+		return newOpenAICompatibleModel("groq", name, groqBaseURL, newAIClient(&AICallValidation), AICallValidation, oaiCallOptions{AuthToken: cfg.GroqAPIKey}), nil
+	case "huggingface":
+		return newOpenAICompatibleModel("huggingface", name, hfBaseURL, newAIClient(&AICallValidation), AICallValidation, oaiCallOptions{AuthToken: cfg.HuggingFaceToken}), nil
+	case "openrouter":
+		return newOpenAICompatibleModel("openrouter", name, openRouterBaseURL, newAIClient(&AICallValidation), AICallValidation, oaiCallOptions{AuthToken: cfg.OpenRouterAPIKey}), nil
+	case "assemblyai":
+		baseURL := strings.TrimSpace(cfg.AssemblyAILLMGatewayBaseURL)
+		if baseURL == "" {
+			baseURL = assemblyAILLMGatewayBaseURL
 		}
-		seen[name] = true
-		supportsTools := name != "qwen3.5-4b-32k-fast"
-		registerOpenAICompatibleModel(g, "assemblyai", name, baseURL, apiKey, client, supportsTools)
-	}
-}
-
-func registerCloudflareAIGatewayModels(g *genkit.Genkit, apiKey, accountID, gatewayID string, extra []string) {
-	accountID = strings.TrimSpace(accountID)
-	if accountID == "" || strings.TrimSpace(apiKey) == "" {
-		return
-	}
-	if strings.TrimSpace(gatewayID) == "" {
-		gatewayID = "default"
-	}
-	baseURL := "https://api.cloudflare.com/client/v4/accounts/" + accountID + "/ai/v1"
-	client := newAIClient(&AICallValidation)
-	headers := map[string]string{"cf-aig-gateway-id": gatewayID}
-	names := []string{
-		"@cf/meta/llama-3.2-3b-instruct",
-		"@cf/meta/llama-3.1-8b-instruct-fast",
-	}
-	names = append(names, extra...)
-	seen := map[string]bool{}
-	for _, raw := range names {
-		name := strings.TrimSpace(raw)
-		if name == "" || seen[name] {
-			continue
+		return newOpenAICompatibleModel("assemblyai", name, baseURL, newAIClient(&AICallValidation), AICallValidation, oaiCallOptions{AuthToken: cfg.AssemblyAIAPIKey}), nil
+	case "cloudflare":
+		if strings.TrimSpace(cfg.CloudflareAPIKey) == "" || strings.TrimSpace(cfg.CloudflareAccountID) == "" {
+			return nil, errors.New("Cloudflare native credentials are unavailable")
 		}
-		seen[name] = true
-		registerOpenAICompatibleModelWithHeaders(g, "cloudflare", name, baseURL, apiKey, client, false, AICallValidation, headers)
+		gatewayID := strings.TrimSpace(cfg.CloudflareGatewayID)
+		if gatewayID == "" {
+			gatewayID = "default"
+		}
+		baseURL := "https://api.cloudflare.com/client/v4/accounts/" + cfg.CloudflareAccountID + "/ai/v1"
+		return newOpenAICompatibleModel("cloudflare", name, baseURL, newAIClient(&AICallValidation), AICallValidation, oaiCallOptions{
+			AuthToken:    cfg.CloudflareAPIKey,
+			ExtraHeaders: map[string]string{"cf-aig-gateway-id": gatewayID},
+		}), nil
+	case "foundry":
+		if !foundryModelEnabled(cfg) {
+			return nil, errors.New("Foundry credentials are unavailable")
+		}
+		baseURL, opts, ok := foundryModelTarget(foundryRegistration{
+			APIKey:      cfg.FoundryAPIKey,
+			BearerToken: cfg.FoundryBearerToken,
+			BaseURL:     cfg.FoundryBaseURL,
+			MAIBaseURL:  cfg.FoundryMAIBaseURL,
+		}, name)
+		if !ok {
+			return nil, fmt.Errorf("Foundry deployment %q cannot be served with the configured bases", name)
+		}
+		return newOpenAICompatibleModel("foundry", name, baseURL, newAIClient(&AICallValidation), AICallValidation, opts), nil
+	case "local":
+		client := newLocalAIClient(&localLLMCallValidation)
+		if cfg.LocalLLMTransport != nil {
+			next := client.Transport
+			if next == nil {
+				next = http.DefaultTransport
+			}
+			client.Transport = cfg.LocalLLMTransport(next)
+		}
+		return newOpenAICompatibleModel("local", name, cfg.LocalLLMBaseURL, client, localLLMCallValidation, oaiCallOptions{}), nil
+	case "ollama":
+		return &ollamaModel{baseURL: cfg.OllamaBaseURL, name: name, client: newLocalAIClient(&localLLMCallValidation)}, nil
+	default:
+		return nil, fmt.Errorf("unsupported model provider %q", provider)
 	}
 }
 
-// registerOpenRouterModels registers OpenRouter models as custom Genkit models.
-// OpenRouter uses an OpenAI-compatible API with a different base URL.
-func registerOpenRouterModels(g *genkit.Genkit, apiKey string) {
-	client := newAIClient(&AICallValidation)
-	models := []string{
-		"meta-llama/llama-3.1-8b-instruct",
-		"google/gemini-2.5-flash",
-	}
-
-	for _, name := range models {
-		registerOpenAICompatibleModel(g, "openrouter", name, openRouterBaseURL, apiKey, client, true)
-	}
-}
-
-// foundryRegistration is what registerFoundryModels needs from the host: one
-// credential (the resource key or a token source), the two inference bases
+// foundryRegistration is what Foundry model construction needs from the host:
+// one credential (the resource key or a token source), the two inference bases
 // and the deployment names the tiers point at.
 type foundryRegistration struct {
 	APIKey      string
@@ -192,8 +130,7 @@ type foundryRegistration struct {
 	BaseURL string
 	// MAIBaseURL is https://<host>/mai/v1 for Microsoft-publisher
 	// deployments (MAI-Thinking-1). Empty means those cannot be served.
-	MAIBaseURL  string
-	Deployments []string
+	MAIBaseURL string
 }
 
 // isFoundryMAIDeployment mirrors config.IsMAIThinkingModel without importing
@@ -227,82 +164,30 @@ func foundryModelTarget(reg foundryRegistration, name string) (baseURL string, o
 	return reg.BaseURL, opts, true
 }
 
-// registerFoundryModels registers the configured Microsoft Foundry deployments
-// as custom Genkit models. OpenAI-publisher deployments speak the
-// OpenAI-compatible v1 surface; Microsoft-publisher ones (MAI-Thinking-1)
-// live on /mai/v1 with the same chat-completions shape. Both accept the
-// resource key or an Entra bearer token.
-func registerFoundryModels(g *genkit.Genkit, reg foundryRegistration) {
-	if strings.TrimSpace(reg.APIKey) == "" && reg.BearerToken == nil {
-		return
-	}
-	client := newAIClient(&AICallValidation)
-	seen := map[string]bool{}
-	for _, raw := range reg.Deployments {
-		name := strings.TrimSpace(raw)
-		if name == "" || seen[name] {
-			continue
-		}
-		seen[name] = true
-		baseURL, opts, ok := foundryModelTarget(reg, name)
-		if !ok {
-			continue
-		}
-		registerOpenAICompatibleModelWithOptions(g, "foundry", name, baseURL, client, true, AICallValidation, opts)
+type openAICompatibleModel struct {
+	provider   string
+	name       string
+	baseURL    string
+	client     *http.Client
+	validation netsec.ValidationOptions
+	opts       oaiCallOptions
+}
+
+func newOpenAICompatibleModel(provider, name, baseURL string, client *http.Client, validation netsec.ValidationOptions, opts oaiCallOptions) *openAICompatibleModel {
+	return &openAICompatibleModel{
+		provider:   provider,
+		name:       name,
+		baseURL:    baseURL,
+		client:     client,
+		validation: validation,
+		opts:       opts,
 	}
 }
 
-// registerLocalLLMModels registers SpeechKit-managed local LLM models.
-// The runtime speaks the OpenAI-compatible chat completions API on loopback.
-func registerLocalLLMModels(g *genkit.Genkit, baseURL string, modelNames []string, wrapTransport func(http.RoundTripper) http.RoundTripper) {
-	client := newLocalAIClient(&localLLMCallValidation)
-	if wrapTransport != nil {
-		next := client.Transport
-		if next == nil {
-			next = http.DefaultTransport
-		}
-		client.Transport = wrapTransport(next)
-	}
-	seen := map[string]bool{}
-	for _, rawName := range modelNames {
-		name := strings.TrimSpace(rawName)
-		if name == "" || seen[name] {
-			continue
-		}
-		seen[name] = true
-		registerOpenAICompatibleModelWithValidation(g, "local", name, baseURL, "", client, false, localLLMCallValidation)
-	}
-}
+func (m *openAICompatibleModel) ID() string { return m.provider + "/" + m.name }
 
-// registerOpenAICompatibleModel registers a single model that speaks the OpenAI chat completions API.
-func registerOpenAICompatibleModel(g *genkit.Genkit, provider, name, baseURL, authToken string, client *http.Client, supportsTools bool) {
-	registerOpenAICompatibleModelWithValidation(g, provider, name, baseURL, authToken, client, supportsTools, AICallValidation)
-}
-
-func registerOpenAICompatibleModelWithValidation(
-	g *genkit.Genkit,
-	provider string,
-	name string,
-	baseURL string,
-	authToken string,
-	client *http.Client,
-	supportsTools bool,
-	validation netsec.ValidationOptions,
-) {
-	genkit.DefineModel(g, provider+"/"+name,
-		&ai.ModelOptions{
-			Label: provider + "/" + name,
-			Supports: &ai.ModelSupports{
-				Multiturn:  true,
-				SystemRole: true,
-				Media:      false,
-				Tools:      supportsTools,
-			},
-		},
-		func(ctx context.Context, mr *ai.ModelRequest, cb ai.ModelStreamCallback) (*ai.ModelResponse, error) {
-			return callOpenAICompatibleWithValidation(ctx, client, baseURL, authToken, name, mr, validation, nil)
-		},
-	)
+func (m *openAICompatibleModel) Generate(ctx context.Context, input Request) (Response, error) {
+	return callOpenAICompatibleWithOptions(ctx, m.client, m.baseURL, m.name, input, m.validation, m.opts)
 }
 
 // OpenAI-compatible request/response types.
@@ -350,30 +235,6 @@ func reasoningModelFamily(name string) bool {
 	return false
 }
 
-func registerOpenAICompatibleModelWithOptions(
-	g *genkit.Genkit,
-	provider, name, baseURL string,
-	client *http.Client,
-	supportsTools bool,
-	validation netsec.ValidationOptions,
-	opts oaiCallOptions,
-) {
-	genkit.DefineModel(g, provider+"/"+name,
-		&ai.ModelOptions{
-			Label: provider + "/" + name,
-			Supports: &ai.ModelSupports{
-				Multiturn:  true,
-				SystemRole: true,
-				Media:      false,
-				Tools:      supportsTools,
-			},
-		},
-		func(ctx context.Context, mr *ai.ModelRequest, cb ai.ModelStreamCallback) (*ai.ModelResponse, error) {
-			return callOpenAICompatibleWithOptions(ctx, client, baseURL, name, mr, validation, opts)
-		},
-	)
-}
-
 type oaiResponse struct {
 	Choices []struct {
 		Message struct {
@@ -386,48 +247,8 @@ type oaiResponse struct {
 	} `json:"usage"`
 }
 
-func registerOpenAICompatibleModelWithHeaders(
-	g *genkit.Genkit,
-	provider, name, baseURL, authToken string,
-	client *http.Client,
-	supportsTools bool,
-	validation netsec.ValidationOptions,
-	extraHeaders map[string]string,
-) {
-	genkit.DefineModel(g, provider+"/"+name,
-		&ai.ModelOptions{
-			Label: provider + "/" + name,
-			Supports: &ai.ModelSupports{
-				Multiturn:  true,
-				SystemRole: true,
-				Media:      false,
-				Tools:      supportsTools,
-			},
-		},
-		func(ctx context.Context, mr *ai.ModelRequest, cb ai.ModelStreamCallback) (*ai.ModelResponse, error) {
-			return callOpenAICompatibleWithValidation(ctx, client, baseURL, authToken, name, mr, validation, extraHeaders)
-		},
-	)
-}
-
-func callOpenAICompatible(ctx context.Context, client *http.Client, baseURL, authToken, model string, mr *ai.ModelRequest) (*ai.ModelResponse, error) {
-	return callOpenAICompatibleWithValidation(ctx, client, baseURL, authToken, model, mr, AICallValidation, nil)
-}
-
-func callOpenAICompatibleWithValidation(
-	ctx context.Context,
-	client *http.Client,
-	baseURL string,
-	authToken string,
-	model string,
-	mr *ai.ModelRequest,
-	validation netsec.ValidationOptions,
-	extraHeaders map[string]string,
-) (*ai.ModelResponse, error) {
-	return callOpenAICompatibleWithOptions(ctx, client, baseURL, model, mr, validation, oaiCallOptions{
-		AuthToken:    authToken,
-		ExtraHeaders: extraHeaders,
-	})
+func callOpenAICompatible(ctx context.Context, client *http.Client, baseURL, authToken, model string, input Request) (Response, error) {
+	return callOpenAICompatibleWithOptions(ctx, client, baseURL, model, input, AICallValidation, oaiCallOptions{AuthToken: authToken})
 }
 
 func callOpenAICompatibleWithOptions(
@@ -435,95 +256,78 @@ func callOpenAICompatibleWithOptions(
 	client *http.Client,
 	baseURL string,
 	model string,
-	mr *ai.ModelRequest,
+	input Request,
 	validation netsec.ValidationOptions,
 	opts oaiCallOptions,
-) (*ai.ModelResponse, error) {
-	extraHeaders := opts.ExtraHeaders
-	var messages []oaiMessage
-	for _, m := range mr.Messages {
-		role := string(m.Role)
-		if role == "model" {
-			role = "assistant"
-		}
-		var text string
-		for _, p := range m.Content {
-			if p.IsText() {
-				text += p.Text
-			}
-		}
-		messages = append(messages, oaiMessage{Role: role, Content: text})
-	}
-
+) (Response, error) {
 	reqBody := oaiRequest{
 		Model:    model,
-		Messages: messages,
+		Messages: promptMessages(input),
 	}
-
-	if cfg, ok := mr.Config.(*ai.GenerationCommonConfig); ok && cfg != nil {
-		if cfg.MaxOutputTokens > 0 {
-			if opts.UseMaxCompletionTokens {
-				reqBody.MaxCompletionTokens = cfg.MaxOutputTokens
-			} else {
-				reqBody.MaxTokens = cfg.MaxOutputTokens
-			}
+	if input.MaxTokens > 0 {
+		if opts.UseMaxCompletionTokens {
+			reqBody.MaxCompletionTokens = input.MaxTokens
+		} else {
+			reqBody.MaxTokens = input.MaxTokens
 		}
-		if cfg.Temperature > 0 && !opts.OmitTemperature {
-			t := cfg.Temperature
-			reqBody.Temperature = &t
-		}
+	}
+	if input.Temperature != nil && *input.Temperature > 0 && !opts.OmitTemperature {
+		reqBody.Temperature = input.Temperature
 	}
 
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
+		return Response{}, fmt.Errorf("marshal request: %w", err)
 	}
 
 	endpoint, err := netsec.BuildEndpoint(baseURL, chatCompletions, validation)
 	if err != nil {
-		return nil, fmt.Errorf("%s endpoint: %w", model, err)
+		return Response{}, fmt.Errorf("%s endpoint: %w", model, err)
 	}
 	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(jsonBody))
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+		return Response{}, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	authToken := opts.AuthToken
 	if opts.BearerToken != nil {
 		minted, err := opts.BearerToken(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("%s: bearer token: %w", model, err)
+			return Response{}, fmt.Errorf("%s: bearer token: %w", model, err)
 		}
 		authToken = minted
 	}
 	if token := strings.TrimSpace(authToken); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	for key, value := range extraHeaders {
+	for key, value := range opts.ExtraHeaders {
 		if strings.TrimSpace(key) == "" || strings.TrimSpace(value) == "" {
 			continue
 		}
 		req.Header.Set(key, value)
 	}
 
+	if client == nil {
+		client = newAIClient(&validation)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%s request: %w", model, err)
+		return Response{}, fmt.Errorf("%s request: %w", model, err)
 	}
 	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxRespBody))
 	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
+		return Response{}, fmt.Errorf("read response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, netsec.ProviderStatusError(model, resp.StatusCode, body)
+		return Response{}, netsec.ProviderStatusError(model, resp.StatusCode, body)
 	}
 
 	var oaiResp oaiResponse
 	if err := json.Unmarshal(body, &oaiResp); err != nil {
-		return nil, fmt.Errorf("parse response: %w", err)
+		return Response{}, fmt.Errorf("parse response: %w", err)
 	}
 
 	if len(oaiResp.Choices) == 0 {
@@ -535,17 +339,89 @@ func callOpenAICompatibleWithOptions(
 		}
 	}
 	if len(oaiResp.Choices) == 0 {
-		return nil, fmt.Errorf("%s: no choices in response", model)
+		return Response{}, fmt.Errorf("%s: no choices in response", model)
 	}
 
-	return &ai.ModelResponse{
-		Message: &ai.Message{
-			Content: []*ai.Part{ai.NewTextPart(oaiResp.Choices[0].Message.Content)},
-			Role:    ai.RoleModel,
-		},
-		FinishReason: ai.FinishReason(oaiResp.Choices[0].FinishReason),
-		Usage: &ai.GenerationUsage{
-			TotalTokens: oaiResp.Usage.TotalTokens,
-		},
-	}, nil
+	out := Response{
+		Text:         oaiResp.Choices[0].Message.Content,
+		FinishReason: oaiResp.Choices[0].FinishReason,
+	}
+	if oaiResp.Usage.TotalTokens > 0 {
+		out.Usage = &generation.Usage{TotalTokens: oaiResp.Usage.TotalTokens}
+	}
+	return out, nil
+}
+
+func promptMessages(input Request) []oaiMessage {
+	messages := make([]oaiMessage, 0, 2+len(input.Messages))
+	if system := strings.TrimSpace(input.System); system != "" {
+		messages = append(messages, oaiMessage{Role: "system", Content: system})
+	}
+	for _, message := range input.Messages {
+		role := message.Role
+		if role == "model" {
+			role = "assistant"
+		}
+		if strings.TrimSpace(message.Content) == "" || role == "system" {
+			continue
+		}
+		messages = append(messages, oaiMessage{Role: role, Content: message.Content})
+	}
+	if prompt := strings.TrimSpace(input.Prompt); prompt != "" {
+		messages = append(messages, oaiMessage{Role: "user", Content: prompt})
+	}
+	return messages
+}
+
+type ollamaModel struct {
+	baseURL string
+	name    string
+	client  *http.Client
+}
+
+func (m *ollamaModel) ID() string { return "ollama/" + m.name }
+
+func (m *ollamaModel) Generate(ctx context.Context, input Request) (Response, error) {
+	body, err := json.Marshal(struct {
+		Model    string       `json:"model"`
+		Messages []oaiMessage `json:"messages"`
+		Stream   bool         `json:"stream"`
+	}{Model: m.name, Messages: promptMessages(input), Stream: false})
+	if err != nil {
+		return Response{}, fmt.Errorf("marshal %s request: %w", m.ID(), err)
+	}
+	endpoint, err := netsec.BuildEndpoint(m.baseURL, "api/chat", localLLMCallValidation)
+	if err != nil {
+		return Response{}, fmt.Errorf("%s endpoint: %w", m.ID(), err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return Response{}, fmt.Errorf("create %s request: %w", m.ID(), err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := m.client
+	if client == nil {
+		client = newLocalAIClient(&localLLMCallValidation)
+	}
+	response, err := client.Do(req)
+	if err != nil {
+		return Response{}, fmt.Errorf("%s request: %w", m.ID(), err)
+	}
+	defer response.Body.Close() //nolint:errcheck
+	payload, err := io.ReadAll(io.LimitReader(response.Body, maxRespBody))
+	if err != nil {
+		return Response{}, fmt.Errorf("read %s response: %w", m.ID(), err)
+	}
+	if response.StatusCode != http.StatusOK {
+		return Response{}, netsec.ProviderStatusError(m.ID(), response.StatusCode, payload)
+	}
+	var decoded struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		return Response{}, fmt.Errorf("parse %s response: %w", m.ID(), err)
+	}
+	return Response{Text: decoded.Message.Content}, nil
 }

@@ -11,7 +11,6 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/assemblyai"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/deepgram"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/google"
 	"io"
 	"math"
 	"os"
@@ -51,20 +50,6 @@ func TestIntegrationAssemblyAIDiarization(t *testing.T) {
 	result, err := provider.Transcribe(ctx, audio, speakerIntegrationOptions())
 	if err != nil {
 		t.Fatalf("AssemblyAI Transcribe: %v", err)
-	}
-	assertTwoSpeakerDiarization(t, result)
-}
-
-func TestIntegrationGoogleSTTDiarization(t *testing.T) {
-	key := testutil.RequireAnyEnvOrSkip(t, []string{google.EnvAPIKey, google.EnvCloudAPIKey, google.EnvLegacyAPIKey}, "Google STT diarization integration requires live Google STT credentials.")
-	audio := loadSpeakerIntegrationAudio(t)
-
-	ctx, cancel := context.WithTimeout(context.Background(), speakerIntegrationTimeout)
-	defer cancel()
-
-	result, err := google.New(key, "latest_long").Transcribe(ctx, audio, speakerIntegrationOptions())
-	if err != nil {
-		t.Fatalf("Google STT Transcribe: %v", err)
 	}
 	assertTwoSpeakerDiarization(t, result)
 }
@@ -392,28 +377,6 @@ func collectSpeakerLabels(labels map[string]bool, frame *speaker.SpeakerFrame) {
 			labels[entry.Label] = true
 		}
 	}
-}
-
-// TestIntegrationGoogleSTTStreamingTranscription gates Google STT v2
-// StreamingRecognize. v2 streaming cannot diarize (Chirp-3 docs), so this
-// proves realtime TRANSCRIPTION only: transcript text must arrive and frames
-// must carry no speaker labels. Requires service-account/ADC credentials.
-func TestIntegrationGoogleSTTStreamingTranscription(t *testing.T) {
-	if !google.StreamingCredentialsPresent() {
-		testutil.SkipOrFailMissingConfig(t, google.EnvCredentialsJSON+" or "+google.EnvApplicationCredentials, "Google STT streaming integration requires service-account or ADC credentials.")
-	}
-	audio, format := loadSpeakerIntegrationPCM(t)
-
-	ctx, cancel := context.WithTimeout(context.Background(), speakerIntegrationTimeout)
-	defer cancel()
-
-	opts := speakerIntegrationOptions().Speaker
-	opts.PreferStreaming = true
-	stream, err := google.New("", "latest_long").StartSpeakerStream(ctx, opts, format)
-	if err != nil {
-		t.Fatalf("Google StartSpeakerStream: %v", err)
-	}
-	assertSpeakerStreamHasTranscript(t, ctx, stream, audio, format)
 }
 
 func assertSpeakerStreamHasTranscript(t *testing.T, ctx context.Context, stream speaker.SpeakerStream, audio []byte, format speaker.AudioFormat) {

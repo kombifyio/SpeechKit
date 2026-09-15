@@ -81,46 +81,6 @@ func (d ProviderDescriptor) DefaultModel() (LiveModelDescriptor, bool) {
 func DefaultProviderDescriptors() []ProviderDescriptor {
 	return []ProviderDescriptor{
 		{
-			Provider:    "google",
-			DisplayName: "Gemini Live",
-			ProfileID:   "realtime.google.gemini-native-audio",
-			Capabilities: []LiveCapabilityFlag{
-				LiveCapabilityRealtimeAudio,
-				LiveCapabilityToolCalling,
-				LiveCapabilityNativeContextPrompt,
-				LiveCapabilityReasoningEffort,
-				LiveCapabilitySessionResume,
-				LiveCapabilityTranscript,
-				LiveCapabilityInterruptions,
-			},
-			Models:           liveModelsForProviderProfile("google", "realtime.google.gemini-native-audio"),
-			SupportedLocales: []string{"*"},
-			NativeOptions:    nativeLiveOptions("google"),
-			AuthRequirement:  "api_key",
-			Transport:        "websocket",
-			EvidenceURL:      "https://ai.google.dev/gemini-api/docs/live-guide",
-		},
-		{
-			Provider:    "google",
-			DisplayName: "Gemini Live Translate",
-			ProfileID:   "realtime.google.gemini-live-translate",
-			Capabilities: []LiveCapabilityFlag{
-				LiveCapabilityRealtimeAudio,
-				LiveCapabilityTranslation,
-				LiveCapabilityTranscript,
-				LiveCapabilityInterruptions,
-			},
-			Models:           liveModelsForProviderProfile("google", "realtime.google.gemini-live-translate"),
-			SupportedLocales: []string{"*"},
-			NativeOptions: []provideropts.OptionID{
-				provideropts.OptionTranslation,
-				provideropts.OptionTurnDetection,
-			},
-			AuthRequirement: "api_key",
-			Transport:       "websocket",
-			EvidenceURL:     "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-live-translate-preview",
-		},
-		{
 			Provider:    "deepgram",
 			DisplayName: "Deepgram Voice Agent",
 			ProfileID:   "realtime.deepgram.voice-agent",

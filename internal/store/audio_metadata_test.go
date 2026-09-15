@@ -37,17 +37,17 @@ func TestBuildLocalAudioAssetReadsFileMetadata(t *testing.T) {
 
 func TestNormalizeTranscriptionModelHints(t *testing.T) {
 	hints := normalizeTranscriptionModelHints(map[string]string{
-		" HF ":      " whisper-large-v3 ",
-		"openai":    "",
-		" ":         "ignored",
-		"GOOGLE_AI": " chirp ",
+		" HF ":     " whisper-large-v3 ",
+		"openai":   "",
+		" ":        "ignored",
+		"DEEPGRAM": " nova-3 ",
 	})
 
 	if hints["hf"] != "whisper-large-v3" {
 		t.Fatalf("hf hint = %q", hints["hf"])
 	}
-	if hints["google_ai"] != "chirp" {
-		t.Fatalf("google_ai hint = %q", hints["google_ai"])
+	if hints["deepgram"] != "nova-3" {
+		t.Fatalf("deepgram hint = %q", hints["deepgram"])
 	}
 	if _, ok := hints["openai"]; ok {
 		t.Fatalf("empty model hint should be omitted: %#v", hints)

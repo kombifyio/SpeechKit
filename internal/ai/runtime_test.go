@@ -3,8 +3,6 @@ package ai
 import (
 	"context"
 	"testing"
-
-	"github.com/firebase/genkit/go/genkit"
 )
 
 func TestInit_EmptyConfig(t *testing.T) {
@@ -14,9 +12,6 @@ func TestInit_EmptyConfig(t *testing.T) {
 	}
 	if rt == nil {
 		t.Fatal("expected non-nil runtime")
-	}
-	if rt.G == nil {
-		t.Fatal("expected non-nil Genkit instance")
 	}
 	if len(rt.UtilityModels()) != 0 {
 		t.Errorf("expected 0 utility models, got %d", len(rt.UtilityModels()))
@@ -291,51 +286,37 @@ func TestInit_DisabledProviderIgnored(t *testing.T) {
 	}
 }
 
-func TestInit_LookupModelDirectly(t *testing.T) {
+func TestInit_RegistersFoundryModel(t *testing.T) {
 	rt, err := Init(context.Background(), Config{
-		OpenAIAPIKey: "test-key",
+		FoundryAPIKey:      "test-key",
+		FoundryBaseURL:     "https://example.services.ai.azure.com/openai/v1",
+		FoundryAssistModel: "gpt-4o",
+		FoundryAgentModel:  "gpt-5.6-terra",
 	})
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-
-	// All registered OpenAI models should be findable
-	for _, name := range []string{"gpt-4o-mini", "gpt-4o"} {
-		m := genkit.LookupModel(rt.G, "openai/"+name)
-		if m == nil {
-			t.Errorf("LookupModel(%q) returned nil", "openai/"+name)
-		}
+	if _, ok := rt.AllModels()["foundry/gpt-4o"]; !ok {
+		t.Fatal("expected foundry/gpt-4o")
+	}
+	if _, ok := rt.AllModels()["foundry/gpt-5.6-terra"]; !ok {
+		t.Fatal("expected foundry/gpt-5.6-terra")
+	}
+	if len(rt.AssistModels()) != 1 || len(rt.AgentModels()) != 1 {
+		t.Fatalf("assist=%d agent=%d, want 1 and 1", len(rt.AssistModels()), len(rt.AgentModels()))
 	}
 }
 
-func TestInit_GroqModelsRegistered(t *testing.T) {
+func TestInit_UnselectedProviderCatalogIsNotRegistered(t *testing.T) {
 	rt, err := Init(context.Background(), Config{
-		GroqAPIKey: "test-key",
-	})
-	if err != nil {
-		t.Fatalf("Init: %v", err)
-	}
-
-	for _, name := range []string{"llama-3.1-8b-instant", "llama-3.3-70b-versatile", "gemma2-9b-it", "mixtral-8x7b-32768"} {
-		m := genkit.LookupModel(rt.G, "groq/"+name)
-		if m == nil {
-			t.Errorf("LookupModel(%q) returned nil", "groq/"+name)
-		}
-	}
-}
-
-func TestInit_HFModelsRegistered(t *testing.T) {
-	rt, err := Init(context.Background(), Config{
+		OpenAIAPIKey:     "test-key",
+		GroqAPIKey:       "test-key",
 		HuggingFaceToken: "test-token",
 	})
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-
-	for _, name := range []string{"Qwen/Qwen2.5-7B-Instruct", "Qwen/Qwen2.5-32B-Instruct", "meta-llama/Llama-3.1-8B-Instruct"} {
-		m := genkit.LookupModel(rt.G, "huggingface/"+name)
-		if m == nil {
-			t.Errorf("LookupModel(%q) returned nil", "huggingface/"+name)
-		}
+	if len(rt.AllModels()) != 0 {
+		t.Fatalf("AllModels = %d, want 0 when no model names are selected", len(rt.AllModels()))
 	}
 }

@@ -43,7 +43,7 @@ without rendering the SPA:
 - `https://speechkit.cc/getting-started/agents/android-memo-app.md`
 - `https://speechkit.cc/getting-started/agents/go-framework-integration.md`
 
-Each prompt writes:
+Each server-backed prompt above writes:
 
 - `speechkit-one-shot-manifest.json`, validated by `https://speechkit.cc/schemas/speechkit-one-shot-manifest.schema.json`.
 - `speechkit-one-shot-functional-result.json`, validated by `https://speechkit.cc/schemas/speechkit-one-shot-functional-result.schema.json`.
@@ -57,6 +57,14 @@ For MCP:
 ```text
 Hi Codex, configure `speechkit-mcp` in docs mode and verify the SpeechKit API before writing integration code.
 ```
+
+## Embedded Meeting starter
+
+Read https://speechkit.cc/getting-started/agents/meeting-notes-go.md to build a
+small Go notes demo using the public Meeting runtime and synthetic adapters.
+It runs without Docker, a server, a microphone or provider keys. It is separate
+from the live one-shot matrix: synthetic output must never be reported as real
+STT or AI review evidence. For recording real meetings, use the Windows client.
 
 ## Agent Instructions
 

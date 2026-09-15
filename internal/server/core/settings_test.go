@@ -45,8 +45,6 @@ func TestActiveVoiceAgentModeSettingUsesDirectProviderProfiles(t *testing.T) {
 		wantID    string
 		wantModel string
 	}{
-		{provider: "google", wantID: "realtime.google.gemini-native-audio", wantModel: "gemini-3.1-flash-live-preview"},
-		{provider: "google", model: "gemini-3.5-live-translate-preview", wantID: "realtime.google.gemini-live-translate", wantModel: "gemini-3.5-live-translate-preview"},
 		{provider: "deepgram", wantID: "realtime.deepgram.voice-agent", wantModel: "flux-general-multi"},
 		{provider: "assemblyai", wantID: "realtime.assemblyai.voice-agent", wantModel: "assemblyai-voice-agent"},
 		{provider: "openai", wantID: "realtime.openai.gpt-realtime-2", wantModel: "gpt-realtime-2"},
@@ -273,9 +271,6 @@ func TestRegisterServerSettings_PatchSavesProviderMatrixWithoutLeakingCredential
 			"assist": {"provider_kind":"local_built_in","profile_id":"assist.builtin.gemma4-e4b","model":"ggml-org/gemma-4-E2B-it-GGUF:Q8_0"},
 			"voice_agent": {"provider_kind":"local_built_in","profile_id":"realtime.builtin.pipeline","model":"ggml-org/gemma-4-E2B-it-GGUF:Q8_0"}
 		},
-		"credentials": {
-			"google": {"enabled": true, "env": "GOOGLE_AI_API_KEY", "value": "google-secret"}
-		},
 		"dictation": {
 			"dictionary": "kombi fire => Kombify\nAcmeOS"
 		},
@@ -291,9 +286,6 @@ func TestRegisterServerSettings_PatchSavesProviderMatrixWithoutLeakingCredential
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("PATCH /v1/server/settings = %d body=%s", rec.Code, rec.Body.String())
-	}
-	if strings.Contains(rec.Body.String(), "google-secret") {
-		t.Fatal("PATCH response leaked raw credential")
 	}
 
 	stored, ok, err := config.LoadServerModelSettings(config.ServerSettingsPath(app.Cfg))
@@ -312,9 +304,6 @@ func TestRegisterServerSettings_PatchSavesProviderMatrixWithoutLeakingCredential
 	if got := stored.Modes.Assist.ProfileID; got != "assist.builtin.gemma4-e4b" {
 		t.Fatalf("assist profile = %q", got)
 	}
-	if got := stored.Credentials.Google.Value; got != "" {
-		t.Fatalf("stored google credential should be write-only, got %q", got)
-	}
 	if stored.Dictation.Dictionary == nil || *stored.Dictation.Dictionary != "kombi fire => Kombify\nAcmeOS" {
 		t.Fatalf("stored dictation dictionary = %#v", stored.Dictation.Dictionary)
 	}
@@ -326,9 +315,6 @@ func TestRegisterServerSettings_PatchSavesProviderMatrixWithoutLeakingCredential
 	}
 
 	get := serveServerSettingsWithBearer(app, httptest.NewRequest(http.MethodGet, "/v1/server/settings", nil))
-	if strings.Contains(get.Body.String(), "google-secret") {
-		t.Fatal("GET response leaked raw credential")
-	}
 	for _, want := range []string{
 		`"dictionary":"kombi fire =\u003e Kombify\nAcmeOS"`,
 		`"enabled_tools":["summarize","quick_note"]`,

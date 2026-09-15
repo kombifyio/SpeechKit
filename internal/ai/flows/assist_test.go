@@ -4,8 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-
-	"github.com/firebase/genkit/go/genkit"
 )
 
 func TestLangName_KnownLocales(t *testing.T) {
@@ -112,8 +110,7 @@ func TestBuildAssistSystemPrompt_OmitsEmptySelectionAndContext(t *testing.T) {
 }
 
 func TestAssistFlow_EmptyUtterance(t *testing.T) {
-	g := genkit.Init(context.Background())
-	flow := DefineAssistFlow(g, nil)
+	flow := DefineAssistFlow(nil)
 
 	_, err := flow.Run(context.Background(), AssistInput{Utterance: ""})
 	if err == nil {
@@ -125,8 +122,7 @@ func TestAssistFlow_EmptyUtterance(t *testing.T) {
 }
 
 func TestAssistFlow_NoModels(t *testing.T) {
-	g := genkit.Init(context.Background())
-	flow := DefineAssistFlow(g, nil)
+	flow := DefineAssistFlow(nil)
 
 	_, err := flow.Run(context.Background(), AssistInput{Utterance: "hello"})
 	if err == nil {
@@ -141,8 +137,7 @@ func TestAssistFlow_NoModelsWithLocaleDefault(t *testing.T) {
 	// Even when Locale is empty, the flow should still proceed past the locale
 	// default assignment and reach the "no models" branch. Guards the default
 	// locale="en" assignment from accidentally short-circuiting.
-	g := genkit.Init(context.Background())
-	flow := DefineAssistFlow(g, nil)
+	flow := DefineAssistFlow(nil)
 
 	_, err := flow.Run(context.Background(), AssistInput{Utterance: "hi", Locale: ""})
 	if err == nil || !strings.Contains(err.Error(), "no models") {

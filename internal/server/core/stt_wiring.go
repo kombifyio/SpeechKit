@@ -136,21 +136,6 @@ func buildSTTRouter(cfg *config.Config) (*router.Router, []namedProvider, []stri
 		}
 	}
 
-	// Google Cloud STT.
-	if cfg.Providers.Google.Enabled {
-		if key, source := credential("google_stt"); key != "" {
-			enabled.Google = &stt.GoogleOpts{
-				APIKey:                    key,
-				Model:                     cfg.Providers.Google.STTModel,
-				CredentialsJSONEnv:        config.GoogleSTTCredentialsJSONEnvName(cfg),
-				ApplicationCredentialsEnv: config.GoogleApplicationCredentialsEnvName(cfg),
-			}
-			notes = append(notes, "Google STT registered (model="+cfg.Providers.Google.STTModel+", source="+source+")")
-		} else {
-			notes = append(notes, "Google STT disabled (set "+config.GoogleSTTAPIKeyEnvName(cfg)+" or "+config.GoogleCloudSTTAPIKeyEnv+")")
-		}
-	}
-
 	// VPS (self-hosted OpenAI-compatible). Model defaults to whisper-1.
 	if cfg.VPS.Enabled && strings.TrimSpace(cfg.VPS.URL) != "" {
 		key := config.ResolveSecret(cfg.VPS.APIKeyEnv)

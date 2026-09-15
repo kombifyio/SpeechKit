@@ -10,14 +10,12 @@ import (
 	liveassemblyai "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/assemblyai"
 	livedeepgram "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/deepgram"
 	livefoundry "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/foundry"
-	livegemini "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/gemini"
 	liveopenai "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openai"
 	livevoicelive "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/voicelive"
 )
 
-// Concrete realtime providers (formerly internal/voiceagent.{GeminiLive,…}).
+// Concrete realtime providers (formerly internal/voiceagent.{OpenAILive,…}).
 type (
-	GeminiLive     = livegemini.Provider
 	OpenAILive     = liveopenai.Provider
 	FoundryLive    = livefoundry.Provider
 	VoiceLive      = livevoicelive.Provider
@@ -40,7 +38,6 @@ const DefaultFoundryRealtimeModel = livefoundry.DefaultRealtimeModel
 // signature-agnostic: changing a constructor's parameters in the live package
 // does not require editing this file.
 var (
-	NewGeminiLive     = livegemini.New
 	NewOpenAILive     = liveopenai.New
 	NewFoundryLive    = livefoundry.New
 	NewVoiceLive      = livevoicelive.New

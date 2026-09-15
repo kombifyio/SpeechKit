@@ -378,7 +378,7 @@ func TestVoiceAgentSessionLifecycle(t *testing.T) {
 		Provider:             "deepgram",
 		Voice:                "nova",
 		Locale:               "en-US",
-		Model:                "gemini-live",
+		Model:                "example-live-model",
 		Thinking:             "fast",
 		SystemPromptOverride: "override",
 	}); err != nil {

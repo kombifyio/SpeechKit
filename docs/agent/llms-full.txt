@@ -1,33 +1,38 @@
-# SpeechKit v0.48 Agent Context
+# SpeechKit Agent Context
 
-SpeechKit is a voice framework for products and automation hosts. It has three
-strict modes:
+SpeechKit is a local-first voice framework with three explicit voice contracts:
+Dictation turns speech into text, Assist handles a one-shot request with optional
+TTS, and Voice Agent holds a realtime conversation. Meeting is a separate
+recording and notes service alongside those modes.
 
-- Dictation: speech-to-text only. No LLM rewriting, no utilities, no codewords.
-- Assist: one-shot utility, codeword, or LLM result with optional TTS.
-- Voice Agent: realtime audio-to-audio dialogue for fast follow-ups.
+Use the Windows desktop app for Dictation, Assist, Voice Agent and Meeting.
+The macOS 14+ Apple Silicon app is an ad-hoc signed, Dictation-only beta.
+Android offers public Kotlin SDK modules and a keyboard/system-assistant
+reference app in testing; Voice Agent needs a SpeechKit Server. Browser clients
+use TypeScript packages and framework-neutral Voice UI components. Linux is a
+self-hosted server target, not a desktop app download.
 
-v0.48 is the long-form dictation and meeting capture line on top of the
-provider-professionalized Go framework. Go hosts can use the public STT, TTS,
-Assist, and Voice Agent packages directly without routing through a SpeechKit
-Server when an embedded framework integration is the right shape. Long
-dictation can use stable segmented processing while provider-native streaming
-stays capability-gated. Meeting sessions can capture system audio into ordered
-transcript segments for correction, summaries, and export. Native Voice Agent
-switching is described by public provider descriptors for Gemini, Deepgram,
-AssemblyAI, OpenAI, and cascaded fallback hosts. The current realtime baselines
-are Gemini 3.1 Flash Live, Deepgram Flux Voice Agent, AssemblyAI Voice Agent
-API, and OpenAI Realtime. AssemblyAI
-realtime STT defaults to `universal-3-5-pro`; `u3-rt-pro` remains a legacy
-fallback. Words teach recognition, Replacements shape final text, Native
-Templates provide curated pack defaults/profiles, provider options are
-structured, and segmented transcription is finalized before output.
-Hands-Free is the activation and voice-output layer for Dictation, Assist, and
-Voice Agent; it is not a fourth mode.
-The latest GitHub Release is the canonical source for desktop installers.
-`release/latest/windows/INSTALLER-MANIFEST.json` mirrors the current installer
-metadata and download URLs; the `latest` GHCR tag tracks the current stable
-server image.
+Embed public Go packages without a SpeechKit Server, or connect clients over
+HTTP/WebSocket. Local Dictation needs a whisper.cpp runtime and model but no
+cloud key. Choose providers through the running catalog and readiness metadata;
+available models and capabilities depend on the configured route. Words and
+Replacements customize recognition and final text. Hands-Free is an activation
+layer for the voice modes.
+
+Meeting on Windows captures microphone and system audio separately, combines
+the transcript with your notes and a template into a Meeting Review, and never
+persists meeting audio. Review generation needs a configured local or cloud
+model. Channel labels do not identify each remote participant. The public
+pkg/speechkit/meeting runtime supports host-owned capture adapters and notes
+helpers; examples/meeting/synthetic-host demonstrates it without devices or
+credentials. Do not assume the full desktop Meeting workflow has a server REST,
+SSE or TypeScript equivalent. Use only endpoints present in the server OpenAPI.
+
+## Meeting SDK starter
+
+Use https://speechkit.cc/getting-started/agents/meeting-notes-go.md for a small
+embedded Go host with synthetic input. It is separate from the server-backed
+one-shot matrix and does not emit a provider/live success result.
 
 ## Start Here
 
@@ -102,7 +107,7 @@ Browser WebSocket auth is subprotocol-first. Use the `ws_url` and
 server bearer token into a browser WebSocket handshake. Tickets default to 90
 seconds; expired tickets are not refreshed in v1, so create a new session.
 
-Important v0.48 surfaces:
+Core server surfaces:
 
 - `GET /v1/catalog/profiles`
 - `GET /v1/catalog/providers`
@@ -126,11 +131,6 @@ Important v0.48 surfaces:
 
 ## Provider Baselines
 
-- Gemini Live: `gemini-3.1-flash-live-preview` primary, with
-  `gemini-2.5-flash-native-audio-preview-12-2025` as previous-preview fallback.
-- Gemini Live Translate: `gemini-3.5-live-translate-preview` via profile
-  `realtime.google.gemini-live-translate`; keep it separate from the general
-  dialogue profile.
 - Deepgram Voice Agent: Flux listen models (`flux-general-multi` or
   `flux-general-en`) for conversational turn events; Nova-3 remains the general
   dictation/diarization baseline.
@@ -171,12 +171,14 @@ Docs-only local config:
 Use these packages when the host embeds SpeechKit directly instead of calling a
 running server:
 
-- `pkg/speechkit`: mode contracts, Runtime, events, provider catalog, and readiness.
+- `pkg/speechkit`: contracts, value types, Runtime and events.
+- `pkg/speechkit/pipeline`: orchestration; `pkg/speechkit/catalog`: provider catalog and readiness.
+- `pkg/speechkit/meeting`: host-owned capture lifecycle, transcript and notes helpers.
 - `pkg/speechkit/dictation`: strict STT-only embedded dictation.
 - `pkg/speechkit/wakeword` and `pkg/speechkit/wakeword/sherpa`: wake-word detection contracts and sherpa adapter.
 - `pkg/speechkit/companion`: `NewHandsFree` composer for wake events, target routing, host transcript requests, Assist, Voice Agent activation, optional TTS, and runtime events.
 - `pkg/speechkit/tts`: ProviderKind-aware Router and Service for local/cloud/direct spoken output.
-- `pkg/speechkit/assist`: Assist service, multi-turn skill context, codeword routing, TTS routing, and optional Genkit adapter.
+- `pkg/speechkit/assist`: Assist service, multi-turn skill context, codeword routing, TTS routing, and optional provider adapters.
 - `pkg/speechkit/agentkit` and `pkg/speechkit/voiceagent/live`: embedded realtime Voice Agent hosts.
 - `pkg/speechkit/client`: self-host server client.
 
@@ -218,25 +220,15 @@ and `RejectedProviders` when you need to explain same-provider model fallback,
 cross-provider fallback, cascaded fallback, or missing capabilities to users.
 
 Server-Target Voice Agent sessions use the same provider vocabulary on the
-WebSocket `start.provider` field. Accepted values include `gemini`/`google`,
-`deepgram`, `assemblyai`, `openai`, `foundry`, and `cascaded`, plus public
-realtime profile IDs such as `realtime.google.gemini-native-audio`,
-`realtime.google.gemini-live-translate`,
-`realtime.deepgram.voice-agent`, `realtime.assemblyai.voice-agent`,
-`realtime.openai.gpt-realtime-2`, `realtime.foundry.gpt-realtime-2`, and
-`realtime.foundry.voice-live` (provider id `foundry-voicelive`).
-Microsoft Foundry sessions reuse the OpenAI Realtime wire protocol against the
-Foundry `/openai/v1/realtime` endpoint; Voice Live sessions dial the Foundry
-`/voice-live/realtime` endpoint and add MAI-Voice-2 output, MAI-Transcribe-2
-input transcription and Azure semantic turn detection. Both authenticate with
-`AZURE_AI_API_KEY` or an Entra bearer token from the signed-in Microsoft
-account.
+WebSocket `start.provider` field. Accepted values include `deepgram`,
+`assemblyai`, `openai`, and `cascaded`, plus public realtime profile IDs such as
+`realtime.deepgram.voice-agent`, `realtime.assemblyai.voice-agent`, and
+`realtime.openai.gpt-realtime-2`.
 Per-session switching resolves provider-specific API keys and model defaults,
-so an OpenAI session does not inherit a Gemini model and an AssemblyAI session
-does not inherit a Gemini model.
+so one provider session does not inherit another provider's model.
 
-The credential-gated `.github/workflows/provider-live-gate.yml` covers four
-providers: Deepgram, AssemblyAI, Gemini, and OpenAI. Missing credentials must
+The credential-gated `.github/workflows/provider-live-gate.yml` covers three
+providers: Deepgram, AssemblyAI, and OpenAI. Missing credentials must
 surface as `blocked_by_auth`; a blocked leg is not live provider proof.
 
 For a browser starter, use `speechkitctl init browser-dictation-react --output
@@ -270,8 +262,9 @@ A coding agent asked to "build a voice agent into my app" should:
    need to change. Audio in: PCM 16 kHz S16LE mono via
    `VoiceAgentSession.SendAudio`. Audio out: PCM 24 kHz S16LE mono from
    `VoiceAgentMessage.Audio`.
-3. Deploy: `speechkit-server --config <preset.toml>` with `GOOGLE_AI_API_KEY`
-   and a bearer token in env. Idle timeout enforces the wall-clock cap.
+3. Deploy: `speechkit-server --config <preset.toml>` with the selected provider
+   credential (for example `OPENAI_API_KEY` for OpenAI Realtime) and a bearer
+   token in env. Idle timeout enforces the wall-clock cap.
 
 ## Release-Gated Native Android Memo Prompt
 

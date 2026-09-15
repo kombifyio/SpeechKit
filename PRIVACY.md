@@ -77,12 +77,13 @@ When you enable cloud providers for speech-to-text (STT), text-to-speech (TTS), 
 |----------|-----------|------------------------|
 | Hugging Face | Audio (STT), Text (LLM/TTS) | https://huggingface.co/privacy |
 | OpenAI | Audio (STT), Text (LLM/TTS) | https://openai.com/privacy |
-| Google Cloud | Audio (STT/TTS), Text (LLM), Audio (Voice Agent) | https://policies.google.com/privacy |
+| Deepgram | Audio (STT/TTS), Audio (Voice Agent) | https://deepgram.com/privacy |
+| AssemblyAI | Audio (STT), Audio (Voice Agent) | https://www.assemblyai.com/legal/privacy-policy |
 | Groq | Audio (STT), Text (LLM) | https://groq.com/privacy-policy |
 
 You choose which providers to enable. When all cloud providers are disabled, SpeechKit operates entirely offline using local models.
 
-**Voice Agent mode** streams audio in real time to the configured provider (e.g., Google Gemini Live) via WebSocket. This audio stream is processed by the provider according to their privacy policy.
+**Voice Agent mode** streams audio in real time to the configured provider via WebSocket. This audio stream is processed by the provider according to their privacy policy.
 
 ## 4. Local Storage
 

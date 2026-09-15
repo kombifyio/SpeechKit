@@ -1,5 +1,5 @@
 // Package voiceagent is the Voice Agent kernel — realtime
-// audio-to-audio session manager backed by Gemini Live, with
+// audio-to-audio session manager backed by a realtime provider, with
 // Persona/Role/Sequence resolution from internal/voicebehavior. The
 // local desktop provider (cmd/speechkit) and the server adapter
 // (internal/server/voiceagent) both depend on this package; the

@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/core"
-	"github.com/firebase/genkit/go/genkit"
+	appai "github.com/kombifyio/SpeechKit/internal/ai"
 	"github.com/kombifyio/SpeechKit/internal/ai/generation"
 )
 
@@ -19,8 +17,16 @@ type AssistInput struct {
 	Context   string `json:"context,omitempty"`   // Additional context (last transcription, active app, etc.)
 }
 
-func DefineAssistFlowWithGenerator(g *genkit.Genkit, generator generation.Generator) *core.Flow[AssistInput, AssistOutput, struct{}] {
-	return genkit.DefineFlow(g, "assist", func(ctx context.Context, input AssistInput) (AssistOutput, error) {
+// AssistOutput is the Assist flow output (before TTS synthesis).
+type AssistOutput struct {
+	Text      string `json:"text"`      // Full LLM response text (always present)
+	SpeakText string `json:"speakText"` // TTS-optimized text (shorter, more natural than Text)
+	Action    string `json:"action"`    // "respond", "execute", "silent"
+	Locale    string `json:"locale"`    // Response language
+}
+
+func DefineAssistFlowWithGenerator(generator generation.Generator) *Flow[AssistInput, AssistOutput] {
+	return New(func(ctx context.Context, input AssistInput) (AssistOutput, error) {
 		if input.Utterance == "" {
 			return AssistOutput{}, fmt.Errorf("assist: empty utterance")
 		}
@@ -43,18 +49,10 @@ func DefineAssistFlowWithGenerator(g *genkit.Genkit, generator generation.Genera
 	})
 }
 
-// AssistOutput is the Genkit flow output (before TTS synthesis).
-type AssistOutput struct {
-	Text      string `json:"text"`      // Full LLM response text (always present)
-	SpeakText string `json:"speakText"` // TTS-optimized text (shorter, more natural than Text)
-	Action    string `json:"action"`    // "respond", "execute", "silent"
-	Locale    string `json:"locale"`    // Response language
-}
-
-// DefineAssistFlow creates the assist Genkit flow for single-turn voice interactions.
+// DefineAssistFlow creates the assist flow for single-turn voice interactions.
 // Optimized for speed: uses assist models, short responses, low temperature.
-func DefineAssistFlow(g *genkit.Genkit, models []ai.Model) *core.Flow[AssistInput, AssistOutput, struct{}] {
-	return genkit.DefineFlow(g, "assist", func(ctx context.Context, input AssistInput) (AssistOutput, error) {
+func DefineAssistFlow(models []appai.Model) *Flow[AssistInput, AssistOutput] {
+	return New(func(ctx context.Context, input AssistInput) (AssistOutput, error) {
 		if input.Utterance == "" {
 			return AssistOutput{}, fmt.Errorf("assist: empty utterance")
 		}
@@ -66,22 +64,23 @@ func DefineAssistFlow(g *genkit.Genkit, models []ai.Model) *core.Flow[AssistInpu
 
 		systemPrompt := buildAssistSystemPrompt(locale, input)
 		userPrompt := input.Utterance
+		temperature := 0.4
 
 		var lastErr error
 		for _, model := range models {
-			resp, err := genkit.Generate(ctx, g,
-				ai.WithModel(model),
-				ai.WithSystem(systemPrompt),
-				ai.WithPrompt(userPrompt),
-				generationConfigOption(model, 1024, 0.4),
-			)
+			resp, err := model.Generate(ctx, appai.Request{
+				System:      systemPrompt,
+				Prompt:      userPrompt,
+				MaxTokens:   1024,
+				Temperature: &temperature,
+			})
 			if err != nil {
 				lastErr = err
 				slog.Warn("assist: model failed", "err", err)
 				continue
 			}
 
-			text := resp.Text()
+			text := resp.Text
 			if text == "" {
 				return AssistOutput{Action: "silent", Locale: locale}, nil
 			}

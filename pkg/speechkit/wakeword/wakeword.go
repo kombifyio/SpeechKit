@@ -338,10 +338,10 @@ type PhraseCatalogEntry struct {
 func DefaultCatalog() []PhraseCatalogEntry {
 	return []PhraseCatalogEntry{
 		{
-			ID:           "hey_quby",
-			DisplayName:  "Hey Quby (Cubi / Kubi)",
+			ID:           "hey_kubi",
+			DisplayName:  "Hey Kubi",
 			KeywordLabel: "hey_quby",
-			Notes:        "SpeechKit brand default. Distinct K/B consonants, varied vowels.",
+			Notes:        "SpeechKit brand default. Distinct K/B consonants, varied vowels. hey_quby remains a config alias.",
 		},
 		{
 			ID:           "hey_computer",

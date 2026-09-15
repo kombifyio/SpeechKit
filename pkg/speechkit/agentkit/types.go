@@ -32,7 +32,7 @@ type (
 	// transcripts, tool calls, errors, session end).
 	Callbacks = live.Callbacks
 
-	// LiveProvider is the WebSocket-backed realtime model adapter (Gemini
+	// LiveProvider is the WebSocket-backed realtime model adapter (for example OpenAI
 	// Live, OpenAI Realtime, ...). Pass it to NewAgentSession.
 	LiveProvider = live.LiveProvider
 

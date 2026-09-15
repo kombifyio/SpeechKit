@@ -40,9 +40,9 @@ const (
 
 // ProviderFactory builds a Framework kernel voice-agent provider on demand.
 // Each WebSocket session gets its own provider instance so concurrent
-// sessions don't share Gemini Live state.
+// sessions don't share realtime-provider state.
 //
-// The concrete production implementation returns a *voiceagent.GeminiLive;
+// The concrete production implementation returns a provider-specific adapter;
 // tests supply a fake that records frames and replies with canned audio.
 type ProviderFactory interface {
 	NewProvider() LiveProviderAdapter
@@ -50,7 +50,7 @@ type ProviderFactory interface {
 
 // LiveProviderAdapter is the minimal slice of the kernel's LiveProvider
 // interface the Server-Target adapter needs. Keeping it narrow makes it
-// trivial for tests to stub without pulling in the full genai SDK.
+// trivial for tests to stub without pulling in provider SDK types.
 type LiveProviderAdapter interface {
 	Connect(ctx context.Context, cfg LiveConfigFrame) error
 	SendAudio(chunk []byte) error
@@ -75,8 +75,8 @@ type LiveToolResponder interface {
 
 // LiveResponseCanceller is implemented by providers whose realtime protocol
 // has a client-initiated cancel for the in-flight agent response (OpenAI
-// Realtime: `response.cancel`). Gemini Live, Deepgram Voice Agent, and
-// AssemblyAI Voice Agent expose no such client message — interruption there
+// Realtime: `response.cancel`). Deepgram Voice Agent and AssemblyAI Voice
+// Agent expose no such client message — interruption there
 // is speech-driven server-side — so their sessions rely on the adapter
 // suppressing downlink audio until the current turn ends (see MsgCancel).
 type LiveResponseCanceller interface {
@@ -86,7 +86,7 @@ type LiveResponseCanceller interface {
 // LiveConfigFrame is the subset of configuration the adapter derives from a
 // StartFrame and the persona/role resolver. Kept as a separate type so the
 // test double doesn't need to depend on the kernel's concrete LiveConfig
-// (which embeds Google genai types).
+// (which may embed provider-specific types).
 type LiveConfigFrame struct {
 	PersonaID string
 	RoleID    string
@@ -105,7 +105,7 @@ type LiveConfigFrame struct {
 
 	Model string
 	// FallbackModel is forwarded to providers that support same-provider
-	// fallback (kernel Gemini Live retries the fallback when the primary
+	// fallback (when a provider supports a same-provider retry after the primary
 	// connect fails). Empty disables the fallback.
 	FallbackModel    string
 	APIKey           string
@@ -186,7 +186,7 @@ type HandlerOptions struct {
 	// empty this factory becomes the sole, default backend.
 	Provider ProviderFactory
 	// Providers is the multi-provider form: a name→factory map (e.g.
-	// "deepgram", "gemini", "cascaded") that the client selects between
+	// "deepgram", "assemblyai", "cascaded") that the client selects between
 	// per session via StartFrame.Provider. DefaultProvider names the entry
 	// used when a session omits an explicit provider.
 	Providers           map[string]ProviderFactory

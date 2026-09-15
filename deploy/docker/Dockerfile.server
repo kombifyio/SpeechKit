@@ -8,7 +8,7 @@
 #
 # Run locally:
 #   docker run --rm -p 8080:8080 \
-#     -e GOOGLE_AI_API_KEY \
+#     -e ASSEMBLYAI_API_KEY \
 #     -v speechkit-models:/var/lib/speechkit/models \
 #     -v "$(pwd)/deploy/config/server.example.toml:/etc/speechkit/config.toml:ro" \
 #     speechkit-server:dev

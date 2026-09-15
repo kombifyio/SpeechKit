@@ -21,9 +21,12 @@ import "strings"
 func NormalizeVoiceAgentProviderName(provider string) string {
 	name := strings.ToLower(strings.TrimSpace(provider))
 	name = strings.ReplaceAll(name, "_", "-")
+	if strings.Contains(name, "gemini") || strings.Contains(name, "vertex") || strings.HasPrefix(name, "google-") {
+		return "retired-google-ai"
+	}
 	switch name {
-	case "google", "gemini", "gemini-live", "google-live", "realtime.google.gemini-native-audio":
-		return "gemini"
+	case "google":
+		return "retired-google-ai"
 	case "deepgram", "deepgram-agent", "deepgram-live", "realtime.deepgram.voice-agent":
 		return "deepgram"
 	case "assemblyai", "assembly-ai", "assemblyai-agent", "assemblyai-live", "realtime.assemblyai.voice-agent":
@@ -41,7 +44,7 @@ func NormalizeVoiceAgentProviderName(provider string) string {
 
 // EffectiveVoiceAgentProvider returns the normalized provider that serves a
 // Voice Agent session when the client does not request one explicitly:
-// cfg.VoiceAgent.Provider, with empty defaulting to Gemini Live. Keep in
+// cfg.VoiceAgent.Provider, with empty defaulting to AssemblyAI. Keep in
 // lockstep with internal/server/core/voiceagent_wiring.go, which consumes
 // this for the serving default.
 func EffectiveVoiceAgentProvider(cfg *Config) string {
@@ -50,7 +53,7 @@ func EffectiveVoiceAgentProvider(cfg *Config) string {
 		name = NormalizeVoiceAgentProviderName(cfg.VoiceAgent.Provider)
 	}
 	if name == "" {
-		name = "gemini"
+		name = "assemblyai"
 	}
 	return name
 }
@@ -59,7 +62,6 @@ func EffectiveVoiceAgentProvider(cfg *Config) string {
 // pkg/speechkit/catalog.go, same convention as the kombify overlay constants
 // in kombify_defaults.go.
 var voiceAgentProfileIDByProvider = map[string]string{
-	"gemini":     "realtime.google.gemini-native-audio",
 	"deepgram":   "realtime.deepgram.voice-agent",
 	"assemblyai": "realtime.assemblyai.voice-agent",
 	"openai":     "realtime.openai.gpt-realtime-2",
