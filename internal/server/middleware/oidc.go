@@ -34,9 +34,16 @@ var oidcAllowedAlgorithms = map[string]struct{}{
 // OIDCConfig configures Bearer-JWT validation against an external identity
 // provider. JWKSURL, Issuer, and Audience are required.
 type OIDCConfig struct {
-	JWKSURL          string
-	Issuer           string
-	Audience         string
+	JWKSURL string
+	// Issuer is the exact "iss" to require, or a template with {tenantid}
+	// for a multi-tenant provider (Microsoft Entra), expanded from the
+	// token's TenantClaim; see oidc_issuer.go.
+	Issuer   string
+	Audience string
+	// AllowedTenants lists the tenants accepted with an issuer template
+	// ("*" for every tenant). Required with a template.
+	AllowedTenants   []string
+	TenantClaim      string // claim carrying the tenant id; defaults to "tid"
 	ClockSkewSeconds int    // tolerated exp/nbf skew; defaults to 60s
 	OrgClaim         string // claim mapped to Identity.OrgID; defaults to "org_id"
 	RoleClaim        string // claim mapped to Identity.Role; defaults to "role"
@@ -50,10 +57,12 @@ type OIDCConfig struct {
 // OIDCValidator validates Bearer JWTs against a cached JWKS and maps their
 // claims to an [Identity]. It is safe for concurrent use.
 type OIDCValidator struct {
-	cfg        OIDCConfig
-	httpClient *http.Client
-	now        func() time.Time
-	leeway     time.Duration
+	cfg         OIDCConfig
+	issuer      oidcIssuerMatcher
+	tenantClaim string
+	httpClient  *http.Client
+	now         func() time.Time
+	leeway      time.Duration
 
 	mu        sync.RWMutex
 	keys      *jose.JSONWebKeySet
@@ -61,19 +70,24 @@ type OIDCValidator struct {
 }
 
 // NewOIDCValidator constructs a validator, returning an error when required
-// configuration is missing.
+// configuration is missing or a multi-tenant issuer template comes without
+// the tenants it may accept.
 func NewOIDCValidator(cfg OIDCConfig) (*OIDCValidator, error) {
 	if strings.TrimSpace(cfg.JWKSURL) == "" {
 		return nil, fmt.Errorf("oidc: jwks_url is required")
 	}
-	if strings.TrimSpace(cfg.Issuer) == "" {
-		return nil, fmt.Errorf("oidc: issuer is required")
+	issuer, err := newOIDCIssuerMatcher(cfg.Issuer, cfg.AllowedTenants)
+	if err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(cfg.Audience) == "" {
 		return nil, fmt.Errorf("oidc: audience is required")
 	}
 
-	v := &OIDCValidator{cfg: cfg}
+	v := &OIDCValidator{cfg: cfg, issuer: issuer, tenantClaim: strings.TrimSpace(cfg.TenantClaim)}
+	if v.tenantClaim == "" {
+		v.tenantClaim = "tid"
+	}
 	v.httpClient = cfg.HTTPClient
 	if v.httpClient == nil {
 		v.httpClient = &http.Client{Timeout: 10 * time.Second}
@@ -122,8 +136,14 @@ func (v *OIDCValidator) Verify(r *http.Request) (Identity, bool) {
 	if err := tok.Claims(key, &registered, &all); err != nil {
 		return Identity{}, false
 	}
+	// The tenant claim is read from the signature-verified claim set, so a
+	// forged tenant cannot steer the expected issuer.
+	expectedIssuer, ok := v.issuer.expectedIssuer(oidcStringClaim(all, v.tenantClaim))
+	if !ok {
+		return Identity{}, false
+	}
 	if err := registered.ValidateWithLeeway(jwt.Expected{
-		Issuer:   v.cfg.Issuer,
+		Issuer:   expectedIssuer,
 		Audience: jwt.Audience{v.cfg.Audience},
 		Time:     v.now(),
 	}, v.leeway); err != nil {

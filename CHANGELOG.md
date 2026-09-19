@@ -9,6 +9,61 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.72.0](https://github.com/kombifyio/SpeechKit/compare/1928f9295bcc67faf0a3a8b67150c75b9c5e58ab...715ff1d400b8e5b6fe18747c9fe5255f06df89aa) (2026-09-19)
+
+### Highlights
+
+* **Cleaner German recordings.** Hesitations no longer leave a trail of commas in the transcript.
+* **Meetings meet Microsoft 365.** After a Teams call you can import the transcript or the Copilot recap, and choose Foundry for write-ups with consent.
+* **Work across companies.** SpeechKit can sign in as a multi-tenant Microsoft app, so you switch the company you work in without a new install.
+
+### Features
+
+* **entra:** SpeechKit multi-tenant app registration, company swap, server multi-tenant OIDC + OBO ([#511](https://github.com/kombifyio/SpeechKit/issues/511)) ([d461898](https://github.com/kombifyio/SpeechKit/commit/d4618987713a71bb379196874bf89d1ace1c0cf9))
+* **meeting:** choose Microsoft Foundry for meetings, with transcript consent ([#515](https://github.com/kombifyio/SpeechKit/issues/515)) ([1935113](https://github.com/kombifyio/SpeechKit/commit/193511316ace1a7925167aba36ae74a6c747400a))
+* **meeting:** import the Microsoft 365 Copilot recap of a Teams meeting ([#519](https://github.com/kombifyio/SpeechKit/issues/519)) ([cf997a4](https://github.com/kombifyio/SpeechKit/commit/cf997a42df583542f060ee8ad5e17180cd47e5f6))
+* **meeting:** import the Teams transcript after a Teams meeting ([#518](https://github.com/kombifyio/SpeechKit/issues/518)) ([de48097](https://github.com/kombifyio/SpeechKit/commit/de480972b162e4aea3f3f716c3d58121e25530b0))
+* **website:** FAQ section on speechkit.cc and a /faq page ([#517](https://github.com/kombifyio/SpeechKit/issues/517)) ([d68a98a](https://github.com/kombifyio/SpeechKit/commit/d68a98af72a1bc7fea6d67cfd0f01fa147c3a3ae))
+
+
+### Bug Fixes
+
+* **dictation:** stop leftover commas after German fillers ([#529](https://github.com/kombifyio/SpeechKit/issues/529)) ([715ff1d](https://github.com/kombifyio/SpeechKit/commit/715ff1d400b8e5b6fe18747c9fe5255f06df89aa))
+* **entra:** drop the duplicated AI insight scope id from the provisioning script ([#521](https://github.com/kombifyio/SpeechKit/issues/521)) ([c87e6fa](https://github.com/kombifyio/SpeechKit/commit/c87e6fa86b8065e2e7117d4e450d21d48c559861))
+* **meeting:** say why a screenshot was not saved ([#522](https://github.com/kombifyio/SpeechKit/issues/522)) ([2b7c5d0](https://github.com/kombifyio/SpeechKit/commit/2b7c5d0bebe81636c8944e36a473e018d09e0822))
+* **meeting:** write-ups fall through every model with its own budget ([#514](https://github.com/kombifyio/SpeechKit/issues/514)) ([220911e](https://github.com/kombifyio/SpeechKit/commit/220911e697227685fec45fbdd4852ee923f20ab2))
+
+Notes cover changes after VERSION 0.71.0 (1928f9295bcc67faf0a3a8b67150c75b9c5e58ab), the earliest available contiguous 0.71.x VERSION anchor, through selected source 715ff1d400b8e5b6fe18747c9fe5255f06df89aa.
+
+## [0.71.0](https://github.com/kombifyio/SpeechKit/compare/00b17c502201393702b34091f46c9b25a4df8ca4...9d5d9b3e1f08b616874c0f30ba63b8504e35ab1b) (2026-09-16)
+
+
+### Features
+
+* **meeting:** notes as timestamped bullets, with a quick note from the pill ([#509](https://github.com/kombifyio/SpeechKit/issues/509)) ([9d5d9b3](https://github.com/kombifyio/SpeechKit/commit/9d5d9b3e1f08b616874c0f30ba63b8504e35ab1b))
+
+
+### Bug Fixes
+
+* **beads:** pin SpeechKit issue prefix ([#500](https://github.com/kombifyio/SpeechKit/issues/500)) ([bc4c626](https://github.com/kombifyio/SpeechKit/commit/bc4c62602afb6ed9eaaa73ee383e40799dd5463f))
+* **ci:** run the kernel packages on pull requests again ([#507](https://github.com/kombifyio/SpeechKit/issues/507)) ([8a5edf1](https://github.com/kombifyio/SpeechKit/commit/8a5edf153fd29614849270ddb4c811abda4b818e))
+* **config:** stop defaulting onto retired Google providers ([#492](https://github.com/kombifyio/SpeechKit/issues/492)) ([b9dce1c](https://github.com/kombifyio/SpeechKit/commit/b9dce1c8e3d657fe2d51310a33229eef4995c6f3))
+* **desktop:** one relaunch after Install and restart ([#469](https://github.com/kombifyio/SpeechKit/issues/469)) ([5862ab7](https://github.com/kombifyio/SpeechKit/commit/5862ab70677b0768dc02f803b4d8ee8d143b383b))
+* **dictation:** open the mic before a live-stream handshake ([#480](https://github.com/kombifyio/SpeechKit/issues/480)) ([7250a5a](https://github.com/kombifyio/SpeechKit/commit/7250a5aa3da264d0ccf97df4a4c17cb18aec20e1))
+* **meeting:** surface summary failures before and inside the meeting ([#505](https://github.com/kombifyio/SpeechKit/issues/505)) ([2391485](https://github.com/kombifyio/SpeechKit/commit/2391485b4e64fc0c936ab5dded304d2e65d8ec33))
+* **release:** authenticate SpeechKit production publication plans ([#484](https://github.com/kombifyio/SpeechKit/issues/484)) ([1bebb01](https://github.com/kombifyio/SpeechKit/commit/1bebb012a1bbc01b284c9c95fb5ffe6866adbe7f))
+* **release:** bind website refresh to verified public package ([#467](https://github.com/kombifyio/SpeechKit/issues/467)) ([cb4701b](https://github.com/kombifyio/SpeechKit/commit/cb4701ba5246394acb3c616c9083b7fb04244eb2))
+* remove Google AI STT/TTS and Gemini Live (1hg3) ([#485](https://github.com/kombifyio/SpeechKit/issues/485)) ([134cc86](https://github.com/kombifyio/SpeechKit/commit/134cc86f793167ccc273b1df4ab46e79d89065db))
+* **server:** keep production Voice Agent off retired Gemini ([#503](https://github.com/kombifyio/SpeechKit/issues/503)) ([77d0ec8](https://github.com/kombifyio/SpeechKit/commit/77d0ec819f85a2285544e5448a57103cfe07276c))
+* **wakeword:** hey_kubi default with hey_quby alias (p6xf) ([#489](https://github.com/kombifyio/SpeechKit/issues/489)) ([649a0c8](https://github.com/kombifyio/SpeechKit/commit/649a0c8b19dabab8b3f08466e595a5200d768ab8))
+
+
+### Performance Improvements
+
+* **delivery:** adopt consolidated source runner ([#487](https://github.com/kombifyio/SpeechKit/issues/487)) ([d0230c3](https://github.com/kombifyio/SpeechKit/commit/d0230c3949a2d041184ec21e06563c997d4f3d6d))
+
+Notes cover changes after VERSION 0.70.0 (00b17c502201393702b34091f46c9b25a4df8ca4), the earliest available contiguous 0.70.x VERSION anchor, through selected source 9d5d9b3e1f08b616874c0f30ba63b8504e35ab1b.
+
 ## [0.70.3](https://github.com/kombifyio/SpeechKit/compare/v0.70.2...v0.70.3) (2026-09-15)
 
 

@@ -50,16 +50,18 @@ func TestRuntimePolicyHidesDisabledModeProfiles(t *testing.T) {
 }
 
 func TestRuntimePolicyNormalizesAllowedProfileAliases(t *testing.T) {
+	// A policy written against the retired GPT-4o transcription profile still
+	// selects the Microsoft speech model it was renamed to.
 	profiles := speechkit.FilterProviderProfiles(catalog.DefaultProviderProfiles(), speechkit.RuntimePolicy{
 		EnabledModes:    []speechkit.Mode{speechkit.ModeDictation},
-		AllowedProfiles: []string{"stt.google.chirp-3"},
+		AllowedProfiles: []string{"stt.foundry.gpt-4o-mini-transcribe"},
 	})
 
 	if len(profiles) != 1 {
 		t.Fatalf("profiles = %d, want 1: %#v", len(profiles), profiles)
 	}
-	if got := profiles[0].ID; got != "stt.google.latest-long" {
-		t.Fatalf("profile ID = %q, want normalized Google STT profile", got)
+	if got := profiles[0].ID; got != "stt.foundry.mai-transcribe-2" {
+		t.Fatalf("profile ID = %q, want the normalized Foundry STT profile", got)
 	}
 }
 
@@ -87,14 +89,14 @@ func TestRuntimePolicyAllowsFallbackWhenExplicitlyEnabledAndAllowed(t *testing.T
 		Dictation: speechkit.DictationSetting{
 			ModeSetting: speechkit.ModeSetting{
 				Enabled:           true,
-				PrimaryProfileID:  "stt.google.chirp-3",
+				PrimaryProfileID:  "stt.foundry.gpt-4o-mini-transcribe",
 				FallbackProfileID: "stt.deepgram.nova-3",
 			},
 		},
 	}, speechkit.RuntimePolicy{
 		EnabledModes: []speechkit.Mode{speechkit.ModeDictation},
 		AllowedProfiles: []string{
-			"stt.google.latest-long",
+			"stt.foundry.mai-transcribe-2",
 			"stt.deepgram.nova-3",
 		},
 		AllowFallbacks: true,
@@ -122,7 +124,27 @@ func TestRuntimePolicyRejectsEnabledDisabledModeSettings(t *testing.T) {
 	}
 }
 
-func TestRuntimePolicyAcceptsLegacyGoogleSTTProfileID(t *testing.T) {
+func TestRuntimePolicyAcceptsARenamedProfileID(t *testing.T) {
+	err := speechkit.ValidateModeSettingsForPolicy(catalog.DefaultProviderProfiles(), speechkit.ModeSettings{
+		Dictation: speechkit.DictationSetting{
+			ModeSetting: speechkit.ModeSetting{
+				Enabled:          true,
+				PrimaryProfileID: "stt.foundry.gpt-4o-mini-transcribe",
+			},
+		},
+	}, speechkit.RuntimePolicy{
+		EnabledModes: []speechkit.Mode{speechkit.ModeDictation},
+	})
+
+	if err != nil {
+		t.Fatalf("ValidateModeSettingsForPolicy() error = %v, want the renamed profile accepted", err)
+	}
+}
+
+// Google AI was retired by owner decision (kombify-SpeechKit-1hg3), and a
+// retired id must fail closed rather than resolve to something else. This test
+// replaces the one that asserted the opposite while the profiles still existed.
+func TestRuntimePolicyRejectsRetiredGoogleProfileID(t *testing.T) {
 	err := speechkit.ValidateModeSettingsForPolicy(catalog.DefaultProviderProfiles(), speechkit.ModeSettings{
 		Dictation: speechkit.DictationSetting{
 			ModeSetting: speechkit.ModeSetting{
@@ -134,8 +156,11 @@ func TestRuntimePolicyAcceptsLegacyGoogleSTTProfileID(t *testing.T) {
 		EnabledModes: []speechkit.Mode{speechkit.ModeDictation},
 	})
 
-	if err != nil {
-		t.Fatalf("ValidateModeSettingsForPolicy() error = %v, want legacy Google profile accepted", err)
+	if err == nil {
+		t.Fatal("a retired Google profile must not validate")
+	}
+	if !strings.Contains(err.Error(), "stt.google.chirp-3") {
+		t.Fatalf("ValidateModeSettingsForPolicy() error = %v, want the retired id named", err)
 	}
 }
 

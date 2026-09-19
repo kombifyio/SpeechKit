@@ -4,6 +4,8 @@ package config
 // OIDC, security headers, debug, LiveKit, features, training-data, and the
 // TOML-seeded Persona/Role/Sequence Voice Agent definitions.
 
+import "strings"
+
 const (
 	// Device-agent request claims are intentionally short-lived. The claim
 	// ledger retains them for a full day so a successfully completed Home
@@ -314,12 +316,52 @@ type ServerWyomingConfig struct {
 // shape). JWKSURL, Issuer, and Audience are required in those modes; the
 // *Claim fields map token claims onto the caller identity.
 type ServerOIDCConfig struct {
-	JWKSURL          string `toml:"jwks_url"`
-	Issuer           string `toml:"issuer"`
-	Audience         string `toml:"audience"`
+	JWKSURL string `toml:"jwks_url"`
+	// Issuer is the exact "iss" claim to require, or a template containing
+	// "{tenantid}" for a multi-tenant identity provider whose issuer varies
+	// per tenant (Microsoft Entra:
+	// "https://login.microsoftonline.com/{tenantid}/v2.0"). With a template
+	// the placeholder is filled from the token's TenantClaim, and that
+	// tenant must be listed in AllowedTenants.
+	Issuer   string `toml:"issuer"`
+	Audience string `toml:"audience"`
+	// AllowedTenants lists the tenant ids accepted with an issuer template.
+	// "*" accepts every tenant (a public multi-tenant deployment); an empty
+	// list with a template fails startup, so a server never trusts every
+	// directory in the world by omission.
+	AllowedTenants []string `toml:"allowed_tenants"`
+	// TenantClaim names the claim carrying the tenant id; default "tid".
+	TenantClaim      string `toml:"tenant_claim"`
 	ClockSkewSeconds int    `toml:"clock_skew_seconds"` // tolerated exp/nbf skew; default 60
 	OrgClaim         string `toml:"org_claim"`          // claim -> OrgID; default "org_id"
 	RoleClaim        string `toml:"role_claim"`         // claim -> Role; default "role"
+}
+
+// Multi-tenant OIDC defaults.
+const (
+	// ServerOIDCTenantPlaceholder is the token in [server.oidc].issuer that
+	// stands for the caller's tenant id (Microsoft Entra:
+	// "https://login.microsoftonline.com/{tenantid}/v2.0").
+	ServerOIDCTenantPlaceholder = "{tenantid}"
+	// ServerOIDCAllowAnyTenant is the allowed_tenants entry that accepts every
+	// tenant the identity provider serves.
+	ServerOIDCAllowAnyTenant = "*"
+)
+
+// MultiTenant reports whether the issuer is a per-tenant template.
+func (c ServerOIDCConfig) MultiTenant() bool {
+	return strings.Contains(c.Issuer, ServerOIDCTenantPlaceholder)
+}
+
+// HasAllowedTenants reports whether at least one non-blank tenant (or "*")
+// is listed.
+func (c ServerOIDCConfig) HasAllowedTenants() bool {
+	for _, tenant := range c.AllowedTenants {
+		if strings.TrimSpace(tenant) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // ServerSecurityConfig configures the HTTP security-header middleware. All

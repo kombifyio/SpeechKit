@@ -164,7 +164,11 @@ func standardPunctuationPack() speechcustomize.Pack {
 		regexReplacement(templateID, version, "en.clear-dash", "en", `(^|[^\pL\pN_])([A-Za-z0-9]+)\s+dash\s+([A-Za-z0-9]+)([^\pL\pN_]|$)`, `${1}${2}-${3}${4}`, 80, tag),
 		regexReplacement(templateID, version, "en.clear-colon", "en", `(^|[^\pL\pN_])([A-Za-z0-9]+)\s+colon\s+([A-Za-z0-9]+)([^\pL\pN_]|$)`, `${1}${2}:${3}${4}`, 80, tag),
 		regexReplacement(templateID, version, "filler.leading", "", `^(?:äh|ähm|aeh|aehm)[,\s]+`, "", 50, tag),
-		regexReplacement(templateID, version, "filler.inline", "", `\s+(?:äh|ähm|aeh|aehm)([^\pL\pN_]|$)`, `${1}`, 50, tag),
+		// Whisper/Deepgram German often emits fillers as "äh," / "ähm,". The
+		// previous inline rule kept that trailing comma (`${1}`), so a recording
+		// full of hesitations became a recording full of comma separators.
+		regexReplacement(templateID, version, "filler.inline-comma", "", `\s+(?:äh|ähm|aeh|aehm),+\s*`, " ", 55, tag),
+		regexReplacement(templateID, version, "filler.inline", "", `\s+(?:äh|ähm|aeh|aehm)([^\pL\pN_,]|$)`, `${1}`, 50, tag),
 	}
 	replacements = append(replacements, numberWordDotReplacements(templateID, version, "de", []string{"punkt", "dot"}, germanDigits(), tag)...)
 	replacements = append(replacements, numberWordDotReplacements(templateID, version, "en", []string{"point", "dot"}, englishDigits(), tag)...)

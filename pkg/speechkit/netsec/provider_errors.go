@@ -39,6 +39,13 @@ func SafeProviderErrorReason(status int, body []byte) string {
 		strings.Contains(lower, "quota") ||
 		strings.Contains(lower, "billing"):
 		return "provider quota exhausted"
+	case strings.Contains(lower, "content_filter") ||
+		strings.Contains(lower, "responsibleaipolicyviolation") ||
+		strings.Contains(lower, "content management policy"):
+		// Azure OpenAI / Microsoft Foundry refuse a prompt their content
+		// filter flags with a plain 400. Read as "provider rejected request",
+		// a meeting write-up failed with nothing pointing at the filter.
+		return "blocked by the provider's content filter"
 	case strings.Contains(lower, "model not supported") ||
 		strings.Contains(lower, "unsupported model"):
 		return "unsupported model"

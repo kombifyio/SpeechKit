@@ -127,3 +127,30 @@ func TestApplyPolicyOverlayTelemetryUpdateCheck(t *testing.T) {
 		t.Errorf("Telemetry.UpdateCheck: policy should force false")
 	}
 }
+
+func TestApplyPolicyOverlayFoundryEntraAppRegistration(t *testing.T) {
+	cfg := &Config{}
+	cfg.Providers.Foundry.EntraClientID = "from-config"
+	cfg.Providers.Foundry.EntraTenantID = "from-config-tenant"
+
+	applyPolicyOverlay(cfg, PolicyValues{
+		FoundryEntraClientID: "11111111-1111-1111-1111-111111111111",
+		FoundryEntraTenantID: "contoso.onmicrosoft.com",
+	})
+	if cfg.Providers.Foundry.EntraClientID != "11111111-1111-1111-1111-111111111111" {
+		t.Fatalf("policy client id not applied: %q", cfg.Providers.Foundry.EntraClientID)
+	}
+	if cfg.Providers.Foundry.EntraTenantID != "contoso.onmicrosoft.com" {
+		t.Fatalf("policy tenant id not applied: %q", cfg.Providers.Foundry.EntraTenantID)
+	}
+
+	// An empty policy value leaves the configured registration alone.
+	cfg.Providers.Foundry.EntraClientID = "from-config"
+	applyPolicyOverlay(cfg, PolicyValues{FoundryEntraTenantID: "only-tenant"})
+	if cfg.Providers.Foundry.EntraClientID != "from-config" {
+		t.Fatalf("empty policy client id overwrote config: %q", cfg.Providers.Foundry.EntraClientID)
+	}
+	if cfg.Providers.Foundry.EntraTenantID != "only-tenant" {
+		t.Fatalf("policy tenant id not applied on its own: %q", cfg.Providers.Foundry.EntraTenantID)
+	}
+}

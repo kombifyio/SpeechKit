@@ -1441,6 +1441,95 @@ paths:
           $ref: "#/components/responses/NotFound"
         "501":
           $ref: "#/components/responses/NotImplemented"
+  /api/v1/recording-sessions/{sessionId}/imports:
+    get:
+      tags: [Data]
+      operationId: listRecordingSessionImports
+      summary: List what was imported into a meeting from outside services.
+      description: >-
+        Today one row per meeting at most: the Microsoft Teams transcript
+        import. While it waits, the meeting's write-up waits too.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: The meeting's imports.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [imports]
+                properties:
+                  imports:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RecordingSessionImport"
+  /api/v1/recording-sessions/{sessionId}/imports/teams-transcript/retry:
+    post:
+      tags: [Data]
+      operationId: retryTeamsTranscriptImport
+      summary: Ask Microsoft 365 for the meeting's Teams transcript again.
+      description: >-
+        Restarts the wait (45 minutes) and keeps the Teams meeting already
+        found in the calendar. Refused with 409 while the import is off or no
+        Microsoft 365 account is connected.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: The rescheduled import.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionImport"
+        "409":
+          description: The import is off or no account is connected.
+  /api/v1/recording-sessions/{sessionId}/imports/copilot-recap/retry:
+    post:
+      tags: [Data]
+      operationId: retryCopilotRecapImport
+      summary: Ask Microsoft 365 for the meeting's Copilot recap again.
+      description: >-
+        Restarts the wait (four hours). Refused with 409 while the recap import
+        is off or no Microsoft 365 account is connected.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: The rescheduled import.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionImport"
+        "409":
+          description: The import is off or no account is connected.
   /api/v1/recording-sessions/{sessionId}/snapshots:
     parameters:
       - name: sessionId
@@ -1600,6 +1689,53 @@ paths:
                 $ref: "#/components/schemas/RecordingSessionSnapshot"
         "409":
           $ref: "#/components/responses/Conflict"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/meeting/summary-readiness:
+    get:
+      tags: [Data]
+      operationId: getMeetingSummaryReadiness
+      summary: Can the meeting summary be written right now?
+      description: >-
+        Preflight for the models bound to meeting synthesis. It never blocks a
+        meeting: capture and transcript are unaffected by a provider that
+        cannot answer, so a surface warns with this rather than refusing to
+        record. `degraded` means a preferred provider is out while another
+        candidate still answers.
+      responses:
+        "200":
+          description: The readiness of the summary provider.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeetingSummaryReadiness"
+  /api/v1/desktop/open-settings:
+    post:
+      tags: [Settings]
+      operationId: openDesktopSettings
+      summary: Bring the dashboard up on one settings tab.
+      description: >-
+        The deep link behind a repair offered in an overlay window. Overlay
+        windows cannot navigate the dashboard, so they post the tab that owns
+        the fix.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tab:
+                  type: string
+                  enum: [general, integrations, customization, speechkit_server, wake_word, storage, meeting]
+      responses:
+        "204":
+          description: The dashboard was shown.
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "501":
           $ref: "#/components/responses/NotImplemented"
   /api/v1/settings/meeting:
@@ -1776,6 +1912,99 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CopilotIntegration"
+  /api/v1/integrations/microsoft365:
+    get:
+      tags: [Integrations]
+      operationId: getMicrosoft365Integration
+      summary: Read the Microsoft 365 connection and the Teams transcript import.
+      description: >-
+        Microsoft 365 signs in with the same app registration as Microsoft
+        Foundry but into its own slot, so a Foundry resource in another tenant
+        keeps its sign-in. transcriptAccess probes the delegated
+        OnlineMeetingTranscript.Read.All permission at most once a minute.
+      responses:
+        "200":
+          description: Connection, transcript access and import settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Microsoft365Integration"
+    patch:
+      tags: [Integrations]
+      operationId: patchMicrosoft365Integration
+      summary: Turn the Teams transcript import on or off, or grant or withdraw its permission.
+      description: >-
+        Turning the import on requires the recorded permission to copy Teams
+        transcripts onto this device (granted in the same patch or earlier);
+        otherwise 400. Withdrawing the permission turns the import off.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Microsoft365IntegrationPatch"
+      responses:
+        "200":
+          description: The integration after the patch.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Microsoft365Integration"
+        "400":
+          description: The import was turned on without the permission.
+  /api/v1/integrations/microsoft365/connect:
+    post:
+      tags: [Integrations]
+      operationId: connectMicrosoft365
+      summary: Start the Microsoft sign-in in the browser.
+      description: >-
+        `level: basic` asks for User.Read, Calendars.Read and
+        OnlineMeetings.Read, which a user consents to alone. `level:
+        transcripts` adds OnlineMeetingTranscript.Read.All, which only a tenant
+        admin can consent to. Returns at once; clients follow `connect` in the
+        integration status. 403 when the privacy scope forbids cloud services,
+        409 while a sign-in runs.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                level:
+                  type: string
+                  enum: [basic, transcripts, recaps]
+      responses:
+        "200":
+          description: The sign-in started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Microsoft365Integration"
+        "403":
+          description: The privacy scope forbids cloud services.
+        "409":
+          description: A sign-in is already running, or no app registration is configured.
+  /api/v1/integrations/microsoft365/disconnect:
+    post:
+      tags: [Integrations]
+      operationId: disconnectMicrosoft365
+      summary: Forget the connected Microsoft 365 account.
+      security:
+        - ControlPlaneHeader: []
+        - ControlPlaneCookie: []
+      responses:
+        "200":
+          description: The integration after signing out.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Microsoft365Integration"
   /api/v1/providers/artifacts:
     get:
       tags: [Providers]
@@ -3207,16 +3436,73 @@ components:
           type: string
         errorKind:
           type: string
+          description: >-
+            Why a delayed or failed batch is not ready — `authentication`,
+            `consent`, `quota`, `configuration`, `context_limit`,
+            `invalid_output`, `transient` or `permanent`. The desktop surfaces
+            name the cause and offer the settings card that repairs it.
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
+    MeetingSummaryReadiness:
+      type: object
+      description: >-
+        Whether the meeting summary provider can be reached with the
+        credentials stored right now.
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [ok, degraded, blocked]
+          description: >-
+            `degraded` means summaries still arrive, from a weaker model that
+            the chain falls through to.
+        reason:
+          type: string
+          enum: [no_generator, no_model, signed_out, no_grant]
+        provider:
+          type: string
+        model:
+          type: string
+        action:
+          type: string
+          enum: [open_integrations, open_meeting_settings]
+          description: The settings tab that repairs the reason.
+    MeetingProviderId:
+      type: string
+      enum: [local, foundry, github_copilot]
+      description: >-
+        `local` runs only on models on this device; the transcript never leaves it. `foundry` is the
+        Microsoft Foundry utility deployment and needs the meeting transcript permission. `github_copilot`
+        needs the Copilot cloud-processing grant from its integration.
+    MeetingProviderSummary:
+      type: object
+      required: [id, model, available, cloud, granted]
+      properties:
+        id:
+          $ref: '#/components/schemas/MeetingProviderId'
+        model:
+          type: string
+          description: Model or deployment that writes the meeting up; empty means the account default.
+        available:
+          type: boolean
+          description: Set up on this device and not blocked by the privacy scope.
+        cloud:
+          type: boolean
+          description: The transcript leaves the device.
+        granted:
+          type: boolean
+          description: Transcript-processing permission; always true for `local`.
+        endpoint:
+          type: string
+          description: Host the transcript is sent to, when known.
     MeetingSettings:
       type: object
       description: Meeting Mode settings as stored, plus the local write-up model's readiness.
-      required: [enabled, autoDetect, autoEnhance, compactOnStart, alwaysOnTop, generationProvider, generationModel, fallbackPolicy, batchMinutes, summaryLanguage, additionalSummaryLanguages, screenshotEnabled, screenshotHotkey, screenshotHotkeyEnabled, localModelReady]
+      required: [enabled, autoDetect, autoEnhance, compactOnStart, alwaysOnTop, generationProvider, fallbackProviders, providers, batchMinutes, summaryLanguage, additionalSummaryLanguages, screenshotEnabled, screenshotHotkey, screenshotHotkeyEnabled, localModelReady]
       properties:
         enabled:
           type: boolean
@@ -3232,13 +3518,17 @@ components:
         alwaysOnTop:
           type: boolean
         generationProvider:
-          type: string
-          enum: [local, github_copilot]
-        generationModel:
-          type: string
-        fallbackPolicy:
-          type: string
-          enum: [local_only, allow_local_fallback]
+          $ref: '#/components/schemas/MeetingProviderId'
+        fallbackProviders:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeetingProviderId'
+          description: Tried in this order when the primary provider fails. Never contains the primary.
+        providers:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeetingProviderSummary'
+          description: One entry per provider, in the order the settings page offers them.
         batchMinutes:
           type: integer
           minimum: 1
@@ -3281,13 +3571,17 @@ components:
         alwaysOnTop:
           type: boolean
         generationProvider:
-          type: string
-          enum: [local, github_copilot]
-        generationModel:
-          type: string
-        fallbackPolicy:
-          type: string
-          enum: [local_only, allow_local_fallback]
+          $ref: '#/components/schemas/MeetingProviderId'
+        fallbackProviders:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeetingProviderId'
+        foundryTranscriptGrant:
+          type: boolean
+          description: >-
+            Grants (true) or revokes (false) permission to send meeting transcripts to Microsoft
+            Foundry. A patch that makes Foundry the provider or a fallback is rejected with 400 unless
+            the permission is recorded or granted in the same patch. Revoking cancels running write-ups.
         batchMinutes:
           type: integer
           minimum: 1
@@ -3304,6 +3598,110 @@ components:
           type: string
         screenshotHotkeyEnabled:
           type: boolean
+    Microsoft365Integration:
+      type: object
+      required: [available, scopeBlocked, signedIn, transcriptAccess, importTeamsTranscripts, granted, recapAccess, importCopilotRecaps, recapGranted, connect]
+      properties:
+        available:
+          type: boolean
+          description: False when no Entra app registration is configured.
+        scopeBlocked:
+          type: boolean
+          description: The privacy scope forbids cloud services.
+        signedIn:
+          type: boolean
+        user:
+          type: string
+        tenantId:
+          type: string
+        transcriptAccess:
+          type: string
+          enum: [granted, admin_consent_required, signed_out, unavailable]
+        adminConsentUrl:
+          type: string
+          description: Set with admin_consent_required; the page a tenant admin opens to approve access.
+        importTeamsTranscripts:
+          type: boolean
+        granted:
+          type: boolean
+          description: The versioned permission to copy Teams transcripts onto this device is recorded.
+        recapAccess:
+          type: string
+          enum: [granted, admin_consent_required, signed_out, unavailable]
+          description: Access to Microsoft 365 Copilot meeting insights (OnlineMeetingAiInsight.Read.All).
+        importCopilotRecaps:
+          type: boolean
+        recapGranted:
+          type: boolean
+          description: The recorded permission is of a version that covers Copilot recaps (2 or later).
+        connect:
+          type: object
+          required: [running, done]
+          properties:
+            running:
+              type: boolean
+            done:
+              type: boolean
+            error:
+              type: string
+    Microsoft365IntegrationPatch:
+      type: object
+      properties:
+        importTeamsTranscripts:
+          type: boolean
+        importCopilotRecaps:
+          type: boolean
+        grantTranscriptImport:
+          type: boolean
+          description: >-
+            Grants (true) the current permission, covering Teams transcripts and
+            Copilot recaps, or withdraws (false) it, which turns both imports off.
+    RecordingSessionImport:
+      type: object
+      required: [id, sessionId, kind, status, attempts, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        sessionId:
+          type: integer
+          format: int64
+        kind:
+          type: string
+          enum: [teams_transcript, copilot_recap]
+        status:
+          type: string
+          enum: [waiting, imported, unavailable, failed, cancelled]
+        attempts:
+          type: integer
+        nextAttemptAt:
+          type: string
+          format: date-time
+        deadlineAt:
+          type: string
+          format: date-time
+        externalMeetingId:
+          type: string
+        externalItemId:
+          type: string
+          description: Comma-separated ids of the Teams transcripts imported.
+        subject:
+          type: string
+        contentJson:
+          type: string
+          description: For copilot_recap, the recap as JSON ({notes:[{title,text,subpoints}], actionItems:[{title,text,owner}]}).
+        errorKind:
+          type: string
+          description: >-
+            Why no content arrived: no_teams_meeting, no_transcript, no_recap,
+            tenant_disabled, consent_required, signed_out, not_found, throttled,
+            transient, permanent, import_disabled or store.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     CopilotIntegration:
       type: object
       required: [enabled, model, granted, available, authenticated, models]

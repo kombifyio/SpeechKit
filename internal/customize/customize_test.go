@@ -1,6 +1,7 @@
 package customize
 
 import (
+	"strings"
 	"testing"
 
 	speechcustomize "github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
@@ -14,8 +15,11 @@ func TestBuildHintsFromWords(t *testing.T) {
 		{Term: "AcmeOS", Enabled: true},
 		{Term: "Disabled", Enabled: false},
 	}
-	if got, want := BuildPrompt(words), "Prefer these terms when transcribing: Kombify, AcmeOS."; got != want {
+	if got, want := BuildPrompt(words), "Kombify AcmeOS"; got != want {
 		t.Fatalf("BuildPrompt = %q, want %q", got, want)
+	}
+	if strings.Contains(BuildPrompt(words), ",") {
+		t.Fatalf("BuildPrompt must not teach comma-separated style, got %q", BuildPrompt(words))
 	}
 	if got := BuildKeyterms(words); len(got) != 2 || got[0] != "Kombify" || got[1] != "AcmeOS" {
 		t.Fatalf("BuildKeyterms = %v", got)

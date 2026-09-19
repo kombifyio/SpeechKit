@@ -63,6 +63,7 @@ const (
 	MeetingSnapshotSaved     MessageID = "meeting.snapshot.saved"
 	MeetingSnapshotCancelled MessageID = "meeting.snapshot.cancelled"
 	MeetingSnapshotError     MessageID = "meeting.snapshot.error"
+	MeetingSnapshotProtected MessageID = "meeting.snapshot.protected"
 )
 
 var messageIDs = []MessageID{
@@ -118,6 +119,17 @@ var messageIDs = []MessageID{
 	"desktop.route.distinct",
 	"desktop.route.scope",
 	"desktop.route.server_fallback",
+	"desktop.meeting.summary_preflight_signed_out",
+	"desktop.meeting.summary_preflight_no_grant",
+	"desktop.meeting.summary_preflight_no_model",
+	"desktop.meeting.summary_preflight_degraded",
+	"desktop.meeting.summary_fix_action",
+	"desktop.meeting.summary_error_authentication",
+	"desktop.meeting.summary_error_consent",
+	"desktop.meeting.summary_error_quota",
+	"desktop.meeting.summary_error_configuration",
+	"desktop.meeting.summary_error_retrying",
+	"desktop.meeting.summary_error_permanent",
 	DesktopCaptureBusy,
 	CompanionHomeAssistantNotConfigured,
 	CompanionHomeAssistantCommandEmpty,
@@ -148,6 +160,7 @@ var messageIDs = []MessageID{
 	MeetingSnapshotSaved,
 	MeetingSnapshotCancelled,
 	MeetingSnapshotError,
+	MeetingSnapshotProtected,
 }
 
 var supportedLocales = []string{"en", "de", "es", "zh-Hans", "hi", "ar"}

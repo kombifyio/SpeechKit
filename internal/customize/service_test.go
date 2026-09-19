@@ -172,6 +172,8 @@ func TestServiceAppliesNativeStandardPunctuationTemplate(t *testing.T) {
 		{name: "multilingual spoken decimal", language: "multi", in: "eins Punkt sieben", want: "1.7"},
 		{name: "multilingual spoken fraction", language: "multi", in: "1 von fünf", want: "1 von 5"},
 		{name: "german fillers", language: "multi", in: "Äh das ist ähm ein Test", want: "das ist ein Test"},
+		{name: "german fillers with commas", language: "multi", in: "Das ist äh, ein Test ähm, weiter", want: "Das ist ein Test weiter"},
+		{name: "stacked filler commas", language: "de", in: "Äh, äh, das ist ähm, also gut", want: "das ist also gut"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

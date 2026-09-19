@@ -138,6 +138,9 @@ type Config struct {
 	// the Server-Target ignores this block.
 	Meeting MeetingConfig `toml:"meeting"`
 	Copilot CopilotConfig `toml:"copilot"`
+	// Microsoft365 connects meetings to the user's Microsoft 365 account.
+	// Desktop-only; the Server-Target ignores this block.
+	Microsoft365 Microsoft365Config `toml:"microsoft365"`
 }
 
 // MeetingConfig configures meeting capture.
@@ -153,15 +156,25 @@ type MeetingConfig struct {
 	AutoDetectApps []string `toml:"auto_detect_apps"`
 	// AutoEnhance writes a meeting up as soon as it ends, rather than waiting
 	// to be asked.
-	AutoEnhance                bool     `toml:"auto_enhance"`
-	CompactOnStart             bool     `toml:"compact_on_start"`
-	AlwaysOnTop                bool     `toml:"always_on_top"`
-	GenerationProvider         string   `toml:"generation_provider"`
-	GenerationModel            string   `toml:"generation_model"`
-	FallbackPolicy             string   `toml:"fallback_policy"`
-	BatchMinutes               int      `toml:"batch_minutes"`
-	SummaryLanguage            string   `toml:"summary_language"`
-	AdditionalSummaryLanguages []string `toml:"additional_summary_languages"`
+	AutoEnhance    bool `toml:"auto_enhance"`
+	CompactOnStart bool `toml:"compact_on_start"`
+	AlwaysOnTop    bool `toml:"always_on_top"`
+	// GenerationProvider writes the meeting up: MeetingProviderLocal (models
+	// on this device only), MeetingProviderFoundry or MeetingProviderCopilot.
+	GenerationProvider string `toml:"generation_provider"`
+	// FallbackProviders are tried in this order when the primary fails.
+	FallbackProviders []string `toml:"fallback_providers"`
+	// FallbackPolicy is the removed predecessor of FallbackProviders. It is
+	// read once to migrate an existing file and never written again.
+	FallbackPolicy string `toml:"fallback_policy,omitempty"`
+	// FoundryTranscriptGrant* record the user's permission to send meeting
+	// transcripts to Microsoft Foundry for summaries and write-ups. Without
+	// it Foundry refuses meeting work, whatever the provider settings say.
+	FoundryTranscriptGrantVersion   int      `toml:"foundry_transcript_grant_version,omitempty"`
+	FoundryTranscriptGrantGrantedAt string   `toml:"foundry_transcript_grant_granted_at,omitempty"`
+	BatchMinutes                    int      `toml:"batch_minutes"`
+	SummaryLanguage                 string   `toml:"summary_language"`
+	AdditionalSummaryLanguages      []string `toml:"additional_summary_languages"`
 
 	// Screenshot configures the Meeting Mode screenshot quick action and its
 	// optional global keyboard shortcut. Captures are taken locally and stay

@@ -77,8 +77,20 @@
   "meeting.snapshot.saved": "Captura guardada en la reunión.",
   "meeting.snapshot.cancelled": "Captura cancelada.",
   "meeting.snapshot.error": "No se pudo realizar la captura.",
+  "meeting.snapshot.protected": "Esta ventana está protegida contra capturas de pantalla. Elige otra ventana.",
   "sk.privacy.retention.retain": "Conservar las grabaciones",
   "sk.privacy.retention.ephemeral": "Conservar solo el resumen",
   "sk.privacy.disabled.retention_ephemeral": "Esto no se conserva: la configuración de retención descarta las grabaciones cuando termina la reunión.",
-  "sk.privacy.disabled.provider_retains": "A este proveedor no se le puede pedir que descarte la solicitud, por lo que la configuración de retención actual lo bloquea."
+  "sk.privacy.disabled.provider_retains": "A este proveedor no se le puede pedir que descarte la solicitud, por lo que la configuración de retención actual lo bloquea.",
+  "desktop.meeting.summary_preflight_signed_out": "El proveedor de resúmenes no tiene la sesión iniciada. La grabación y la transcripción no se ven afectadas, pero no habrá resumen hasta que inicies sesión.",
+  "desktop.meeting.summary_preflight_no_grant": "El proveedor de resúmenes aún no tiene permiso para la transcripción. Concédelo en Ajustes o esta reunión se quedará sin resumen.",
+  "desktop.meeting.summary_preflight_no_model": "No hay ningún modelo configurado para los resúmenes de reuniones. Elige uno en Ajustes: la grabación y la transcripción siguen funcionando.",
+  "desktop.meeting.summary_preflight_degraded": "No se puede acceder al modelo en la nube para los resúmenes; se encarga el modelo local. Los resúmenes serán más breves y menos precisos.",
+  "desktop.meeting.summary_fix_action": "Solucionar ahora",
+  "desktop.meeting.summary_error_authentication": "El resumen espera un inicio de sesión: el proveedor rechazó la solicitud. Se ejecutará solo cuando vuelvas a iniciar sesión.",
+  "desktop.meeting.summary_error_consent": "El resumen espera el permiso para enviar la transcripción al proveedor.",
+  "desktop.meeting.summary_error_quota": "La cuota del proveedor se ha agotado. El resumen se reintenta solo.",
+  "desktop.meeting.summary_error_configuration": "No había ningún modelo configurado cuando se resumió esta reunión. Elige uno y volverá a ejecutarse.",
+  "desktop.meeting.summary_error_retrying": "El resumen volvió inservible y se está reintentando automáticamente.",
+  "desktop.meeting.summary_error_permanent": "El resumen falló definitivamente. La transcripción está completa y puede resumirse de nuevo."
 }

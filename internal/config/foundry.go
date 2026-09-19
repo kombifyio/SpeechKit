@@ -81,6 +81,19 @@ const (
 	FoundryEntraCredentialAzureCLI   = "azure_cli"
 	FoundryEntraCredentialBrowser    = "browser"
 	FoundryEntraCredentialDeviceCode = "device_code"
+	// FoundryEntraCredentialClientSecret signs in as the app registration
+	// itself (OAuth 2.0 client credentials) with a client secret the
+	// organisation deploys to the device, instead of as a user. That is the
+	// "own client id and secret" setup: the registration is single-tenant or
+	// the organisation's own multi-tenant one, entra_tenant_id names the
+	// tenant, and application permissions (Cognitive Services access, Graph
+	// Notes.ReadWrite.All for OneNote) replace user consent. The secret lives
+	// in the secret store under DefaultFoundryEntraClientSecretEnv.
+	FoundryEntraCredentialClientSecret = "client_secret"
+
+	// DefaultFoundryEntraClientSecretEnv is the secret-store / environment
+	// name of the client secret for FoundryEntraCredentialClientSecret.
+	DefaultFoundryEntraClientSecretEnv = "SPEECHKIT_ENTRA_CLIENT_SECRET" //nolint:gosec // secret name, not a credential
 
 	FoundryAzureCLIProfileShared   = "shared"
 	FoundryAzureCLIProfileIsolated = "isolated"
@@ -99,6 +112,21 @@ const (
 	FoundryScopeAI                = "https://ai.azure.com/.default"
 	FoundryScopeCognitiveServices = "https://cognitiveservices.azure.com/.default"
 )
+
+// Microsoft Graph scopes served by the same sign-in (the SpeechKit app
+// registration carries the delegated permissions). Notes.Create is the
+// OneNote export's default consent per ADR 0002; Notes.ReadWrite is requested
+// by incremental consent only when a user allows updating an existing page.
+const (
+	GraphScopeUserRead       = "https://graph.microsoft.com/User.Read"
+	GraphScopeNotesCreate    = "https://graph.microsoft.com/Notes.Create"
+	GraphScopeNotesReadWrite = "https://graph.microsoft.com/Notes.ReadWrite"
+)
+
+// GraphScopeDefault is the app-only Graph scope: every application
+// permission the tenant admin granted the registration (client-credentials
+// sign-in, see FoundryEntraCredentialClientSecret).
+const GraphScopeDefault = "https://graph.microsoft.com/.default"
 
 // FoundryProjectDeploymentsAPIVersion is the data-plane version of
 // GET {projectEndpoint}/deployments.
@@ -283,6 +311,8 @@ func (c FoundryProviderConfig) ResolvedEntraCredential() string {
 		return FoundryEntraCredentialBrowser
 	case FoundryEntraCredentialDeviceCode, "devicecode", "device-code":
 		return FoundryEntraCredentialDeviceCode
+	case FoundryEntraCredentialClientSecret, "clientsecret", "client-secret", "app", "application":
+		return FoundryEntraCredentialClientSecret
 	default:
 		return FoundryEntraCredentialAuto
 	}

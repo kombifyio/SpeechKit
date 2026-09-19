@@ -318,6 +318,73 @@ type MeetingSummaryBatchStore interface {
 	ListMeetingSummaryBatches(ctx context.Context, sessionID int64) ([]MeetingSummaryBatch, error)
 }
 
+// RecordingSessionImportKind names what is imported into a meeting from an
+// outside service.
+type RecordingSessionImportKind string
+
+const (
+	// RecordingSessionImportTeamsTranscript is the transcript Microsoft Teams
+	// produced for the meeting. Its cues become segments of the session on
+	// the RecordingSegmentChannelTeams channel.
+	RecordingSessionImportTeamsTranscript RecordingSessionImportKind = "teams_transcript"
+	// RecordingSessionImportCopilotRecap is the meeting notes and action
+	// items Microsoft 365 Copilot wrote for the meeting, kept as JSON in
+	// ContentJSON next to SpeechKit's own review.
+	RecordingSessionImportCopilotRecap RecordingSessionImportKind = "copilot_recap"
+)
+
+// RecordingSessionImportStatus is where one import stands.
+type RecordingSessionImportStatus string
+
+const (
+	// RecordingSessionImportWaiting: scheduled for NextAttemptAt.
+	RecordingSessionImportWaiting RecordingSessionImportStatus = "waiting"
+	// RecordingSessionImportImported: done.
+	RecordingSessionImportImported RecordingSessionImportStatus = "imported"
+	// RecordingSessionImportUnavailable: the service has nothing to import
+	// or refuses access; ErrorKind says why. Final.
+	RecordingSessionImportUnavailable RecordingSessionImportStatus = "unavailable"
+	// RecordingSessionImportFailed: an error retrying will not fix. Final.
+	RecordingSessionImportFailed RecordingSessionImportStatus = "failed"
+	// RecordingSessionImportCancelled: the user withdrew the permission or
+	// turned the import off before it finished. Final.
+	RecordingSessionImportCancelled RecordingSessionImportStatus = "cancelled"
+)
+
+// RecordingSegmentChannelTeams marks segments imported from a Microsoft Teams
+// transcript. Their Speaker is the name Teams attributed the words to.
+const RecordingSegmentChannelTeams = "teams"
+
+// RecordingSessionImport tracks one import for one meeting. Content that
+// becomes segments is not repeated here; ContentJSON holds only what has no
+// other home.
+type RecordingSessionImport struct {
+	ID                int64                        `json:"id"`
+	SessionID         int64                        `json:"sessionId"`
+	Kind              RecordingSessionImportKind   `json:"kind"`
+	Status            RecordingSessionImportStatus `json:"status"`
+	Attempts          int                          `json:"attempts"`
+	NextAttemptAt     time.Time                    `json:"nextAttemptAt,omitempty"`
+	DeadlineAt        time.Time                    `json:"deadlineAt,omitempty"`
+	ExternalMeetingID string                       `json:"externalMeetingId,omitempty"`
+	ExternalItemID    string                       `json:"externalItemId,omitempty"`
+	Subject           string                       `json:"subject,omitempty"`
+	ContentJSON       string                       `json:"contentJson,omitempty"`
+	ErrorKind         string                       `json:"errorKind,omitempty"`
+	CreatedAt         time.Time                    `json:"createdAt"`
+	UpdatedAt         time.Time                    `json:"updatedAt"`
+}
+
+// RecordingSessionImportStore is an optional extension for backends that
+// persist imports into meetings. One row exists per session and kind.
+type RecordingSessionImportStore interface {
+	UpsertRecordingSessionImport(ctx context.Context, item RecordingSessionImport) (RecordingSessionImport, error)
+	ListRecordingSessionImports(ctx context.Context, sessionID int64) ([]RecordingSessionImport, error)
+	// ListDueRecordingSessionImports returns waiting imports whose next
+	// attempt is due at now, oldest first, in the caller's scope.
+	ListDueRecordingSessionImports(ctx context.Context, now time.Time, limit int) ([]RecordingSessionImport, error)
+}
+
 // AudioAssetStore is an optional extension for backends that persist
 // first-class audio asset metadata alongside legacy audio_path columns.
 type AudioAssetStore interface {
@@ -672,6 +739,9 @@ type RecordingSession struct {
 	// user's words belongs in the answer.
 	WriteUps       []RecordingSessionEnhancement `json:"writeUps,omitempty"`
 	SummaryBatches []MeetingSummaryBatch         `json:"summaryBatches,omitempty"`
+	// Imports are what was brought in from outside services, such as a
+	// Microsoft Teams transcript. Loaded, like WriteUps, for subject exports.
+	Imports []RecordingSessionImport `json:"imports,omitempty"`
 	// RetentionPinned keeps this meeting even once it is past the retention
 	// window.
 	RetentionPinned bool `json:"retentionPinned,omitempty"`

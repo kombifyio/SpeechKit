@@ -77,8 +77,20 @@
   "meeting.snapshot.saved": "تم حفظ لقطة الشاشة في الاجتماع.",
   "meeting.snapshot.cancelled": "تم إلغاء لقطة الشاشة.",
   "meeting.snapshot.error": "تعذّر التقاط لقطة الشاشة.",
+  "meeting.snapshot.protected": "هذه النافذة محمية من التقاط الشاشة. اختر نافذة أخرى.",
   "sk.privacy.retention.retain": "الاحتفاظ بالتسجيلات",
   "sk.privacy.retention.ephemeral": "الاحتفاظ بالملخص فقط",
   "sk.privacy.disabled.retention_ephemeral": "لا يتم الاحتفاظ بهذا: يتجاهل إعداد الاحتفاظ التسجيلات عند انتهاء الاجتماع.",
-  "sk.privacy.disabled.provider_retains": "لا يمكن إبلاغ هذا المزوّد بتجاهل الطلب، لذا يحظره إعداد الاحتفاظ الحالي."
+  "sk.privacy.disabled.provider_retains": "لا يمكن إبلاغ هذا المزوّد بتجاهل الطلب، لذا يحظره إعداد الاحتفاظ الحالي.",
+  "desktop.meeting.summary_preflight_signed_out": "لم يتم تسجيل الدخول إلى مزوّد الملخّصات. التسجيل والنص المكتوب لا يتأثران، لكن لن يُنشأ ملخّص قبل تسجيل الدخول.",
+  "desktop.meeting.summary_preflight_no_grant": "لا يملك مزوّد الملخّصات إذنًا بالنص المكتوب بعد. امنحه من الإعدادات وإلا سيبقى هذا الاجتماع بلا ملخّص.",
+  "desktop.meeting.summary_preflight_no_model": "لا يوجد نموذج مُعدّ لملخّصات الاجتماعات. اختر واحدًا من الإعدادات — التسجيل والنص المكتوب يستمران.",
+  "desktop.meeting.summary_preflight_degraded": "تعذّر الوصول إلى النموذج السحابي للملخّصات، وقد تولّى النموذج المحلي المهمة. ستكون الملخّصات أقصر وأقل دقة.",
+  "desktop.meeting.summary_fix_action": "الإصلاح الآن",
+  "desktop.meeting.summary_error_authentication": "الملخّص ينتظر تسجيل الدخول: رفض المزوّد الطلب. سيعمل من تلقاء نفسه بمجرد تسجيل دخولك.",
+  "desktop.meeting.summary_error_consent": "الملخّص ينتظر الإذن بإرسال النص المكتوب إلى المزوّد.",
+  "desktop.meeting.summary_error_quota": "استُنفدت حصة المزوّد. ستُعاد محاولة الملخّص تلقائيًا.",
+  "desktop.meeting.summary_error_configuration": "لم يكن هناك نموذج مُعدّ عند تلخيص هذا الاجتماع. اختر واحدًا وسيعمل من جديد.",
+  "desktop.meeting.summary_error_retrying": "عاد الملخّص غير صالح للاستخدام وتجري إعادة المحاولة تلقائيًا.",
+  "desktop.meeting.summary_error_permanent": "فشل الملخّص نهائيًا. النص المكتوب مكتمل ويمكن تلخيصه مرة أخرى."
 }

@@ -77,8 +77,20 @@
   "meeting.snapshot.saved": "截图已保存到会议。",
   "meeting.snapshot.cancelled": "已取消截图。",
   "meeting.snapshot.error": "无法捕获截图。",
+  "meeting.snapshot.protected": "此窗口受屏幕捕获保护。请选择其他窗口。",
   "sk.privacy.retention.retain": "保留录音",
   "sk.privacy.retention.ephemeral": "仅保留纪要",
   "sk.privacy.disabled.retention_ephemeral": "此项不会保留：会议结束时，保留设置会丢弃录音。",
-  "sk.privacy.disabled.provider_retains": "无法要求该提供方丢弃请求，因此当前保留设置将其阻止。"
+  "sk.privacy.disabled.provider_retains": "无法要求该提供方丢弃请求，因此当前保留设置将其阻止。",
+  "desktop.meeting.summary_preflight_signed_out": "摘要服务提供方尚未登录。录音和转写不受影响，但在登录之前不会生成摘要。",
+  "desktop.meeting.summary_preflight_no_grant": "摘要服务提供方尚未获得转写授权。请在设置中授权，否则本次会议不会有摘要。",
+  "desktop.meeting.summary_preflight_no_model": "尚未为会议摘要配置模型。请在设置中选择一个——录音和转写仍会继续。",
+  "desktop.meeting.summary_preflight_degraded": "用于摘要的云端模型无法访问，已改用本地模型。摘要会更简短，也不够准确。",
+  "desktop.meeting.summary_fix_action": "立即修复",
+  "desktop.meeting.summary_error_authentication": "摘要正在等待登录：服务提供方拒绝了请求。重新登录后会自动继续。",
+  "desktop.meeting.summary_error_consent": "摘要正在等待把转写发送给服务提供方的授权。",
+  "desktop.meeting.summary_error_quota": "服务提供方的配额已用完。摘要会自动重试。",
+  "desktop.meeting.summary_error_configuration": "总结这次会议时尚未配置模型。选择一个后会重新运行。",
+  "desktop.meeting.summary_error_retrying": "摘要返回的内容不可用，正在自动重试。",
+  "desktop.meeting.summary_error_permanent": "摘要已彻底失败。转写是完整的，可以重新生成摘要。"
 }

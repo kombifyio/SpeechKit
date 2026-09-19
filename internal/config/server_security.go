@@ -674,6 +674,24 @@ func validateServerResourceLimits(cfg *Config) error {
 			return fmt.Errorf("trusted_proxy_cidrs contains invalid CIDR %q: %w", cidr, err)
 		}
 	}
+	if err := validateServerOIDCConfig(cfg); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateServerOIDCConfig keeps a multi-tenant issuer template from trusting
+// every directory in the world by omission: with {tenantid} in the issuer the
+// operator must list the tenants to accept, or opt in to "*" explicitly.
+func validateServerOIDCConfig(cfg *Config) error {
+	mode := strings.ToLower(strings.TrimSpace(cfg.Server.AuthMode))
+	if mode != "oidc" && mode != "bearer_or_oidc" {
+		return nil
+	}
+	oidc := cfg.Server.OIDC
+	if oidc.MultiTenant() && !oidc.HasAllowedTenants() {
+		return fmt.Errorf("[server.oidc].issuer %q is a multi-tenant template; set allowed_tenants to the tenant ids to accept, or [%q] to accept every tenant", oidc.Issuer, ServerOIDCAllowAnyTenant)
+	}
 	return nil
 }
 

@@ -23,6 +23,13 @@ type PolicyValues struct {
 	AuditRetentionDays        *int
 	AuditEventLogEnabled      *bool
 	AuditOTLPEndpoint         string
+	// FoundryEntraClientID and FoundryEntraTenantID let a company pin the
+	// Microsoft Entra app registration SpeechKit signs in with (see
+	// docs/entra-app-registration.md) for a whole fleet. They land in
+	// [providers.foundry] entra_client_id / entra_tenant_id and beat the
+	// build default and the environment.
+	FoundryEntraClientID string
+	FoundryEntraTenantID string
 
 	// Origin describes which registry hive first contributed a value.
 	// One of "hklm-policies" | "hklm-defaults" | "hkcu" | "none" | "non-windows".
@@ -64,5 +71,11 @@ func applyPolicyOverlay(cfg *Config, policy PolicyValues) {
 	}
 	if policy.AuditOTLPEndpoint != "" {
 		cfg.Audit.OTLPEndpoint = policy.AuditOTLPEndpoint
+	}
+	if policy.FoundryEntraClientID != "" {
+		cfg.Providers.Foundry.EntraClientID = policy.FoundryEntraClientID
+	}
+	if policy.FoundryEntraTenantID != "" {
+		cfg.Providers.Foundry.EntraTenantID = policy.FoundryEntraTenantID
 	}
 }

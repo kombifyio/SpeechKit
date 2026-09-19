@@ -101,6 +101,12 @@ func ApplyServerDeploymentEnv(cfg *Config) ([]string, error) {
 	}
 	notes = append(notes, toolBridgeNotes...)
 
+	oidcNotes, err := applyServerOIDCEnv(cfg)
+	if err != nil {
+		return nil, err
+	}
+	notes = append(notes, oidcNotes...)
+
 	return notes, nil
 }
 
@@ -197,4 +203,46 @@ func firstNonEmptySetting(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// Multi-tenant OIDC deployment env. These let a container validate tokens
+// from an identity provider without a TOML file.
+const (
+	ServerOIDCJWKSURLEnv        = "SPEECHKIT_SERVER_OIDC_JWKS_URL"
+	ServerOIDCIssuerEnv         = "SPEECHKIT_SERVER_OIDC_ISSUER"
+	ServerOIDCAudienceEnv       = "SPEECHKIT_SERVER_OIDC_AUDIENCE"
+	ServerOIDCAllowedTenantsEnv = "SPEECHKIT_SERVER_OIDC_ALLOWED_TENANTS"
+	ServerOIDCOrgClaimEnv       = "SPEECHKIT_SERVER_OIDC_ORG_CLAIM"
+)
+
+// applyServerOIDCEnv applies the SPEECHKIT_SERVER_OIDC_* contract for
+// [server.oidc]. Values replace the persisted ones only when set, so a TOML
+// deployment is untouched by an empty environment.
+func applyServerOIDCEnv(cfg *Config) ([]string, error) {
+	var notes []string
+	oidc := &cfg.Server.OIDC
+	setString := func(env string, target *string, what string) {
+		if value := cleanSetting(os.Getenv(env)); value != "" && *target != value {
+			*target = value
+			notes = append(notes, "deployment env: "+what+" set from "+env)
+		}
+	}
+	setString(ServerOIDCJWKSURLEnv, &oidc.JWKSURL, "oidc jwks_url")
+	setString(ServerOIDCIssuerEnv, &oidc.Issuer, "oidc issuer")
+	setString(ServerOIDCAudienceEnv, &oidc.Audience, "oidc audience")
+	setString(ServerOIDCOrgClaimEnv, &oidc.OrgClaim, "oidc org_claim")
+	if raw := cleanSetting(os.Getenv(ServerOIDCAllowedTenantsEnv)); raw != "" {
+		var tenants []string
+		for _, tenant := range strings.Split(raw, ",") {
+			if tenant = strings.TrimSpace(tenant); tenant != "" {
+				tenants = append(tenants, tenant)
+			}
+		}
+		if len(tenants) > 0 {
+			oidc.AllowedTenants = tenants
+			notes = append(notes, "deployment env: oidc allowed_tenants set from "+ServerOIDCAllowedTenantsEnv)
+		}
+	}
+
+	return notes, nil
 }

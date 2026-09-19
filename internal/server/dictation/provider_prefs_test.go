@@ -147,8 +147,8 @@ func TestHandler_UnsatisfiablePrefFallsBackToModelSelectionDefault(t *testing.T)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	if fake.lastOpts.ProviderProfileID != "stt.google.latest-long" {
-		t.Fatalf("ProviderProfileID = %q, want ModelSelection default stt.google.latest-long",
+	if fake.lastOpts.ProviderProfileID != "stt.openai.whisper-1" {
+		t.Fatalf("ProviderProfileID = %q, want ModelSelection default stt.openai.whisper-1",
 			fake.lastOpts.ProviderProfileID)
 	}
 }

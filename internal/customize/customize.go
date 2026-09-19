@@ -219,7 +219,10 @@ func BuildPrompt(words []speechcustomize.Word) string {
 	if len(terms) == 0 {
 		return ""
 	}
-	return "Prefer these terms when transcribing: " + strings.Join(terms, ", ") + "."
+	// Whisper-family models treat `prompt` as previous-transcript style, not as
+	// an instruction. A comma-separated English list ("Prefer these terms: A, B.")
+	// makes German recordings copy that list punctuation.
+	return strings.Join(terms, " ")
 }
 
 func BuildKeyterms(words []speechcustomize.Word) []string {

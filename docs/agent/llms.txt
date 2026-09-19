@@ -94,9 +94,16 @@ Embed SpeechKit as a Go framework:
   `realtime.deepgram.voice-agent`,
   `realtime.assemblyai.voice-agent`, and `realtime.openai.gpt-realtime-2`
   normalize to the same provider path.
+- On the device, `live.DefaultProviderDescriptors()` also carries two
+  Microsoft Foundry live providers: `realtime.foundry.gpt-realtime-2` (OpenAI
+  Realtime on a Foundry resource) and `realtime.foundry.voice-live` (Voice
+  Live: a hosted brain model with Azure Speech in and out). The Server-Target
+  WebSocket does not accept them; they are selected through
+  `ProviderIntent` on the device.
 - The provider live gate covers Deepgram, AssemblyAI, and OpenAI with
   deterministic gate configs. Missing credentials report `blocked_by_auth` and
-  do not count as live proof.
+  do not count as live proof. Microsoft Foundry has no live-gate leg, so its
+  descriptors are covered by unit tests only.
 
 Component rule: import only the public package you need from
 `github.com/kombifyio/SpeechKit/pkg/speechkit/...`. Use `wakeword` for

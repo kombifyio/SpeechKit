@@ -51,6 +51,8 @@ type registryTree struct {
 	auditRetentionDays    *int
 	auditEventLogEnabled  *bool
 	auditOTLPEndpoint     string
+	foundryEntraClientID  string
+	foundryEntraTenantID  string
 	keysFound             int
 }
 
@@ -124,6 +126,20 @@ func readRegistryTree(hive registry.Key, rootPath string) registryTree {
 		}
 	}
 
+	// Foundry\EntraClientId (REG_SZ) + Foundry\EntraTenantId (REG_SZ): the
+	// company's own Microsoft Entra app registration for the Foundry sign-in.
+	if k, err := registry.OpenKey(hive, rootPath+`\Foundry`, registry.QUERY_VALUE); err == nil {
+		defer k.Close() //nolint:errcheck // Windows registry key close error is not actionable for read-only policy probes
+		if v, _, err := k.GetStringValue("EntraClientId"); err == nil && strings.TrimSpace(v) != "" {
+			t.foundryEntraClientID = strings.TrimSpace(v)
+			t.keysFound++
+		}
+		if v, _, err := k.GetStringValue("EntraTenantId"); err == nil && strings.TrimSpace(v) != "" {
+			t.foundryEntraTenantID = strings.TrimSpace(v)
+			t.keysFound++
+		}
+	}
+
 	return t
 }
 
@@ -170,6 +186,16 @@ func mergePolicy(result *PolicyValues, t registryTree, source string) {
 	}
 	if t.auditOTLPEndpoint != "" && result.AuditOTLPEndpoint == "" {
 		result.AuditOTLPEndpoint = t.auditOTLPEndpoint
+		result.KeysFound++
+		contributed = true
+	}
+	if t.foundryEntraClientID != "" && result.FoundryEntraClientID == "" {
+		result.FoundryEntraClientID = t.foundryEntraClientID
+		result.KeysFound++
+		contributed = true
+	}
+	if t.foundryEntraTenantID != "" && result.FoundryEntraTenantID == "" {
+		result.FoundryEntraTenantID = t.foundryEntraTenantID
 		result.KeysFound++
 		contributed = true
 	}

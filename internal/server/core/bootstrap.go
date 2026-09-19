@@ -439,6 +439,8 @@ func serverOIDCVerifier(cfg *config.Config) (func(*http.Request) (middleware.Ide
 		JWKSURL:          cfg.Server.OIDC.JWKSURL,
 		Issuer:           cfg.Server.OIDC.Issuer,
 		Audience:         cfg.Server.OIDC.Audience,
+		AllowedTenants:   cfg.Server.OIDC.AllowedTenants,
+		TenantClaim:      cfg.Server.OIDC.TenantClaim,
 		ClockSkewSeconds: cfg.Server.OIDC.ClockSkewSeconds,
 		OrgClaim:         cfg.Server.OIDC.OrgClaim,
 		RoleClaim:        cfg.Server.OIDC.RoleClaim,

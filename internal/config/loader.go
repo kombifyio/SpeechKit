@@ -108,6 +108,8 @@ func Load(path string) (*Config, error) {
 		}
 	}
 
+	migrateMeetingFallbackPolicy(meta, cfg)
+	NormalizeMeetingGeneration(cfg)
 	backfillLegacyAssistModels(meta, cfg)
 	backfillLegacyModeHotkeys(meta, cfg)
 	backfillStartupBehavior(meta, cfg)

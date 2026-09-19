@@ -76,6 +76,9 @@ func (s *sqlStore) ExportScope(ctx context.Context, scope speechstorage.Scope) (
 		if session.SummaryBatches, err = s.loadMeetingSummaryBatches(ctx, session.ID); err != nil {
 			return nil, err
 		}
+		if session.Imports, err = s.loadRecordingSessionImports(ctx, session.ID); err != nil {
+			return nil, err
+		}
 	}
 	if export.DictionaryEntries, err = s.listUserDictionaryEntriesByScopeID(ctx, scopeID); err != nil {
 		return nil, err
@@ -163,6 +166,8 @@ func (s *sqlStore) DeleteScope(ctx context.Context, scope speechstorage.Scope) (
 		`DELETE FROM recording_session_enhancements
 		 WHERE session_id IN (SELECT id FROM recording_sessions WHERE scope_id = ?)`,
 		`DELETE FROM meeting_summary_batches
+		 WHERE session_id IN (SELECT id FROM recording_sessions WHERE scope_id = ?)`,
+		`DELETE FROM recording_session_imports
 		 WHERE session_id IN (SELECT id FROM recording_sessions WHERE scope_id = ?)`,
 		`DELETE FROM recording_sessions WHERE scope_id = ?`,
 		// 6–9. Owner tables

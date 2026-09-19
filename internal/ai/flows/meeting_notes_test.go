@@ -1,8 +1,11 @@
 package flows
 
 import (
+	"context"
+	"strings"
 	"testing"
 
+	"github.com/kombifyio/SpeechKit/internal/ai/generation"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/meeting"
 )
 
@@ -54,6 +57,52 @@ func TestMeetingNotesFromProseKeepsTheAnswer(t *testing.T) {
 		if len(bullet.SourceSegmentIDs) != 0 {
 			t.Fatal("prose salvage invented provenance it does not have")
 		}
+	}
+}
+
+type pinnedRecorder struct {
+	requests []generation.Request
+}
+
+func (r *pinnedRecorder) Generate(_ context.Context, request generation.Request) (generation.Result, error) {
+	r.requests = append(r.requests, request)
+	if request.Purpose == generation.PurposeMeetingExtraction {
+		return generation.Result{Text: `{"facts":[{"segmentId":1,"text":"We shipped."}]}`}, nil
+	}
+	return generation.Result{Text: `{"sections":[{"slug":"summary","title":"Summary","bullets":[{"text":"We shipped."}]}]}`}, nil
+}
+
+func (r *pinnedRecorder) Models(context.Context, generation.ModelQuery) (generation.Catalog, error) {
+	return generation.Catalog{Models: []generation.Model{
+		{ID: "github_copilot/gpt-5.6-luna", ContextWindowTokens: 128000},
+		{ID: "local/gemma", ContextWindowTokens: 1200},
+	}}, nil
+}
+
+// A write-up pinned to one model sends every pass to that model and sizes its
+// chunks for that model's window, not for the first model of the chain.
+func TestMeetingNotesPinnedRunStaysOnItsModel(t *testing.T) {
+	recorder := &pinnedRecorder{}
+	flow := DefineMeetingNotesFlowWithGenerator(recorder)
+	transcript := make([]meeting.TranscriptLine, 0, 60)
+	for index := range 60 {
+		transcript = append(transcript, meeting.TranscriptLine{SegmentID: int64(index + 1), Text: strings.Repeat("Wir besprechen den Launch und die offenen Punkte. ", 4)})
+	}
+
+	if _, err := flow.Run(context.Background(), MeetingNotesInput{ModelID: "local/gemma", Transcript: transcript}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	extraction := 0
+	for _, request := range recorder.requests {
+		if request.ModelID != "local/gemma" {
+			t.Fatalf("request for %q left the pinned model", request.ModelID)
+		}
+		if request.Purpose == generation.PurposeMeetingExtraction {
+			extraction++
+		}
+	}
+	if extraction == 0 {
+		t.Fatal("the transcript was not condensed for the pinned model's small window")
 	}
 }
 

@@ -43,3 +43,40 @@ func TestClassifyGenerateErrorTreatsAnUnreachableServerAsTransient(t *testing.T)
 		t.Fatal("rate limit must still classify as quota")
 	}
 }
+
+// A provider the user is signed out of must classify as authentication, not
+// permanent: the meeting summary processor keeps an authentication failure
+// "delayed" and re-runs it, while permanent marks the batch failed for good.
+// The 2026-09-15 meeting lost its rollups this way — Foundry answered "not
+// signed in" and no keyword matched.
+func TestClassifyGenerateErrorTreatsSignedOutProvidersAsAuthentication(t *testing.T) {
+	model := Model{Provider: "foundry", Name: "gpt-5.6-luna"}
+
+	signedOut := errors.New("gpt-5.6-luna: bearer token: microsoft foundry: not signed in — sign in on the Microsoft Foundry card in Settings")
+	if Kind(classifyGenerateError(model, signedOut)) != ErrorAuthentication {
+		t.Fatalf("signed-out provider kind = %s, want authentication", Kind(classifyGenerateError(model, signedOut)))
+	}
+
+	for _, message := range []string{
+		"unauthorized",
+		"invalid api key",
+		"azure: token expired",
+		"github copilot: please sign-in again",
+		"request failed with http status 403",
+	} {
+		if Kind(classifyGenerateError(model, errors.New(message))) != ErrorAuthentication {
+			t.Fatalf("%q kind = %s, want authentication", message, Kind(classifyGenerateError(model, errors.New(message))))
+		}
+	}
+
+	// Digits that only look like status codes keep their own class.
+	sized := classifyGenerateError(model, errors.New("model rejected the request: prompt of 403 tokens is malformed"))
+	if Kind(sized) != ErrorPermanent {
+		t.Fatalf("a stray 403 in prose kind = %s, want permanent", Kind(sized))
+	}
+	// Precedence: a context-limit message wins over the credential wording it carries.
+	limit := classifyGenerateError(model, errors.New("api key ok but context length exceeded"))
+	if Kind(limit) != ErrorContextLimit {
+		t.Fatalf("context limit kind = %s, want context_limit", Kind(limit))
+	}
+}

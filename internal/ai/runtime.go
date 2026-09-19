@@ -169,6 +169,12 @@ func (r *Runtime) ModelInfos() []ModelInfo {
 // Generator exposes the configured model pool through SpeechKit's
 // provider-neutral generation boundary.
 func (r *Runtime) Generator() generation.Generator {
+	return r.GeneratorWhere(nil)
+}
+
+// GeneratorWhere exposes the configured models the filter keeps, in the same
+// order. A nil filter keeps every model.
+func (r *Runtime) GeneratorWhere(keep func(generation.Model) bool) generation.Generator {
 	if r == nil {
 		return generation.NewBound(nil)
 	}
@@ -178,7 +184,7 @@ func (r *Runtime) Generator() generation.Generator {
 		if model == nil {
 			continue
 		}
-		bindings = append(bindings, bindNativeModel(model, generation.Model{
+		described := generation.Model{
 			ID:                       info.ID,
 			Provider:                 info.Provider,
 			Name:                     info.Name,
@@ -186,7 +192,11 @@ func (r *Runtime) Generator() generation.Generator {
 			ContextWindowTokens:      generation.ConservativeContextWindow(info.Provider, info.Name),
 			SupportsStructuredOutput: true,
 			Cloud:                    info.Provider != "local" && info.Provider != "ollama",
-		}))
+		}
+		if keep != nil && !keep(described) {
+			continue
+		}
+		bindings = append(bindings, bindNativeModel(model, described))
 	}
 	return generation.NewBound(bindings)
 }

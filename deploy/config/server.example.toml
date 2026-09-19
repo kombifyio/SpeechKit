@@ -92,11 +92,13 @@ pprof_public  = false
 # against the provider's JWKS (signature, issuer, audience, expiry) and maps
 # token claims onto the caller identity, giving real multi-tenancy from your
 # IdP (Azure AD / Okta / Google Workspace / Auth0 / ...).
-jwks_url           = ""            # e.g. "https://login.microsoftonline.com/<tenant>/discovery/v2.0/keys"
-issuer             = ""            # exact "iss" claim to require
-audience           = ""            # exact "aud" claim to require (your API's client/app id)
+jwks_url           = ""            # e.g. "https://login.microsoftonline.com/common/discovery/v2.0/keys" (one JWKS serves every Entra tenant)
+issuer             = ""            # exact "iss" claim to require, or a per-tenant template such as "https://login.microsoftonline.com/{tenantid}/v2.0"
+audience           = ""            # exact "aud" claim to require (your API's client/app id; the SpeechKit app registration's client id)
+allowed_tenants    = []            # with a {tenantid} template: tenant ids to accept, or ["*"] for every tenant. Empty + template fails startup.
+tenant_claim       = "tid"         # claim carrying the tenant id for the template
 clock_skew_seconds = 60            # tolerated exp/nbf skew
-org_claim          = "org_id"      # token claim mapped to the caller's organization
+org_claim          = "org_id"      # token claim mapped to the caller's organization ("tid" for Entra tenants)
 role_claim         = "role"        # token claim mapped to the caller's role
 
 [server.livekit]

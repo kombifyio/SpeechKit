@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"strings"
 	"time"
@@ -52,13 +53,16 @@ func (g *BoundGenerator) Generate(ctx context.Context, request Request) (Result,
 	nativeRequest.StructuredHint = ""
 
 	var lastErr error
-	for _, candidate := range candidates {
+	for index, candidate := range candidates {
 		started := time.Now()
 		result, err := candidate.Call(ctx, nativeRequest)
 		if err != nil {
 			lastErr = classifyGenerateError(candidate.Info, err)
 			if ctx.Err() != nil {
 				return Result{}, lastErr
+			}
+			if index < len(candidates)-1 {
+				slog.Warn("generation.fallback", "purpose", string(request.Purpose), "provider", candidate.Info.Provider, "model", candidate.Info.Name, "kind", string(Kind(lastErr)), "err", lastErr)
 			}
 			continue
 		}
@@ -127,7 +131,11 @@ func classifyGenerateError(model Model, err error) error {
 		retryable = true
 	case strings.Contains(message, "context") && (strings.Contains(message, "limit") || strings.Contains(message, "length") || strings.Contains(message, "exceed")):
 		kind = ErrorContextLimit
-	case strings.Contains(message, "unauthorized"), strings.Contains(message, "authentication"), strings.Contains(message, "api key"):
+	case isAuthenticationError(message):
+		// A credential the user restores: an expired API key, a Foundry or
+		// Copilot session that is signed out. Classified permanent, such a
+		// failure marked every meeting summary batch "failed" for good, so
+		// signing in afterwards never produced the missing summary.
 		kind = ErrorAuthentication
 	case strings.Contains(message, "quota"), strings.Contains(message, "rate limit"), strings.Contains(message, "429"):
 		kind = ErrorQuota
@@ -137,6 +145,33 @@ func classifyGenerateError(model Model, err error) error {
 		retryable = true
 	}
 	return &Error{Kind: kind, Operation: "generate", Provider: model.Provider, Model: model.Name, Retryable: retryable, Err: err}
+}
+
+// isAuthenticationError reports a credential problem the user can resolve.
+// Adapters flatten their provider errors to text on the way up, so the
+// wording of each sign-in path belongs here: "not signed in" is Microsoft
+// Foundry's, "bearer token" the wrapper the model client adds around it.
+func isAuthenticationError(message string) bool {
+	for _, marker := range []string{
+		"unauthorized", "authentication", "api key",
+		"not signed in", "sign in", "sign-in", "signed out",
+		"bearer token", "credential", "token expired", "invalid token",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	// A bare 401/403 only counts next to transport wording; the digits alone
+	// also appear in ports, token counts and model names.
+	for _, code := range []string{"401", "403"} {
+		if !strings.Contains(message, code) {
+			continue
+		}
+		if strings.Contains(message, "http") || strings.Contains(message, "status") || strings.Contains(message, "code") {
+			return true
+		}
+	}
+	return false
 }
 
 // isConnectionError reports transport-level failures — the request never got

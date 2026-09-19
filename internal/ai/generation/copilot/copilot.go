@@ -90,25 +90,51 @@ func (g *Generator) Models(ctx context.Context, query generation.ModelQuery) (ge
 	if err != nil {
 		return generation.Catalog{}, classify("models", "", err)
 	}
-	out := generation.Catalog{Models: make([]generation.Model, 0, len(models))}
-	for _, model := range models {
-		contextWindow := generation.ConservativeContextWindow(Provider, model.ID)
-		if model.Capabilities.Limits.MaxContextWindowTokens != nil && *model.Capabilities.Limits.MaxContextWindowTokens > 0 {
-			contextWindow = *model.Capabilities.Limits.MaxContextWindowTokens
-		} else if model.Capabilities.Limits.MaxPromptTokens != nil && *model.Capabilities.Limits.MaxPromptTokens > 0 {
-			contextWindow = *model.Capabilities.Limits.MaxPromptTokens
+	return catalogFor(models, g.options.Model, query.Purpose), nil
+}
+
+// ProviderID names the one provider this generator serves.
+func (g *Generator) ProviderID() string { return Provider }
+
+// catalogFor lists the model Generate uses: the configured one, or the first
+// the account offers when none is configured. Listing every model of the
+// account put "auto" first, so callers sized a write-up for "auto"'s unknown
+// 8,192-token window and a request pinned to the first entry would have
+// switched away from the model the user picked.
+func catalogFor(models []sdk.ModelInfo, configured string, purpose generation.Purpose) generation.Catalog {
+	configured = strings.TrimSpace(configured)
+	var chosen *sdk.ModelInfo
+	for index := range models {
+		if configured == "" || models[index].ID == configured {
+			chosen = &models[index]
+			break
 		}
-		out.Models = append(out.Models, generation.Model{
-			ID:                       Provider + "/" + model.ID,
-			Provider:                 Provider,
-			Name:                     model.ID,
-			Purposes:                 []generation.Purpose{query.Purpose},
-			ContextWindowTokens:      contextWindow,
-			SupportsStructuredOutput: true,
-			Cloud:                    true,
-		})
 	}
-	return out, nil
+	name := configured
+	if chosen != nil {
+		name = chosen.ID
+	}
+	if name == "" {
+		return generation.Catalog{}
+	}
+	contextWindow := generation.ConservativeContextWindow(Provider, name)
+	if chosen != nil {
+		limits := chosen.Capabilities.Limits
+		if limits.MaxContextWindowTokens != nil && *limits.MaxContextWindowTokens > 0 {
+			contextWindow = *limits.MaxContextWindowTokens
+		} else if limits.MaxPromptTokens != nil && *limits.MaxPromptTokens > 0 {
+			contextWindow = *limits.MaxPromptTokens
+		}
+	}
+	return generation.Catalog{Models: []generation.Model{{
+		ID:                       Provider + "/" + name,
+		Provider:                 Provider,
+		Name:                     name,
+		Purposes:                 []generation.Purpose{purpose},
+		ContextWindowTokens:      contextWindow,
+		SupportsStructuredOutput: true,
+		Cloud:                    true,
+	}}}
 }
 
 func (g *Generator) Generate(ctx context.Context, request generation.Request) (generation.Result, error) {

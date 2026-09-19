@@ -77,8 +77,20 @@
   "meeting.snapshot.saved": "Screenshot saved to the meeting.",
   "meeting.snapshot.cancelled": "Screenshot cancelled.",
   "meeting.snapshot.error": "The screenshot could not be captured.",
+  "meeting.snapshot.protected": "This window is protected from screen capture. Pick another window.",
   "sk.privacy.retention.retain": "Keep recordings",
   "sk.privacy.retention.ephemeral": "Keep nothing but the write-up",
   "sk.privacy.disabled.retention_ephemeral": "This is not kept: the retention setting discards recordings when the meeting ends.",
-  "sk.privacy.disabled.provider_retains": "This provider cannot be told to discard the request, so it is blocked by the current retention setting."
+  "sk.privacy.disabled.provider_retains": "This provider cannot be told to discard the request, so it is blocked by the current retention setting.",
+  "desktop.meeting.summary_preflight_signed_out": "The summary provider is signed out. Recording and transcript are unaffected, but no summary is written until you sign in.",
+  "desktop.meeting.summary_preflight_no_grant": "The summary provider has no permission for the transcript yet. Grant it in Settings, or this meeting stays without a summary.",
+  "desktop.meeting.summary_preflight_no_model": "No model is set up for meeting summaries. Choose one in Settings — recording and transcript keep running.",
+  "desktop.meeting.summary_preflight_degraded": "The cloud model for summaries cannot be reached; the local model takes over. Summaries stay shorter and less precise.",
+  "desktop.meeting.summary_fix_action": "Fix now",
+  "desktop.meeting.summary_error_authentication": "The summary is waiting for a sign-in: the provider refused the request. It runs again on its own once you are signed in.",
+  "desktop.meeting.summary_error_consent": "The summary is waiting for permission to send the transcript to the provider.",
+  "desktop.meeting.summary_error_quota": "The provider's quota is used up. The summary retries on its own.",
+  "desktop.meeting.summary_error_configuration": "No model was set up when this meeting was summarized. Choose one and it runs again.",
+  "desktop.meeting.summary_error_retrying": "The summary came back unusable and is being retried automatically.",
+  "desktop.meeting.summary_error_permanent": "The summary failed for good. The transcript is complete and can be summarized again."
 }

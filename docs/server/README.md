@@ -101,6 +101,7 @@ runtime credentials without storing secret values in JSON.
 | `SPEECHKIT_SERVER_AUTH_MODE` | Optional startup override: `none`, `bearer`, `edge_hmac`, or `bearer_or_edge`. |
 | `SPEECHKIT_SERVER_EDGE_AUTH_SECRET_ENV` | Optional custom env var name for the edge-HMAC shared secret. |
 | `SPEECHKIT_SERVER_BEARER_ROLE` | Optional role for bearer-token callers, for example `admin` in a single-operator deployment. |
+| `SPEECHKIT_SERVER_OIDC_JWKS_URL`, `SPEECHKIT_SERVER_OIDC_ISSUER`, `SPEECHKIT_SERVER_OIDC_AUDIENCE`, `SPEECHKIT_SERVER_OIDC_ALLOWED_TENANTS`, `SPEECHKIT_SERVER_OIDC_ORG_CLAIM` | `[server.oidc]` from the environment for `auth_mode = "oidc"` / `"bearer_or_oidc"`. The issuer may be a `{tenantid}` template (Microsoft Entra), in which case `ALLOWED_TENANTS` (comma-separated tenant ids, or `*`) is required. |
 | `SPEECHKIT_PUBLIC_URL` | Canonical public HTTP base used to generate browser-reachable Voice Agent `ws_url` values. |
 
 Authenticated public modes fail startup if the required env credential values
@@ -313,6 +314,11 @@ Built-in auth is configured via `[server].auth_mode`:
 - `bearer` — single static token from
   `$SPEECHKIT_SERVER_TOKEN`.
 - `edge_hmac` — trusts HMAC-signed headers from an authenticated edge.
+- `oidc` / `bearer_or_oidc` — validates Bearer JWTs from an external identity
+  provider through `[server.oidc]` (JWKS, issuer, audience). For a
+  multi-tenant provider such as Microsoft Entra the issuer is the per-tenant
+  template `https://login.microsoftonline.com/{tenantid}/v2.0` plus
+  `allowed_tenants`; a template without tenants fails startup.
 - `none` — local development only. Do not expose a `none` deployment publicly.
 
 `/healthz` is always public liveness. By default, local and self-hosted installs
