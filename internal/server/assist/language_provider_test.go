@@ -5,16 +5,15 @@ package assist
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/deepgram"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"sync"
 	"testing"
-
-	"github.com/kombifyio/SpeechKit/internal/router"
-	"github.com/kombifyio/SpeechKit/internal/stt"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
 
 // deepgramListenStub stands in for Deepgram's Listen API and records the query
@@ -63,16 +62,16 @@ func (s *deepgramListenStub) language() string {
 	return s.query.Get("language")
 }
 
-func newStubbedDeepgramRouter(baseURL string) *router.Router {
-	provider := stt.NewDeepgramProvider("deepgram-test-key", "nova-3")
+func newStubbedDeepgramRouter(baseURL string) *stt.Router {
+	provider := deepgram.New("deepgram-test-key", "nova-3")
 	provider.BaseURL = baseURL
 	provider.Validation = netsec.ValidationOptions{AllowLoopback: true, AllowHTTP: true}
-	provider.ApplyOptions(stt.DeepgramOptions{
+	provider.ApplyOptions(deepgram.Options{
 		Configured:            true,
 		SmartFormat:           true,
 		UseVocabularyKeyterms: true,
 	})
-	r := &router.Router{Strategy: router.StrategyCloudOnly}
+	r := &stt.Router{Strategy: stt.StrategyCloudOnly}
 	r.AddCloud(provider)
 	return r
 }
@@ -166,7 +165,7 @@ func TestHandler_MultipartAudio_MultiIsNotAdoptedAsReplyLocale(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	if got := fp.lastOpts.Locale; got != "de" {
+	if got := fp.lastReq.Locale; got != "de" {
 		t.Fatalf("reply locale = %q, want the server default rather than the routing value", got)
 	}
 }
@@ -182,7 +181,7 @@ func TestHandler_MultipartAudio_AdoptsDetectedLocaleForReply(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	if got := fp.lastOpts.Locale; got != "en-GB" {
+	if got := fp.lastReq.Locale; got != "en-GB" {
 		t.Fatalf("reply locale = %q, want the detected en-GB", got)
 	}
 }
@@ -202,7 +201,7 @@ func TestHandler_TextInput_ResolvesDefaultLocale(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	if got := fp.lastOpts.Locale; got != "de" {
+	if got := fp.lastReq.Locale; got != "de" {
 		t.Fatalf("reply locale = %q, want the server default de", got)
 	}
 }

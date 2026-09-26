@@ -140,6 +140,16 @@ Core server surfaces:
   with `session.update`, `session.ready`, `input.audio`, `reply.audio`,
   user/agent transcripts, tool calls/results, interruptions, and `session.end`.
 - OpenAI Realtime: `gpt-realtime-2` under the same LiveProvider contract.
+- Gemini Live (opt-in BYOK only, never a default; needs the operator's own
+  `GOOGLE_AI_API_KEY` and `[providers.google]`): profile
+  `realtime.google.gemini-native-audio` with `gemini-3.1-flash-live-preview`
+  primary and `gemini-2.5-flash-native-audio-preview-12-2025` as
+  previous-preview fallback.
+- Gemini Live Translate (opt-in BYOK only): `gemini-3.5-live-translate-preview`
+  via profile `realtime.google.gemini-live-translate`; keep it separate from
+  the general dialogue profile.
+- Google Cloud STT/TTS (opt-in BYOK only): `stt.google.latest-long`,
+  `stt.google.latest-long-diarization`, and `tts.google.studio-o-de`.
 
 ## MCP
 
@@ -221,9 +231,12 @@ cross-provider fallback, cascaded fallback, or missing capabilities to users.
 
 Server-Target Voice Agent sessions use the same provider vocabulary on the
 WebSocket `start.provider` field. Accepted values include `deepgram`,
-`assemblyai`, `openai`, and `cascaded`, plus public realtime profile IDs such as
-`realtime.deepgram.voice-agent`, `realtime.assemblyai.voice-agent`, and
-`realtime.openai.gpt-realtime-2`.
+`assemblyai`, `openai`, and `cascaded`, plus `gemini`/`google` when the
+operator has opted in to Gemini Live with their own Google key, and public
+realtime profile IDs such as `realtime.deepgram.voice-agent`,
+`realtime.assemblyai.voice-agent`, `realtime.openai.gpt-realtime-2`,
+`realtime.google.gemini-native-audio`, and
+`realtime.google.gemini-live-translate`.
 Per-session switching resolves provider-specific API keys and model defaults,
 so one provider session does not inherit another provider's model.
 
@@ -239,7 +252,8 @@ different set of models.
 The credential-gated `.github/workflows/provider-live-gate.yml` covers three
 providers: Deepgram, AssemblyAI, and OpenAI. Missing credentials must
 surface as `blocked_by_auth`; a blocked leg is not live provider proof. The
-Microsoft Foundry descriptors have no gate leg of their own.
+Microsoft Foundry descriptors and the opt-in Gemini Live provider have no gate
+leg of their own.
 
 For a browser starter, use `speechkitctl init browser-dictation-react --output
 ./speechkit-demo` or ask `speechkit-mcp` for `speechkit_scaffold_integration`.

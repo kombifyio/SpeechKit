@@ -12,9 +12,14 @@ user's host application, desktop client, mobile app, or device agent.
 
 Use the public packages when embedding wake-word behavior:
 
-- `pkg/speechkit/wakeword` defines detector, dispatcher, event, and auto-end
-  contracts.
-- `pkg/speechkit/wakeword/sherpa` exposes the sherpa-onnx adapter surface.
+- `pkg/speechkit/wakeword` defines detector, pipeline, dispatcher, event, and
+  auto-end contracts. It links no keyword-spotting engine; `RegisterEngine`
+  is the extension point.
+- `pkg/speechkit/wakeword/sherpa` is the sherpa-onnx engine. Importing it
+  registers the engine in cgo builds; `sherpa.NewDetector` returns
+  `wakeword.ErrCgoRequired` without cgo.
+- `pkg/speechkit/wakeword/training` is the opt-in training-data capture and
+  uploader around detections (off by default).
 
 The package boundary is intentionally host-neutral. Your host supplies audio
 frames, lifecycle, logging, model assets, playback, and UI state; SpeechKit
@@ -40,15 +45,19 @@ Hands-free targets:
 
 ## Runtime Split
 
-The desktop host does not link Sherpa directly. Sherpa KWS support is isolated
-in `speechkit-wakeword.exe`, built from `cmd/speechkit-wakeword` with
-`-tags sherpa_kws_sidecar` and bundled next to its private Sherpa runtime DLLs.
+The desktop host imports only the engine-free `pkg/speechkit/wakeword` root
+(catalog, `AutoEndPolicy`, detection contracts) and never links Sherpa.
+Sherpa KWS support is isolated in `speechkit-wakeword.exe`, built from
+`cmd/speechkit-wakeword`: it is the only binary that imports the
+`pkg/speechkit/wakeword/sherpa` engine (a cgo build) and it is bundled next
+to its private Sherpa runtime DLLs.
 
 OpenWakeWord stays a separate sidecar, `speechkit-openwakeword.exe`, built from
 `cmd/speechkit-openwakeword` with `-tags openwakeword_sidecar`. Keep these
 sidecars independent: the host starts them as subprocesses and communicates
 over the sidecar protocol instead of importing provider-specific runtime
-packages.
+packages. Both sidecars record opt-in training clips through
+`pkg/speechkit/wakeword/training`.
 
 ## Agent Guidance
 

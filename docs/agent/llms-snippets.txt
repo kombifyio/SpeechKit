@@ -63,10 +63,12 @@ with `-provider auto -preferred openai,assemblyai -require-native-keyterms` to
 see structured cross-provider fallback and rejected-provider diagnostics.
 
 For Server-Target Voice Agent sessions, set the WebSocket start-frame
-`provider` to `deepgram`, `assemblyai`, `openai`, or `cascaded`. Public profile
-IDs such as `realtime.deepgram.voice-agent` and `realtime.assemblyai.voice-agent`
-normalize to the same server provider paths. The credential-gated provider-live
-workflow covers Deepgram, AssemblyAI, and OpenAI; missing secrets must report
+`provider` to `deepgram`, `assemblyai`, `openai`, `cascaded`, or — opt-in BYOK
+only, with the operator's own Google key — `gemini`/`google`. Public profile IDs
+such as `realtime.deepgram.voice-agent`, `realtime.assemblyai.voice-agent`, and
+`realtime.google.gemini-native-audio` normalize to the same server provider
+paths. Google is never a default. The credential-gated provider-live workflow
+covers Deepgram, AssemblyAI, and OpenAI; missing secrets must report
 `blocked_by_auth` rather than a false pass.
 
 ## Assist Voice Companion prompt

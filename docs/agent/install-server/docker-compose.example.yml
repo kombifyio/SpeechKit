@@ -4,6 +4,8 @@
 #   export SPEECHKIT_SERVER_TOKEN="$(openssl rand -hex 32)"
 #   export SPEECHKIT_PUBLIC_URL="http://localhost:8080"
 #   export OPENAI_API_KEY="..." # required for the included OpenAI Realtime example
+#   # Optional, opt-in BYOK only: uncomment GOOGLE_AI_API_KEY below and the
+#   # [providers.google] block in the config to use Gemini Live / Google STT+TTS.
 #   docker compose -f docker-compose.example.yml up -d
 #
 services:
@@ -14,6 +16,7 @@ services:
       SPEECHKIT_PUBLIC_URL: ${SPEECHKIT_PUBLIC_URL:-http://localhost:8080}
       HF_TOKEN: ${HF_TOKEN:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}   # opt-in BYOK Gemini Live / Google STT+TTS
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
     volumes:

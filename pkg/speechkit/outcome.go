@@ -16,6 +16,7 @@ const (
 	OutcomeEmptyFinalTranscript = "empty_final_transcript"
 	OutcomePCMQueueDrop         = "pcm_queue_drop"
 	OutcomeAssistEmptySpeak     = "assist_empty_speak"
+	OutcomeAssistTTSFailed      = "assist_tts_failed"
 )
 
 // Attr is one key/value pair attached to a recorded outcome. It exists so
@@ -27,13 +28,19 @@ type Attr struct {
 	Value any
 }
 
-// StringAttr, Int64Attr, Float64Attr and BoolAttr build an [Attr] of the
-// matching type. They read better at a call site than a struct literal and
-// keep the value's type explicit.
-func StringAttr(key, value string) Attr      { return Attr{Key: key, Value: value} }
-func Int64Attr(key string, v int64) Attr     { return Attr{Key: key, Value: v} }
+// StringAttr builds an [Attr] holding a string. StringAttr, Int64Attr,
+// Float64Attr and BoolAttr read better at a call site than a struct literal
+// and keep the value's type explicit.
+func StringAttr(key, value string) Attr { return Attr{Key: key, Value: value} }
+
+// Int64Attr builds an [Attr] holding an int64.
+func Int64Attr(key string, v int64) Attr { return Attr{Key: key, Value: v} }
+
+// Float64Attr builds an [Attr] holding a float64.
 func Float64Attr(key string, v float64) Attr { return Attr{Key: key, Value: v} }
-func BoolAttr(key string, v bool) Attr       { return Attr{Key: key, Value: v} }
+
+// BoolAttr builds an [Attr] holding a bool.
+func BoolAttr(key string, v bool) Attr { return Attr{Key: key, Value: v} }
 
 func (a Attr) keyValue() attribute.KeyValue {
 	switch v := a.Value.(type) {

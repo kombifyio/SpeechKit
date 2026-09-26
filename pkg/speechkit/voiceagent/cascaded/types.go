@@ -2,11 +2,10 @@
 // provider. It is the self-hosted-friendly alternative to real-time
 // native realtime providers and Moshi.
 //
-// The package is platform-neutral pure Go. Server-Target (Linux container)
-// and Device-Target (Windows Wails reference UI) both wrap it: see
-// internal/server/voiceagent.CascadedProvider for the Linux server's
-// adapter, and internal/voiceagent.LocalVoiceAgentProvider for the
-// Device-Target's adapter.
+// The package is platform-neutral pure Go. [LiveProvider] adapts it to the
+// realtime [live.LiveProvider] contract so in-process hosts can drive it
+// through a [live.Session]; the speechkit-server wraps it with its own
+// WebSocket adapter.
 //
 // Turn detection uses energy-based silence detection (RMS of the 16 kHz S16
 // PCM stream). Callers that want tighter control can send an audio_end
@@ -20,9 +19,8 @@ import "github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 type SpeakerStreamer = speaker.StreamingProvider
 
 // SessionConfig is the minimal per-session configuration the cascaded
-// provider needs. Adapters in internal/server/voiceagent and
-// internal/voiceagent translate their richer config types into this
-// when calling Connect / UpdateInstructions.
+// provider needs. Adapters such as [LiveProvider] translate their richer
+// config types into this when calling Connect / UpdateInstructions.
 type SessionConfig struct {
 	Locale           string
 	Voice            string

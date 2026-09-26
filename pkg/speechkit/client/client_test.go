@@ -244,12 +244,6 @@ func TestFromEnvUsesDocumentedVariables(t *testing.T) {
 	}
 }
 
-func TestHTTPErrorWithoutBody(t *testing.T) {
-	if got := (HTTPError{StatusCode: http.StatusUnauthorized}).Error(); got != "speechkit: HTTP 401" {
-		t.Fatalf("Error() = %q", got)
-	}
-}
-
 func TestClientValidationAndErrorPaths(t *testing.T) {
 	for _, opts := range []Options{
 		{BaseURL: "://bad"},

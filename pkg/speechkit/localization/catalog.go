@@ -16,9 +16,16 @@ import (
 // MessageID is a stable semantic identifier for customer-facing prose.
 type MessageID string
 
+// Message IDs that Go code resolves directly. Each must also appear in
+// messageIDs and in every embedded catalog; the package panics at init
+// otherwise.
 const (
+	// DesktopCaptureBusy tells the user the current recording must finish or
+	// be cancelled before switching modes.
 	DesktopCaptureBusy MessageID = "desktop.capture.busy"
 
+	// Home Assistant smart-home command outcomes reported by the Companion
+	// voice skill.
 	CompanionHomeAssistantNotConfigured MessageID = "companion.home_assistant.not_configured"
 	CompanionHomeAssistantCommandEmpty  MessageID = "companion.home_assistant.command.empty"
 	CompanionHomeAssistantNotMatched    MessageID = "companion.home_assistant.command.not_matched"

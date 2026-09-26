@@ -26,8 +26,8 @@ func TestEffectiveVoiceAgentProfileIDFollowsProvider(t *testing.T) {
 		want     string
 	}{
 		{"", "realtime.assemblyai.voice-agent"},
-		{"google", ""},
-		{"vertex", ""},
+		{"google", "realtime.google.gemini-native-audio"},
+		{"gemini", "realtime.google.gemini-native-audio"},
 		{"deepgram", "realtime.deepgram.voice-agent"},
 		{"openai", "realtime.openai.gpt-realtime-2"},
 		{"assemblyai", "realtime.assemblyai.voice-agent"},

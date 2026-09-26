@@ -1,12 +1,14 @@
-// Package stt defines the SpeechKit speech-to-text provider interface and
-// houses the concrete provider implementations: whisper.cpp (local
-// built-in), HuggingFace, OpenAI, Groq, Google, an OpenAI-compatible
-// adapter (covers Ollama and other compatible servers), and the
-// self-hosted VPS adapter.
+// Package stt defines the SpeechKit speech-to-text contracts: the
+// [STTProvider] interface, transcribe options and results, the [Router]
+// that picks a provider per request, the AsTranscriber bridge into the
+// pipeline, and the helpers the adapters share. It names no provider.
 //
-// All providers must go through [github.com/kombifyio/SpeechKit/pkg/speechkit/netsec]
-// for outbound HTTP. Routing — which provider to pick for a given request — is
-// the host's responsibility (a routing/fallback layer above these providers).
+// The concrete adapters live in subpackages: local (whisper.cpp built-in),
+// openaicompat (OpenAI, Groq, Ollama and other compatible servers), vps
+// (self-hosted whisper-server), huggingface, openrouter, deepgram,
+// assemblyai and azurespeech; allproviders assembles all of them and
+// sttcontract is their conformance suite. Every adapter dials through
+// [github.com/kombifyio/SpeechKit/pkg/speechkit/netsec].
 package stt
 
 import (
@@ -64,6 +66,10 @@ type TranscribeOpts struct {
 	ProviderOptionsByProvider map[string]provideropts.Values // Optional provider-keyed overrides used by routers
 }
 
+// ForProvider returns a copy of o whose ProviderOptions are a clone of the
+// original merged with the ProviderOptionsByProvider entry for provider
+// (matched case-insensitively). Routers call it for the provider they picked
+// so per-provider tuning applies without the caller knowing which one won.
 func (o TranscribeOpts) ForProvider(provider string) TranscribeOpts {
 	provider = normalizeProviderKey(provider)
 	if len(o.ProviderOptionsByProvider) == 0 {

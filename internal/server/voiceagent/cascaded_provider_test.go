@@ -4,15 +4,14 @@ package voiceagent
 
 import (
 	"context"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/cascaded"
 	"testing"
-
-	"github.com/kombifyio/SpeechKit/internal/stt"
-	"github.com/kombifyio/SpeechKit/internal/tts"
-	"github.com/kombifyio/SpeechKit/internal/voiceagent/cascaded"
 )
 
 // The bulk of cascaded provider tests live in
-// internal/voiceagent/cascaded/provider_test.go (cross-platform). The
+// pkg/speechkit/voiceagent/cascaded/provider_test.go (cross-platform). The
 // tests below guard only what is specific to this Linux adapter:
 //
 //  1. The CascadedConfig / CascadedSTT / CascadedAgent / CascadedTTS /

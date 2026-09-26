@@ -12,6 +12,12 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 )
 
+// Case configures one conformance run. NewProvider is required and must
+// return a fresh, unconnected provider. Config is passed to Connect; Audio,
+// Text and ToolResponse are the payloads sent (defaults: four bytes, "ping"
+// and a "noop" result); WantName is the expected Name and WantEventType an
+// event type the first received message must carry, both optional;
+// ReceiveTimeout bounds Connect and Receive (default 2 s).
 type Case struct {
 	NewProvider    func() live.LiveProvider
 	Config         live.LiveConfig
@@ -23,6 +29,11 @@ type Case struct {
 	ReceiveTimeout time.Duration
 }
 
+// Run exercises the whole [live.LiveProvider] surface on a fresh provider: a
+// non-empty Name, Connect, SendAudio, SendAudioStreamEnd, SendText,
+// SendToolResponse, one Receive that must yield a non-empty message (carrying
+// WantEventType when set), and Close twice, the second call proving
+// idempotence. It calls t.Fatal on the first violation.
 func Run(t testing.TB, c Case) {
 	t.Helper()
 	if c.NewProvider == nil {
@@ -110,6 +121,9 @@ func containsLiveEventType(values []live.LiveEventType, want live.LiveEventType)
 	return false
 }
 
+// RunReceiveCancellation checks that Receive returns an error satisfying
+// errors.Is(err, context.Canceled) once its context is cancelled after
+// Connect, and that Close still succeeds afterwards.
 func RunReceiveCancellation(t testing.TB, c Case) {
 	t.Helper()
 	if c.NewProvider == nil {

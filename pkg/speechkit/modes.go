@@ -8,6 +8,10 @@ import (
 // Mode identifies one of SpeechKit's strict product modes.
 type Mode string
 
+// Mode values. ModeNone means no mode is selected; ModeDictation, ModeAssist
+// and ModeVoiceAgent are the three interaction modes; ModeTTS is a
+// model-selection axis rather than an interaction mode. [NormalizeMode] maps
+// aliases such as "dictate" or "voice-agent" onto these values.
 const (
 	ModeNone       Mode = "none"
 	ModeDictation  Mode = "dictation"
@@ -25,6 +29,11 @@ const (
 // IntelligenceKind names the mode-specific intelligence contract.
 type IntelligenceKind string
 
+// Intelligence contracts, one per mode as assigned by [DefaultModeContracts]:
+// Dictation runs on User intelligence (the user's own words, unchanged),
+// Assist on Utility intelligence (one-shot utilities and tools), Voice Agent
+// on Brainstorming intelligence (open realtime dialogue) and TTS on Voice
+// Output.
 const (
 	IntelligenceUser          IntelligenceKind = "user"
 	IntelligenceUtility       IntelligenceKind = "utility"
@@ -38,6 +47,12 @@ const (
 // ProviderKind is the product-facing provider group shown for every mode.
 type ProviderKind string
 
+// Provider kinds, the user-facing grouping of a profile: Local Built-in is the
+// SpeechKit-managed local runtime and model artifact path; Local Provider is a
+// user-managed local runtime such as Ollama or another local OpenAI-compatible
+// service; Cloud Provider is a routed cloud or hosted open-weight provider;
+// Direct Provider is a direct model-vendor API. [NetworkScope] admits profiles
+// by kind.
 const (
 	ProviderKindLocalBuiltIn   ProviderKind = "local_built_in"
 	ProviderKindLocalProvider  ProviderKind = "local_provider"
@@ -48,12 +63,17 @@ const (
 // ExecutionMode describes the technical runtime behind a provider profile.
 type ExecutionMode string
 
+// Execution modes, the technical adapter behind a profile: the in-process
+// local runtime, a self-hosted OpenAI-compatible HTTP service, Hugging Face
+// routed inference, the vendor APIs of OpenAI, Groq, Google (opt-in BYOK),
+// Deepgram, AssemblyAI, OpenRouter and Foundry, and a local Ollama server.
 const (
 	ExecutionModeLocal          ExecutionMode = "local"
 	ExecutionModeSelfHostedHTTP ExecutionMode = "self_hosted_http"
 	ExecutionModeHFRouted       ExecutionMode = "hf_routed"
 	ExecutionModeOpenAI         ExecutionMode = "openai_api"
 	ExecutionModeGroq           ExecutionMode = "groq_api"
+	ExecutionModeGoogle         ExecutionMode = "google_api"
 	ExecutionModeDeepgram       ExecutionMode = "deepgram_api"
 	ExecutionModeAssemblyAI     ExecutionMode = "assemblyai_api"
 	ExecutionModeOllama         ExecutionMode = "ollama_local"
@@ -64,35 +84,61 @@ const (
 // Capability is a mode capability declared by a provider profile.
 type Capability string
 
+// Capabilities a provider profile can declare. [DefaultModeContracts] lists
+// the allowed and forbidden set per mode and [RequiredCapabilities] the
+// minimum a profile needs. Every STT provider reports CapabilityTranscription,
+// CapabilitySTT and CapabilityAudioInput.
 const (
-	CapabilityTranscription         Capability = "transcription"
-	CapabilitySTT                   Capability = "stt"
-	CapabilityAudioInput            Capability = "audio_input"
-	CapabilityLLM                   Capability = "llm"
-	CapabilityTTS                   Capability = "tts"
-	CapabilityRealtimeAudio         Capability = "realtime_audio"
-	CapabilityPipelineFallback      Capability = "pipeline_fallback"
-	CapabilityToolCalling           Capability = "tool_calling"
+	CapabilityTranscription Capability = "transcription"
+	CapabilitySTT           Capability = "stt"
+	CapabilityAudioInput    Capability = "audio_input"
+	CapabilityLLM           Capability = "llm"
+	CapabilityTTS           Capability = "tts"
+	// CapabilityRealtimeAudio is native audio-to-audio dialogue;
+	// CapabilityPipelineFallback is the STT -> LLM -> TTS chain used by Voice
+	// Agent profiles without it.
+	CapabilityRealtimeAudio    Capability = "realtime_audio"
+	CapabilityPipelineFallback Capability = "pipeline_fallback"
+	CapabilityToolCalling      Capability = "tool_calling"
+	// The *Prompt variants pass the user dictionary or Words as prompt text;
+	// the *NativeHints variants use the provider's own vocabulary-boosting
+	// parameters instead.
 	CapabilityDictionaryPrompt      Capability = "dictionary_prompt"
 	CapabilityDictionaryNativeHints Capability = "dictionary_native_hints"
 	CapabilityWordsPrompt           Capability = "words_prompt"
 	CapabilityWordsNativeHints      Capability = "words_native_hints"
-	CapabilityPostSTTReplacements   Capability = "post_stt_replacements"
-	CapabilitySessionSummary        Capability = "session_summary"
-	CapabilityTranscript            Capability = "transcript"
-	CapabilityInterruptions         Capability = "interruptions"
-	CapabilitySessionResume         Capability = "session_resume"
+	// CapabilityPostSTTReplacements applies text replacements after
+	// recognition; CapabilitySessionSummary produces a structured summary
+	// when a Voice Agent session ends.
+	CapabilityPostSTTReplacements Capability = "post_stt_replacements"
+	CapabilitySessionSummary      Capability = "session_summary"
+	// Realtime dialogue features: a live transcript of the dialogue, user
+	// barge-in, and resuming a session.
+	CapabilityTranscript    Capability = "transcript"
+	CapabilityInterruptions Capability = "interruptions"
+	CapabilitySessionResume Capability = "session_resume"
+	// CapabilityNativeContextPrompt accepts caller-supplied situational
+	// context and CapabilityNativeKeyterms provider-side key terms;
+	// CapabilityNativeDictationStream marks a [DictationStreamProvider];
+	// CapabilityLanguageHints biases recognition toward given BCP-47 languages.
 	CapabilityNativeContextPrompt   Capability = "native_context_prompt"
 	CapabilityNativeKeyterms        Capability = "native_keyterms"
 	CapabilityNativeDictationStream Capability = "native_dictation_stream"
 	CapabilityLanguageHints         Capability = "language_hints"
-	CapabilitySpeakerStreaming      Capability = "speaker_streaming"
-	CapabilityPrivacyRedaction      Capability = "privacy_redaction"
-	CapabilityVoiceFocus            Capability = "voice_focus"
-	CapabilityMedicalDomain         Capability = "medical_domain"
-	CapabilityReasoningEffort       Capability = "reasoning_effort"
-	CapabilityTranslation           Capability = "translation"
-	CapabilityTranscriptionOnly     Capability = "transcription_only"
+	// Provider-native options: speaker labels on a live stream, PII
+	// redaction, voice focus (suppressing background voices), a medical
+	// vocabulary domain, configurable reasoning effort, translation, and a
+	// realtime session that only transcribes.
+	CapabilitySpeakerStreaming  Capability = "speaker_streaming"
+	CapabilityPrivacyRedaction  Capability = "privacy_redaction"
+	CapabilityVoiceFocus        Capability = "voice_focus"
+	CapabilityMedicalDomain     Capability = "medical_domain"
+	CapabilityReasoningEffort   Capability = "reasoning_effort"
+	CapabilityTranslation       Capability = "translation"
+	CapabilityTranscriptionOnly Capability = "transcription_only"
+	// Speaker layers (see the speaker package): diarization tells speakers
+	// apart, identification matches a known person, attribution names turns,
+	// and enrollment registers a voice.
 	CapabilitySpeakerDiarization    Capability = "speaker_diarization"
 	CapabilitySpeakerIdentification Capability = "speaker_identification"
 	CapabilitySpeakerAttribution    Capability = "speaker_attribution"
@@ -105,6 +151,9 @@ const (
 // rerankers, utility models — only have a Modality.
 type Modality string
 
+// Modalities. STT, TTS, realtime voice and assist map onto a user-facing mode
+// (see [ModeForModality]); utility, embedding and reranker entries are
+// support models a host needs but a user never picks.
 const (
 	ModalitySTT           Modality = "stt"
 	ModalityTTS           Modality = "tts"
@@ -196,6 +245,10 @@ type ProviderProfile struct {
 func NormalizeProviderProfileID(profileID string) string {
 	profileID = strings.TrimSpace(profileID)
 	switch profileID {
+	case "stt.google.chirp-3":
+		return "stt.google.latest-long"
+	case "stt.google.chirp-3-diarization":
+		return "stt.google.latest-long-diarization"
 	case "assist.foundry.gpt-5.1":
 		// The Foundry assist profile moved to the GPT-5.6 family; configs
 		// written before that keep resolving to the same profile.
@@ -211,6 +264,7 @@ func NormalizeProviderProfileID(profileID string) string {
 	}
 }
 
+// HasCapability reports whether the profile declares capability.
 func (p ProviderProfile) HasCapability(capability Capability) bool {
 	for _, candidate := range p.Capabilities {
 		if candidate == capability {
@@ -246,17 +300,26 @@ type ModeSetting struct {
 	ModeSource string `json:"modeSource,omitempty"`
 }
 
+// DictationSetting is the Dictation mode configuration: the shared
+// [ModeSetting] plus whether the user dictionary is applied.
 type DictationSetting struct {
 	ModeSetting
 	DictionaryEnabled bool `json:"dictionaryEnabled"`
 }
 
+// AssistSetting is the Assist mode configuration: the shared [ModeSetting],
+// whether results are spoken through TTS, and the name of the utility
+// registry in use.
 type AssistSetting struct {
 	ModeSetting
 	TTSEnabled      bool   `json:"ttsEnabled"`
 	UtilityRegistry string `json:"utilityRegistry,omitempty"`
 }
 
+// VoiceAgentSetting is the Voice Agent mode configuration: the shared
+// [ModeSetting], whether sessions end with a summary, whether the STT/LLM/TTS
+// pipeline fallback is allowed, the close behavior, and the selected agent
+// profile and agent sequence.
 type VoiceAgentSetting struct {
 	ModeSetting
 	SessionSummary   bool   `json:"sessionSummary"`
@@ -266,6 +329,8 @@ type VoiceAgentSetting struct {
 	AgentSequenceID  string `json:"agentSequenceId,omitempty"`
 }
 
+// ModeSettings is the complete per-mode configuration exchanged between the
+// SDK, hostconfig and the versioned HTTP control plane.
 type ModeSettings struct {
 	Dictation        DictationSetting        `json:"dictation"`
 	Assist           AssistSetting           `json:"assist"`
@@ -290,6 +355,9 @@ type ServerConnectionSetting struct {
 	Targets              []ServerConnectionTarget `json:"targets,omitempty"`
 }
 
+// ServerConnectionTarget is one registered speechkit-server the host can
+// connect to; ServerConnectionSetting.ActiveTargetID selects the current one.
+// Like its parent it carries only env var names for credentials, never values.
 type ServerConnectionTarget struct {
 	ID                   string `json:"id"`
 	Label                string `json:"label"`
@@ -303,6 +371,8 @@ type ServerConnectionTarget struct {
 	RequestTimeoutSec    int    `json:"requestTimeoutSec"`
 }
 
+// ReadinessSchemaVersion is the schema identifier the readiness API sets in
+// [Readiness.SchemaVersion].
 const ReadinessSchemaVersion = "provider-readiness.v1"
 
 // ReadinessRequirement is a machine-readable setup check for a provider
@@ -390,6 +460,8 @@ func RequiredCapabilities(mode Mode, nativeRealtime bool) []Capability {
 	}
 }
 
+// DefaultModeContracts returns the built-in [ModeContract] of Dictation,
+// Assist, Voice Agent and TTS as a fresh slice callers may modify.
 func DefaultModeContracts() []ModeContract {
 	return []ModeContract{
 		{
@@ -457,6 +529,9 @@ func DefaultModeContracts() []ModeContract {
 	}
 }
 
+// NormalizeMode maps a mode string to its canonical [Mode], accepting legacy
+// and alternative spellings ("dictate", "stt", "voiceAgent", "voice-agent",
+// "realtime_voice", "speak", ...). Unknown and empty values yield ModeNone.
 func NormalizeMode(mode Mode) Mode {
 	switch strings.TrimSpace(string(mode)) {
 	case "dictate", "dictation", "transcribe", "stt":

@@ -9,6 +9,15 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
+// Segmenter tuning defaults, in audio time. DefaultDictationPause is the
+// silence that closes an utterance; DefaultDictationMinSegment the shortest
+// segment emitted (shorter audio is dropped);
+// DefaultDictationMinIntermediateSegment how long an utterance must be before
+// a pause may emit it ahead of Stop; DefaultDictationParagraphPause the
+// silence after which the next segment starts a paragraph;
+// DefaultDictationPadding the silence kept before and after speech; and
+// DefaultDictationOverlap the tail of one segment repeated at the start of
+// the next.
 const (
 	DefaultDictationPause                  = 1500 * time.Millisecond
 	DefaultDictationMinSegment             = 1200 * time.Millisecond
@@ -73,6 +82,10 @@ type DictationSegmenter struct {
 	lastFrameAt time.Time
 }
 
+// NewDictationSegmenter builds a segmenter around detector with the
+// DefaultDictation* tuning; pauseThreshold <= 0 selects DefaultDictationPause.
+// It returns nil when detector is nil; a nil segmenter's methods are safe
+// no-ops that fall back to whole-capture segments.
 func NewDictationSegmenter(detector speechkit.VoiceActivityDetector, pauseThreshold time.Duration) *DictationSegmenter {
 	if detector == nil {
 		return nil
@@ -169,6 +182,12 @@ func (s *DictationSegmenter) now() time.Time {
 	return time.Now()
 }
 
+// FeedPCM implements [speechkit.SegmentCollector]. It buffers pcm (16 kHz S16
+// mono), runs the detector over each 512-sample frame and keeps utterances
+// closed by a pause for [DictationSegmenter.DrainReadySegments] and
+// [DictationSegmenter.CollectStopSegments]. It returns the detector's error;
+// nil receivers and empty input are no-ops. Safe for concurrent use with the
+// Idle* methods.
 func (s *DictationSegmenter) FeedPCM(pcm []byte) error {
 	if s == nil || s.detector == nil || len(pcm) == 0 {
 		return nil
@@ -210,6 +229,13 @@ func (s *DictationSegmenter) DrainReadySegments() []speechkit.AudioSegment {
 	return segments
 }
 
+// CollectStopSegments implements [speechkit.SegmentCollector]. It folds the
+// part of fullPCM that was never fed into the open utterance, flushes that
+// utterance as a final segment behind any segments still waiting to be
+// drained, and resets the detector and session state for the next recording.
+// When no segment was ever produced it returns [FallbackDictationSegments] of
+// fullPCM; when earlier segments were drained and nothing remains it returns
+// nil. A nil segmenter returns the fallback segment.
 func (s *DictationSegmenter) CollectStopSegments(fullPCM []byte) ([]speechkit.AudioSegment, error) {
 	if s == nil || s.detector == nil {
 		return FallbackDictationSegments(fullPCM), nil

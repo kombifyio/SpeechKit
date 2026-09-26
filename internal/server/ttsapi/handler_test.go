@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
-	"github.com/kombifyio/SpeechKit/internal/tts"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
 )
 
 // fakeProvider is a controllable tts.Provider for router-backed handler tests.
@@ -128,6 +128,7 @@ func TestVoices_GET_ReflectsEnabledProviders(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.TTS.OpenAI.Enabled = true
 	cfg.TTS.OpenAI.Voice = "shimmer"
+	cfg.TTS.Google.Enabled = true
 
 	h := New(cfg, nil)
 	rec := httptest.NewRecorder()
@@ -142,8 +143,8 @@ func TestVoices_GET_ReflectsEnabledProviders(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(body.Voices) != 1 {
-		t.Fatalf("want 1 enabled voice, got %d: %+v", len(body.Voices), body.Voices)
+	if len(body.Voices) != 2 {
+		t.Fatalf("want 2 enabled voices, got %d: %+v", len(body.Voices), body.Voices)
 	}
 	if body.Voices[0]["provider"] != "openai" || body.Voices[0]["id"] != "shimmer" {
 		t.Errorf("first voice mismatch: %+v", body.Voices[0])

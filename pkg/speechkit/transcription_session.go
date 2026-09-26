@@ -16,6 +16,10 @@ type TranscriptSegmentKey struct {
 	ProviderItemID     string
 }
 
+// IsZero reports whether the key carries no segment identity:
+// RecordingSessionID, SessionID and SegmentID are zero and ProviderItemID is
+// empty. CaptureChannel alone does not identify a segment. Zero keys are
+// exempt from ledger deduplication.
 func (k TranscriptSegmentKey) IsZero() bool {
 	return k.RecordingSessionID == 0 && k.SessionID == 0 && k.SegmentID == 0 && k.ProviderItemID == ""
 }

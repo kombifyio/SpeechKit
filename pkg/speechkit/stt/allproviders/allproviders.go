@@ -29,6 +29,7 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/assemblyai"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/azurespeech"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/deepgram"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/google"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/huggingface"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/local"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/openaicompat"
@@ -45,7 +46,7 @@ type BuildSpec struct {
 	Provider      string
 	ModelID       string
 
-	APIKey  string // cloud API key (OpenAI/Groq/Deepgram/AssemblyAI/OpenRouter/Foundry)
+	APIKey  string // cloud API key (OpenAI/Groq/Google/Deepgram/AssemblyAI/OpenRouter/Foundry)
 	Token   string // HuggingFace token
 	BaseURL string // Ollama base URL (optional; defaulted when empty) or Foundry OpenAI-compatible base (required)
 
@@ -53,6 +54,10 @@ type BuildSpec struct {
 	DiarizationModel string
 	// Deepgram forwards provider-specific Listen options (optional).
 	Deepgram deepgram.Options
+	// Google streaming credential env-var names (optional), forwarded to the
+	// Google provider so realtime transcription can authenticate.
+	GoogleStreamingCredentialsEnv   string
+	GoogleApplicationCredentialsEnv string
 
 	// FoundrySpeech, when set, builds the Foundry provider on the resource's
 	// Azure Speech surface (MAI-Transcribe) instead of the OpenAI-compatible
@@ -145,6 +150,14 @@ var providerRegistry = map[string]providerDescriptor{
 		Name: "groq",
 		Build: func(spec BuildSpec) (stt.STTProvider, error) {
 			return openaicompat.New("groq", "https://api.groq.com/openai", spec.APIKey, spec.ModelID), nil
+		},
+	},
+	"google": {
+		Name: "google",
+		Build: func(spec BuildSpec) (stt.STTProvider, error) {
+			provider := google.New(spec.APIKey, spec.ModelID)
+			provider.SetStreamingCredentialEnvs(spec.GoogleStreamingCredentialsEnv, spec.GoogleApplicationCredentialsEnv)
+			return provider, nil
 		},
 	},
 	"deepgram": {
@@ -278,23 +291,40 @@ type (
 		Validation *netsec.ValidationOptions
 	}
 
+	// HuggingFaceOpts configures the routed Hugging Face Inference provider:
+	// Model is the hub model id, Token the access token.
 	HuggingFaceOpts struct {
 		Model string
 		Token string
 	}
 
-	// OpenAIOpts: Model defaults to "whisper-1" when empty.
+	// OpenAIOpts configures the OpenAI transcription provider. Model defaults
+	// to "whisper-1" when empty.
 	OpenAIOpts struct {
 		APIKey string
 		Model  string
 	}
 
-	// GroqOpts: Model defaults to "whisper-large-v3-turbo" when empty.
+	// GroqOpts configures the Groq transcription provider. Model defaults to
+	// "whisper-large-v3-turbo" when empty.
 	GroqOpts struct {
 		APIKey string
 		Model  string
 	}
 
+	// GoogleOpts configures the opt-in Google Cloud Speech-to-Text provider
+	// (bring your own key). Model defaults to "latest_long" when empty.
+	GoogleOpts struct {
+		APIKey string
+		Model  string
+		// Streaming credential env-var names forwarded via
+		// SetStreamingCredentialEnvs.
+		CredentialsJSONEnv        string
+		ApplicationCredentialsEnv string
+	}
+
+	// DeepgramOpts configures the Deepgram Listen provider. Model defaults to
+	// "nova-3" when empty.
 	DeepgramOpts struct {
 		APIKey string
 		Model  string
@@ -304,6 +334,8 @@ type (
 		Listen deepgram.Options
 	}
 
+	// AssemblyAIOpts configures the AssemblyAI provider; empty fields keep
+	// the defaults assemblyai.New applies.
 	AssemblyAIOpts struct {
 		APIKey string
 		// Models is the comma-separated STT model list accepted by
@@ -319,6 +351,8 @@ type (
 		StreamingLLMModel string
 	}
 
+	// OpenRouterOpts configures the OpenRouter provider. Model defaults to
+	// "openai/whisper-1" when empty.
 	OpenRouterOpts struct {
 		APIKey string
 		Model  string
@@ -352,8 +386,8 @@ type (
 		Diarization bool
 	}
 
-	// OllamaOpts: BaseURL defaults to "http://localhost:11434" and Model to
-	// the provider default when empty.
+	// OllamaOpts configures the Ollama provider. BaseURL defaults to
+	// "http://localhost:11434" and Model to the provider default when empty.
 	OllamaOpts struct {
 		BaseURL string
 		Model   string
@@ -379,20 +413,22 @@ type EnabledProviders struct {
 	OpenAI      *OpenAIOpts
 	Deepgram    *DeepgramOpts
 	AssemblyAI  *AssemblyAIOpts
+	Google      *GoogleOpts
 	Foundry     *FoundryOpts
 	// FoundrySpeech routes Foundry dictation to Azure Speech (MAI-Transcribe)
 	// instead of the OpenAI-compatible transcription route.
 	FoundrySpeech *FoundrySpeechOpts
 	Extra         []stt.STTProvider
-	// Secrets is handed to constructed providers that resolve credentials
-	// lazily. Nil falls back to the process environment.
+	// Secrets is handed to every constructed provider that resolves
+	// credentials lazily (currently Google streaming). Nil falls back to the
+	// process environment.
 	Secrets stt.SecretResolver
 }
 
 // BuildRouter is the single source of truth for assembling an STT router from
 // a set of enabled providers: it constructs each enabled provider in a stable
 // order (cloud fallback order: HuggingFace, OpenRouter, VPS, Ollama, Groq,
-// OpenAI, Deepgram, AssemblyAI, Foundry, then Extra), applies optional
+// OpenAI, Deepgram, AssemblyAI, Google, Foundry, then Extra), applies optional
 // model_selection pinning, and returns the router plus human-readable notes.
 // ok is false (router nil) when nothing is enabled.
 func BuildRouter(cfg RouterConfig, enabled EnabledProviders) (router *stt.Router, ok bool, notes []string) {
@@ -468,6 +504,13 @@ func BuildRouter(cfg RouterConfig, enabled EnabledProviders) (router *stt.Router
 		}
 		cloud = append(cloud, p)
 		notes = append(notes, "STT: AssemblyAI registered (models="+strings.Join(p.Models, ",")+")")
+	}
+	if o := enabled.Google; o != nil {
+		p := google.New(o.APIKey, o.Model)
+		p.SetStreamingCredentialEnvs(o.CredentialsJSONEnv, o.ApplicationCredentialsEnv)
+		p.SecretResolver = enabled.Secrets
+		cloud = append(cloud, p)
+		notes = append(notes, "STT: Google registered (model="+o.Model+")")
 	}
 	if o := enabled.Foundry; o != nil {
 		if baseURL := strings.TrimSpace(o.BaseURL); baseURL != "" {

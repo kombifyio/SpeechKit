@@ -81,7 +81,9 @@ func ApplyKombifyDeploymentDefaults(cfg *Config) []string {
 	}
 
 	// ── Voice Agent (Deepgram Voice Agent API, audio-to-audio) ──
-	if p := strings.ToLower(strings.TrimSpace(cfg.VoiceAgent.Provider)); p == "" || NormalizeVoiceAgentProviderName(p) == "retired-google-ai" {
+	// Kombify's own deployments never serve Gemini Live: Google stays an
+	// opt-in BYOK provider for SpeechKit users, not for Kombify itself.
+	if p := strings.ToLower(strings.TrimSpace(cfg.VoiceAgent.Provider)); p == "" || NormalizeVoiceAgentProviderName(p) == "gemini" {
 		cfg.VoiceAgent.Provider = "deepgram"
 		notes = append(notes, "kombify defaults: Voice Agent provider = deepgram")
 	}

@@ -10,7 +10,7 @@
 //  2. A wire protocol (see protocol.go) that carries control frames as
 //     JSON and audio frames as binary.
 //  3. An adapter that bridges the WebSocket to the Framework kernel's
-//     internal/voiceagent.Session without the kernel needing to know
+//     pkg/speechkit/voiceagent/live.Session without the kernel needing to know
 //     anything about HTTP.
 package voiceagent
 

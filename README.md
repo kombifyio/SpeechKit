@@ -57,7 +57,7 @@ traffic goes through `https://api.kombify.io`.
 | Package managers | Go modules, npm, `mise` for the task surface |
 | Authentication | Bearer tokens or edge-auth for the server target; Auth0 JWT at `api.kombify.io` for the Kombify-hosted deployment |
 | Data | SQLite by default (pure-Go driver); optional PostgreSQL 17; Render Managed Postgres for the hosted server target |
-| Voice providers | whisper.cpp, Piper, OpenAI, Google, Groq, Deepgram, AssemblyAI, Hugging Face, OpenRouter, Ollama |
+| Voice providers | whisper.cpp, Piper, OpenAI, Groq, Deepgram, AssemblyAI, Hugging Face, OpenRouter, Ollama; Google Cloud STT/TTS and Gemini Live as opt-in BYOK (never a default) |
 | Delivery | GitHub Releases (Windows installer and portable, ad-hoc signed macOS arm64 bundle), `ghcr.io/kombifyio/speechkit-server` container |
 
 SpeechKit imports no Kombify Go modules — it has no dependency on
@@ -179,14 +179,12 @@ broken file returns an error wrapping `hostconfig.ErrMalformedConfig`. The
 package owns the loader semantics and the desktop app delegates to it, so an
 embedder and the reference app read the same `config.toml` identically.
 
-Real providers run in-process — no SpeechKit server required. Two runnable
-references:
+Real providers run in-process — no SpeechKit server required. A runnable
+reference:
 
 ```bash
-# in-process Voice Agent (Gemini Live), no server:
-GOOGLE_AI_API_KEY=... go run ./examples/voice-agent/in-process
-# in-process Assist (host-owned LLM + optional public TTS), no server:
-GOOGLE_AI_API_KEY=... go run ./examples/assist/in-process
+# in-process Voice Agent (OpenAI Realtime), no server:
+OPENAI_API_KEY=... go run ./examples/voice-agent/in-process
 ```
 
 Scaffold a single-prompt Go starter, run the server image, or drive the agent

@@ -13,33 +13,29 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/ai"
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
-	assistpkg "github.com/kombifyio/SpeechKit/internal/assist"
 	"github.com/kombifyio/SpeechKit/internal/config"
-	"github.com/kombifyio/SpeechKit/internal/router"
 	"github.com/kombifyio/SpeechKit/internal/server/assist"
 	"github.com/kombifyio/SpeechKit/internal/server/catalog"
 	"github.com/kombifyio/SpeechKit/internal/server/configapi"
 	"github.com/kombifyio/SpeechKit/internal/server/customization"
 	deviceagentserver "github.com/kombifyio/SpeechKit/internal/server/deviceagent"
 	"github.com/kombifyio/SpeechKit/internal/server/dictation"
-	"github.com/kombifyio/SpeechKit/internal/server/discovery"
-	"github.com/kombifyio/SpeechKit/internal/server/httpx"
 	"github.com/kombifyio/SpeechKit/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/internal/server/persona"
 	"github.com/kombifyio/SpeechKit/internal/server/transcripts"
 	"github.com/kombifyio/SpeechKit/internal/server/ttsapi"
 	"github.com/kombifyio/SpeechKit/internal/server/vocabulary"
 	"github.com/kombifyio/SpeechKit/internal/store"
-	"github.com/kombifyio/SpeechKit/internal/tts"
+	assistpkg "github.com/kombifyio/SpeechKit/pkg/speechkit/assist"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/lifecycle"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
 )
 
 // Mode identifies a server mode toggle.
@@ -66,16 +62,16 @@ type RunOptions struct {
 // lazily via ensureSharedAIDeps so Assist and Cascaded-VoiceAgent share one
 // Genkit instance instead of paying init cost twice.
 type App struct {
-	Cfg            *config.Config
-	Mux            *http.ServeMux
-	Health         *HealthRegistry
-	Modes          map[Mode]bool
-	Lifecycle      *lifecycle.Registry
-	SharedDeps     *lifecycle.SharedDepRegistry
-	Version        string
-	AuthState      *middleware.AuthState
-	STTRouter      *router.Router
-	AssistPipeline *assistpkg.Pipeline
+	Cfg           *config.Config
+	Mux           *http.ServeMux
+	Health        *HealthRegistry
+	Modes         map[Mode]bool
+	Lifecycle     *lifecycle.Registry
+	SharedDeps    *lifecycle.SharedDepRegistry
+	Version       string
+	AuthState     *middleware.AuthState
+	STTRouter     *stt.Router
+	AssistService *assistpkg.Service
 
 	// Shared AI deps — populated by ensureSharedAIDeps on demand.
 	GenkitRuntime *ai.Runtime
@@ -313,14 +309,17 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	wireWakewordModels(cfg, app)
 
 	if app.ModeEnabled(ModeAssist) {
-		pipeline, notes := buildAssistPipeline(ctx, cfg, app)
+		service, notes, err := buildAssistService(ctx, cfg, app)
 		for _, note := range notes {
 			slog.Info("assist wiring", "msg", note)
 		}
-		app.AssistPipeline = pipeline
+		if err != nil {
+			return fmt.Errorf("core.Run: build assist service: %w", err)
+		}
+		app.AssistService = service
 
 		h, err := assist.New(assist.Options{
-			Processor:              pipeline,
+			Processor:              service,
 			Transcriber:            app.STTRouter,
 			MaxUploadMB:            cfg.Server.MaxUploadMB,
 			MaxDecodedAudioSeconds: cfg.Server.MaxDecodedAudioSeconds,
@@ -404,471 +403,4 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	startWyoming(ctx, cfg, app)
 
 	return serveServer(ctx, cfg, app)
-}
-
-func newServerApp(cfg *config.Config, opts RunOptions) *App {
-	return &App{
-		Cfg:     cfg,
-		Mux:     http.NewServeMux(),
-		Health:  NewHealthRegistry(),
-		Modes:   resolveModes(cfg.Server.Modes),
-		Version: opts.Version,
-	}
-}
-
-func registerCoreEndpoints(app *App) {
-	registerHealth(app)
-	registerTestUI(app)
-	registerAssistantUI(app)
-	registerServerSettings(app)
-	registerDeploymentStatus(app)
-	registerPprof(app)
-	registerAPIAlias(app.Mux)
-}
-
-// serverOIDCVerifier builds the OIDC JWT verifier when auth_mode is "oidc"
-// or "bearer_or_oidc". Returns (nil, nil) for every other mode so the auth
-// chain is unchanged.
-func serverOIDCVerifier(cfg *config.Config) (func(*http.Request) (middleware.Identity, bool), error) {
-	authMode := strings.TrimSpace(cfg.Server.AuthMode)
-	if !strings.EqualFold(authMode, string(middleware.AuthModeOIDC)) &&
-		!strings.EqualFold(authMode, string(middleware.AuthModeBearerOrOIDC)) {
-		return nil, nil
-	}
-	validator, err := middleware.NewOIDCValidator(middleware.OIDCConfig{
-		JWKSURL:          cfg.Server.OIDC.JWKSURL,
-		Issuer:           cfg.Server.OIDC.Issuer,
-		Audience:         cfg.Server.OIDC.Audience,
-		AllowedTenants:   cfg.Server.OIDC.AllowedTenants,
-		TenantClaim:      cfg.Server.OIDC.TenantClaim,
-		ClockSkewSeconds: cfg.Server.OIDC.ClockSkewSeconds,
-		OrgClaim:         cfg.Server.OIDC.OrgClaim,
-		RoleClaim:        cfg.Server.OIDC.RoleClaim,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return validator.Verify, nil
-}
-
-// serverSecurityHeaders builds the security-header middleware from config.
-// Returns nil (a no-op slot in the chain) only when explicitly disabled.
-func serverSecurityHeaders(cfg *config.Config) middleware.Middleware {
-	if cfg.Server.Security.Disabled {
-		return nil
-	}
-	return middleware.SecurityHeaders(middleware.SecurityHeadersOptions{
-		ContentSecurityPolicy: cfg.Server.Security.ContentSecurityPolicy,
-		FrameOptions:          cfg.Server.Security.FrameOptions,
-		ReferrerPolicy:        cfg.Server.Security.ReferrerPolicy,
-		HSTS:                  cfg.Server.Security.HSTS,
-		HSTSMaxAgeSeconds:     cfg.Server.Security.HSTSMaxAgeSeconds,
-	})
-}
-
-func serveServer(ctx context.Context, cfg *config.Config, app *App) (returnErr error) {
-	// serveServer is the single process owner for the HA-capable Box runtime.
-	// Keep a fallback defer so middleware or main-listener startup failures also
-	// drain Box requests before Run closes the shared claim ledger.
-	if app != nil && app.BoxMediaRuntime != nil {
-		defer func() {
-			shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
-			defer cancel()
-			if err := app.BoxMediaRuntime.Shutdown(shutdownCtx); err != nil && returnErr == nil {
-				returnErr = fmt.Errorf("core.Run: Box media shutdown: %w", err)
-			}
-		}()
-	}
-	chain, err := serverMiddlewareChain(ctx, cfg, app)
-	if err != nil {
-		return err
-	}
-
-	addr := strings.TrimSpace(cfg.Server.ListenAddr)
-	if addr == "" {
-		addr = ":8080"
-	}
-
-	srv := &http.Server{
-		Addr:              addr,
-		Handler:           chain(app.Mux),
-		ReadHeaderTimeout: serverDurationDefault(cfg.Server.ReadHeaderTimeoutSec, 15*time.Second),
-		ReadTimeout:       serverDurationDefault(cfg.Server.ReadTimeoutSec, 120*time.Second),
-		WriteTimeout:      0, // WebSocket sessions can be long-lived.
-		IdleTimeout:       serverDurationDefault(cfg.Server.IdleTimeoutSec, 120*time.Second),
-		MaxHeaderBytes:    serverIntDefault(cfg.Server.MaxHeaderBytes, 1<<20),
-	}
-
-	var listenConfig net.ListenConfig
-	ln, err := listenConfig.Listen(ctx, "tcp", addr)
-	if err != nil {
-		return fmt.Errorf("core.Run: listen on %s: %w", addr, err)
-	}
-
-	slog.Info("HTTP server listening", "addr", ln.Addr().String())
-
-	// LAN-Announcement (opt-in, [server.discovery]): non-fatal — a homelab
-	// without multicast still serves normally, clients just type the URL.
-	var enabledModes []string
-	for mode, on := range app.Modes {
-		if on {
-			enabledModes = append(enabledModes, string(mode))
-		}
-	}
-	announcer, err := discovery.Start(cfg, app.Version, enabledModes)
-	if err != nil {
-		slog.Warn("mDNS discovery unavailable", "err", err)
-	}
-	defer announcer.Shutdown()
-
-	serveErr := make(chan error, 1)
-	go func() {
-		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serveErr <- err
-		}
-		close(serveErr)
-	}()
-
-	var boxMediaErrors <-chan error
-	if app.BoxMediaRuntime != nil {
-		boxMediaErrors = app.BoxMediaRuntime.Errors()
-	}
-	var runtimeErr error
-serveLoop:
-	for {
-		select {
-		case <-ctx.Done():
-			slog.Info("shutdown signal received, draining connections")
-			break serveLoop
-		case err, ok := <-serveErr:
-			if err != nil {
-				runtimeErr = fmt.Errorf("core.Run: serve: %w", err)
-			} else if !ok && ctx.Err() == nil {
-				runtimeErr = errors.New("core.Run: main HTTP listener stopped unexpectedly")
-			}
-			break serveLoop
-		case err, ok := <-boxMediaErrors:
-			// Box is an optional feature. One dead satellite listener or a
-			// stalled local STT child must not take down dictation, assist,
-			// Voice Agent, Wyoming, or the device-agent bridge.
-			boxMediaErrors = nil
-			switch {
-			case err != nil:
-				_, components, _ := app.Health.Snapshot()
-				if entry, exists := components[boxMediaHealthComponent]; !exists || entry.Status != StatusUnavailable {
-					app.Health.SetReady(boxMediaHealthComponent, StatusUnavailable, "runtime dependency failed")
-				}
-				slog.Error("Box media runtime failed; HTTP server continues", "err", err)
-			case !ok && ctx.Err() == nil:
-				app.Health.SetReady(boxMediaHealthComponent, StatusUnavailable, "runtime stopped unexpectedly")
-				slog.Error("Box media runtime stopped unexpectedly; HTTP server continues")
-			}
-		}
-	}
-
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
-	defer cancel()
-	// Drain the HA-capable Box path before any shared lifecycle or claim-ledger
-	// dependency can be torn down. Box shutdown cancels active request contexts
-	// and does not return until every tracked handler has exited.
-	if app.BoxMediaRuntime != nil {
-		if err := app.BoxMediaRuntime.Shutdown(shutdownCtx); err != nil {
-			slog.Warn("Box media shutdown did not complete cleanly", "err", err)
-			if runtimeErr == nil {
-				runtimeErr = fmt.Errorf("core.Run: Box media shutdown: %w", err)
-			}
-		}
-	}
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		slog.Warn("HTTP shutdown did not complete cleanly", "err", err)
-		_ = srv.Close()
-	}
-	if app.Lifecycle != nil {
-		if err := app.Lifecycle.Shutdown(shutdownCtx); err != nil {
-			slog.Warn("server lifecycle shutdown", "err", err)
-		}
-	}
-	// Flush the OpenTelemetry trace pipeline last so spans emitted during
-	// lifecycle shutdown are exported before the batch processor stops.
-	if app.telemetryShutdown != nil {
-		if err := app.telemetryShutdown(shutdownCtx); err != nil {
-			slog.Warn("telemetry flush/shutdown failed", "err", err)
-		}
-	}
-
-	// Drain any lingering serve error.
-	if err := <-serveErr; err != nil && runtimeErr == nil {
-		runtimeErr = fmt.Errorf("core.Run: serve (post-shutdown): %w", err)
-	}
-	return runtimeErr
-}
-
-func serverMiddlewareChain(ctx context.Context, cfg *config.Config, app *App) (func(http.Handler) http.Handler, error) {
-	if app == nil {
-		return nil, errors.New("core.Run: app is required")
-	}
-	// Order matters: Recover wraps everything (panics from any middleware
-	// or handler land in the JSON 500), Logging runs early so even auth
-	// failures get an access-log line, CORS runs before Auth so preflight
-	// OPTIONS bypasses the bearer check, Auth attaches Identity to the
-	// context, and RateLimit reads that Identity to bucket per-user
-	// rather than per-IP.
-	app.AuthState = middleware.NewAuthState(
-		cfg.Server.AuthMode,
-		cfg.Server.BearerTokenEnv,
-		cfg.Server.EdgeAuthSecretEnv,
-		cfg.Server.AdminUsername,
-		cfg.Server.AdminPasswordHash,
-	)
-	app.AuthState.SetSmokeTokenEnv(cfg.Server.SmokeTokenEnv)
-	publicPaths := serverPublicPaths()
-	publicRoutes := serverPublicRoutes()
-	if app.DeviceAgentBridgeMounted {
-		publicRoutes = append(publicRoutes, deviceAgentAuthRoutes()...)
-	}
-	bootstrapPaths := serverBootstrapPaths()
-	oidcVerifier, err := serverOIDCVerifier(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("core.Run: %w", err)
-	}
-	return middleware.Chain(
-		middleware.Recover(),
-		middleware.RequestID(),
-		middleware.Logging(),
-		middleware.CORS(cfg.Server.CORSAllowedOrigins),
-		serverSecurityHeaders(cfg),
-		middleware.Auth(middleware.AuthOptions{
-			ModeProvider:        app.AuthState.Mode,
-			BearerTokenProvider: app.AuthState.BearerToken,
-			EdgeSecretProvider:  app.AuthState.EdgeSecret,
-			AdminUsernameProvider: func() string {
-				if app.Cfg == nil || !app.Cfg.Server.AdminAuthEnabled {
-					return ""
-				}
-				return app.AuthState.AdminUsername()
-			},
-			AdminPasswordHashProvider: func() string {
-				if app.Cfg == nil || !app.Cfg.Server.AdminAuthEnabled {
-					return ""
-				}
-				return app.AuthState.AdminPasswordHash()
-			},
-			SmokeTokenProvider: app.AuthState.SmokeToken,
-			// Liveness is always public. Detailed readiness and browser operator
-			// UI paths can require authentication in hosted deployments.
-			AllowPublicPaths:      publicPaths,
-			AllowPublicRoutes:     publicRoutes,
-			HTMLUnauthorizedPaths: serverAdminUIPaths(),
-			AllowBootstrapPaths:   bootstrapPaths,
-			AllowBootstrapRoutes:  serverBootstrapAuthRoutes(),
-			BearerRole:            cfg.Server.BearerRole,
-			BootstrapAllowed: func(r *http.Request) bool {
-				return serverSettingsBootstrapWriteAllowed(app)
-			},
-			// Defence-in-depth: if the operator bound to a non-loopback
-			// address, refuse to issue the implicit anonymous Identity
-			// from AuthModeNone even if config validation was bypassed.
-			// ValidateServerProductionAuth already rejects this at
-			// startup; this is a runtime backstop for code paths that
-			// embed the server without calling that validator (tests,
-			// in-process hosts, future helper binaries).
-			RequireAuthenticatedMode: !config.IsLoopbackListenAddr(cfg.Server.ListenAddr),
-			TrustedProxyCIDRs:        cfg.Server.TrustedProxyCIDRs,
-			OIDCVerifier:             oidcVerifier,
-			// Voice-agent tool bridge: the header carrying the per-session
-			// bridge credential (accepted only on edge-HMAC identities).
-			OboSubjectTokenHeader: cfg.Server.VoiceAgent.ToolBridge.CredentialHeader,
-		}),
-		middleware.RateLimit(middleware.RateLimitOptions{ //nolint:contextcheck // RateLimit receives the server lifetime context via options.Context; contextcheck does not model contained context fields.
-			RequestsPerSecond: cfg.Server.RateLimitRPS,
-			Burst:             cfg.Server.RateLimitBurst,
-			Context:           ctx,
-			// Health probes must never be rate-limited; otherwise a busy
-			// neighbour could starve out Render's readiness checks during
-			// real outages.
-			AllowPublicPaths: publicPaths,
-			// Audit S-4: cost-weighted bucket so a few expensive calls
-			// (LLM, transcription, voice-agent session create) drain
-			// the budget appropriately. Empty map falls back to flat
-			// cost=1 — backwards compatible.
-			EndpointCosts: cfg.Server.RateLimitEndpointCosts,
-			// Audit S-5: hard daily ceiling for Plan="demo" (smoke
-			// token) surface so a casual scraper can't burn provider
-			// budget overnight. Zero disables.
-			DemoDailyQuota: cfg.Server.DemoDailyQuota,
-		}),
-	), nil
-}
-
-func serverDurationDefault(seconds int, fallback time.Duration) time.Duration {
-	if seconds <= 0 {
-		return fallback
-	}
-	return time.Duration(seconds) * time.Second
-}
-
-func serverIntDefault(value, fallback int) int {
-	if value <= 0 {
-		return fallback
-	}
-	return value
-}
-
-// resolveModes turns the toml "modes" list into a lookup map. Empty input means
-// all modes are enabled, matching the documented default.
-func resolveModes(configured []string) map[Mode]bool {
-	result := map[Mode]bool{
-		ModeDictation:  false,
-		ModeAssist:     false,
-		ModeVoiceAgent: false,
-	}
-	if len(configured) == 0 {
-		for k := range result {
-			result[k] = true
-		}
-		return result
-	}
-	for _, raw := range configured {
-		switch strings.ToLower(strings.TrimSpace(raw)) {
-		case string(ModeDictation):
-			result[ModeDictation] = true
-		case string(ModeAssist):
-			result[ModeAssist] = true
-		case string(ModeVoiceAgent):
-			result[ModeVoiceAgent] = true
-		}
-	}
-	return result
-}
-
-// ModeEnabled reports whether the given mode is active for this process.
-func (a *App) ModeEnabled(m Mode) bool {
-	if a == nil || a.Modes == nil {
-		return false
-	}
-	return a.Modes[m]
-}
-
-// needsSTT reports whether any enabled mode depends on the STT router.
-// Dictation always needs it; Assist and Cascaded-VoiceAgent use it for the
-// STT stage of their pipelines; native realtime Voice Agent providers perform
-// speech handling in their own sessions.
-func needsSTT(modes map[Mode]bool) bool {
-	return modes[ModeDictation] || modes[ModeAssist] || modes[ModeVoiceAgent]
-}
-
-func firstVANonEmpty(a, b string) string {
-	if strings.TrimSpace(a) != "" {
-		return a
-	}
-	return b
-}
-
-func mountModeDisabled(mux *http.ServeMux, mode Mode, patterns ...string) {
-	if mux == nil {
-		return
-	}
-	for _, pattern := range patterns {
-		pattern := strings.TrimSpace(pattern)
-		if pattern == "" {
-			continue
-		}
-		mux.HandleFunc(pattern, func(w http.ResponseWriter, _ *http.Request) {
-			httpx.WriteModeDisabled(w, string(mode))
-		})
-	}
-}
-
-// ensureStore opens the configured durable store. Idempotent — the first
-// successful call populates app.Store; subsequent calls are no-ops. If
-// the backend is unconfigured or the driver fails, we log and continue:
-// Voice Agent mode still works (personas stay in-memory), dictation still
-// serves requests, and /readyz surfaces the missing capability.
-func ensureStore(cfg *config.Config, app *App) {
-	if app.Store != nil {
-		return
-	}
-	backend := strings.TrimSpace(cfg.Store.Backend)
-	if backend == "" {
-		backend = "sqlite"
-	}
-	storeCfg := store.StoreConfig{
-		Backend:            backend,
-		SQLitePath:         cfg.Store.SQLitePath,
-		PostgresDSN:        cfg.Store.PostgresDSN,
-		SaveAudio:          cfg.Store.SaveAudio,
-		AudioRetentionDays: cfg.Store.AudioRetentionDays,
-		MaxAudioStorageMB:  cfg.Store.MaxAudioStorageMB,
-	}
-	s, err := store.New(storeCfg)
-	if err != nil {
-		slog.Warn("store init failed; durable features disabled", "backend", backend, "err", err)
-		app.Health.SetReady("store", StatusDegraded, err.Error())
-		return
-	}
-	app.Store = s
-	app.Health.SetReady("store", StatusOK, backend)
-	slog.Info("store initialized", "backend", backend)
-}
-
-// ensurePersonaRegistry lazily initializes the persona catalog.
-//
-// Boot order:
-//  1. Build an empty registry.
-//  2. If the Store exposes a *sql.DB (SQLite backend), hydrate previously
-//     persisted entries FIRST so admin-authored overrides are in place,
-//     then attach a Persister so subsequent admin writes survive restart.
-//  3. Overlay TOML seeds on top — TOML acts as a baseline of defaults
-//     that admin writes can replace per ID.
-//
-// Idempotent — second+ calls are no-ops.
-func ensurePersonaRegistry(ctx context.Context, cfg *config.Config, app *App) {
-	if app.PersonaRegistry != nil {
-		return
-	}
-	reg := persona.NewRegistry()
-
-	// (2) store-backed persistence, opt-in per concrete store type so
-	// bootstrap stays compile-time explicit about durable backends.
-	switch concreteStore := app.Store.(type) {
-	case *store.SQLiteStore:
-		persister := persona.NewSQLitePersister(concreteStore.DB())
-		if err := reg.HydrateFrom(ctx, persister); err != nil {
-			slog.Warn("persona: hydrate from store failed; falling back to TOML-only", "err", err)
-		} else {
-			slog.Info("persona: hydrated from SQLite store")
-		}
-		reg.WithPersister(persister)
-	case *store.PostgresStore:
-		persister := persona.NewPostgresPersister(concreteStore.DB())
-		if err := reg.HydrateFrom(ctx, persister); err != nil {
-			slog.Warn("persona: hydrate from Postgres store failed; falling back to TOML-only", "err", err)
-		} else {
-			slog.Info("persona: hydrated from Postgres store")
-		}
-		reg.WithPersister(persister)
-	default:
-		if app.Store != nil {
-			slog.Info("persona: store backend does not support durable personas; admin writes are in-memory only")
-		}
-	}
-
-	// (3) overlay TOML seeds. Seeds are tagged Source="toml" and never
-	// round-trip to the persister — they're the baseline, not data.
-	notes := persona.LoadSeeds(reg, cfg) //nolint:contextcheck // seed loading is in-memory TOML overlay work with no request or cancellable I/O.
-	for _, note := range notes {
-		slog.Debug("persona seed", "note", note)
-	}
-	app.PersonaRegistry = reg
-
-	personaCount := len(reg.ListPersonas())
-	roleCount := len(reg.ListRoles())
-	sequenceCount := len(reg.ListSequences())
-	detail := fmt.Sprintf("%d personas, %d roles, %d sequences", personaCount, roleCount, sequenceCount)
-	if personaCount == 0 {
-		app.Health.SetReady("persona.registry", StatusDegraded, "no personas seeded; clients must create one via POST /v1/personas")
-	} else {
-		app.Health.SetReady("persona.registry", StatusOK, detail)
-	}
-	slog.Info("persona registry ready", "summary", detail)
 }

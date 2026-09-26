@@ -1,5 +1,5 @@
 // Package local implements [voiceagent.Provider] on top of an in-process
-// live session — realtime voice agents (Deepgram Voice Agent,
+// live session — realtime voice agents (Deepgram Voice Agent, Gemini Live,
 // OpenAI Realtime, AssemblyAI, cascaded) without a speechkit-server.
 //
 // It is the composition seam between the embeddable [voiceagent.Service]
@@ -28,8 +28,15 @@ import (
 	liveall "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/allproviders"
 )
 
+// Errors reported by [Provider]. Both are returned directly, so hosts can
+// compare them with errors.Is.
 var (
-	ErrSessionActive   = errors.New("speechkit voiceagent/local: a session is already active")
+	// ErrSessionActive is returned by StartVoiceAgent while a session is
+	// already running.
+	ErrSessionActive = errors.New("speechkit voiceagent/local: a session is already active")
+	// ErrNoActiveSession is returned when there is no session to act on:
+	// before the first StartVoiceAgent, after StopVoiceAgent for the send
+	// and stop methods, and on a nil *Provider.
 	ErrNoActiveSession = errors.New("speechkit voiceagent/local: no active session")
 )
 
@@ -83,6 +90,10 @@ type Provider struct {
 
 var _ voiceagent.Provider = (*Provider)(nil)
 
+// New returns a [Provider] for opts after filling defaults: a nil Factory
+// uses [liveall.NewProviderForConfig], and an Idle config with neither bound
+// set uses [live.DefaultIdleConfig]. The error result is currently always
+// nil.
 func New(opts Options) (*Provider, error) {
 	if opts.Factory == nil {
 		opts.Factory = liveall.NewProviderForConfig

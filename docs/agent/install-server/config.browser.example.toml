@@ -59,6 +59,17 @@ tts_model = "tts-1"
 tts_voice = "nova"
 realtime_model = "gpt-realtime-2"
 
+# Opt-in BYOK only: Google Cloud STT/TTS and Gemini Live with your own Google
+# credentials. Never a default. To use it, uncomment this block, pass
+# GOOGLE_AI_API_KEY to the container, and set [voice_agent] provider = "gemini".
+# [providers.google]
+# enabled = true
+# api_key_env = "GOOGLE_AI_API_KEY"
+# stt_api_key_env = "SPEECHKIT_GOOGLE_STT_API_KEY"
+# stt_credentials_json_env = "SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON"
+# application_credentials_env = "GOOGLE_APPLICATION_CREDENTIALS"
+# stt_model = "latest_long"
+
 [providers.groq]
 enabled = false
 api_key_env = "GROQ_API_KEY"
@@ -72,8 +83,8 @@ speed = 1.0
 
 [voice_agent]
 enabled = true
-provider = "openai"
-model = "gpt-realtime-2"
+provider = "openai"                 # opt-in BYOK alternative: "gemini" (needs [providers.google])
+model = "gpt-realtime-2"            # Gemini: "gemini-3.1-flash-live-preview"
 fallback_model = ""
 voice = "marin"
 framework_prompt = """

@@ -43,8 +43,8 @@ type ToolDefinitionFrame struct {
 	Description          string         `json:"description,omitempty"`
 	ParametersJSONSchema map[string]any `json:"parameters,omitempty"`
 	// Behavior is "blocking", "non_blocking", or "" (provider default).
-	// Bridge-sourced tools are always declared "blocking" to keep the contract
-	// portable across supported realtime providers.
+	// Bridge-sourced tools are always declared "blocking": Gemini 3.1 flash
+	// live rejects non_blocking function declarations.
 	Behavior  string `json:"behavior,omitempty"`
 	TimeoutMs int    `json:"timeout_ms,omitempty"`
 }

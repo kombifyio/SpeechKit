@@ -8,27 +8,62 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
+// LiveCapabilityFlag names a realtime feature a [ProviderDescriptor]
+// advertises. [ProviderIntent] requests flags and [ResolveProviderIntent]
+// matches them against the descriptor catalog.
 type LiveCapabilityFlag string
 
+// Capability flags. They mirror the framework's speechkit.Capability ids so
+// hosts reason about realtime and cascaded profiles with one vocabulary.
 const (
-	LiveCapabilityRealtimeAudio       LiveCapabilityFlag = "realtime_audio"
-	LiveCapabilityToolCalling         LiveCapabilityFlag = "tool_calling"
-	LiveCapabilityNativeWords         LiveCapabilityFlag = "native_words"
-	LiveCapabilityTranscript          LiveCapabilityFlag = "transcript"
-	LiveCapabilityInterruptions       LiveCapabilityFlag = "interruptions"
-	LiveCapabilitySessionResume       LiveCapabilityFlag = "session_resume"
+	// LiveCapabilityRealtimeAudio is native audio-to-audio dialogue.
+	LiveCapabilityRealtimeAudio LiveCapabilityFlag = "realtime_audio"
+	// LiveCapabilityToolCalling means the model can call host-side tools.
+	LiveCapabilityToolCalling LiveCapabilityFlag = "tool_calling"
+	// LiveCapabilityNativeWords means the host's Words vocabulary is applied
+	// through provider-native boosting instead of prompt text.
+	LiveCapabilityNativeWords LiveCapabilityFlag = "native_words"
+	// LiveCapabilityTranscript means the session emits input and output
+	// transcripts.
+	LiveCapabilityTranscript LiveCapabilityFlag = "transcript"
+	// LiveCapabilityInterruptions means the user can barge in on playback.
+	LiveCapabilityInterruptions LiveCapabilityFlag = "interruptions"
+	// LiveCapabilitySessionResume means the provider implements
+	// [LiveReconnector] and can resume a session after a reconnect.
+	LiveCapabilitySessionResume LiveCapabilityFlag = "session_resume"
+	// LiveCapabilityNativeContextPrompt means a context prompt is passed as a
+	// native session field.
 	LiveCapabilityNativeContextPrompt LiveCapabilityFlag = "native_context_prompt"
-	LiveCapabilityNativeKeyterms      LiveCapabilityFlag = "native_keyterms"
-	LiveCapabilityLanguageHints       LiveCapabilityFlag = "language_hints"
-	LiveCapabilitySpeakerStreaming    LiveCapabilityFlag = "speaker_streaming"
-	LiveCapabilityPrivacyRedaction    LiveCapabilityFlag = "privacy_redaction"
-	LiveCapabilityVoiceFocus          LiveCapabilityFlag = "voice_focus"
-	LiveCapabilityMedicalDomain       LiveCapabilityFlag = "medical_domain"
-	LiveCapabilityReasoningEffort     LiveCapabilityFlag = "reasoning_effort"
-	LiveCapabilityTranslation         LiveCapabilityFlag = "translation"
-	LiveCapabilityTranscriptionOnly   LiveCapabilityFlag = "transcription_only"
+	// LiveCapabilityNativeKeyterms means key terms boost recognition natively.
+	LiveCapabilityNativeKeyterms LiveCapabilityFlag = "native_keyterms"
+	// LiveCapabilityLanguageHints means recognition can be biased toward
+	// given languages.
+	LiveCapabilityLanguageHints LiveCapabilityFlag = "language_hints"
+	// LiveCapabilitySpeakerStreaming means input transcripts can carry
+	// speaker labels.
+	LiveCapabilitySpeakerStreaming LiveCapabilityFlag = "speaker_streaming"
+	// LiveCapabilityPrivacyRedaction means PII can be redacted from
+	// transcripts.
+	LiveCapabilityPrivacyRedaction LiveCapabilityFlag = "privacy_redaction"
+	// LiveCapabilityVoiceFocus means background voices can be suppressed.
+	LiveCapabilityVoiceFocus LiveCapabilityFlag = "voice_focus"
+	// LiveCapabilityMedicalDomain means a medical vocabulary domain is
+	// available.
+	LiveCapabilityMedicalDomain LiveCapabilityFlag = "medical_domain"
+	// LiveCapabilityReasoningEffort means the model's reasoning effort is
+	// configurable.
+	LiveCapabilityReasoningEffort LiveCapabilityFlag = "reasoning_effort"
+	// LiveCapabilityTranslation means the session can translate speech.
+	LiveCapabilityTranslation LiveCapabilityFlag = "translation"
+	// LiveCapabilityTranscriptionOnly means the session can transcribe
+	// without producing an agent reply.
+	LiveCapabilityTranscriptionOnly LiveCapabilityFlag = "transcription_only"
 )
 
+// LiveModelDescriptor is one realtime model a provider advertises, projected
+// from the framework model catalog. Default marks the model
+// [ProviderDescriptor.DefaultModel] returns, Recommended the catalog's
+// preferred pick, and SourceURL the vendor page that evidences the entry.
 type LiveModelDescriptor struct {
 	Provider    string                   `json:"provider"`
 	ModelID     string                   `json:"modelId"`
@@ -39,6 +74,13 @@ type LiveModelDescriptor struct {
 	SourceURL   string                   `json:"sourceUrl"`
 }
 
+// ProviderDescriptor is the public catalog entry for a realtime provider: its
+// canonical id and public profile id, advertised capabilities and models,
+// accepted locales ("*" for any), the provider-native option ids it honours,
+// how it authenticates ("api_key") and connects ("websocket"), and the
+// vendor documentation that evidences the claims. OptIn marks a provider that
+// [ResolveProviderIntent] only considers when the intent names it (provider,
+// profile, model, or a preferred provider); it is never an implicit pick.
 type ProviderDescriptor struct {
 	Provider         string                  `json:"provider"`
 	DisplayName      string                  `json:"displayName"`
@@ -50,6 +92,7 @@ type ProviderDescriptor struct {
 	AuthRequirement  string                  `json:"authRequirement,omitempty"`
 	Transport        string                  `json:"transport,omitempty"`
 	EvidenceURL      string                  `json:"evidenceUrl,omitempty"`
+	OptIn            bool                    `json:"optIn,omitempty"`
 }
 
 // HasCapability reports whether this provider advertises a capability.
@@ -189,6 +232,50 @@ func DefaultProviderDescriptors() []ProviderDescriptor {
 			Transport:       "websocket",
 			EvidenceURL:     "https://learn.microsoft.com/azure/ai-services/speech-service/voice-live",
 		},
+		{
+			// Google is an opt-in BYOK provider: listed last and never picked
+			// by an intent that does not name it.
+			Provider:    "google",
+			DisplayName: "Gemini Live",
+			OptIn:       true,
+			ProfileID:   "realtime.google.gemini-native-audio",
+			Capabilities: []LiveCapabilityFlag{
+				LiveCapabilityRealtimeAudio,
+				LiveCapabilityToolCalling,
+				LiveCapabilityNativeContextPrompt,
+				LiveCapabilityReasoningEffort,
+				LiveCapabilitySessionResume,
+				LiveCapabilityTranscript,
+				LiveCapabilityInterruptions,
+			},
+			Models:           liveModelsForProviderProfile("google", "realtime.google.gemini-native-audio"),
+			SupportedLocales: []string{"*"},
+			NativeOptions:    nativeLiveOptions("google"),
+			AuthRequirement:  "api_key",
+			Transport:        "websocket",
+			EvidenceURL:      "https://ai.google.dev/gemini-api/docs/live-guide",
+		},
+		{
+			Provider:    "google",
+			DisplayName: "Gemini Live Translate",
+			OptIn:       true,
+			ProfileID:   "realtime.google.gemini-live-translate",
+			Capabilities: []LiveCapabilityFlag{
+				LiveCapabilityRealtimeAudio,
+				LiveCapabilityTranslation,
+				LiveCapabilityTranscript,
+				LiveCapabilityInterruptions,
+			},
+			Models:           liveModelsForProviderProfile("google", "realtime.google.gemini-live-translate"),
+			SupportedLocales: []string{"*"},
+			NativeOptions: []provideropts.OptionID{
+				provideropts.OptionTranslation,
+				provideropts.OptionTurnDetection,
+			},
+			AuthRequirement: "api_key",
+			Transport:       "websocket",
+			EvidenceURL:     "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-live-translate-preview",
+		},
 	}
 }
 
@@ -293,6 +380,11 @@ func nativeLiveOptions(provider string) []provideropts.OptionID {
 	return out
 }
 
+// SessionCapabilitiesForProvider builds the [SessionCapabilities] a built-in
+// provider reports: the profile, default model and capability flags of the
+// catalog descriptor for provider (an id, alias or profile id). An unknown
+// provider yields only the normalized provider id. The flags are copied, so
+// callers may modify the result.
 func SessionCapabilitiesForProvider(provider string) SessionCapabilities {
 	descriptor, ok := FindProviderDescriptor(provider)
 	if !ok {

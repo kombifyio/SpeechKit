@@ -2,6 +2,9 @@ package speechkit
 
 import "github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
 
+// Audio format of the SpeechKit capture path, re-exported from [audio] so
+// hosts that only import the root package get the same numbers: 16 kHz, one
+// channel, signed 16-bit samples, two bytes per sample.
 const (
 	AudioSampleRate     = audio.SampleRate
 	AudioChannels       = audio.Channels

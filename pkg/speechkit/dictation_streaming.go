@@ -96,6 +96,9 @@ type DictationStreamEvent struct {
 	Speakers       *speaker.DiarizationResult
 }
 
+// Transcript converts the event into a [Transcript] with the same text,
+// language, provider, model, confidence and session/segment identity, and
+// SegmentFinal set from IsFinal. Words are copied; Speakers is shared.
 func (e DictationStreamEvent) Transcript() Transcript {
 	return Transcript{
 		Text:           e.Text,

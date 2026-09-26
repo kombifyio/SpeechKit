@@ -154,3 +154,6 @@ deploy/docker/.env
 
 # Local wakeword training pipeline output (generated corpus packages)
 tools/wakeword-training/corpus-packages/
+
+# bd 1.3 workspace-gate lock beside .beads/
+*.gate.lock*

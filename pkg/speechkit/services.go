@@ -26,6 +26,11 @@ type DictationRun struct {
 // AssistSurfaceDecision describes where an Assist result should be presented.
 type AssistSurfaceDecision string
 
+// Surface decisions for an [AssistResult]: present it in the Assist panel,
+// insert it into the editable target, replace the selection, only acknowledge
+// that an action ran, or show nothing. Tool results default to
+// AssistSurfaceActionAck; a silent tool result may fall through to the
+// generator.
 const (
 	AssistSurfacePanel     AssistSurfaceDecision = "panel"
 	AssistSurfaceInsert    AssistSurfaceDecision = "insert"
@@ -45,12 +50,19 @@ type AssistRequest struct {
 	SessionKey        string                     `json:"sessionKey,omitempty"`
 	SpeakerOptions    speaker.Options            `json:"speakerOptions,omitempty"`
 	Speakers          *speaker.DiarizationResult `json:"speakers,omitempty"`
+	// Target is the host destination for insertion or execution (see
+	// OutputTarget). Assist services carry it unchanged into the tool call of a
+	// matched utility and of a multi-turn follow-up; it is host-local state and
+	// is never serialised.
+	Target any `json:"-"`
 }
 
 // AudioData carries optional synthesized audio without making AssistResult
 // non-comparable for existing SDK consumers.
 type AudioData []byte
 
+// NewAudioData copies data into a new [AudioData]. It returns nil for empty
+// input so results without audio stay comparable.
 func NewAudioData(data []byte) *AudioData {
 	if len(data) == 0 {
 		return nil
@@ -59,6 +71,7 @@ func NewAudioData(data []byte) *AudioData {
 	return &clone
 }
 
+// Bytes returns a copy of the audio bytes, or nil for a nil receiver.
 func (a *AudioData) Bytes() []byte {
 	if a == nil {
 		return nil
@@ -66,6 +79,7 @@ func (a *AudioData) Bytes() []byte {
 	return append([]byte(nil), (*a)...)
 }
 
+// Len returns the number of audio bytes, or 0 for a nil receiver.
 func (a *AudioData) Len() int {
 	if a == nil {
 		return 0

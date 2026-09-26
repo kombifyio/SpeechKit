@@ -11,12 +11,12 @@ import (
 
 	"github.com/kombifyio/SpeechKit/internal/ai"
 	"github.com/kombifyio/SpeechKit/internal/ai/flows"
-	"github.com/kombifyio/SpeechKit/internal/assist"
-	"github.com/kombifyio/SpeechKit/internal/assist/skills/voice_companion"
 	"github.com/kombifyio/SpeechKit/internal/config"
-	"github.com/kombifyio/SpeechKit/internal/shortcuts"
-	"github.com/kombifyio/SpeechKit/internal/tts"
 	"github.com/kombifyio/SpeechKit/internal/ttswiring"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/assist"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/assist/shortcuts"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/assist/skills"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
 )
 
 // ensureSharedAIDeps lazily builds Genkit runtime + TTS router + assist/agent
@@ -118,87 +118,82 @@ func localLLMHealthURL(baseURL string) string {
 	return baseURL + "/health"
 }
 
-// buildAssistPipeline assembles the Assist mode pipeline from the shared AI
+// buildAssistService assembles the Assist mode service from the shared AI
 // deps held on App. Any degraded component (no Genkit, no TTS, no
-// shortcuts) still yields a viable pipeline — the Framework's Assist code
-// gracefully degrades from LLM → shortcuts → action-only, and Assist
-// responses stay functional for every valid caller.
-func buildAssistPipeline(ctx context.Context, cfg *config.Config, app *App) (*assist.Pipeline, []string) {
+// shortcuts) still yields a viable service — it degrades from LLM →
+// codeword utilities → action-only, and Assist responses stay functional
+// for every valid caller.
+func buildAssistService(ctx context.Context, cfg *config.Config, app *App) (*assistService, []string, error) {
 	notes := ensureSharedAIDeps(ctx, app)
 
-	shortcutResolver := buildShortcutResolver(cfg)
-
-	// Voice-Companion skill catalog wraps the host-side legacy executor.
-	// CompositeExecutor first dispatches to a matching pure-Go skill
-	// (Time / Date / Math / Weather / Timer / Reminder / Wikipedia /
-	// HomeAssistant); unmatched intents fall through to the legacy
-	// serverAssistToolExecutor so existing Copy/Insert/Summarize clients
-	// keep working unchanged.
+	// The Voice-Companion skill catalog runs in front of the host-side
+	// serverAssistToolExecutor: a matching pure-Go skill (Time / Date / Math /
+	// Weather / Timer / Reminder / Wikipedia / Temperature / HomeAssistant)
+	// answers first; the text utilities fall through to the fallback so
+	// existing Copy/Insert/Summarize clients keep working unchanged.
 	haURL := strings.TrimSpace(cfg.Assist.HomeAssistant.URL)
 	haToken := strings.TrimSpace(config.ResolveSecret(cfg.Assist.HomeAssistant.TokenEnv))
 	haConfigured := haURL != "" && haToken != ""
-	skills := voice_companion.AllSkills(haURL, haToken)
-	executor := voice_companion.NewCompositeExecutor(skills, serverAssistToolExecutor{})
-
 	switch {
 	case haConfigured:
 		notes = append(notes, "Assist: HomeAssistant bridge wired ("+haURL+")")
 	case haURL != "":
 		notes = append(notes, "Assist: HomeAssistant URL configured but token env unresolved; smart-home intents fail closed")
 	}
-	notes = append(notes, "Assist: Voice-Companion skill catalog active (Time/Date/Math/Weather/Timer/Reminder/Wikipedia)")
+	notes = append(notes, "Assist: Voice-Companion skill catalog active (Time/Date/Math/Weather/Timer/Reminder/Wikipedia/Temperature)")
 
-	utilityRegistry := buildAssistUtilityRegistry(cfg)
-	if haConfigured {
-		// Flip the HomeAssistant UtilityDefinition to Enabled=true so the
-		// router routes HA-prefix matches ("schalte ...", "turn on ...")
-		// to the CompositeExecutor. The Pipeline's secondary guard keeps
-		// the same intent terminal when the integration is unavailable.
-		enableHomeAssistantUtility(utilityRegistry)
-	}
-
-	// v0.38.0 multi-turn: each Pipeline gets its own in-memory
-	// SkillContextStore. The store is process-scoped — multi-server
-	// deployments needing cross-replica state would swap in a
-	// Redis-backed implementation here.
-	skillContexts := assist.NewInMemorySkillContextStore(60*time.Second, nil)
-
-	pipeline := assist.NewPipeline(
-		app.AssistFlow,
-		executor,
-		app.TTSRouter,
-		app.TTSEnabled,
-		assist.WithRouter(assist.NewRouter(
-			assist.WithResolver(shortcutResolver),
-			assist.WithUtilityRegistry(utilityRegistry),
-		)),
-		assist.WithSkillContextStore(skillContexts),
-		assist.WithSpeechDefaults(config.SpeechDefaultsValues(app.Cfg)),
-	)
-	return pipeline, notes
-}
-
-// enableHomeAssistantUtility flips the HomeAssistant UtilityDefinition
-// to Enabled=true so the router accepts the intent. Idempotent — when
-// the registry already has the entry enabled the call is a no-op.
-func enableHomeAssistantUtility(registry *assist.UtilityRegistry) {
-	if registry == nil {
-		return
-	}
-	registry.Register(assist.UtilityDefinition{
-		ID:             assist.UtilityHomeAssistant,
-		Intent:         shortcuts.IntentHomeAssistant,
-		Label:          "Send command to Home Assistant",
-		Input:          assist.UtilityInputUtterance,
-		DefaultSurface: assist.ResultSurfaceActionAck,
-		DefaultKind:    assist.ResultKindUtilityAction,
-		Enabled:        true,
+	// The catalog always claims the Home Assistant intent and the skill fails
+	// closed while the bridge is unconfigured, so a recognised smart-home
+	// command is never reinterpreted by the Assist model — with or without
+	// the utility in the [assist].enabled_tools allow-list.
+	catalog := skills.New(skills.Options{
+		HomeAssistantURL:   haURL,
+		HomeAssistantToken: haToken,
+		Resolver:           buildShortcutResolver(cfg),
+		Registry:           buildAssistUtilityRegistry(cfg),
+		Fallback:           serverAssistToolExecutor{},
 	})
+
+	opts := assist.Options{
+		Generator: flows.AssistGenerator(app.AssistFlow),
+		Matcher:   catalog.Matcher(),
+		Executor:  catalog.Executor(),
+		// v0.38.0 multi-turn: each service gets its own in-memory
+		// SkillContextStore. The store is process-scoped — multi-server
+		// deployments needing cross-replica state would swap in a shared
+		// implementation here.
+		SkillContexts: assist.NewInMemorySkillContextStore(60*time.Second, nil),
+		// A failing voice must not fail the whole request: the text result
+		// is returned and the failure is recorded as an outcome.
+		TTSBestEffort: true,
+	}
+	if app.TTSEnabled && app.TTSRouter != nil {
+		opts.TTSRouter = app.TTSRouter
+		opts.TTSEnabled = true
+		opts.TTS = &assist.TTSOptions{Defaults: config.SpeechDefaultsValues(app.Cfg)}
+	}
+	service, err := assist.NewService(opts)
+	if err != nil {
+		return nil, notes, err
+	}
+	return service, notes, nil
 }
 
+// assistService is the public Assist service the server mounts; named so
+// the wiring reads as the host of pkg/speechkit/assist rather than of a
+// private pipeline.
+type assistService = assist.Service
+
+// serverAssistToolExecutor is the server's fallback for the host text
+// utilities. The server has no clipboard or editor: it returns an
+// `action: "execute"` acknowledgement and the calling client performs the
+// action. Surface and Kind are left to the catalog's registry defaults
+// (action_ack/utility_action for copy and insert, panel/work_product for
+// summarize).
 type serverAssistToolExecutor struct{}
 
-func (serverAssistToolExecutor) Execute(_ context.Context, call assist.ToolCall) (assist.ToolResult, error) {
+// ExecuteTool implements assist.ToolExecutor.
+func (serverAssistToolExecutor) ExecuteTool(_ context.Context, call assist.ToolCall) (assist.ToolResult, error) {
 	text := serverAssistToolText(call)
 	return assist.ToolResult{
 		Text:      text,
@@ -209,7 +204,7 @@ func (serverAssistToolExecutor) Execute(_ context.Context, call assist.ToolCall)
 }
 
 func serverAssistToolText(call assist.ToolCall) string {
-	switch call.Intent {
+	switch shortcuts.Intent(call.Intent) {
 	case shortcuts.IntentCopyLast:
 		return "Copy last transcription."
 	case shortcuts.IntentInsertLast:
@@ -223,27 +218,27 @@ func serverAssistToolText(call assist.ToolCall) string {
 	}
 }
 
-func buildAssistUtilityRegistry(cfg *config.Config) *assist.UtilityRegistry {
-	base := assist.DefaultUtilityRegistry()
+// buildAssistUtilityRegistry translates [assist].enabled_tools into the
+// utility registry the catalog routes with. No explicit allow-list surfaces
+// the default registry as-is so freshly-shipped Voice-Companion skills
+// (Time/Date/...) are usable out of the box; hosts that want to lock the
+// catalog down keep the allow-list semantics.
+func buildAssistUtilityRegistry(cfg *config.Config) *skills.UtilityRegistry {
+	base := skills.DefaultUtilityRegistry()
 	if cfg == nil || cfg.Assist.EnabledTools == nil {
-		// No explicit allow-list — surface the default registry as-is
-		// so freshly-shipped Voice-Companion skills (Time/Date/...) are
-		// usable out of the box. Hosts that want to lock the catalog
-		// down still get the existing allow-list semantics via the
-		// branch below.
 		return base
 	}
 
-	enabled := map[assist.UtilityID]bool{}
+	enabled := map[skills.UtilityID]bool{}
 	for _, id := range cfg.Assist.EnabledTools {
 		id = strings.TrimSpace(id)
 		if id == "" {
 			continue
 		}
-		enabled[assist.UtilityID(id)] = true
+		enabled[skills.UtilityID(id)] = true
 	}
 
-	filtered := assist.NewUtilityRegistry()
+	filtered := skills.NewUtilityRegistry()
 	for _, def := range base.List() {
 		if enabled[def.ID] {
 			def.Enabled = true

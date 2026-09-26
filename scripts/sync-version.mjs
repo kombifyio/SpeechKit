@@ -163,7 +163,8 @@ export function syncVersion(argv = process.argv.slice(2)) {
       data.RT_MANIFEST["#1"]["0409"].identity.version = metadata.windowsManifestVersion;
     });
 
-    // AppVersion is injected via -ldflags in build.ps1 from package.json.
+    // internal/buildinfo.Version is injected via -ldflags in build.ps1 from
+    // package.json.
     // No source file edit needed.
 
     updateText("installer/speechkit.nsi", [

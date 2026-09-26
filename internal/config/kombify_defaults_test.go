@@ -76,11 +76,11 @@ func TestApplyKombifyDeploymentDefaults_NoKeyKeepsLocalFirst(t *testing.T) {
 	}
 }
 
-func TestApplyKombifyDeploymentDefaults_MigratesRetiredGoogleVoiceAgentProvider(t *testing.T) {
+func TestApplyKombifyDeploymentDefaults_MovesGoogleVoiceAgentOffKombifyDeployments(t *testing.T) {
 	t.Setenv("DEEPGRAM_API_KEY", "dg-test-key")
 
 	cfg := &Config{}
-	cfg.VoiceAgent.Provider = "vertex"
+	cfg.VoiceAgent.Provider = "google"
 
 	ApplyKombifyDeploymentDefaults(cfg)
 

@@ -80,13 +80,17 @@ linters:
         - name: error-return
         - name: error-strings
         - name: error-naming
+        # The public framework surface (pkg/**) is documentation-gated:
+        # every exported identifier and every package carries a doc comment
+        # that starts with its name. The rule is scoped to pkg/ via the
+        # path-except exclusions below; the reference apps are not gated.
         - name: exported
-          disabled: true
+          arguments:
+            - disableStutteringCheck
         - name: if-return
         - name: increment-decrement
         - name: indent-error-flow
         - name: package-comments
-          disabled: true
         - name: range
         - name: receiver-naming
         - name: redefines-builtin-id
@@ -127,6 +131,11 @@ linters:
       - docker
       - docs
     rules:
+      # Doc-comment gating applies to the public framework surface only.
+      - path-except: '^pkg/'
+        linters:
+          - revive
+        text: '^(exported|package-comments):'
       - path: _test\.go
         linters:
           - errcheck

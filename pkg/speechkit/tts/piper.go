@@ -97,6 +97,8 @@ func NewPiper(opts PiperOpts) (*Piper, error) {
 // Name returns the provider identifier.
 func (*Piper) Name() string { return "piper" }
 
+// Kind reports [ProviderKindLocalBuiltIn]: Piper runs as a local subprocess
+// and needs no network.
 func (*Piper) Kind() ProviderKind { return ProviderKindLocalBuiltIn }
 
 // Health verifies the piper binary can be located. Voice-model

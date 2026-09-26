@@ -1,15 +1,15 @@
 [versions]
-agp = "8.13.0"
+agp = "8.13.2"
 kotlin = "2.3.21"
 coroutines = "1.11.0"
 # Hilt stays: 2.60.1 requires AGP >= 9.0.0, we are on 8.13.0.
 hilt = "2.58"
-ksp = "2.3.11"
+ksp = "2.3.12"
 compose-bom = "2026.06.00"
 activity-compose = "1.13.0"
 lifecycle = "2.8.7"
 navigation = "2.8.5"
-room = "2.8.4"
+room = "2.8.5"
 savedstate = "1.2.1"
 onnxruntime = "1.28.0"
 okhttp = "4.12.0"

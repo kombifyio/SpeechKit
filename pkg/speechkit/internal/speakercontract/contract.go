@@ -1,3 +1,8 @@
+// Package speakercontract holds test-only conformance helpers that speaker
+// provider tests use to assert the public [speaker] contracts: complete
+// diarization results, well-formed realtime frames, unknown labels left
+// unattributed, and provider errors that name the provider without leaking
+// credentials.
 package speakercontract
 
 import (
@@ -7,6 +12,10 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
+// AssertDiarizationResult fails t unless result is non-nil, names its
+// provider and model, carries text, reports a level stronger than
+// [speaker.IdentificationNone], and has non-empty words (each with text),
+// segments, and speakers.
 func AssertDiarizationResult(t testing.TB, result *speaker.DiarizationResult) {
 	t.Helper()
 	if result == nil {
@@ -41,6 +50,9 @@ func AssertDiarizationResult(t testing.TB, result *speaker.DiarizationResult) {
 	}
 }
 
+// AssertKnownAttribution runs [AssertDiarizationResult] and then fails t
+// unless some segment or speaker carries wantName as its DisplayName or
+// PersonID.
 func AssertKnownAttribution(t testing.TB, result *speaker.DiarizationResult, wantName string) {
 	t.Helper()
 	AssertDiarizationResult(t, result)
@@ -57,6 +69,9 @@ func AssertKnownAttribution(t testing.TB, result *speaker.DiarizationResult, wan
 	t.Fatalf("known attribution %q not found in %+v", wantName, result)
 }
 
+// AssertSpeakerFrame fails t unless frame is non-nil, names its provider
+// and model, has a positive Sequence, and carries text or words (each word
+// with text).
 func AssertSpeakerFrame(t testing.TB, frame *speaker.SpeakerFrame) {
 	t.Helper()
 	if frame == nil {
@@ -82,6 +97,8 @@ func AssertSpeakerFrame(t testing.TB, frame *speaker.SpeakerFrame) {
 	}
 }
 
+// AssertUnknownIsUnattributed fails t unless [speaker.NormalizeSpeakerLabel]
+// maps raw to the empty, unattributed label.
 func AssertUnknownIsUnattributed(t testing.TB, raw any) {
 	t.Helper()
 	if got := speaker.NormalizeSpeakerLabel(raw); got != "" {
@@ -89,6 +106,9 @@ func AssertUnknownIsUnattributed(t testing.TB, raw any) {
 	}
 }
 
+// AssertProviderError fails t unless err is non-nil, mentions provider
+// case-insensitively, and contains none of the secret-shaped fragments a
+// provider response body could leak.
 func AssertProviderError(t testing.TB, err error, provider string) {
 	t.Helper()
 	if err == nil {

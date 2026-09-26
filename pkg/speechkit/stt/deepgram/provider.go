@@ -1,3 +1,8 @@
+// Package deepgram adapts Deepgram's speech APIs to [stt.STTProvider]: the
+// Listen REST endpoint (/v1/listen) for batch transcription, the Listen
+// WebSocket for live dictation and speaker streams, and Flux (/v2/listen) for
+// conversational turn detection. It needs a Deepgram API key and public https
+// egress; there is no local component.
 package deepgram
 
 import (
@@ -87,6 +92,10 @@ func New(apiKey, model string) *Provider {
 	return p
 }
 
+// ApplyOptions copies opts onto the provider, replacing the flags [New] set
+// (SmartFormat and Numerals default on) rather than merging with them.
+// Keyterms are trimmed, de-duplicated case-insensitively and capped at 100;
+// a negative EndpointingMs keeps the current value.
 func (p *Provider) ApplyOptions(opts Options) {
 	if p == nil {
 		return
@@ -104,6 +113,13 @@ func (p *Provider) ApplyOptions(opts Options) {
 	}
 }
 
+// Transcribe implements [stt.STTProvider] over POST /v1/listen. The model is
+// the request override, else the configured Model, else "nova-3"; the
+// language is the resolved locale, else Deepgram's multilingual "multi";
+// keyterms, formatting flags, the MIP opt-out and diarization travel as query
+// parameters. The result carries the best alternative's text, confidence and
+// per-word confidences, the detected language when reported, and speaker
+// segments when diarization was requested.
 func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.TranscribeOpts) (*stt.Result, error) {
 	model := stt.FirstNonEmptyTrimmed(opts.Model, p.Model, "nova-3")
 	resolved := p.resolveOptions(model, opts)
@@ -195,10 +211,13 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 	return result, nil
 }
 
+// Name returns "deepgram".
 func (p *Provider) Name() string {
 	return "deepgram"
 }
 
+// Health issues an authenticated GET /v1/projects; a transport failure or
+// non-200 status is returned as the error.
 func (p *Provider) Health(ctx context.Context) error {
 	endpoint, err := netsec.BuildEndpoint(stt.FirstNonEmptyTrimmed(p.BaseURL, deepgramBaseURL), "v1/projects", p.Validation)
 	if err != nil {
@@ -417,6 +436,9 @@ func normalizedDeepgramTerms(terms []string, limit int) []string {
 	return out
 }
 
+// ParseKeyterms splits a free-text vocabulary list on newlines, commas and
+// semicolons into Deepgram keyterms: trimmed, de-duplicated case-insensitively
+// and capped at 100. It returns nil for blank input.
 func ParseKeyterms(raw string) []string {
 	raw = strings.ReplaceAll(raw, "\r\n", "\n")
 	raw = strings.ReplaceAll(raw, "\r", "\n")

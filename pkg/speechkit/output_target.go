@@ -38,6 +38,7 @@ type TargetRef struct {
 	ID   string
 }
 
+// TargetKind implements [OutputTarget] by returning Kind.
 func (t TargetRef) TargetKind() string { return t.Kind }
 
 // TargetKind reports the kind of an arbitrary target value handed through the

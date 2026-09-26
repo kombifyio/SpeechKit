@@ -18,10 +18,12 @@ import (
 
 func TestDeploymentStatusReportsHeadlessEnvWithoutSecretValues(t *testing.T) {
 	t.Setenv("SPEECHKIT_SERVER_TOKEN", "super-secret-bearer")
+	t.Setenv("GOOGLE_AI_API_KEY", "super-secret-gemini")
 
 	cfg := &config.Config{}
 	cfg.Server.AuthMode = "bearer"
 	cfg.Server.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
+	cfg.Providers.Google.APIKeyEnv = "GOOGLE_AI_API_KEY"
 	app := &App{
 		Cfg:     cfg,
 		Mux:     http.NewServeMux(),
@@ -51,7 +53,7 @@ func TestDeploymentStatusReportsHeadlessEnvWithoutSecretValues(t *testing.T) {
 		t.Fatalf("GET /api/v1/deployment/status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, leaked := range []string{"super-secret-bearer"} {
+	for _, leaked := range []string{"super-secret-bearer", "super-secret-gemini"} {
 		if strings.Contains(body, leaked) {
 			t.Fatalf("deployment status leaked secret %q in body=%s", leaked, body)
 		}
@@ -63,6 +65,14 @@ func TestDeploymentStatusReportsHeadlessEnvWithoutSecretValues(t *testing.T) {
 			BearerTokenEnv string `json:"bearer_token_env"`
 			BearerTokenSet bool   `json:"bearer_token_set"`
 		} `json:"auth"`
+		Providers struct {
+			Google struct {
+				APIKey struct {
+					Env        string `json:"env"`
+					Configured bool   `json:"configured"`
+				} `json:"api_key"`
+			} `json:"google"`
+		} `json:"providers"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode deployment status: %v", err)
@@ -72,6 +82,9 @@ func TestDeploymentStatusReportsHeadlessEnvWithoutSecretValues(t *testing.T) {
 	}
 	if payload.Auth.Mode != "bearer" || payload.Auth.BearerTokenEnv != "SPEECHKIT_SERVER_TOKEN" || !payload.Auth.BearerTokenSet {
 		t.Fatalf("auth status = %+v", payload.Auth)
+	}
+	if payload.Providers.Google.APIKey.Env != "GOOGLE_AI_API_KEY" || !payload.Providers.Google.APIKey.Configured {
+		t.Fatalf("google api key status = %+v", payload.Providers.Google.APIKey)
 	}
 }
 

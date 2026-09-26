@@ -7,28 +7,49 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
+// Model ids known to the catalog: the strings vendors accept on the wire (for
+// Foundry, the default deployment names), kept as constants so registry rows,
+// provider profiles and hosts share one spelling.
 const (
 	ModelAssemblyAIUniversal35ProRealtime = "universal-3-5-pro"
-	ModelAssemblyAIU3RTPro                = "u3-rt-pro"
-	ModelAssemblyAIVoiceAgent             = "assemblyai-voice-agent"
-	ModelDeepgramFluxGeneralEN            = "flux-general-en"
-	ModelDeepgramFluxGeneralMulti         = "flux-general-multi"
+	// ModelAssemblyAIU3RTPro is the legacy Universal-3 Pro streaming id.
+	ModelAssemblyAIU3RTPro = "u3-rt-pro"
+	// ModelAssemblyAIVoiceAgent is SpeechKit's own id for the AssemblyAI Voice
+	// Agent API, which has no vendor model name.
+	ModelAssemblyAIVoiceAgent = "assemblyai-voice-agent"
+	// ModelDeepgramFluxGeneralEN and ModelDeepgramFluxGeneralMulti are the
+	// English-only and multilingual (code-switching) Flux conversational STT
+	// models.
+	ModelDeepgramFluxGeneralEN    = "flux-general-en"
+	ModelDeepgramFluxGeneralMulti = "flux-general-multi"
 	// ModelDeepgramFluxTTSDefaultEN is Deepgram's default Flux TTS voice. Flux
 	// TTS is English-only; Aura-2 remains the multilingual speak leg.
-	ModelDeepgramFluxTTSDefaultEN        = "flux-kit-en"
-	ModelDeepgramNova3                   = "nova-3"
-	ModelGroqWhisperLargeV3              = "whisper-large-v3"
-	ModelGroqWhisperLargeV3Turbo         = "whisper-large-v3-turbo"
+	ModelDeepgramFluxTTSDefaultEN = "flux-kit-en"
+	ModelDeepgramNova3            = "nova-3"
+	// ModelGroqWhisperLargeV3 and ModelGroqWhisperLargeV3Turbo are the
+	// Groq-hosted Whisper variants; Turbo is the Groq dictation default.
+	ModelGroqWhisperLargeV3      = "whisper-large-v3"
+	ModelGroqWhisperLargeV3Turbo = "whisper-large-v3-turbo"
+	// ModelGemini35LiveTranslatePreview, ModelGemini31FlashLivePreview and
+	// ModelGemini25FlashNativeAudioPreview are Google Gemini Live API preview
+	// models for realtime voice.
 	ModelGemini35LiveTranslatePreview    = "gemini-3.5-live-translate-preview"
 	ModelGemini31FlashLivePreview        = "gemini-3.1-flash-live-preview"
 	ModelGemini25FlashNativeAudioPreview = "gemini-2.5-flash-native-audio-preview-12-2025"
-	ModelOpenAIGPT4OTranscribe           = "gpt-4o-transcribe"
-	ModelOpenAIGPT4OMiniTranscribe       = "gpt-4o-mini-transcribe"
-	ModelOpenAIGPT4OTranscribeDiarize    = "gpt-4o-transcribe-diarize"
-	ModelOpenAIRealtime2                 = "gpt-realtime-2"
-	ModelOpenAIRealtime21                = "gpt-realtime-2.1"
-	ModelOpenAIRealtime21Mini            = "gpt-realtime-2.1-mini"
-	// Microsoft MAI speech models (Azure Speech on a Foundry resource) and the
+	// ModelOpenAIGPT4OTranscribe and its mini and diarize siblings are OpenAI's
+	// transcription models; Diarize is catalog-only until SpeechKit maps its
+	// diarized speaker segments.
+	ModelOpenAIGPT4OTranscribe        = "gpt-4o-transcribe"
+	ModelOpenAIGPT4OMiniTranscribe    = "gpt-4o-mini-transcribe"
+	ModelOpenAIGPT4OTranscribeDiarize = "gpt-4o-transcribe-diarize"
+	// ModelOpenAIRealtime2 is the promoted OpenAI Realtime model; 2.1 and its
+	// mini are selectable but not default (see the registry rows).
+	ModelOpenAIRealtime2      = "gpt-realtime-2"
+	ModelOpenAIRealtime21     = "gpt-realtime-2.1"
+	ModelOpenAIRealtime21Mini = "gpt-realtime-2.1-mini"
+	// ModelFoundryMAITranscribe2, ModelFoundryMAIVoice2 and
+	// ModelFoundryMAIVoice2Flash are Microsoft MAI speech models served by
+	// Azure Speech on a Foundry resource; the ModelFoundryVoiceLive ids are the
 	// brains Voice Live hosts without a deployment.
 	ModelFoundryMAITranscribe2        = "MAI-Transcribe-2"
 	ModelFoundryMAIVoice2             = "MAI-Voice-2"
@@ -130,6 +151,11 @@ func parseFreshnessDay(value string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+// DefaultModelRegistry returns the built-in model rows: the framework
+// defaults and first-class live-provider choices per provider and mode, each
+// with its lifecycle and freshness metadata. Provider ids are canonical
+// catalog ids ("foundry-voicelive" is the Voice Live adapter, distinct from
+// "foundry"). A fresh slice is returned on every call.
 func DefaultModelRegistry() []ProviderModelDescriptor {
 	return []ProviderModelDescriptor{
 		{
@@ -210,6 +236,45 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Recommended:          true,
 			SourceURL:            "https://developers.deepgram.com/docs/models-languages-overview",
 			ReleasedAt:           "2025-02-12",
+			LastVerifiedAt:       modelRegistryVerifiedAt,
+			MultilanguageCapable: true,
+		},
+		{
+			Provider:             "google",
+			ModelID:              ModelGemini35LiveTranslatePreview,
+			ProfileID:            "realtime.google.gemini-live-translate",
+			Mode:                 speechkit.ModeVoiceAgent,
+			Name:                 "Gemini 3.5 Live Translate Preview",
+			Lifecycle:            speechkit.ModelLifecyclePreview,
+			Recommended:          true,
+			SourceURL:            "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-live-translate-preview",
+			ReleasedAt:           "2026-06-09",
+			LastVerifiedAt:       modelRegistryVerifiedAt,
+			MultilanguageCapable: true,
+		},
+		{
+			Provider:             "google",
+			ModelID:              ModelGemini31FlashLivePreview,
+			ProfileID:            "realtime.google.gemini-native-audio",
+			Mode:                 speechkit.ModeVoiceAgent,
+			Name:                 "Gemini 3.1 Flash Live Preview",
+			Lifecycle:            speechkit.ModelLifecyclePreview,
+			Default:              true,
+			Recommended:          true,
+			SourceURL:            "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-live-preview",
+			ReleasedAt:           "2026-03-26",
+			LastVerifiedAt:       modelRegistryVerifiedAt,
+			MultilanguageCapable: true,
+		},
+		{
+			Provider:             "google",
+			ModelID:              ModelGemini25FlashNativeAudioPreview,
+			ProfileID:            "realtime.google.gemini-native-audio",
+			Mode:                 speechkit.ModeVoiceAgent,
+			Name:                 "Gemini 2.5 Flash Native Audio Preview",
+			Lifecycle:            speechkit.ModelLifecycleLegacy,
+			SourceURL:            "https://ai.google.dev/gemini-api/docs/live-api/capabilities",
+			ReleasedAt:           "2025-12-12",
 			LastVerifiedAt:       modelRegistryVerifiedAt,
 			MultilanguageCapable: true,
 		},
@@ -389,6 +454,8 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 	}
 }
 
+// FindModelDescriptor looks a registry row up by exact (not normalised)
+// provider id and model id; ok is false when the registry has no such row.
 func FindModelDescriptor(provider, modelID string) (ProviderModelDescriptor, bool) {
 	for _, descriptor := range DefaultModelRegistry() {
 		if descriptor.Provider == provider && descriptor.ModelID == modelID {

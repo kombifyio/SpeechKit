@@ -327,9 +327,9 @@ func (r *Registry) emit(ev TransitionEvent) {
 	}
 }
 
-// Snapshot returns the current Status of every registered mode, plus
-// the active shared-dep refcounts. Used by /readyz handlers and OTel
-// metric collection.
+// SnapshotView is the point-in-time view returned by [Registry.Snapshot]: the
+// current Status of every registered mode, plus the active shared-dep
+// refcounts. Used by /readyz handlers and OTel metric collection.
 type SnapshotView struct {
 	Modes      map[ModeKey]Status
 	SharedDeps []SharedDepStatus

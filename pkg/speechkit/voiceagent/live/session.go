@@ -286,11 +286,13 @@ func closeProviderBounded(provider LiveProvider, timeout time.Duration) error {
 	}
 }
 
-// State returns the current session state.
+// CurrentState returns the session's current [State].
 func (s *Session) CurrentState() State {
 	return s.currentState()
 }
 
+// ProviderName returns the [LiveProvider.Name] of the session's provider, or
+// "" for a nil session or provider.
 func (s *Session) ProviderName() string {
 	if s == nil {
 		return ""

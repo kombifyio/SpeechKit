@@ -102,12 +102,19 @@ func NewAzureSpeech(opts AzureSpeechOpts) *AzureSpeech {
 	return a
 }
 
+// Name returns "foundry", the provider id shared with [Foundry]: routing,
+// preference pinning and option manifests key on it, not on the wire format.
 func (a *AzureSpeech) Name() string { return "foundry" }
 
+// Kind reports [ProviderKindDirectProvider]: the resource's own API.
 func (a *AzureSpeech) Kind() ProviderKind { return ProviderKindDirectProvider }
 
+// Capabilities implements [CapabilityReporter]; AzureSpeech reports
+// [speechkit.CapabilityTTS] only.
 func (*AzureSpeech) Capabilities() []speechkit.Capability { return ttsCapabilities() }
 
+// CloseIdleConnections drops idle keep-alive connections in the provider's
+// HTTP client. It is safe on a nil receiver.
 func (a *AzureSpeech) CloseIdleConnections() {
 	if a != nil && a.client != nil {
 		a.client.CloseIdleConnections()

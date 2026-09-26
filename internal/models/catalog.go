@@ -41,6 +41,7 @@ const (
 	ExecutionModeHFInference    = speechkit.ExecutionModeHFRouted // Legacy alias.
 	ExecutionModeOpenAI         = speechkit.ExecutionModeOpenAI
 	ExecutionModeGroq           = speechkit.ExecutionModeGroq
+	ExecutionModeGoogle         = speechkit.ExecutionModeGoogle
 	ExecutionModeDeepgram       = speechkit.ExecutionModeDeepgram
 	ExecutionModeAssemblyAI     = speechkit.ExecutionModeAssemblyAI
 	ExecutionModeOllama         = speechkit.ExecutionModeOllama

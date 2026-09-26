@@ -1,8 +1,8 @@
 // The capture layer (backend registry, capture Session, device
 // enumeration, frame pool) moved to the public
 // pkg/speechkit/audio/capture package. This shim re-exports that surface
-// so the existing device-app call sites (cmd/speechkit, internal/wakeword,
-// cmd/sk-*-smoke) keep compiling unchanged. New
+// so the existing device-app call sites (cmd/speechkit, the wake-word
+// sidecars, cmd/sk-*-smoke) keep compiling unchanged. New
 // capture code goes in pkg/speechkit/audio/capture; playback
 // (player.go, stream_player.go) stays private in this package.
 package audio
@@ -70,17 +70,3 @@ var (
 // pointer (Go cannot alias vars) — method calls read identically at the
 // call sites.
 var DefaultFramePool = &capture.DefaultFramePool
-
-// OnCaptureDeviceRebound mirrors capture.OnCaptureDeviceRebound for
-// existing assignment sites (cmd/speechkit assigns audio.OnCaptureDeviceRebound).
-// Go cannot alias vars, so the capture package's hook is wired once at
-// init to forward to whatever this var currently holds.
-var OnCaptureDeviceRebound func(oldID, newID, name string)
-
-func init() {
-	capture.OnCaptureDeviceRebound = func(oldID, newID, name string) {
-		if OnCaptureDeviceRebound != nil {
-			OnCaptureDeviceRebound(oldID, newID, name)
-		}
-	}
-}

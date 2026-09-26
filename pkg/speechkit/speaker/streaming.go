@@ -9,6 +9,9 @@ import (
 // receives.
 type AudioEncoding string
 
+// Audio encodings accepted by [AudioFormat]. Both name 16-bit signed
+// little-endian PCM: linear16 is the provider-side spelling, pcm16 the
+// client-side alias, and adapters send the same wire value for either.
 const (
 	AudioEncodingLinear16 AudioEncoding = "linear16"
 	AudioEncodingPCM16    AudioEncoding = "pcm16"
@@ -24,6 +27,9 @@ type AudioFormat struct {
 	Container    string        `json:"container,omitempty"`
 }
 
+// Normalized returns f with SpeechKit's streaming defaults filled in:
+// [AudioEncodingLinear16], 16000 Hz, and one channel for empty or
+// non-positive fields, plus a trimmed Container.
 func (f AudioFormat) Normalized() AudioFormat {
 	f.Container = strings.TrimSpace(f.Container)
 	if f.Encoding == "" {

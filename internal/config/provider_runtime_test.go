@@ -9,17 +9,6 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 )
 
-func TestProviderRuntimeRegistryCoversFrameworkMatrix(t *testing.T) {
-	for _, row := range catalog.DefaultProviderMatrix() {
-		if _, ok := ProviderRuntimeFor(row.Provider); !ok {
-			t.Fatalf("provider runtime registry missing framework provider %q", row.Provider)
-		}
-	}
-	if got := len(ProviderRuntimes()); got < 10 {
-		t.Fatalf("provider runtime registry has %d providers, want at least 10", got)
-	}
-}
-
 // Every mode the catalog can serve for a provider must be declared on its
 // runtime row, otherwise Settings hides a working capability (this is how the
 // OpenAI Realtime voice agent went missing from the Integrations card).

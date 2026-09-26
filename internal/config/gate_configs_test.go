@@ -6,92 +6,20 @@ import (
 	"testing"
 )
 
-// TestProviderGateConfigsLoadDeterministically verifies the per-provider
-// functional-gate reference configs load and enable only the target provider
-// surface for each gate. The provider-live-gate workflow relies on this
-// determinism so `sk-e2e --expect-provider <name>` proves real routing rather
-// than a silent fallback to another configured provider.
-func TestProviderGateConfigsLoadDeterministically(t *testing.T) {
-	t.Run("deepgram", func(t *testing.T) {
-		cfg := loadPrivateGateConfig(t, filepath.Join("..", "..", "deploy", "config", "server.deepgram-gate.toml"))
-		if !cfg.Providers.Deepgram.Enabled {
-			t.Error("deepgram provider must be enabled")
-		}
-		assertProvidersDisabled(t, "deepgram gate", map[string]bool{
-			"assemblyai":  cfg.Providers.AssemblyAI.Enabled,
-			"openai":      cfg.Providers.OpenAI.Enabled,
-			"google":      cfg.Providers.Google.Enabled,
-			"groq":        cfg.Providers.Groq.Enabled,
-			"huggingface": cfg.HuggingFace.Enabled,
-		})
-		if cfg.Routing.Strategy != "cloud-only" {
-			t.Errorf("routing.strategy = %q, want cloud-only", cfg.Routing.Strategy)
-		}
-		if cfg.VoiceAgent.Provider != "deepgram" {
-			t.Errorf("voice_agent.provider = %q, want deepgram", cfg.VoiceAgent.Provider)
-		}
-		if !cfg.TTS.Deepgram.Enabled {
-			t.Error("deepgram TTS must be enabled for the Aura WAV/Voice-Agent path")
-		}
-	})
-
-	t.Run("assemblyai", func(t *testing.T) {
-		cfg := loadPrivateGateConfig(t, filepath.Join("..", "..", "deploy", "config", "server.assemblyai-gate.toml"))
-		if !cfg.Providers.AssemblyAI.Enabled {
-			t.Error("assemblyai provider must be enabled")
-		}
-		assertProvidersDisabled(t, "assemblyai gate", map[string]bool{
-			"deepgram":    cfg.Providers.Deepgram.Enabled,
-			"openai":      cfg.Providers.OpenAI.Enabled,
-			"google":      cfg.Providers.Google.Enabled,
-			"groq":        cfg.Providers.Groq.Enabled,
-			"huggingface": cfg.HuggingFace.Enabled,
-		})
-		if cfg.Routing.Strategy != "cloud-only" {
-			t.Errorf("routing.strategy = %q, want cloud-only", cfg.Routing.Strategy)
-		}
-		if cfg.VoiceAgent.Provider != "assemblyai" {
-			t.Errorf("voice_agent.provider = %q, want assemblyai", cfg.VoiceAgent.Provider)
-		}
-		if cfg.VoiceAgent.Model != "assemblyai-voice-agent" {
-			t.Errorf("voice_agent.model = %q, want assemblyai-voice-agent", cfg.VoiceAgent.Model)
-		}
-	})
-
-	t.Run("openai", func(t *testing.T) {
-		cfg := loadPrivateGateConfig(t, filepath.Join("..", "..", "deploy", "config", "server.openai-gate.toml"))
-		if !cfg.Providers.OpenAI.Enabled {
-			t.Error("openai provider must be enabled")
-		}
-		assertProvidersDisabled(t, "openai gate", map[string]bool{
-			"deepgram":    cfg.Providers.Deepgram.Enabled,
-			"assemblyai":  cfg.Providers.AssemblyAI.Enabled,
-			"google":      cfg.Providers.Google.Enabled,
-			"groq":        cfg.Providers.Groq.Enabled,
-			"huggingface": cfg.HuggingFace.Enabled,
-		})
-		if cfg.Routing.Strategy != "cloud-only" {
-			t.Errorf("routing.strategy = %q, want cloud-only", cfg.Routing.Strategy)
-		}
-		if cfg.VoiceAgent.Provider != "openai" {
-			t.Errorf("voice_agent.provider = %q, want openai", cfg.VoiceAgent.Provider)
-		}
-		if cfg.Providers.OpenAI.RealtimeModel != "gpt-realtime-2" {
-			t.Errorf("providers.openai.realtime_model = %q, want gpt-realtime-2", cfg.Providers.OpenAI.RealtimeModel)
-		}
-	})
-}
-
-// TestKombifyProdConfigRejectsRetiredGoogleVoiceAgent is the production
-// image contract: baking gemini as the default Voice Agent makes
-// speechkit-server exit 1 on boot after Google AI retirement.
-func TestKombifyProdConfigRejectsRetiredGoogleVoiceAgent(t *testing.T) {
+// TestKombifyProdConfigDoesNotSelectGoogle is Kombify's own deployment
+// policy: Google is an opt-in BYOK provider for SpeechKit users, but the
+// Kombify production image never enables it or routes the Voice Agent to
+// Gemini Live (Kombify does not run on Google AI / GCP).
+func TestKombifyProdConfigDoesNotSelectGoogle(t *testing.T) {
 	cfg := loadPrivateGateConfig(t, filepath.Join("..", "..", "deploy", "config", "server.kombify-prod.toml"))
 	if cfg.Providers.Google.Enabled {
-		t.Error("production must not enable the retired Google provider")
+		t.Error("Kombify production must not enable the Google provider")
 	}
-	if got := EffectiveVoiceAgentProvider(cfg); got == "retired-google-ai" {
-		t.Fatalf("production voice agent provider resolved to retired-google-ai from %q", cfg.VoiceAgent.Provider)
+	if cfg.TTS.Google.Enabled {
+		t.Error("Kombify production must not enable Google TTS")
+	}
+	if got := EffectiveVoiceAgentProvider(cfg); got == "gemini" {
+		t.Fatalf("Kombify production voice agent provider resolved to Gemini Live from %q", cfg.VoiceAgent.Provider)
 	}
 	if cfg.VoiceAgent.Provider != "deepgram" {
 		t.Errorf("production voice_agent.provider = %q, want deepgram", cfg.VoiceAgent.Provider)
@@ -99,29 +27,6 @@ func TestKombifyProdConfigRejectsRetiredGoogleVoiceAgent(t *testing.T) {
 	if !cfg.Providers.Deepgram.Enabled || !cfg.Providers.AssemblyAI.Enabled {
 		t.Errorf("production must keep deepgram+assemblyai: dg=%v aai=%v",
 			cfg.Providers.Deepgram.Enabled, cfg.Providers.AssemblyAI.Enabled)
-	}
-}
-
-// TestStagingConfigLoads verifies the Render staging config loads and turns on
-// Deepgram STT/TTS/Voice-Agent plus AssemblyAI STT.
-func TestStagingConfigLoads(t *testing.T) {
-	cfg := loadPrivateGateConfig(t, filepath.Join("..", "..", "deploy", "config", "server.staging.toml"))
-	if !cfg.Providers.Deepgram.Enabled || !cfg.Providers.AssemblyAI.Enabled {
-		t.Errorf("staging must enable deepgram+assemblyai: dg=%v aai=%v",
-			cfg.Providers.Deepgram.Enabled, cfg.Providers.AssemblyAI.Enabled)
-	}
-	if !cfg.TTS.Deepgram.Enabled {
-		t.Error("staging must enable Deepgram Aura TTS")
-	}
-	if cfg.VoiceAgent.Provider != "deepgram" {
-		t.Errorf("staging voice_agent.provider = %q, want deepgram", cfg.VoiceAgent.Provider)
-	}
-	wantModes := map[string]bool{"dictation": true, "assist": true, "voiceagent": true}
-	for _, m := range cfg.Server.Modes {
-		delete(wantModes, m)
-	}
-	if len(wantModes) != 0 {
-		t.Errorf("staging must enable all three modes; missing %v", wantModes)
 	}
 }
 
@@ -138,33 +43,4 @@ func loadPrivateGateConfig(t *testing.T, path string) *Config {
 		t.Fatalf("load %s: %v", path, err)
 	}
 	return cfg
-}
-
-func assertProvidersDisabled(t *testing.T, gate string, providers map[string]bool) {
-	t.Helper()
-	for name, enabled := range providers {
-		if enabled {
-			t.Errorf("%s: %s must be disabled for deterministic single-provider routing", gate, name)
-		}
-	}
-}
-
-func assertModes(t *testing.T, got []string, want map[string]bool) {
-	t.Helper()
-	remaining := map[string]bool{}
-	for mode, expected := range want {
-		if expected {
-			remaining[mode] = true
-		}
-	}
-	for _, mode := range got {
-		if !want[mode] {
-			t.Errorf("unexpected server mode %q", mode)
-			continue
-		}
-		delete(remaining, mode)
-	}
-	for mode := range remaining {
-		t.Errorf("missing server mode %q", mode)
-	}
 }

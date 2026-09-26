@@ -5,8 +5,8 @@
 //
 // The router is platform-neutral and is consumed by both the Device-Target
 // (Wails client) and the Server-Target. TTS has a parallel routing layer in
-// pkg/speechkit/tts; this file is STT-only. It was promoted from
-// internal/router, which remains as a compatibility alias shim.
+// pkg/speechkit/tts; this file is STT-only. Both hosts import it directly.
+
 package stt
 
 import (
@@ -49,11 +49,19 @@ func (r *Router) emitProviderSelected(ctx context.Context, providerName string, 
 // Strategy defines the routing strategy.
 type Strategy string
 
+// Routing strategies. An empty Strategy behaves as [StrategyDynamic].
 const (
-	StrategyDynamic   Strategy = "dynamic"
+	// StrategyDynamic prefers the local provider for audio shorter than
+	// PreferLocalUnderSecs and the cloud providers otherwise, each falling
+	// back to the other; a failed connectivity probe flips the preference to
+	// local.
+	StrategyDynamic Strategy = "dynamic"
+	// StrategyLocalOnly uses the local provider alone.
 	StrategyLocalOnly Strategy = "local-only"
+	// StrategyCloudOnly uses the ordered cloud providers alone.
 	StrategyCloudOnly Strategy = "cloud-only"
 
+	// internetCacheTTL is how long a connectivity probe result is reused.
 	internetCacheTTL = 60 * time.Second
 )
 

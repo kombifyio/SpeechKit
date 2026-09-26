@@ -90,10 +90,12 @@ Embed SpeechKit as a Go framework:
   `SelectedFallbackKind`, `Fallbacks`, and `RejectedProviders` before silently
   changing provider/model behavior.
 - Server-Target Voice Agent WebSocket `start.provider` accepts `deepgram`,
-  `assemblyai`, `openai`, and `cascaded`; public profile IDs such as
-  `realtime.deepgram.voice-agent`,
-  `realtime.assemblyai.voice-agent`, and `realtime.openai.gpt-realtime-2`
-  normalize to the same provider path.
+  `assemblyai`, `openai`, and `cascaded`, plus `gemini`/`google` when the
+  operator opts in to Gemini Live with their own Google key (BYOK, never a
+  default); public profile IDs such as `realtime.deepgram.voice-agent`,
+  `realtime.assemblyai.voice-agent`, `realtime.openai.gpt-realtime-2`,
+  `realtime.google.gemini-native-audio`, and
+  `realtime.google.gemini-live-translate` normalize to the same provider path.
 - On the device, `live.DefaultProviderDescriptors()` also carries two
   Microsoft Foundry live providers: `realtime.foundry.gpt-realtime-2` (OpenAI
   Realtime on a Foundry resource) and `realtime.foundry.voice-live` (Voice
@@ -102,8 +104,9 @@ Embed SpeechKit as a Go framework:
   `ProviderIntent` on the device.
 - The provider live gate covers Deepgram, AssemblyAI, and OpenAI with
   deterministic gate configs. Missing credentials report `blocked_by_auth` and
-  do not count as live proof. Microsoft Foundry has no live-gate leg, so its
-  descriptors are covered by unit tests only.
+  do not count as live proof. Microsoft Foundry and the opt-in Gemini Live
+  provider have no live-gate leg, so their descriptors are covered by unit
+  tests only.
 
 Component rule: import only the public package you need from
 `github.com/kombifyio/SpeechKit/pkg/speechkit/...`. Use `wakeword` for

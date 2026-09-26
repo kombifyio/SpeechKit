@@ -141,10 +141,9 @@ func TestRuntimePolicyAcceptsARenamedProfileID(t *testing.T) {
 	}
 }
 
-// Google AI was retired by owner decision (kombify-SpeechKit-1hg3), and a
-// retired id must fail closed rather than resolve to something else. This test
-// replaces the one that asserted the opposite while the profiles still existed.
-func TestRuntimePolicyRejectsRetiredGoogleProfileID(t *testing.T) {
+// Google Cloud STT is an opt-in BYOK provider; its legacy chirp-3 profile id
+// keeps resolving to the current latest-long profile.
+func TestRuntimePolicyAcceptsLegacyGoogleSTTProfileID(t *testing.T) {
 	err := speechkit.ValidateModeSettingsForPolicy(catalog.DefaultProviderProfiles(), speechkit.ModeSettings{
 		Dictation: speechkit.DictationSetting{
 			ModeSetting: speechkit.ModeSetting{
@@ -155,12 +154,8 @@ func TestRuntimePolicyRejectsRetiredGoogleProfileID(t *testing.T) {
 	}, speechkit.RuntimePolicy{
 		EnabledModes: []speechkit.Mode{speechkit.ModeDictation},
 	})
-
-	if err == nil {
-		t.Fatal("a retired Google profile must not validate")
-	}
-	if !strings.Contains(err.Error(), "stt.google.chirp-3") {
-		t.Fatalf("ValidateModeSettingsForPolicy() error = %v, want the retired id named", err)
+	if err != nil {
+		t.Fatalf("ValidateModeSettingsForPolicy() error = %v, want the legacy Google STT id accepted", err)
 	}
 }
 

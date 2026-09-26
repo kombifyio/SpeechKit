@@ -9,11 +9,6 @@ type DeviceInfo struct {
 	IsDefault bool   `json:"isDefault"`
 }
 
-// OnCaptureDeviceRebound, when set, is called after a configured capture
-// device ID was not found but the device was recovered via its persisted
-// name (USB/UAC re-enumeration). The host app can persist the new ID.
-var OnCaptureDeviceRebound func(oldID, newID, name string)
-
 var captureDeviceLister = func(Config) ([]DeviceInfo, error) {
 	return nil, ErrBackendUnavailable
 }

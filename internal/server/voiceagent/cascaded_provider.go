@@ -5,12 +5,13 @@ package voiceagent
 import (
 	"context"
 
-	"github.com/kombifyio/SpeechKit/internal/voiceagent/cascaded"
+	"github.com/kombifyio/SpeechKit/internal/ai/flows"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/cascaded"
 )
 
-// The cascaded provider implementation lives in
-// internal/voiceagent/cascaded (cross-platform). This file is the
-// Linux-only adapter that translates between the server's local
+// The cascaded provider implementation lives in the public
+// pkg/speechkit/voiceagent/cascaded package (cross-platform). This file is
+// the Linux-only adapter that translates between the server's local
 // LiveConfigFrame / LiveMessage types and the cross-platform
 // cascaded.SessionConfig / cascaded.Message types so the existing call
 // sites in internal/server/core/voiceagent_wiring.go keep compiling
@@ -40,9 +41,9 @@ func NewCascadedProvider(deps CascadedDeps) *CascadedProvider {
 	return &CascadedProvider{inner: cascaded.NewProvider(deps)}
 }
 
-// NewAgentFlowAdapter re-exports the cross-platform helper used by
+// NewAgentFlowAdapter bridges the server's agent flow to cascaded.Agent for
 // internal/server/core/voiceagent_wiring.go.
-var NewAgentFlowAdapter = cascaded.NewAgentFlowAdapter
+var NewAgentFlowAdapter = flows.NewCascadedAgent
 
 // Connect translates the rich server LiveConfigFrame into a minimal
 // cascaded.SessionConfig and forwards.

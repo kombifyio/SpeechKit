@@ -21,7 +21,15 @@ Use these packages:
   `assist.ToolExecutor` — wire the real framework skills instead of writing
   your own keyword router. A recognized smart-home utterance is terminal:
   missing Home Assistant configuration, no-match, and execution errors must
-  fail closed instead of falling through to a general LLM.
+  fail closed instead of falling through to a general LLM. The SpeechKit
+  desktop app and the self-host server run on exactly this catalog; there is
+  no private Assist pipeline behind it.
+- `pkg/speechkit/assist/skills/companion` for the individual skill
+  implementations (`Skill`, `CompositeExecutor`, `TimerSink`/`ReminderSink`)
+  when a host composes its own catalog or probes the Home Assistant bridge.
+- `pkg/speechkit/assist/shortcuts` for the codeword `Intent` catalog and the
+  locale-aware `Resolver` the skills are matched against, including
+  host-registered aliases.
 - `pkg/speechkit/tts` for spoken output routing.
 - `pkg/speechkit/agentkit` when your host also needs tool registration,
   lifecycle hooks, or session memory.
@@ -34,6 +42,8 @@ Component-level imports are intentional:
 | Spoken output only | `pkg/speechkit/tts` |
 | One-shot utilities or LLM Assist | `pkg/speechkit/assist` |
 | Ready-made skill catalog (Time/Math/Weather/HA/…) | `pkg/speechkit/assist/skills` |
+| Individual skills or a custom catalog | `pkg/speechkit/assist/skills/companion` |
+| Codeword intents and resolver | `pkg/speechkit/assist/shortcuts` |
 | Hands-Free composition | `pkg/speechkit/companion` |
 | Realtime Voice Agent tools/session harness | `pkg/speechkit/agentkit`, `pkg/speechkit/voiceagent/live` |
 | Self-host server client | `pkg/speechkit/client` |

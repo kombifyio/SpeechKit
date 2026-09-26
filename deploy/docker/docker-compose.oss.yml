@@ -30,6 +30,11 @@ services:
       # Required by the stock authenticated config; optional only for explicit loopback/dev auth_mode=none.
       SPEECHKIT_SERVER_TOKEN: ${SPEECHKIT_SERVER_TOKEN:-}
       # Optional — enables specific provider features.
+      # Opt-in BYOK Google Cloud STT/TTS and Gemini Live (never a default).
+      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}
+      SPEECHKIT_GOOGLE_STT_API_KEY: ${SPEECHKIT_GOOGLE_STT_API_KEY:-}
+      SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON: ${SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
       DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
       ASSEMBLYAI_API_KEY: ${ASSEMBLYAI_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

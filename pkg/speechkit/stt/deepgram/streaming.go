@@ -51,6 +51,11 @@ type deepgramDictationStream struct {
 	pending   []speechkit.DictationStreamEvent
 }
 
+// StartSpeakerStream implements [speaker.StreamingProvider] over the Listen
+// WebSocket with diarization and utterances on. opts must ask for
+// diarization; the model is opts.Model, else the configured Model, else
+// "nova-3", and the provider's formatting flags, keyterms and endpointing
+// apply.
 func (p *Provider) StartSpeakerStream(ctx context.Context, opts speaker.Options, format speaker.AudioFormat) (speaker.SpeakerStream, error) {
 	opts = opts.Normalized()
 	if !opts.WantsDiarization() {
@@ -82,6 +87,12 @@ func (p *Provider) StartSpeakerStream(ctx context.Context, opts speaker.Options,
 	}, nil
 }
 
+// StartDictationStream implements [speechkit.DictationStreamProvider] over
+// the Listen WebSocket. The language is opts.Language, else the provider's
+// LanguageOverride, else "multi"; endpointing is opts.EndpointingMs, else the
+// provider's, else 700 ms; interim results are requested only when asked for.
+// The returned stream coalesces Deepgram's is_final fragments into one final
+// event per utterance.
 func (p *Provider) StartDictationStream(ctx context.Context, opts speechkit.DictationStreamOptions, format speaker.AudioFormat) (speechkit.DictationStream, error) {
 	format = format.Normalized()
 	model := stt.FirstNonEmptyTrimmed(opts.Model, p.Model, "nova-3")

@@ -79,14 +79,14 @@ func (s *scheduler) Close() {
 	}
 }
 
-// timerSink adapts the scheduler to voice_companion.TimerSink (duration-based).
+// timerSink adapts the scheduler to companion.TimerSink (duration-based).
 type timerSink struct{ s *scheduler }
 
 func (t timerSink) Schedule(_ context.Context, d time.Duration, label, locale string) (string, error) {
 	return t.s.arm(d, Alarm{Kind: "timer", Label: label, Locale: locale, FireAt: time.Now().Add(d)})
 }
 
-// reminderSink adapts the scheduler to voice_companion.ReminderSink
+// reminderSink adapts the scheduler to companion.ReminderSink
 // (absolute-time-based).
 type reminderSink struct{ s *scheduler }
 

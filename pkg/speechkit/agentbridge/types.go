@@ -22,6 +22,8 @@ import (
 // AuthMethod describes how the external agent CLI is signed in.
 type AuthMethod string
 
+// AuthMethod values reported in [Status.Auth]. Turns require AuthChatGPT or
+// AuthAPIKey; AuthNone makes [Agent.StartTurn] return [ErrNotSignedIn].
 const (
 	AuthChatGPT AuthMethod = "chatgpt" // agent CLI holds a ChatGPT-subscription login
 	AuthAPIKey  AuthMethod = "api_key" // agent CLI is configured with a platform API key
@@ -31,6 +33,9 @@ const (
 // Mode is the transport the bridge is currently able to use.
 type Mode string
 
+// Mode values reported in [Status.Mode]. Only ModeAppServer supports
+// [Agent.Steer] and approvals; ModeExec runs one-shot turns; ModeUnavailable
+// means no turn can start.
 const (
 	ModeAppServer   Mode = "app_server"  // stateful JSON-RPC control surface (M2)
 	ModeExec        Mode = "exec"        // one-shot non-interactive turns
@@ -41,17 +46,26 @@ const (
 // "danger-full-access" is deliberately unrepresentable.
 type SandboxMode string
 
+// SandboxMode values, from least to most access. An unset
+// [TurnRequest.Sandbox] defaults to SandboxReadOnly.
 const (
-	SandboxReadOnly       SandboxMode = "read-only"
+	// SandboxReadOnly lets the agent inspect the project without writing.
+	SandboxReadOnly SandboxMode = "read-only"
+	// SandboxWorkspaceWrite additionally lets the agent edit files inside the
+	// project directory.
 	SandboxWorkspaceWrite SandboxMode = "workspace-write"
 )
 
 // Decision answers an ApprovalRequest.
 type Decision string
 
+// Decision values for [Agent.RespondApproval]. An approval that is never
+// answered, times out, or whose session closes counts as DecisionDeny.
 const (
+	// DecisionApprove lets the agent run the command or apply the patch.
 	DecisionApprove Decision = "approve"
-	DecisionDeny    Decision = "deny"
+	// DecisionDeny refuses the side effect.
+	DecisionDeny Decision = "deny"
 )
 
 // Status reports the bridge's current capability, in terms a host can render
@@ -91,15 +105,28 @@ type ThreadRef struct {
 // EventType enumerates normalized bridge events.
 type EventType string
 
+// EventType values carried in [Event.Type].
 const (
-	EventThreadStarted     EventType = "thread_started"
-	EventTurnStarted       EventType = "turn_started"
-	EventItemStarted       EventType = "item_started"
-	EventItemCompleted     EventType = "item_completed"
-	EventTurnCompleted     EventType = "turn_completed"
+	// EventThreadStarted reports the ThreadID of a freshly created thread.
+	EventThreadStarted EventType = "thread_started"
+	// EventTurnStarted reports that the turn is running.
+	EventTurnStarted EventType = "turn_started"
+	// EventItemStarted reports that [Event.Item] began.
+	EventItemStarted EventType = "item_started"
+	// EventItemCompleted reports that [Event.Item] finished with its final
+	// Summary.
+	EventItemCompleted EventType = "item_completed"
+	// EventTurnCompleted reports that the turn ended normally.
+	EventTurnCompleted EventType = "turn_completed"
+	// EventApprovalRequested carries [Event.Approval], which the host answers
+	// through [Agent.RespondApproval].
 	EventApprovalRequested EventType = "approval_requested"
-	EventBridgeState       EventType = "bridge_state"
-	EventError             EventType = "error"
+	// EventBridgeState reports a transport capability change, such as a
+	// degradation to [ModeExec]; [Event.Err] holds a speakable explanation.
+	EventBridgeState EventType = "bridge_state"
+	// EventError reports that the turn failed; [Event.Err] holds a speakable
+	// message.
+	EventError EventType = "error"
 )
 
 // Item is one unit of agent work (message, reasoning, command, file change).

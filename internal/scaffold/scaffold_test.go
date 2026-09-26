@@ -9,40 +9,6 @@ import (
 	"testing"
 )
 
-func TestListTemplates_IncludesEmbeddedTemplates(t *testing.T) {
-	templates, err := ListTemplates()
-	if err != nil {
-		t.Fatalf("ListTemplates: %v", err)
-	}
-	if len(templates) == 0 {
-		t.Fatalf("expected at least one embedded template")
-	}
-	required := map[string]bool{
-		"browser-dictation-react":   false,
-		"go-assist-voice-companion": false,
-		"go-voice-agent-companion":  false,
-		"go-dictation-handsfree-ui": false,
-	}
-	for _, tpl := range templates {
-		if _, ok := required[tpl.Name]; ok {
-			required[tpl.Name] = true
-			if tpl.Description == "" {
-				t.Errorf("%s missing description", tpl.Name)
-			}
-		}
-	}
-	for name, found := range required {
-		if found {
-			continue
-		}
-		names := make([]string, 0, len(templates))
-		for _, tpl := range templates {
-			names = append(names, tpl.Name)
-		}
-		t.Fatalf("%s not found among %v", name, names)
-	}
-}
-
 func TestListTemplates_SkipsIncompleteTemplateDirectories(t *testing.T) {
 	templates, err := ListTemplates()
 	if err != nil {

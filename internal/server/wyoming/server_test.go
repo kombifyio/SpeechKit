@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/server/audio"
-	"github.com/kombifyio/SpeechKit/internal/stt"
-	"github.com/kombifyio/SpeechKit/internal/tts"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
 )
 
 type fakeTranscriber struct {

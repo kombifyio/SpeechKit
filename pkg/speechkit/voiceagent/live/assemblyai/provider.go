@@ -1,3 +1,7 @@
+// Package assemblyai adapts the AssemblyAI Voice Agent WebSocket API
+// (wss://agents.assemblyai.com/v1/ws) to [live.LiveProvider]. It needs an
+// AssemblyAI API key in the [live.LiveConfig]; the LLM behind the agent is
+// chosen server-side, so cfg.Model is not sent.
 package assemblyai
 
 import (
@@ -40,16 +44,24 @@ type Provider struct {
 // New returns an unconnected AssemblyAI Voice Agent provider.
 func New() *Provider { return &Provider{} }
 
+// Name implements [live.LiveProvider] by identifying the provider as
+// "assemblyai-agent" in logs.
 func (p *Provider) Name() string { return "assemblyai-agent" }
 
 // EndpointURL reports the WS endpoint for connect-time logging
 // (live.LiveEndpointReporter). Static URL, no credentials or query parameters.
 func (p *Provider) EndpointURL() string { return assemblyAIAgentURL }
 
+// SessionCapabilities reports the profile, default model and capability
+// flags of the AssemblyAI catalog descriptor.
 func (p *Provider) SessionCapabilities() live.SessionCapabilities {
 	return live.SessionCapabilitiesForProvider("assemblyai")
 }
 
+// Connect dials the Voice Agent WebSocket with the API key as a Bearer
+// token, sends the session.update built from cfg and waits for session.ready
+// before returning. It fails with [live.ErrMissingAPIKey] when the key is
+// empty and with the server's session.error when the session is rejected.
 func (p *Provider) Connect(ctx context.Context, cfg live.LiveConfig) error {
 	if strings.TrimSpace(cfg.APIKey) == "" {
 		return fmt.Errorf("assemblyai agent: %w", live.ErrMissingAPIKey)
@@ -65,13 +77,19 @@ func (p *Provider) Connect(ctx context.Context, cfg live.LiveConfig) error {
 	}
 	conn.SetReadLimit(assemblyAIAgentReadLimit)
 
+	// closed/closeErr belong to closeMu — Close guards them with it. Take
+	// closeMu first and mu inside it, the same order Close uses; reversing the
+	// two would deadlock against a concurrent Close, and resetting them under
+	// mu alone (as this did) races a reconnect against a teardown.
+	p.closeMu.Lock()
 	p.mu.Lock()
 	p.conn = conn
 	p.sessionID = ""
 	p.lastCfg = cfg
+	p.mu.Unlock()
 	p.closed = false
 	p.closeErr = nil
-	p.mu.Unlock()
+	p.closeMu.Unlock()
 
 	if err := p.sendSessionUpdate(ctx, cfg); err != nil {
 		_ = conn.Close(websocket.StatusInternalError, "session.update failed")
@@ -84,6 +102,10 @@ func (p *Provider) Connect(ctx context.Context, cfg live.LiveConfig) error {
 	return nil
 }
 
+// SendAudio upsamples a 16 kHz PCM16 mono mic chunk to 24 kHz and sends it
+// base64-encoded as input.audio. Empty chunks are no-ops; it fails with
+// [live.ErrNotConnected] before Connect and [live.ErrSessionNotReady] until
+// session.ready arrived.
 func (p *Provider) SendAudio(chunk []byte) error {
 	if len(chunk) == 0 {
 		return nil
@@ -102,8 +124,13 @@ func (p *Provider) SendAudio(chunk []byte) error {
 	})
 }
 
+// SendAudioStreamEnd is a no-op: the Voice Agent detects turn ends
+// server-side and the protocol has no client-side commit.
 func (p *Provider) SendAudioStreamEnd() error { return nil }
 
+// SendText asks the agent to reply following text as instructions
+// (reply.create); this is how host prompts such as idle reminders are
+// delivered. Blank text is a no-op.
 func (p *Provider) SendText(text string) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -119,6 +146,9 @@ func (p *Provider) SendText(text string) error {
 	})
 }
 
+// SendToolResponse returns a host-side tool result as tool.result with the
+// Response map JSON-encoded into the result string; a nil Response sends an
+// empty object.
 func (p *Provider) SendToolResponse(response live.ToolResponse) error {
 	conn := p.snapshotConn()
 	if conn == nil {
@@ -139,6 +169,9 @@ func (p *Provider) SendToolResponse(response live.ToolResponse) error {
 	})
 }
 
+// UpdateInstructions implements [live.LiveInstructionUpdater] by sending a
+// new session.update built from cfg on the open connection, so prompt, tools
+// and voice change without a reconnect.
 func (p *Provider) UpdateInstructions(ctx context.Context, cfg live.LiveConfig) error {
 	conn := p.snapshotConn()
 	if conn == nil {
@@ -153,6 +186,11 @@ func (p *Provider) UpdateInstructions(ctx context.Context, cfg live.LiveConfig) 
 	return conn.Write(writeCtx, websocket.MessageText, body)
 }
 
+// Reconnect implements [live.LiveReconnector]: it dials a new connection
+// with the last config, resumes the previous session id with
+// session.resume, waits for session.ready and then closes the old
+// connection. It fails with [live.ErrNoResumableSession] when no session id
+// is known.
 func (p *Provider) Reconnect(ctx context.Context) error {
 	p.mu.RLock()
 	cfg := p.lastCfg
@@ -183,17 +221,26 @@ func (p *Provider) Reconnect(ctx context.Context) error {
 		_ = conn.Close(websocket.StatusInternalError, "session.resume ready failed")
 		return err
 	}
+	// Same closeMu -> mu ordering as Connect and Close; see Connect.
+	p.closeMu.Lock()
 	p.mu.Lock()
 	p.conn = conn
+	p.mu.Unlock()
 	p.closed = false
 	p.closeErr = nil
-	p.mu.Unlock()
+	p.closeMu.Unlock()
 	if oldConn != nil && oldConn != conn {
 		_ = oldConn.Close(websocket.StatusNormalClosure, "client reconnect")
 	}
 	return nil
 }
 
+// Receive reads server events until one maps to a [live.LiveMessage]: user
+// and agent transcripts, reply audio, reply completion (with its
+// interruption status), tool calls, and session.ended, which is returned
+// with GoAway set. Status-only events are swallowed; session.error and
+// decoding failures are returned as errors, and a closed socket yields
+// io.EOF.
 func (p *Provider) Receive(ctx context.Context) (*live.LiveMessage, error) {
 	conn := p.snapshotConn()
 	if conn == nil {
@@ -224,6 +271,8 @@ func (p *Provider) Receive(ctx context.Context) (*live.LiveMessage, error) {
 	}
 }
 
+// Close sends session.end and closes the WebSocket. It is idempotent and
+// repeats the first close error on later calls.
 func (p *Provider) Close() error {
 	p.closeMu.Lock()
 	defer p.closeMu.Unlock()

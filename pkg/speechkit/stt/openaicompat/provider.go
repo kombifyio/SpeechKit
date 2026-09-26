@@ -1,3 +1,10 @@
+// Package openaicompat adapts any server that speaks the OpenAI
+// /v1/audio/transcriptions API to [stt.STTProvider]: OpenAI itself, Groq,
+// Microsoft Foundry's OpenAI-compatible route, Ollama, and self-hosted
+// whisper-server deployments. It needs the endpoint's base URL plus an API
+// key or a bearer-token source; the default network validation accepts
+// public https only, so loopback and private endpoints must relax
+// Provider.Validation (see [NewOllama] and the vps package).
 package openaicompat
 
 import (

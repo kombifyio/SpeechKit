@@ -7,6 +7,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"github.com/coder/websocket"
+	"github.com/kombifyio/SpeechKit/internal/server/wssession"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/deepgram"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -14,12 +19,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/coder/websocket"
-	"github.com/kombifyio/SpeechKit/internal/router"
-	"github.com/kombifyio/SpeechKit/internal/server/wssession"
-	"github.com/kombifyio/SpeechKit/internal/stt"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
 
 // The tests in this file assert on the query string that reaches the provider,
@@ -84,11 +83,11 @@ func (s *deepgramStub) language() string {
 // newStubbedDeepgram builds the real Deepgram adapter against a stub endpoint.
 // providerLanguage is the configured [providers.deepgram] stt_language, i.e.
 // the tier between the request and the multilingual default.
-func newStubbedDeepgram(baseURL, providerLanguage string) *stt.DeepgramProvider {
-	provider := stt.NewDeepgramProvider("deepgram-test-key", "nova-3")
+func newStubbedDeepgram(baseURL, providerLanguage string) *deepgram.Provider {
+	provider := deepgram.New("deepgram-test-key", "nova-3")
 	provider.BaseURL = baseURL
 	provider.Validation = netsec.ValidationOptions{AllowLoopback: true, AllowHTTP: true}
-	provider.ApplyOptions(stt.DeepgramOptions{
+	provider.ApplyOptions(deepgram.Options{
 		Configured:            true,
 		SmartFormat:           true,
 		UseVocabularyKeyterms: true,
@@ -97,8 +96,8 @@ func newStubbedDeepgram(baseURL, providerLanguage string) *stt.DeepgramProvider 
 	return provider
 }
 
-func newStubbedDeepgramRouter(baseURL, providerLanguage string) *router.Router {
-	r := &router.Router{Strategy: router.StrategyCloudOnly}
+func newStubbedDeepgramRouter(baseURL, providerLanguage string) *stt.Router {
+	r := &stt.Router{Strategy: stt.StrategyCloudOnly}
 	r.AddCloud(newStubbedDeepgram(baseURL, providerLanguage))
 	return r
 }

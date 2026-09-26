@@ -47,8 +47,8 @@ func TestPreferredProviderForProfileID_MapsCatalogEntries(t *testing.T) {
 	cases := map[string]string{
 		"":                                      "",
 		"tts.openai.tts-1-hd":                   "openai",
-		"tts.google.studio-o-de":                "retired-google-ai",
-		"tts.google.studio-o-de.variant.studio": "retired-google-ai", // prefix match
+		"tts.google.studio-o-de":                "google",
+		"tts.google.studio-o-de.variant.studio": "google", // prefix match
 		"tts.huggingface.parler-multilingual":   "huggingface",
 		"tts.openedai.kokoro":                   "kokoro",
 		"tts.kokoro.82m":                        "kokoro",

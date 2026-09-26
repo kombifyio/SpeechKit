@@ -1,6 +1,6 @@
 // Package auditlog provides the dedicated audit-event stream for SpeechKit.
 //
-// Audit events are separate from the runtime log (cmd/speechkit/logging.go):
+// Audit events are separate from the runtime log (internal/desktop/applog):
 // the runtime log is for operator troubleshooting (debug-level slog JSON);
 // the audit log is the customer's source of truth for SOC 2 / ISO 27001 /
 // BSI C5 evidence and DSGVO Art. 30 verification.

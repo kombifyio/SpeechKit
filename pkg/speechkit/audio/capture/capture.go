@@ -8,11 +8,22 @@ import (
 	audiopkg "github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
 )
 
+// Backend names a registered capture implementation. Backends register
+// themselves with [RegisterBackend]; [Open] resolves [BackendAuto] to the
+// platform default.
 type Backend string
 
+// Built-in backend names. Which of them a binary can actually open depends
+// on the target and on cgo: builds without a native backend answer every
+// Open with [ErrBackendUnavailable].
 const (
-	BackendAuto                Backend = "auto"
-	BackendWindowsWASAPIMalgo  Backend = "windows-wasapi-malgo"
+	// BackendAuto selects the platform default backend at Open time.
+	BackendAuto Backend = "auto"
+	// BackendWindowsWASAPIMalgo is the Windows capture backend: a malgo
+	// (miniaudio) session on WASAPI, supporting microphone and loopback.
+	BackendWindowsWASAPIMalgo Backend = "windows-wasapi-malgo"
+	// BackendWindowsWASAPINative is reserved for a direct WASAPI backend;
+	// no factory is registered for it in this build.
 	BackendWindowsWASAPINative Backend = "windows-wasapi-native"
 	// BackendDarwinCoreAudioMalgo is the macOS capture backend: the same
 	// malgo session as BackendWindowsWASAPIMalgo, opened on CoreAudio.
@@ -21,28 +32,54 @@ const (
 	BackendDarwinCoreAudioMalgo Backend = "darwin-coreaudio-malgo"
 )
 
+// InputSource selects what a session records. The zero value means
+// [InputSourceMicrophone].
 type InputSource string
 
+// Input sources. A backend that cannot serve a source rejects Open with
+// [ErrUnsupportedSource] instead of silently recording something else.
 const (
-	InputSourceMicrophone     InputSource = "microphone"
+	// InputSourceMicrophone records the selected (or default) capture device.
+	InputSourceMicrophone InputSource = "microphone"
+	// InputSourceSystemLoopback records what the selected output device
+	// plays (WASAPI loopback); unavailable on macOS in this build.
 	InputSourceSystemLoopback InputSource = "system_loopback"
-	InputSourceMicAndSystem   InputSource = "mic_and_system"
+	// InputSourceMicAndSystem is the mixed source Meeting Mode asks for;
+	// no backend serves it yet, so Open returns ErrUnsupportedSource.
+	InputSourceMicAndSystem InputSource = "mic_and_system"
 )
 
+// Sentinel errors returned by [Open], [ListCaptureDevices] and
+// [ListOutputDevices]; callers match them with errors.Is.
 var (
-	ErrUnsupportedBackend      = errors.New("unsupported audio backend")
-	ErrBackendUnavailable      = errors.New("audio backend unavailable in this build")
-	ErrUnsupportedSource       = errors.New("unsupported audio input source")
+	// ErrUnsupportedBackend means the requested Backend has no factory.
+	ErrUnsupportedBackend = errors.New("unsupported audio backend")
+	// ErrBackendUnavailable means this build has no native backend at all
+	// (no cgo, or an unsupported platform).
+	ErrBackendUnavailable = errors.New("audio backend unavailable in this build")
+	// ErrUnsupportedSource means the backend cannot record the InputSource.
+	ErrUnsupportedSource = errors.New("unsupported audio input source")
+	// ErrOutputDeviceUnavailable means the loopback output device could not
+	// be found or opened.
 	ErrOutputDeviceUnavailable = errors.New("audio output device unavailable")
 )
 
+// EventType classifies the lifecycle and health events a [Session] emits
+// on [Session.Events].
 type EventType string
 
+// Event types. Started/Stopped bracket the device stream; Warning and
+// Error carry a backend diagnostic; Overrun and Stalled are health signals.
 const (
+	// EventStarted is emitted once the device stream delivers audio.
 	EventStarted EventType = "started"
+	// EventStopped is emitted when the device stream ends; see
+	// [Event.Requested] to tell a Stop from an interruption.
 	EventStopped EventType = "stopped"
+	// EventWarning carries a non-fatal backend diagnostic in Message or Err.
 	EventWarning EventType = "warning"
-	EventError   EventType = "error"
+	// EventError carries a backend failure in Err; the session may be unusable.
+	EventError EventType = "error"
 	// EventOverrun signals that the frame dispatcher dropped captured
 	// frames because the consumer (level/VAD handlers) could not keep
 	// up. The authoritative full-capture buffer is unaffected — only
@@ -54,6 +91,7 @@ const (
 	EventStalled EventType = "stalled"
 )
 
+// Event is one lifecycle or health notification from a [Session].
 type Event struct {
 	Type    EventType
 	Backend Backend
@@ -65,6 +103,9 @@ type Event struct {
 	Requested bool
 }
 
+// Config selects the backend, input source, device and framing of a
+// capture session. Zero fields take the defaults described per field;
+// [Open] fills them in before handing the config to the backend.
 type Config struct {
 	Backend     Backend
 	InputSource InputSource
@@ -93,6 +134,19 @@ type Config struct {
 	// initialised device that is not started holds no stream and uses no
 	// CPU. Ignored by backends that open nothing.
 	KeepDeviceWarm bool
+	// OnDeviceRebound, when set, is called after DeviceID was not found but
+	// the device was recovered via DeviceName (USB/UAC re-enumeration). The
+	// host can persist newID so the next start matches by ID again. It is
+	// invoked from the backend's device-resolution path, so it must return
+	// promptly and must not call back into the session.
+	OnDeviceRebound func(oldID, newID, name string)
+	// FramePool is the buffer pool the session leases per-frame buffers
+	// from for [Session.SetPooledPCMHandler] and its internal frame
+	// dispatch. nil selects [DefaultFramePool], which is shared by every
+	// session in the process; hosts that run several capture sessions
+	// with different frame sizes, or that want isolated pool statistics,
+	// pass their own.
+	FramePool *FramePool
 }
 
 // Session records microphone PCM and exposes both level and live-audio callbacks.
@@ -105,9 +159,9 @@ type Session interface {
 	SetPCMHandler(func([]byte))
 	// SetPooledPCMHandler installs the pool-aware variant of the PCM
 	// callback. When set (non-nil), the capture backend leases the
-	// per-frame buffer from this package's package-level FramePool
-	// instead of allocating fresh, and invokes the handler with a
-	// release closure. The handler MUST call release exactly once
+	// per-frame buffer from the session's [FramePool] ([Config.FramePool],
+	// [DefaultFramePool] when unset) instead of allocating fresh, and
+	// invokes the handler with a release closure. The handler MUST call release exactly once
 	// before returning OR before retaining any reference to the
 	// slice. Forgetting to release leaks one pool slot per frame but
 	// does not corrupt data.
@@ -144,6 +198,8 @@ type PooledPCMHandler = func(buf []byte, release func())
 // Capturer is kept as an alias while the app migrates to the session terminology.
 type Capturer = Session
 
+// Factory constructs a [Session] for a normalised [Config]; backends
+// register one per [Backend] name via [RegisterBackend].
 type Factory func(Config) (Session, error)
 
 var (
@@ -151,6 +207,10 @@ var (
 	registry   = map[Backend]Factory{}
 )
 
+// RegisterBackend makes factory available under name. It rejects an empty
+// or [BackendAuto] name, a nil factory, and a name that is already
+// registered, all with [ErrUnsupportedBackend]. Native backends register
+// themselves at init; hosts register their own to replace or add one.
 func RegisterBackend(name Backend, factory Factory) error {
 	if name == "" || name == BackendAuto {
 		return fmt.Errorf("%w: invalid backend name %q", ErrUnsupportedBackend, name)
@@ -174,6 +234,11 @@ func unregisterBackendForTest(name Backend) {
 	delete(registry, name)
 }
 
+// Open normalises cfg (defaults for backend, source, 16 kHz mono, 32 ms
+// frames, realtime thread priority) and constructs a session from the
+// registered backend. It returns [ErrBackendUnavailable] when the build
+// has no default backend, [ErrUnsupportedBackend] for an unknown name,
+// and wraps any other backend failure.
 func Open(cfg Config) (Session, error) {
 	cfg = normalizeConfig(cfg)
 	if cfg.Backend == "" {
@@ -198,10 +263,12 @@ func Open(cfg Config) (Session, error) {
 	return session, nil
 }
 
+// NewCapturer opens a session with the default [Config].
 func NewCapturer() (Capturer, error) {
 	return Open(Config{})
 }
 
+// NewCapturerWithConfig is [Open] under the older capturer name.
 func NewCapturerWithConfig(cfg Config) (Capturer, error) {
 	return Open(cfg)
 }

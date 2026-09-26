@@ -6,7 +6,6 @@
 // a host that offers a provider choice at runtime. A host that speaks exactly
 // one realtime protocol imports that provider's own package instead and stays
 // free of the others' dependencies.
-
 package allproviders
 
 import (
@@ -18,10 +17,15 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/assemblyai"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/deepgram"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/foundry"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/gemini"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openai"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/voicelive"
 )
 
+// ErrUnknownLiveProvider is wrapped by [NewProvider],
+// [NewProviderWithFactories], [NormalizeLiveConfig] and
+// [NewProviderForConfig] when no built-in or registered provider matches the
+// given provider id, alias, profile id or model; test for it with errors.Is.
 var ErrUnknownLiveProvider = errors.New("speechkit live: unknown provider")
 
 // ProviderFactory constructs a fresh live.LiveProvider instance.
@@ -35,6 +39,7 @@ type ProviderFactoryRegistry map[string]ProviderFactory
 // providers. The returned map is a copy and can be safely modified by callers.
 func DefaultProviderFactories() ProviderFactoryRegistry {
 	return ProviderFactoryRegistry{
+		"google":            func() live.LiveProvider { return gemini.New() },
 		"deepgram":          func() live.LiveProvider { return deepgram.New() },
 		"assemblyai":        func() live.LiveProvider { return assemblyai.New() },
 		"openai":            func() live.LiveProvider { return openai.New() },

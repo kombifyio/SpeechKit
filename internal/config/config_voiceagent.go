@@ -9,8 +9,10 @@ type VoiceAgentConfig struct {
 	Enabled bool `toml:"enabled"`
 	// Provider selects the backend that drives a Voice Agent session.
 	// Supported values:
-	//   ""          (default) — same as "gemini"
-	//   "gemini"    — Google Gemini Live (cloud, GOOGLE_AI_API_KEY required)
+	//   ""          (default) — AssemblyAI on the Server-Target; the
+	//                 Device-Target requires an explicit provider
+	//   "gemini"    — Google Gemini Live, opt-in BYOK (cloud,
+	//                 GOOGLE_AI_API_KEY required; alias "google")
 	//   "openai"    — OpenAI Realtime API (cloud, OPENAI_API_KEY required)
 	//   "deepgram"  — Deepgram Voice Agent (cloud, DEEPGRAM_API_KEY required)
 	//   "assemblyai" — AssemblyAI Voice Agent API (cloud, ASSEMBLYAI_API_KEY required)
@@ -19,11 +21,10 @@ type VoiceAgentConfig struct {
 	//   "moshi"     — self-hosted Kyutai Moshi Rust server (GPU required, M9b)
 	//
 	// The Server-Target reads this field via cmd/speechkit-server. The Device-
-	// Target runs "gemini", "openai", "deepgram", and — since v0.58 —
-	// "assemblyai" in-process; any other value falls back to Gemini Live (or
-	// the pipeline fallback when enabled), and the Device-Target logs and
-	// surfaces that fallback at session preparation instead of silently
-	// running Gemini.
+	// Target runs "openai", "deepgram", "assemblyai", the Foundry backends
+	// and the opt-in "gemini" in-process; any other value fails closed (or
+	// uses the pipeline fallback when enabled), and the Device-Target logs
+	// and surfaces that at session preparation.
 	Provider      string `toml:"provider"`
 	Model         string `toml:"model"`          // Real-time model ID (e.g. "gemini-3.1-flash-live-preview")
 	FallbackModel string `toml:"fallback_model"` // Fallback real-time model

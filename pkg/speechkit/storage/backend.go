@@ -6,6 +6,9 @@ package storage
 
 import "fmt"
 
+// Capabilities advertises the optional features a backend implements so
+// hosts can adapt: per-scope isolation, audio asset storage, full-text
+// search, stored embeddings, and vector similarity search.
 type Capabilities struct {
 	Scopes       bool `json:"scopes"`
 	AudioAssets  bool `json:"audioAssets"`
@@ -14,6 +17,9 @@ type Capabilities struct {
 	VectorSearch bool `json:"vectorSearch"`
 }
 
+// BackendInfo describes a registered backend: the Name it registers under,
+// an optional DisplayName for settings surfaces, the [ScopePolicy] it
+// enforces, and its [Capabilities].
 type BackendInfo struct {
 	Name         string       `json:"name"`
 	DisplayName  string       `json:"displayName,omitempty"`
@@ -21,8 +27,13 @@ type BackendInfo struct {
 	Capabilities Capabilities `json:"capabilities"`
 }
 
+// Factory constructs a backend of type T from a [Config].
 type Factory[T any] func(Config) (T, error)
 
+// Config is what a host passes to a [Factory]: the registered Backend name,
+// the DefaultScope used when a context carries none, the ScopePolicy the
+// backend must enforce, and free-form backend-specific Options such as a
+// path or DSN.
 type Config struct {
 	Backend      string
 	DefaultScope Scope
@@ -30,14 +41,21 @@ type Config struct {
 	Options      map[string]string
 }
 
+// Registry maps normalized backend names to factories for one backend type
+// T. The zero value is ready to use; registration is not safe for
+// concurrent use.
 type Registry[T any] struct {
 	factories map[string]Factory[T]
 }
 
+// NewRegistry returns an empty [Registry] for backend type T.
 func NewRegistry[T any]() *Registry[T] {
 	return &Registry[T]{factories: map[string]Factory[T]{}}
 }
 
+// RegisterBackend stores factory under the normalized form of name,
+// replacing any earlier registration. It returns an error when the name
+// normalizes to "" or factory is nil.
 func (r *Registry[T]) RegisterBackend(name string, factory Factory[T]) error {
 	if r.factories == nil {
 		r.factories = map[string]Factory[T]{}
@@ -53,6 +71,8 @@ func (r *Registry[T]) RegisterBackend(name string, factory Factory[T]) error {
 	return nil
 }
 
+// NormalizeBackendName canonicalizes a backend name with
+// [NormalizeIdentifier] so registrations and lookups agree.
 func NormalizeBackendName(name string) string {
 	return NormalizeIdentifier(name)
 }

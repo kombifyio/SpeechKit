@@ -25,6 +25,9 @@ type AudioIdleObserver interface {
 	IdleAudio() (silence time.Duration, lastFrame time.Time)
 }
 
+// DefaultMinPCMBytes is the shortest capture that is transcribed, in bytes of
+// 16 kHz S16 mono PCM: 3200 bytes is 100 ms. The recording controller skips
+// shorter captures and the Dictation runtime rejects them.
 const DefaultMinPCMBytes = 3200
 
 // Capture channels name the audio source behind a recording. A host that
@@ -50,6 +53,9 @@ type SegmentCollector interface {
 	CollectStopSegments(fullPCM []byte) ([]AudioSegment, error)
 }
 
+// SegmentCollectorFactory builds the [SegmentCollector] for one recording. A
+// RecordingController calls it on every Start; returning nil records without
+// segmentation.
 type SegmentCollectorFactory func() SegmentCollector
 
 // JobSubmitter accepts a [TranscriptionJob] for async processing.
@@ -57,11 +63,20 @@ type JobSubmitter interface {
 	Submit(TranscriptionJob) error
 }
 
+// RecordingObserver receives status and log lines from a recording controller.
+// OnState statuses are "recording", "processing" and "idle" with an optional
+// user-facing text; OnLog kinds are log levels ("info", "warn", "error").
+// [TranscriptionObserver] is a superset.
 type RecordingObserver interface {
 	OnState(status, text string)
 	OnLog(message, kind string)
 }
 
+// RecordingStartOptions configures one recording started through a recording
+// controller: where the transcript is delivered (Target, QuickNote), how it is
+// attributed (RecordingSessionID, CaptureChannel, CaptureEpoch), which live
+// paths are on (StreamSegments, ProviderStream, LiveCommitMode) and the
+// silence auto-stop. Label, when set, is logged when capture starts.
 type RecordingStartOptions struct {
 	// Context scopes provider-native streaming sessions. When nil,
 	// context.Background is used.
@@ -117,6 +132,8 @@ type RecordingStartOptions struct {
 	OnIdleTimeoutCallback func()
 }
 
+// RecordingStopOptions configures a stop request. Label prefixes the capture
+// log line ("<label>: 3.2s audio").
 type RecordingStopOptions struct {
 	Label string
 	// TailDelay keeps the recorder physically open for a short grace period

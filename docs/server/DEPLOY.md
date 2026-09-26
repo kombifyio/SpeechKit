@@ -26,6 +26,7 @@ Release tags follow the repository tags, for example
 
 ```bash
 export SPEECHKIT_SERVER_TOKEN="replace-with-a-local-dev-token"
+export GOOGLE_AI_API_KEY="..."  # optional, opt-in BYOK Gemini Live (enable [providers.google])
 export HF_TOKEN="..."           # optional Hugging Face Dictation
 export OPENAI_API_KEY="..."     # optional OpenAI STT/LLM/TTS
 

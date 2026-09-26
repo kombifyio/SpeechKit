@@ -25,6 +25,9 @@ func NewTranscriptionRunner(transcriber speechkit.Transcriber, store speechkit.P
 	}
 }
 
+// WithObserver sets the [speechkit.CommitObserver] notified after each
+// successful Commit and returns the runner for chaining (nil for a nil
+// receiver).
 func (r *TranscriptionRunner) WithObserver(observer speechkit.CommitObserver) *TranscriptionRunner {
 	if r == nil {
 		return nil
@@ -33,6 +36,13 @@ func (r *TranscriptionRunner) WithObserver(observer speechkit.CommitObserver) *T
 	return r
 }
 
+// Commit finalizes a transcript: it trims the text, prepends submission.Prefix
+// and persists the result. Quick-note submissions update the note named by
+// QuickNoteID (as a new paragraph when Prefix is set) or create one; other
+// submissions are saved as transcriptions, without audio for captures that
+// name a channel (meetings). The observer is notified afterwards; a nil store
+// skips persistence. It returns [ErrMissingRunner] on a nil receiver and
+// wrapped store errors, in which case nothing is reported.
 func (r *TranscriptionRunner) Commit(ctx context.Context, submission speechkit.Submission, transcript speechkit.Transcript) (speechkit.Completion, error) {
 	if r == nil {
 		return speechkit.Completion{}, ErrMissingRunner

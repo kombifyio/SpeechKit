@@ -53,7 +53,8 @@ export interface StartFrame {
   sequence_id?: string;
   /**
    * Selects the realtime backend for THIS session, e.g. "openai",
-   * "openai", "deepgram", "assemblyai", "cascaded". Empty uses the
+   * "deepgram", "assemblyai", "cascaded", or the opt-in BYOK "gemini"
+   * (only when the server operator configured Google). Empty uses the
    * server's configured default. An unknown or unconfigured provider is
    * rejected at start with a provider_unavailable error.
    */

@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
-	"github.com/kombifyio/SpeechKit/internal/tts"
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
 )
 
 func firstNonEmpty(values ...string) string {
@@ -80,6 +80,15 @@ func ResolveEnabledProvidersWithAuth(cfg *config.Config, auth Auth) (tts.Enabled
 				APIKey: apiKey,
 				Model:  firstNonEmpty(cfg.TTS.OpenAI.Model, cfg.Providers.OpenAI.TTSModel, "tts-1"),
 				Voice:  firstNonEmpty(cfg.TTS.OpenAI.Voice, cfg.Providers.OpenAI.TTSVoice, cfg.TTS.Voice, "nova"),
+			}
+		}
+	}
+
+	if cloudAllowed && cfg.TTS.Google.Enabled {
+		if apiKey := providerCredential(cfg, "google"); apiKey != "" {
+			enabled.Google = &tts.GoogleOpts{
+				APIKey: apiKey,
+				Voice:  firstNonEmpty(cfg.TTS.Google.Voice, cfg.TTS.Voice),
 			}
 		}
 	}

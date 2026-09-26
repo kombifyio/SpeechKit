@@ -23,6 +23,11 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 )
 
+// Errors of the Dictation runtime. [NewRuntime] rejects a missing Recorder or
+// Transcriber; [Runtime.Start] returns ErrAlreadyRecording while a recording
+// is active; [Runtime.Stop] returns ErrNotRecording without an active
+// recording and ErrAudioTooShort when the capture is shorter than
+// Options.MinPCMBytes, in which case nothing is transcribed.
 var (
 	ErrMissingRecorder    = errors.New("speechkit dictation: recorder is required")
 	ErrMissingTranscriber = errors.New("speechkit dictation: transcriber is required")
@@ -103,6 +108,12 @@ func NewService(opts Options) (*Service, error) {
 	return NewRuntime(opts)
 }
 
+// NewRuntime validates opts and builds the runtime. It returns
+// [ErrMissingRecorder] or [ErrMissingTranscriber] when those options are nil,
+// and an error when opts.Policy enables or pins a non-dictation mode, fails
+// [speechkit.ValidateRuntimePolicy] against opts.Profiles, or leaves no usable
+// dictation profile. Defaults: Language "auto", MinPCMBytes
+// [speechkit.DefaultMinPCMBytes], Profiles catalog.DefaultProviderProfiles().
 func NewRuntime(opts Options) (*Runtime, error) {
 	if opts.Recorder == nil {
 		return nil, ErrMissingRecorder
@@ -139,6 +150,10 @@ func NewRuntime(opts Options) (*Runtime, error) {
 	}, nil
 }
 
+// Start opens the recorder and begins capturing; with Stop it implements
+// [speechkit.DictationService]. It returns [ErrAlreadyRecording] while a
+// recording is active, ctx.Err() when ctx is already done, and the recorder's
+// error (leaving the runtime idle) when the device fails to open.
 func (r *Runtime) Start(ctx context.Context) error {
 	if r == nil {
 		return ErrMissingRecorder
@@ -166,6 +181,15 @@ func (r *Runtime) Start(ctx context.Context) error {
 	return nil
 }
 
+// Stop ends the capture and transcribes it; without an active recording it
+// returns [ErrNotRecording]. The returned [speechkit.DictationRun] always
+// carries timing and a [speechkit.TranscriptionFinalization]; a recorder,
+// [ErrAudioTooShort] or transcriber failure marks recognition failed and
+// returns that error. After recognition the transcript goes to Options.Output
+// (with Options.Target) and to Options.Store, which gets its own 15-second
+// budget; their errors are joined into the returned error while the run keeps
+// the recognized text. Options.Observer is notified after every finalization
+// step.
 func (r *Runtime) Stop(ctx context.Context) (speechkit.DictationRun, error) {
 	if r == nil {
 		return speechkit.DictationRun{}, ErrMissingRecorder

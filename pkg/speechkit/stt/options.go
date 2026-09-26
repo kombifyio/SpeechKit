@@ -8,6 +8,12 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
+// ResolvedTranscribeOptions is the provider-neutral view of one transcription
+// request after [ResolveTranscribeOptions] has layered every option source.
+// The scalar fields hold the effective values (empty, false or zero when
+// nothing set them); Model is the raw request override; Effective keeps every
+// option with the source it came from, which
+// [ResolvedTranscribeOptions.APILanguage] consults.
 type ResolvedTranscribeOptions struct {
 	Language              string
 	Model                 string
@@ -36,6 +42,14 @@ type ResolvedTranscribeOptions struct {
 	Effective     provideropts.EffectiveOptions
 }
 
+// ResolveTranscribeOptions resolves the options for one request against the
+// provider's STT option manifest (an empty manifest when none is registered;
+// profileID is only stamped on the result). Precedence, lowest to highest:
+// providerDefaults, opts.Options, providerOverrides merged with
+// opts.ProviderOptions, then the request's own Language, Prompt, Keyterms and
+// diarization wish. Options the manifest does not support are kept but
+// reported at debug level; Prompt and Keyterms fall back to the raw request
+// values when resolution leaves them empty.
 func ResolveTranscribeOptions(provider, profileID string, opts TranscribeOpts, providerDefaults, providerOverrides provideropts.Values) ResolvedTranscribeOptions {
 	manifest, ok := provideropts.FindManifest(provider, provideropts.ModalitySTT)
 	if !ok {
@@ -154,6 +168,11 @@ func normalizedRequestLanguage(language string, detectLanguage bool) string {
 	return strings.TrimSpace(language)
 }
 
+// APILanguage returns the language to put on the wire, or "" to let the
+// model detect it. It is empty when the language came only from the provider
+// default or was never set, when DetectLanguage is on, or when the language
+// is multilanguage (see [IsMultilanguage]); otherwise it is the trimmed
+// locale. Each provider translates "" into its own auto-detect dialect.
 func (r ResolvedTranscribeOptions) APILanguage() string {
 	option, ok := r.Effective.Options[provideropts.OptionLanguage]
 	if ok {

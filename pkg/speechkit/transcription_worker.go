@@ -4,6 +4,8 @@ import (
 	"context"
 )
 
+// DefaultProcessingMessage is the status text a TranscriptionWorker reports
+// through [TranscriptionObserver.OnState] while a job is being transcribed.
 const DefaultProcessingMessage = "Recording stopped · Transcribing"
 
 // EmptyFinalTranscriptMessage is shown when a provider returns a successful
@@ -65,6 +67,8 @@ type TranscriptionJob struct {
 	Target any
 }
 
+// Clone returns a deep copy of the job: the PCM and WAV buffers of the
+// Submission and of every Segment are copied. Target is shared.
 func (j TranscriptionJob) Clone() TranscriptionJob {
 	clone := j
 	clone.Submission = cloneSubmission(j.Submission)

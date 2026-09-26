@@ -11,8 +11,8 @@ import (
 	"net"
 
 	"github.com/kombifyio/SpeechKit/internal/server/audio"
-	"github.com/kombifyio/SpeechKit/internal/stt"
-	"github.com/kombifyio/SpeechKit/internal/tts"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
 )
 
 // Transcriber is the minimal STT surface the Wyoming adapter needs; satisfied

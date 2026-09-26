@@ -8,6 +8,9 @@ import (
 	"math"
 )
 
+// PCM format of every SpeechKit capture buffer: 16 kHz sample rate, one
+// channel, signed 16-bit little-endian samples, so a second of audio is
+// SampleRate*BytesPerSample (32000) bytes.
 const (
 	SampleRate     = 16000
 	Channels       = 1

@@ -71,6 +71,18 @@ func TestResolveOpenAIDisabledWithoutKey(t *testing.T) {
 	}
 }
 
+func TestResolveGoogleVoiceFallback(t *testing.T) {
+	t.Setenv("TEST_GOOGLE_KEY", "g-test")
+	cfg := newCfg()
+	cfg.TTS.Google.Enabled = true
+	cfg.Providers.Google.APIKeyEnv = "TEST_GOOGLE_KEY"
+	cfg.TTS.Voice = "de-DE-Neural2-B"
+	enabled, _ := ResolveEnabledProviders(cfg)
+	if enabled.Google == nil || enabled.Google.Voice != "de-DE-Neural2-B" {
+		t.Fatalf("google voice fallback to TTS.Voice failed: %+v", enabled.Google)
+	}
+}
+
 func TestResolveHuggingFaceModelDefault(t *testing.T) {
 	t.Setenv("TEST_HF_TOKEN", "hf-test")
 	cfg := newCfg()

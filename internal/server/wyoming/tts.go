@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/internal/server/audio"
-	"github.com/kombifyio/SpeechKit/internal/tts"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
 )
 
 // ttsChunkBytes is the PCM payload size per audio-chunk on the TTS path. Small

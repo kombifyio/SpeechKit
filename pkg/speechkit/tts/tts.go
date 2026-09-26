@@ -18,6 +18,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// ErrMissingRouter is returned by [NewService] and [Service.Synthesize] when
+// no [Router] is configured.
 var ErrMissingRouter = errors.New("speechkit tts: router is required")
 
 // ttsTracer instruments TTS synthesis. A no-op tracer is used when no
@@ -36,10 +38,20 @@ type Provider interface {
 // direct external API. Router strategies use this instead of provider names.
 type ProviderKind string
 
+// Provider kinds, from most to least local. The Router's "-only" strategies
+// count the first two as local.
 const (
-	ProviderKindLocalBuiltIn   ProviderKind = "local_built_in"
-	ProviderKindLocalProvider  ProviderKind = "local_provider"
-	ProviderKindCloudProvider  ProviderKind = "cloud_provider"
+	// ProviderKindLocalBuiltIn runs on the device under SpeechKit's control
+	// (the Piper subprocess) and needs no network at all.
+	ProviderKindLocalBuiltIn ProviderKind = "local_built_in"
+	// ProviderKindLocalProvider is a service the user runs on their own machine
+	// or network, such as an OpenAI-compatible Kokoro/openedai-speech server.
+	ProviderKindLocalProvider ProviderKind = "local_provider"
+	// ProviderKindCloudProvider is a hosted inference platform that routes to
+	// models (Hugging Face Inference) rather than a vendor's own API.
+	ProviderKindCloudProvider ProviderKind = "cloud_provider"
+	// ProviderKindDirectProvider is a vendor's own hosted API (OpenAI, Deepgram
+	// Aura, Microsoft Foundry).
 	ProviderKindDirectProvider ProviderKind = "direct_provider"
 )
 
@@ -89,11 +101,21 @@ type Result struct {
 // Strategy determines how Router selects providers.
 type Strategy string
 
+// Routing strategies. The Router never reorders providers: the "-first"
+// strategies admit every provider and try them in the order the host
+// registered them (see [BuildRouter]); the "-only" strategies filter by
+// [ProviderKind].
 const (
+	// StrategyCloudFirst is what [NewRouter] uses for an empty strategy; every
+	// provider is eligible.
 	StrategyCloudFirst Strategy = "cloud-first"
+	// StrategyLocalFirst also admits every provider; local precedence has to
+	// come from the host's provider order, not from the Router.
 	StrategyLocalFirst Strategy = "local-first"
-	StrategyCloudOnly  Strategy = "cloud-only"
-	StrategyLocalOnly  Strategy = "local-only"
+	// StrategyCloudOnly skips local built-in and local providers.
+	StrategyCloudOnly Strategy = "cloud-only"
+	// StrategyLocalOnly skips cloud and direct providers.
+	StrategyLocalOnly Strategy = "local-only"
 )
 
 // Router selects and falls back between TTS providers.
@@ -266,14 +288,19 @@ type Service struct {
 	defaultOpts SynthesizeOpts
 }
 
+// ServiceOption customises a [Service] during [NewService].
 type ServiceOption func(*Service)
 
+// WithDefaultOpts sets the [SynthesizeOpts] every [Service.Synthesize] call
+// starts from; per-call options are merged on top of them.
 func WithDefaultOpts(opts SynthesizeOpts) ServiceOption {
 	return func(s *Service) {
 		s.defaultOpts = opts
 	}
 }
 
+// NewService wraps router in a [Service]. It returns [ErrMissingRouter] when
+// router is nil; nil options are ignored.
 func NewService(router *Router, opts ...ServiceOption) (*Service, error) {
 	if router == nil {
 		return nil, ErrMissingRouter
@@ -287,6 +314,10 @@ func NewService(router *Router, opts ...ServiceOption) (*Service, error) {
 	return service, nil
 }
 
+// Synthesize renders text through the underlying [Router]. At most one opts
+// value is honoured: its non-zero scalar fields replace the service defaults
+// and its option maps are merged over them (provider-keyed overrides replace
+// per provider). A nil Service or missing router returns [ErrMissingRouter].
 func (s *Service) Synthesize(ctx context.Context, text string, opts ...SynthesizeOpts) (*Result, error) {
 	if s == nil || s.router == nil {
 		return nil, ErrMissingRouter
@@ -298,6 +329,7 @@ func (s *Service) Synthesize(ctx context.Context, text string, opts ...Synthesiz
 	return s.router.Synthesize(ctx, text, requestOpts)
 }
 
+// Router returns the underlying [Router], or nil for a nil Service.
 func (s *Service) Router() *Router {
 	if s == nil {
 		return nil

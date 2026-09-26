@@ -3,7 +3,7 @@
 package capture
 
 // threadPriorityAboveNormal mirrors the Windows constant so the shared
-// drain goroutine (capture_malgo_cgo.go) compiles unchanged on macOS.
+// drain goroutine (frame_dispatch_malgo_cgo.go) compiles unchanged on macOS.
 const threadPriorityAboveNormal = 1
 
 // setCurrentThreadPriority is a no-op on macOS for now: the drain thread

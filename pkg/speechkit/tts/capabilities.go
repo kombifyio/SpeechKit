@@ -14,6 +14,18 @@ func ttsCapabilities() []speechkit.Capability {
 	return []speechkit.Capability{speechkit.CapabilityTTS}
 }
 
-func (*OpenAI) Capabilities() []speechkit.Capability      { return ttsCapabilities() }
+// Capabilities implements [CapabilityReporter]; OpenAI reports
+// [speechkit.CapabilityTTS] only.
+func (*OpenAI) Capabilities() []speechkit.Capability { return ttsCapabilities() }
+
+// Capabilities implements [CapabilityReporter]; the opt-in Google Cloud
+// Text-to-Speech provider reports [speechkit.CapabilityTTS] only.
+func (*Google) Capabilities() []speechkit.Capability { return ttsCapabilities() }
+
+// Capabilities implements [CapabilityReporter]; HuggingFace reports
+// [speechkit.CapabilityTTS] only.
 func (*HuggingFace) Capabilities() []speechkit.Capability { return ttsCapabilities() }
-func (*Piper) Capabilities() []speechkit.Capability       { return ttsCapabilities() }
+
+// Capabilities implements [CapabilityReporter]; Piper reports
+// [speechkit.CapabilityTTS] only.
+func (*Piper) Capabilities() []speechkit.Capability { return ttsCapabilities() }

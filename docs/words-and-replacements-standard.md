@@ -140,7 +140,7 @@ closed `kind` discriminator.
 | `substitution` | Text-to-text rewrite, including spoken form to canonical form. | Former dictionary corrections. |
 | `synonym` | Normalize multiple variants to one preferred form. | Implicit or ad hoc today. |
 | `snippet` | Expand a short trigger into a static text block. | Host quick-insert behavior. |
-| `command` | Emit an intent and optional payload. | `internal/shortcuts` and voice-companion intent phrases. |
+| `command` | Emit an intent and optional payload. | `pkg/speechkit/assist/shortcuts` and voice-companion intent phrases. |
 | `template` | Produce a slotted prompt/template for Assist/Summarize flows. This Replacement kind is distinct from the Native Template catalog. | Assist rewrite, email, summarize instructions. |
 
 The kind set is closed. Adding another kind is a standard change, not a local
@@ -285,9 +285,11 @@ options.
 | --- | --- |
 | whisper.cpp, OpenAI-compatible, VPS, Ollama | Prompt text through `TranscribeOpts.Prompt`. |
 | Deepgram | Keyterm/keyword options. |
+| Google Cloud STT (opt-in BYOK) | `speechContexts.phrases` with boost where available. |
 | AssemblyAI | `word_boost` and boost-level options. |
 | HuggingFace | Prompt where the selected model supports it. |
-| Native Voice Agent | Provider-neutral context prompt where supported. |
+| Gemini Live (opt-in BYOK) | Recognition/system prompt hint. |
+| Other native Voice Agents | Provider-neutral context prompt where supported. |
 
 Weights map to provider-native boost scales where possible and are ignored
 explicitly where no provider equivalent exists.
@@ -347,7 +349,7 @@ Migration phases:
 3. Move UI, public docs, and new APIs to Words and Replacements.
 4. Keep any dictionary-shaped route or client method only as a temporary
    migration adapter while consumers move. It must not grow new behavior.
-5. Keep `internal/shortcuts` initially; re-derive it from command Replacements
+5. Keep `pkg/speechkit/assist/shortcuts` initially; re-derive it from command Replacements
    only after the new path is tested.
 
 Usage counts are recorded on the matched Word/Replacement IDs, not on a legacy

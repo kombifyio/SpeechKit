@@ -15,10 +15,16 @@ type TranscriptSessionLedger struct {
 	committed map[speechkit.TranscriptSegmentKey]struct{}
 }
 
+// NewTranscriptSessionLedger returns an empty ledger. A nil
+// *TranscriptSessionLedger is also usable: every call admits the segment.
 func NewTranscriptSessionLedger() *TranscriptSessionLedger {
 	return &TranscriptSessionLedger{}
 }
 
+// Begin reserves key for an in-flight commit and reports whether the caller
+// may proceed. It returns false when the key was already committed or is
+// being committed by another job. Zero keys (see
+// [speechkit.TranscriptSegmentKey.IsZero]) and nil ledgers always admit.
 func (l *TranscriptSessionLedger) Begin(key speechkit.TranscriptSegmentKey) bool {
 	if l == nil || key.IsZero() {
 		return true
@@ -41,6 +47,8 @@ func (l *TranscriptSessionLedger) Begin(key speechkit.TranscriptSegmentKey) bool
 	return true
 }
 
+// Commit marks key as committed and drops its in-flight reservation; later
+// Begin calls for the key return false.
 func (l *TranscriptSessionLedger) Commit(key speechkit.TranscriptSegmentKey) {
 	if l == nil || key.IsZero() {
 		return
@@ -54,6 +62,8 @@ func (l *TranscriptSessionLedger) Commit(key speechkit.TranscriptSegmentKey) {
 	l.committed[key] = struct{}{}
 }
 
+// Release drops the in-flight reservation taken by Begin without committing,
+// so a segment whose transcription failed can be retried.
 func (l *TranscriptSessionLedger) Release(key speechkit.TranscriptSegmentKey) {
 	if l == nil || key.IsZero() {
 		return

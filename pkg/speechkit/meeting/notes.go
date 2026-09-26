@@ -41,6 +41,10 @@ type NotesDocument struct {
 	Sections       []NotesSection `json:"sections"`
 }
 
+// Finalize normalizes a generated document for storage: it records the trimmed
+// locale, keeps at most five non-blank executive brief statements and, when the
+// model produced no brief, builds one from the first five bullet texts across
+// the sections in order. It returns the updated document.
 func (d NotesDocument) Finalize(locale string) NotesDocument {
 	d.Locale = strings.TrimSpace(locale)
 	if len(d.ExecutiveBrief) > 5 {

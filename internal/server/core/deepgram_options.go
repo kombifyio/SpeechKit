@@ -4,15 +4,15 @@ package core
 
 import (
 	"github.com/kombifyio/SpeechKit/internal/config"
-	"github.com/kombifyio/SpeechKit/internal/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/deepgram"
 )
 
-func deepgramOptionsFromConfig(cfg *config.Config) stt.DeepgramOptions {
+func deepgramOptionsFromConfig(cfg *config.Config) deepgram.Options {
 	if cfg == nil {
-		return stt.DeepgramOptions{}
+		return deepgram.Options{}
 	}
 	dg := cfg.Providers.Deepgram
-	return stt.DeepgramOptions{
+	return deepgram.Options{
 		Configured:            true,
 		SmartFormat:           dg.STTSmartFormat,
 		Dictation:             dg.STTDictation,
@@ -21,7 +21,7 @@ func deepgramOptionsFromConfig(cfg *config.Config) stt.DeepgramOptions {
 		DetectLanguage:        dg.STTDetectLanguage,
 		LanguageOverride:      config.DeepgramSTTLanguageOverride(dg.STTLanguage),
 		UseVocabularyKeyterms: dg.STTUseVocabularyKeyterms,
-		Keyterms:              stt.ParseDeepgramKeyterms(dg.STTKeyterms),
+		Keyterms:              deepgram.ParseKeyterms(dg.STTKeyterms),
 		EndpointingMs:         dg.STTEndpointingMs,
 	}
 }

@@ -223,6 +223,9 @@ func noConfiguredTTSSecret(cfg *Config) bool {
 	if cfg.TTS.OpenAI.Enabled && ProviderCredentialAvailable(cfg, "openai") {
 		return false
 	}
+	if cfg.TTS.Google.Enabled && ProviderCredentialAvailable(cfg, "google") {
+		return false
+	}
 	if cfg.TTS.HuggingFace.Enabled && ProviderCredentialAvailable(cfg, "huggingface") {
 		return false
 	}

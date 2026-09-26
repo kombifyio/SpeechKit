@@ -103,6 +103,9 @@ func New() *Provider {
 // Name identifies the provider in Voice Agent logs.
 func (p *Provider) Name() string { return "foundry-voicelive" }
 
+// SessionCapabilities reports the profile, default model and capability
+// flags of the shared "foundry" catalog descriptor (OpenAI Realtime on
+// Foundry), not of the Voice Live entry.
 func (p *Provider) SessionCapabilities() live.SessionCapabilities {
 	return live.SessionCapabilitiesForProvider("foundry")
 }

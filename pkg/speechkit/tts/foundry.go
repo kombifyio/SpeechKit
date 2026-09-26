@@ -71,6 +71,12 @@ func NewFoundry(opts FoundryOpts) *Foundry {
 	return p
 }
 
+// Synthesize posts to the OpenAI-compatible audio/speech route with the
+// deployment as model, the resolved voice (default "alloy"), the resolved
+// format (wav, mp3, opus or pcm; anything else becomes mp3) and the speed
+// clamped to 0.25–4.0. It fails on empty text, an empty BaseURL, an endpoint
+// that fails validation, a bearer-token error, a transport error, or a
+// non-200 response. The reported sample rate is 24 kHz.
 func (f *Foundry) Synthesize(ctx context.Context, text string, opts SynthesizeOpts) (*Result, error) {
 	if text == "" {
 		return nil, fmt.Errorf("foundry tts: empty text")
@@ -170,10 +176,14 @@ func (f *Foundry) Synthesize(ctx context.Context, text string, opts SynthesizeOp
 	}, nil
 }
 
+// Name returns "foundry", the provider id shared with [AzureSpeech].
 func (f *Foundry) Name() string { return "foundry" }
 
+// Kind reports [ProviderKindDirectProvider]: the resource's own API.
 func (f *Foundry) Kind() ProviderKind { return ProviderKindDirectProvider }
 
+// CloseIdleConnections drops idle keep-alive connections in the provider's
+// HTTP client. It is safe on a nil receiver.
 func (f *Foundry) CloseIdleConnections() {
 	if f != nil && f.client != nil {
 		f.client.CloseIdleConnections()
@@ -195,6 +205,9 @@ func (f *Foundry) authorize(ctx context.Context, req *http.Request) error {
 	return nil
 }
 
+// Health synthesizes a one-word mp3 clip through the deployment, which is a
+// billable request; it fails fast when neither an API key nor a bearer-token
+// source is configured, or when BaseURL is empty.
 func (f *Foundry) Health(ctx context.Context) error {
 	if f.apiKey == "" && f.bearerToken == nil {
 		return fmt.Errorf("foundry tts: no API key or Microsoft sign-in configured")

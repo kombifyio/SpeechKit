@@ -24,7 +24,8 @@ import (
 const defaultStreamWSReadLimitBytes int64 = 64 * 1024
 
 // StreamRouter is the minimal surface the streaming handler needs from the
-// STT router. The production implementation is `internal/router.Router`;
+// STT router. The production implementation is `stt.Router` from
+// pkg/speechkit/stt;
 // tests provide a fake.
 type StreamRouter interface {
 	StartDictationStream(ctx context.Context, opts speechkit.DictationStreamOptions, format speaker.AudioFormat) (speechkit.DictationStream, error)

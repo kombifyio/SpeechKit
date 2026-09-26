@@ -7,6 +7,11 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
+// ResolvedSynthesizeOptions is the provider-neutral view of one synthesis
+// request after [ResolveSynthesizeOptions] has layered every option source.
+// The scalar fields are the effective language, voice, speed multiplier and
+// container format (empty or zero when nothing set them); Effective keeps the
+// full option set with the source each value came from.
 type ResolvedSynthesizeOptions struct {
 	Locale    string
 	Voice     string
@@ -15,6 +20,13 @@ type ResolvedSynthesizeOptions struct {
 	Effective provideropts.EffectiveOptions
 }
 
+// ResolveSynthesizeOptions resolves the options for one request against the
+// provider's TTS option manifest (an empty manifest when none is registered;
+// profileID is only stamped on the result). Precedence, lowest to highest:
+// providerDefaults, opts.Options, providerOverrides merged with
+// opts.ProviderOptions, then the request's own Locale, Voice, Speed (when
+// positive) and Format. Options the manifest does not support are kept but
+// reported at debug level.
 func ResolveSynthesizeOptions(provider, profileID string, opts SynthesizeOpts, providerDefaults, providerOverrides provideropts.Values) ResolvedSynthesizeOptions {
 	manifest, ok := provideropts.FindManifest(provider, provideropts.ModalityTTS)
 	if !ok {

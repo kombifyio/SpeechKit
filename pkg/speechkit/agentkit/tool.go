@@ -41,10 +41,20 @@ type FuncTool struct {
 	Fn              func(ctx context.Context, args map[string]any) (map[string]any, error)
 }
 
-func (f *FuncTool) Name() string        { return f.ToolName }
+// Name implements [Tool] by returning ToolName, which must be non-empty and
+// unique before the tool is registered.
+func (f *FuncTool) Name() string { return f.ToolName }
+
+// Description implements [Tool] by returning ToolDescription.
 func (f *FuncTool) Description() string { return f.ToolDescription }
+
+// InputSchema implements [Tool] by returning ToolSchema; nil means the tool
+// takes no parameters.
 func (f *FuncTool) InputSchema() Schema { return f.ToolSchema }
 
+// Invoke implements [Tool] by delegating to Fn. When Fn is nil it returns an
+// error without invoking anything, which the agent runtime reports to the
+// model as a tool error.
 func (f *FuncTool) Invoke(ctx context.Context, args map[string]any) (map[string]any, error) {
 	if f.Fn == nil {
 		return nil, errors.New("agentkit: FuncTool has no Fn")

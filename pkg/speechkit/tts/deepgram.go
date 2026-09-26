@@ -62,8 +62,10 @@ func NewDeepgram(opts DeepgramOpts) *Deepgram {
 	return p
 }
 
+// Name returns "deepgram".
 func (d *Deepgram) Name() string { return "deepgram" }
 
+// Kind reports [ProviderKindDirectProvider]: Deepgram's own API.
 func (d *Deepgram) Kind() ProviderKind { return ProviderKindDirectProvider }
 
 // resolveModel picks the Aura voice/model for a request: an explicit per-request
@@ -110,6 +112,13 @@ func speakParams(model, format string) (url.Values, string) {
 	}
 }
 
+// Synthesize renders text with Aura. The voice is the resolved Voice option,
+// else the configured Model, else a locale default (German locales get a
+// German voice); Format selects mp3 (default), wav, pcm/linear16 or opus, all
+// at 24 kHz. Text beyond the Aura per-request limit is split on sentence
+// boundaries and the chunks joined; multi-chunk WAV is fetched as PCM and
+// re-wrapped in one header. It fails on empty text, a missing API key, an
+// endpoint that fails validation, a transport error, or a non-200 response.
 func (d *Deepgram) Synthesize(ctx context.Context, text string, opts SynthesizeOpts) (*Result, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -224,6 +233,8 @@ func (d *Deepgram) synthesizeChunk(ctx context.Context, endpoint, text string) (
 	return audio, nil
 }
 
+// Health synthesizes a one-word mp3 clip, which is a billable request; it
+// fails fast when no API key is configured.
 func (d *Deepgram) Health(ctx context.Context) error {
 	if d.apiKey == "" {
 		return fmt.Errorf("deepgram tts: no API key configured")
@@ -235,6 +246,8 @@ func (d *Deepgram) Health(ctx context.Context) error {
 	return nil
 }
 
+// CloseIdleConnections drops idle keep-alive connections in the provider's
+// HTTP client. It is safe on a nil receiver.
 func (d *Deepgram) CloseIdleConnections() {
 	if d != nil && d.client != nil {
 		d.client.CloseIdleConnections()

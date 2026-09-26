@@ -19,16 +19,11 @@ func TestPublicSDKDoesNotImportInternalPackages(t *testing.T) {
 	const internalPrefix = "github.com/kombifyio/SpeechKit/internal/"
 
 	// package dir (relative to pkg/speechkit) -> internal import paths that
-	// package is allowed to use, each with a justification.
-	allowlist := map[string]map[string]string{
-		// Adapter over the voice-companion skill catalog; all internal types
-		// are fully re-exported through public wrappers.
-		"assist/skills": {
-			internalPrefix + "assist":                        "skill catalog implementation",
-			internalPrefix + "assist/skills/voice_companion": "built-in skill set",
-			internalPrefix + "shortcuts":                     "shortcut actions used by skills",
-		},
-	}
+	// package is allowed to use, each with a justification. The list is empty:
+	// the last exception (the assist/skills adapter over the private skill
+	// catalog) was retired when the catalog moved into pkg/speechkit/assist.
+	// Add an entry only together with the matching documentation update.
+	allowlist := map[string]map[string]string{}
 
 	fset := token.NewFileSet()
 	seen := map[string]map[string]bool{}

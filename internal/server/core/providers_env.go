@@ -13,13 +13,18 @@ import (
 //
 // The set of keys mirrors what scripts/install-server.sh's
 // --strict-local-only flag refuses to write into .env:
-// OPENAI_API_KEY, GROQ_API_KEY, HF_TOKEN, and
+// GOOGLE_AI_API_KEY (via Google.APIKeyEnv or default),
+// the Google STT key env, OPENAI_API_KEY, GROQ_API_KEY, HF_TOKEN, and
 // OPENROUTER_API_KEY.
 func anyCloudKeyEnvSet(cfg *config.Config) bool {
 	if cfg == nil {
 		cfg = &config.Config{}
 	}
 	envs := []string{
+		config.ProviderCredentialEnvName(cfg, "google"),
+		config.ProviderCredentialEnvName(cfg, "google_stt"),
+		config.GoogleSTTCredentialsJSONEnvName(cfg),
+		config.GoogleApplicationCredentialsEnvName(cfg),
 		config.ProviderCredentialEnvName(cfg, "openai"),
 		config.ProviderCredentialEnvName(cfg, "groq"),
 		config.ProviderCredentialEnvName(cfg, "deepgram"),

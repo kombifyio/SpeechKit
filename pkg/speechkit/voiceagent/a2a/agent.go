@@ -35,14 +35,27 @@ type RequestContext struct {
 // SpeechKit clients.
 type HeaderProvider func(context.Context, RequestContext) (http.Header, error)
 
+// Config describes the registered A2A agent an [Agent] talks to. Endpoint,
+// TargetAgentID and SessionID are required.
 type Config struct {
-	Endpoint      string
+	// Endpoint is the agent's A2A JSON-RPC URL. It must use HTTPS; plain
+	// HTTP is accepted only for loopback hosts.
+	Endpoint string
+	// TargetAgentID names the registered agent; it is sent in the request
+	// metadata and in every [RequestContext].
 	TargetAgentID string
-	SessionID     string
-	HTTPClient    *http.Client
-	Headers       HeaderProvider
+	// SessionID is the A2A contextId every turn is sent under, so the
+	// remote agent can keep per-session memory.
+	SessionID string
+	// HTTPClient sends the turns; nil uses a client with a 60 s timeout.
+	HTTPClient *http.Client
+	// Headers optionally mints per-turn headers; nil adds none.
+	Headers HeaderProvider
 }
 
+// Agent implements [cascaded.Agent] by forwarding each utterance to a
+// registered A2A agent and returning the text parts of its answer. Build it
+// with [New]; it holds no per-turn state and is safe for concurrent use.
 type Agent struct {
 	endpoint      string
 	targetAgentID string
@@ -51,6 +64,9 @@ type Agent struct {
 	headers       HeaderProvider
 }
 
+// New validates config and returns an [Agent]. It fails when Endpoint is
+// missing or not HTTPS (HTTP is allowed only on loopback), or when
+// TargetAgentID or SessionID is blank.
 func New(config Config) (*Agent, error) {
 	endpoint, err := validateEndpoint(config.Endpoint)
 	if err != nil {
@@ -75,6 +91,12 @@ func New(config Config) (*Agent, error) {
 	}, nil
 }
 
+// Run sends one user turn as a JSON-RPC "message/stream" request and returns
+// the agent's text answer with Action "display". It fails closed: a blank
+// utterance, a [HeaderProvider] error (reported before any network call), a
+// non-2xx status, a JSON-RPC error object (also inside an SSE stream), or an
+// answer without text parts is an error. Streamed answers concatenate the
+// text of every result event.
 func (a *Agent) Run(ctx context.Context, input cascaded.AgentInput) (cascaded.AgentOutput, error) {
 	utterance := strings.TrimSpace(input.Utterance)
 	if utterance == "" {

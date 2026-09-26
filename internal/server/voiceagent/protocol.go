@@ -15,8 +15,8 @@ import "github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 //
 // Control frames are JSON text messages with a required "type" field.
 // Audio frames are binary messages containing raw PCM 16kHz S16 mono
-// (client → server) or 24kHz S16 mono (server → client). The first frame a
-// client sends must be a "start" message.
+// (client → server) or 24kHz S16 mono (server → client, Gemini Live native
+// output rate). The first frame a client sends must be a "start" message.
 
 // Client-to-server message types.
 const (
@@ -30,8 +30,8 @@ const (
 	// MsgCancel is the client's tap-to-interrupt: stop relaying the CURRENT
 	// agent reply's downlink audio. Idempotent, no payload. The server also
 	// invokes the provider-native response cancel where the provider protocol
-	// has one (OpenAI Realtime `response.cancel`); Deepgram Voice Agent,
-	// AssemblyAI Voice Agent, and the cascaded pipeline expose
+	// has one (OpenAI Realtime `response.cancel`); Gemini Live, Deepgram
+	// Voice Agent, AssemblyAI Voice Agent, and the cascaded pipeline expose
 	// no client-side cancel message, so for them the reply keeps generating
 	// upstream and the server suppresses its downlink audio until the turn
 	// ends. Every cancel — including one that arrives while nothing is

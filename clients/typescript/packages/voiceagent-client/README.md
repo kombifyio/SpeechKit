@@ -20,7 +20,7 @@ const session = await openBrowserSession({
   resolveWsUrl: (t) =>
     `wss://api.kombify.io/v1/speechkit/voiceagent/sessions/${t.session_id}/ws`,
   // `provider` selects the realtime backend for this session
-  // (openai | deepgram | assemblyai | cascaded); empty = server default.
+  // (openai | deepgram | assemblyai | cascaded, or opt-in BYOK gemini); empty = server default.
   start: { locale: "en-US", provider: "deepgram" },
   onPlaybackLevel: (level) => setAgentLevel(level), // RMS 0..1 for visualizers
   hooks: {

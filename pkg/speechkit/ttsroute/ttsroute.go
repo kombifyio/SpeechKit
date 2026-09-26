@@ -1,9 +1,9 @@
 // Package ttsroute holds the single source of truth that maps a Voice-Output
 // profile ID to the provider name the TTS routers use internally.
 //
-// It is a zero-dependency leaf package so that both the framework kernel
-// (internal/tts) and the public embeddable surface (pkg/speechkit/tts) can
-// share one mapping without violating the OSS boundary (pkg/** must not import
+// It is a zero-dependency leaf package so that the public embeddable surface
+// (pkg/speechkit/tts) and the host wiring (internal/ttswiring) share one
+// mapping without violating the OSS boundary (pkg/** must not import
 // internal/*). Keep the prefixes in sync with the TTS catalog entries.
 package ttsroute
 
@@ -16,7 +16,7 @@ import "strings"
 // Mapping:
 //
 //	tts.openai.*                        → "openai"
-//	tts.google.*                        → "retired-google-ai" (rejected by the router)
+//	tts.google.*                        → "google"
 //	tts.deepgram.*                      → "deepgram"
 //	tts.huggingface.*                   → "huggingface"
 //	tts.foundry.*                       → "foundry"
@@ -34,7 +34,7 @@ func PreferredProvider(profileID string) string {
 	case strings.HasPrefix(id, "tts.openai."):
 		return "openai"
 	case strings.HasPrefix(id, "tts.google."):
-		return "retired-google-ai"
+		return "google"
 	case strings.HasPrefix(id, "tts.deepgram."):
 		return "deepgram"
 	case strings.HasPrefix(id, "tts.huggingface."):

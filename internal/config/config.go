@@ -59,9 +59,9 @@ const (
 	DefaultAssistPrimaryProfileID     = hostconfig.DefaultAssistPrimaryProfileID
 	DefaultVoiceAgentPrimaryProfileID = hostconfig.DefaultVoiceAgentPrimaryProfileID
 	// DefaultTTSPrimaryProfileID is the Voice-Output profile pre-selected for
-	// fresh installs. Kokoro is the local built-in default after Google TTS
-	// was retired; OpenAI tts-1-hd remains the cloud fallback once a key is
-	// configured.
+	// fresh installs. Kokoro is the local built-in default; OpenAI tts-1-hd
+	// remains the cloud fallback once a key is configured. Opt-in cloud
+	// voices such as Google Cloud TTS are never the default.
 	DefaultTTSPrimaryProfileID  = "tts.local.kokoro-82m"
 	DefaultTTSFallbackProfileID = "tts.openai.tts-1-hd"
 )

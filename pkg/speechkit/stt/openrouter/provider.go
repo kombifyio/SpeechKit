@@ -1,3 +1,7 @@
+// Package openrouter adapts OpenRouter's JSON speech-to-text endpoint
+// (https://openrouter.ai/api/v1/audio/transcriptions) to [stt.STTProvider].
+// OpenRouter is a routing gateway in front of vendor models; audio is sent
+// base64-encoded. It needs an OpenRouter API key and public https egress.
 package openrouter
 
 import (
@@ -71,6 +75,10 @@ func (p *Provider) endpoint(path string) (string, error) {
 	return netsec.BuildEndpoint(baseURL, path, p.Validation)
 }
 
+// Transcribe implements [stt.STTProvider]: the audio is wrapped as WAV,
+// base64-encoded and posted as JSON with opts.Model, else the configured
+// Model. The response carries no language, so the result Language echoes the
+// requested locale or "multi".
 func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.TranscribeOpts) (*stt.Result, error) {
 	endpoint, err := p.endpoint("audio/transcriptions")
 	if err != nil {
@@ -141,10 +149,13 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 	}, nil
 }
 
+// Name returns "openrouter".
 func (p *Provider) Name() string {
 	return "openrouter"
 }
 
+// Health issues an authenticated GET /models; a transport failure or non-200
+// status is returned as the error.
 func (p *Provider) Health(ctx context.Context) error {
 	endpoint, err := p.endpoint("models")
 	if err != nil {

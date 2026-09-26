@@ -1,4 +1,8 @@
-// Package wakeword exposes embeddable SpeechKit wake-word contracts.
+// Package wakeword exposes embeddable SpeechKit wake-word contracts: the
+// phrase catalog, detection events, the hotkey Dispatcher, AutoEndPolicy and
+// the engine-neutral Detector and Pipeline. The package links no
+// keyword-spotting engine; import pkg/speechkit/wakeword/sherpa (or register
+// another Engine) to run detection.
 package wakeword
 
 import (
@@ -9,6 +13,9 @@ import (
 	"time"
 )
 
+// Audio contract of the wake-word pipeline: 16 kHz mono S16 PCM delivered in
+// 80 ms frames, matching pkg/speechkit/audio so one capture session can fan
+// out to VAD and wake-word without resampling.
 const (
 	SampleRate     = 16000
 	BytesPerSample = 2
@@ -182,6 +189,8 @@ func DefaultAutoEndConfig() AutoEndConfig {
 // EndReason is the result emitted by AutoEndPolicy.
 type EndReason string
 
+// EndReason values: the silence cutoff elapsed, or a transcript matched an
+// exit phrase.
 const (
 	EndReasonSilence    EndReason = "silence"
 	EndReasonExitPhrase EndReason = "exit_phrase"
@@ -370,11 +379,24 @@ func DefaultCatalog() []PhraseCatalogEntry {
 	}
 }
 
-// LookupPhrase returns the catalog entry matching id.
+// phraseIDAliases maps legacy config IDs to their current catalog entry.
+// "hey_quby" was the brand default's ID before it became "hey_kubi"; configs
+// in the wild still carry it and the bundled keywords file still labels the
+// phrase hey_quby.
+var phraseIDAliases = map[string]string{
+	"hey_quby": "hey_kubi",
+}
+
+// LookupPhrase returns the catalog entry matching id, or nil if none does.
+// The lookup is case-insensitive, trims surrounding whitespace and accepts
+// legacy aliases such as "hey_quby" for "hey_kubi".
 func LookupPhrase(id string) *PhraseCatalogEntry {
 	key := strings.ToLower(strings.TrimSpace(id))
 	if key == "" {
 		return nil
+	}
+	if alias, ok := phraseIDAliases[key]; ok {
+		key = alias
 	}
 	for _, entry := range DefaultCatalog() {
 		if entry.ID == key {

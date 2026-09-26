@@ -22,7 +22,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/internal/config"
 	deviceagentserver "github.com/kombifyio/SpeechKit/internal/server/deviceagent"
-	"github.com/kombifyio/SpeechKit/internal/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 )
 
 const (

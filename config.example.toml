@@ -285,7 +285,7 @@ fallback_profile_id = ""
 mode_source = "local"
 
 [model_selection.voice_agent]
-primary_profile_id = "realtime.builtin.pipeline" # Default local Voice Agent pipeline. Use realtime.openai.gpt-realtime-2, realtime.deepgram.voice-agent, or realtime.assemblyai.voice-agent for a native backend.
+primary_profile_id = "realtime.builtin.pipeline" # Default local Voice Agent pipeline. Use realtime.openai.gpt-realtime-2, realtime.deepgram.voice-agent, or realtime.assemblyai.voice-agent for a native backend. Opt-in BYOK: realtime.google.gemini-native-audio or realtime.google.gemini-live-translate after enabling [providers.google] with your own key.
 fallback_profile_id = ""
 mode_source = "local"
 
@@ -421,6 +421,12 @@ enabled = false
 model = "aura-2-thalia-en"    # Deepgram Aura-2 voice id; reuses DEEPGRAM_API_KEY from [providers.deepgram]
 voice = ""                    # optional explicit voice override (alias of model)
 
+# Opt-in BYOK only — Google Cloud TTS with your own credentials from
+# [providers.google]. Never enabled by default.
+# [tts.google]
+# enabled = false
+# voice = "de-DE-Studio-O"    # Google Cloud TTS voice name (e.g. de-DE-Studio-O, de-DE-Neural2-B)
+
 [tts.huggingface]
 enabled = false
 model = "parler-tts/parler-tts-mini-multilingual-v1.1"  # Multilingual TTS via HF Inference API
@@ -452,7 +458,7 @@ timeout_sec = 30                         # subprocess timeout
 
 [voice_agent]
 enabled = true
-provider = "openai"                         # Realtime backend: "openai", "deepgram", or "assemblyai"; Server-Target also accepts "cascaded"/"moshi"
+provider = "openai"                         # Realtime backend: "openai", "deepgram", "assemblyai", or opt-in BYOK "gemini" (needs [providers.google]); Server-Target also accepts "cascaded"/"moshi"
 model = "gpt-realtime-2"                    # OpenAI Realtime model; provider-native defaults apply when empty.
 fallback_model = ""
 voice = "Kore"                             # Voice for real-time model
@@ -526,6 +532,18 @@ vad_silence_duration_ms = 700
 # utility_model = "llama-3.1-8b-instant"
 # assist_model = "llama-3.3-70b-versatile"
 # agent_model = "llama-3.3-70b-versatile"
+
+# Opt-in BYOK only — Google Cloud STT (batch, streaming, diarization), Google
+# Cloud TTS, and Gemini Live with YOUR OWN Google credentials. Never a default;
+# SpeechKit only calls Google when you enable this block. Auth: API key, ADC
+# (GOOGLE_APPLICATION_CREDENTIALS), or a service-account JSON for Cloud STT v2.
+# [providers.google]
+# enabled = false
+# api_key_env = "GOOGLE_AI_API_KEY"
+# stt_api_key_env = "SPEECHKIT_GOOGLE_STT_API_KEY"
+# stt_credentials_json_env = "SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON"
+# application_credentials_env = "GOOGLE_APPLICATION_CREDENTIALS"
+# stt_model = "latest_long"
 
 # [providers.deepgram]
 # enabled = false
@@ -712,6 +730,7 @@ vad_silence_duration_ms = 700
 # #   tts.openedai.kokoro                 Local Provider (OpenAI-compatible Kokoro container)
 # #   tts.huggingface.parler-multilingual Cloud Provider (HF Inference Router)
 # #   tts.openai.tts-1-hd                 Direct Provider (OpenAI TTS-1-HD, six voices)
+# #   tts.google.studio-o-de              Direct Provider (Studio-O DE, opt-in BYOK via [providers.google]; never a default)
 # primary_profile_id = "tts.openai.tts-1-hd"
 # fallback_profile_id = "tts.local.kokoro-82m"     # Local fallback when cloud is unavailable
 # mode_source = "local"

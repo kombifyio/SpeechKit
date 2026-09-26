@@ -8,6 +8,7 @@ import "strings"
 // path (BuildRouter) while each keeps its own config-resolution specifics.
 type EnabledProviders struct {
 	OpenAI      *OpenAIOpts
+	Google      *GoogleOpts
 	Deepgram    *DeepgramOpts
 	HuggingFace *HuggingFaceOpts
 	Foundry     *FoundryOpts
@@ -27,15 +28,15 @@ type EnabledProviders struct {
 // order, applies optional model_selection pinning, and returns the router plus
 // human-readable notes. ok is false (router nil) when nothing is enabled.
 func BuildRouter(strategy Strategy, enabled EnabledProviders) (router *Router, ok bool, notes []string) {
-	if strings.HasPrefix(strings.TrimSpace(enabled.PreferredProfileID), "tts.google.") {
-		return nil, false, []string{"TTS: this provider profile is retired; select a supported provider"}
-	}
-
 	var providers []Provider
 
 	if enabled.OpenAI != nil {
 		providers = append(providers, NewOpenAI(*enabled.OpenAI))
 		notes = append(notes, "TTS: OpenAI registered (voice="+enabled.OpenAI.Voice+")")
+	}
+	if enabled.Google != nil {
+		providers = append(providers, NewGoogle(*enabled.Google))
+		notes = append(notes, "TTS: Google registered (voice="+enabled.Google.Voice+")")
 	}
 	if enabled.Deepgram != nil {
 		providers = append(providers, NewDeepgram(*enabled.Deepgram))

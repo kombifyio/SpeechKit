@@ -1,14 +1,23 @@
 package provideropts
 
+// Metadata stamped on every built-in manifest.
 const (
+	// SchemaProviderOptions is the schema identifier of the manifest format,
+	// echoed by the catalog API.
 	SchemaProviderOptions = "speechkit.provider_options.v1"
-	ManifestUpdated       = "2026-08-25"
+	// ManifestUpdated is the date (YYYY-MM-DD) the built-in manifests were
+	// last audited against vendor documentation.
+	ManifestUpdated = "2026-08-25"
 
+	// Modalities a manifest describes; [FindManifest] keys on them.
 	ModalitySTT        = "stt"
 	ModalityTTS        = "tts"
 	ModalityVoiceAgent = "voice_agent"
 )
 
+// DefaultManifests returns the built-in option manifests SpeechKit
+// registers for its STT, TTS, and Voice Agent adapters, one per provider
+// and modality. Each call builds a fresh slice.
 func DefaultManifests() []ProviderOptionManifest {
 	return []ProviderOptionManifest{
 		deepgramSTTManifest(),
@@ -18,20 +27,25 @@ func DefaultManifests() []ProviderOptionManifest {
 		// "vps" is the self-hosted whisper-server adapter's own identifier, which
 		// is what the resolver looks up; it has no catalog profile of its own.
 		openAISTTManifest("vps", "Self-hosted whisper-server", nil, "https://github.com/ggerganov/whisper.cpp"),
+		googleSTTManifest(),
 		assemblyAISTTManifest(),
 		openRouterSTTManifest(),
 		huggingFaceSTTManifest(),
 		localSTTManifest(),
 		deepgramTTSManifest(),
 		openAITTSManifest(),
+		googleTTSManifest(),
 		huggingFaceTTSManifest(),
 		piperTTSManifest(),
 		deepgramVoiceAgentManifest(),
 		assemblyAIVoiceAgentManifest(),
+		geminiVoiceAgentManifest(),
 		openAIVoiceAgentManifest(),
 	}
 }
 
+// ManifestsByProvider groups [DefaultManifests] by provider identifier; a
+// provider that serves several modalities has one entry per modality.
 func ManifestsByProvider() map[string][]ProviderOptionManifest {
 	out := map[string][]ProviderOptionManifest{}
 	for _, manifest := range DefaultManifests() {
@@ -40,6 +54,9 @@ func ManifestsByProvider() map[string][]ProviderOptionManifest {
 	return out
 }
 
+// FindManifest returns the built-in manifest for the adapter identifier
+// provider and modality (one of the Modality constants). The boolean is
+// false when no manifest describes that pair.
 func FindManifest(provider, modality string) (ProviderOptionManifest, bool) {
 	for _, manifest := range DefaultManifests() {
 		if manifest.Provider == provider && manifest.Modality == modality {

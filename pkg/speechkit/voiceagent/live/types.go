@@ -1,7 +1,7 @@
 // Package live exposes the low-level Voice Agent realtime-protocol types.
 //
 // This is the public-API surface for building custom realtime providers
-// (OpenAI Realtime or a third-party WebSocket model) and
+// (Gemini Live, OpenAI Realtime, or a third-party WebSocket model) and
 // for libraries that drive a SpeechKit session directly without going
 // through the higher-level [Service] in the parent package.
 //
@@ -22,19 +22,32 @@ import (
 // State represents the current state of a Voice Agent session.
 type State string
 
+// Session states as reported through [Callbacks.OnStateChange]. A session
+// starts and ends in [StateInactive].
 const (
-	StateInactive     State = "inactive"
-	StateConnecting   State = "connecting"
-	StateListening    State = "listening"
-	StateProcessing   State = "processing"
-	StateSpeaking     State = "speaking"
-	StateRecovering   State = "recovering"
+	// StateInactive means no session is running.
+	StateInactive State = "inactive"
+	// StateConnecting means Start is dialing the provider.
+	StateConnecting State = "connecting"
+	// StateListening means the session waits for user speech or text.
+	StateListening State = "listening"
+	// StateProcessing means the user turn ended and the model has not yet
+	// produced audio.
+	StateProcessing State = "processing"
+	// StateSpeaking means model audio is being delivered to the host.
+	StateSpeaking State = "speaking"
+	// StateRecovering means the provider announced a session end (GoAway)
+	// and a reconnect is in progress.
+	StateRecovering State = "recovering"
+	// StateDeactivating means Stop or error cleanup is closing the provider.
 	StateDeactivating State = "deactivating"
 )
 
 // ThinkingLevel controls how much deliberate reasoning a provider should spend.
 type ThinkingLevel string
 
+// Thinking levels for [ThinkingPolicy], from no deliberate reasoning (off)
+// to the most (high).
 const (
 	ThinkingLevelOff    ThinkingLevel = "off"
 	ThinkingLevelLow    ThinkingLevel = "low"
@@ -45,6 +58,9 @@ const (
 // StartSensitivity controls how aggressively automatic activity detection commits speech start.
 type StartSensitivity string
 
+// Start sensitivities for [ActivityDetectionPolicy]: high commits a speech
+// start earliest (OpenAI Realtime maps it to the lowest VAD threshold), low
+// latest.
 const (
 	StartSensitivityLow    StartSensitivity = "low"
 	StartSensitivityMedium StartSensitivity = "medium"
@@ -54,6 +70,8 @@ const (
 // EndSensitivity controls how aggressively automatic activity detection commits speech end.
 type EndSensitivity string
 
+// End sensitivities for [ActivityDetectionPolicy]: high commits a speech end
+// soonest after the user pauses, low waits longest.
 const (
 	EndSensitivityLow    EndSensitivity = "low"
 	EndSensitivityMedium EndSensitivity = "medium"
@@ -63,19 +81,35 @@ const (
 // ActivityHandling controls what the provider should do when new activity starts.
 type ActivityHandling string
 
+// Activity handling values for [ActivityDetectionPolicy].
 const (
-	ActivityHandlingUnspecified               ActivityHandling = ""
-	ActivityHandlingNoInterrupt               ActivityHandling = "no_interrupt"
+	// ActivityHandlingUnspecified keeps the provider default.
+	ActivityHandlingUnspecified ActivityHandling = ""
+	// ActivityHandlingNoInterrupt lets model playback finish even when the
+	// user starts speaking (barge-in disabled).
+	ActivityHandlingNoInterrupt ActivityHandling = "no_interrupt"
+	// ActivityHandlingStartOfActivityInterrupts stops model playback as soon
+	// as user activity starts (barge-in).
 	ActivityHandlingStartOfActivityInterrupts ActivityHandling = "start_of_activity_interrupts"
 )
 
 // TurnCoverage controls how the live API builds a user turn from incoming activity.
 type TurnCoverage string
 
+// Turn coverage values for [ActivityDetectionPolicy]. They follow the Google
+// Live API vocabulary and are honoured only by providers that expose the
+// setting.
 const (
-	TurnCoverageUnspecified               TurnCoverage = ""
-	TurnCoverageTurnIncludesOnlyActivity  TurnCoverage = "turn_includes_only_activity"
-	TurnCoverageTurnIncludesAllInput      TurnCoverage = "turn_includes_all_input"
+	// TurnCoverageUnspecified keeps the provider default.
+	TurnCoverageUnspecified TurnCoverage = ""
+	// TurnCoverageTurnIncludesOnlyActivity builds the user turn from detected
+	// activity only, dropping the silence around it.
+	TurnCoverageTurnIncludesOnlyActivity TurnCoverage = "turn_includes_only_activity"
+	// TurnCoverageTurnIncludesAllInput builds the user turn from all input
+	// since the previous turn, silence included.
+	TurnCoverageTurnIncludesAllInput TurnCoverage = "turn_includes_all_input"
+	// TurnCoverageTurnIncludesAudioActivity restricts the user turn to
+	// detected audio activity.
 	TurnCoverageTurnIncludesAudioActivity TurnCoverage = "turn_includes_audio_activity"
 )
 
@@ -118,20 +152,34 @@ type LivePolicies struct {
 // ToolBehavior controls whether the model waits for a tool result.
 type ToolBehavior string
 
+// Tool behaviours for [ToolDefinition].
 const (
+	// ToolBehaviorUnspecified keeps the provider default.
 	ToolBehaviorUnspecified ToolBehavior = ""
-	ToolBehaviorBlocking    ToolBehavior = "blocking"
+	// ToolBehaviorBlocking makes the model wait for the [ToolResponse] before
+	// it continues the turn.
+	ToolBehaviorBlocking ToolBehavior = "blocking"
+	// ToolBehaviorNonBlocking lets the model keep talking; the result is
+	// reintroduced according to [ToolResponse.Scheduling].
 	ToolBehaviorNonBlocking ToolBehavior = "non_blocking"
 )
 
 // ToolResponseScheduling controls how a non-blocking tool result is reintroduced into the conversation.
 type ToolResponseScheduling string
 
+// Scheduling values for the result of a non-blocking tool.
 const (
+	// ToolResponseSchedulingUnspecified keeps the provider default.
 	ToolResponseSchedulingUnspecified ToolResponseScheduling = ""
-	ToolResponseSchedulingSilent      ToolResponseScheduling = "silent"
-	ToolResponseSchedulingWhenIdle    ToolResponseScheduling = "when_idle"
-	ToolResponseSchedulingInterrupt   ToolResponseScheduling = "interrupt"
+	// ToolResponseSchedulingSilent adds the result to the conversation
+	// without prompting a response.
+	ToolResponseSchedulingSilent ToolResponseScheduling = "silent"
+	// ToolResponseSchedulingWhenIdle delivers the result once the model has
+	// finished its current output.
+	ToolResponseSchedulingWhenIdle ToolResponseScheduling = "when_idle"
+	// ToolResponseSchedulingInterrupt interrupts the current output to
+	// deliver the result immediately.
+	ToolResponseSchedulingInterrupt ToolResponseScheduling = "interrupt"
 )
 
 // ToolDefinition exposes a host-side action the Voice Agent may call.
@@ -202,7 +250,7 @@ type LiveReconnector interface {
 
 // LiveConfig configures a real-time session.
 type LiveConfig struct {
-	Provider  string // e.g. "deepgram", "assemblyai", "openai"
+	Provider  string // e.g. "deepgram", "assemblyai", "openai", "google"
 	ProfileID string // e.g. "realtime.openai.gpt-realtime-2"
 	Model     string // provider-specific realtime model id
 	// FallbackModel is tried when the primary Model's Connect fails. Empty
@@ -230,9 +278,17 @@ type LiveConfig struct {
 	RefinementPrompt string
 	VocabularyHint   string
 	Locale           string
-	// Region is retained for legacy configuration decoding only. Current
-	// providers in SpeechKit do not use it and it must not select a retired
-	// resources or route AI traffic.
+	// Region is the Google Cloud region the caller's API key / project is
+	// pinned to (e.g. "europe-west3", "us-central1"). Only the opt-in Gemini
+	// Live provider reads it; other providers ignore it. For Gemini Live (as
+	// of May 2026) the API
+	// exposes a single global WebSocket endpoint, so this field does NOT
+	// redirect traffic — it is logged at connect time for compliance evidence
+	// (byok.key_updated audit event) and reserved for future regional routing
+	// once Google publishes per-region hostnames. Data residency is controlled
+	// at the Google Cloud project level; both the project region AND this field
+	// must agree for audit records to be accurate.
+	// See docs/compliance/byok-gemini-region-pinning.md.
 	Region          string
 	Policies        LivePolicies
 	Tools           []ToolDefinition
@@ -242,20 +298,39 @@ type LiveConfig struct {
 	ProviderOptions provideropts.Values
 }
 
+// LiveEventType is the provider-neutral meaning of a [LiveMessage]. Providers
+// set it when translating native frames; [InferLiveEventTypes] derives it
+// from the populated fields otherwise.
 type LiveEventType string
 
+// Event types carried in [LiveMessage.EventType] and [LiveMessage.EventTypes].
 const (
-	LiveEventSessionReady     LiveEventType = "session_ready"
-	LiveEventInputPartial     LiveEventType = "input_partial"
-	LiveEventInputFinal       LiveEventType = "input_final"
-	LiveEventOutputAudio      LiveEventType = "output_audio"
-	LiveEventOutputText       LiveEventType = "output_text"
-	LiveEventToolCall         LiveEventType = "tool_call"
-	LiveEventToolResultAck    LiveEventType = "tool_result_ack"
-	LiveEventInterrupted      LiveEventType = "interrupted"
-	LiveEventTurnEnd          LiveEventType = "turn_end"
+	// LiveEventSessionReady announces that the session is configured and
+	// accepts input. The built-in providers do not emit it; speechkit-server
+	// surfaces it on its WebSocket protocol.
+	LiveEventSessionReady LiveEventType = "session_ready"
+	// LiveEventInputPartial carries an interim user transcript.
+	LiveEventInputPartial LiveEventType = "input_partial"
+	// LiveEventInputFinal carries a final user transcript segment.
+	LiveEventInputFinal LiveEventType = "input_final"
+	// LiveEventOutputAudio carries a chunk of agent audio.
+	LiveEventOutputAudio LiveEventType = "output_audio"
+	// LiveEventOutputText carries agent text or an output transcript.
+	LiveEventOutputText LiveEventType = "output_text"
+	// LiveEventToolCall carries host-side tool calls.
+	LiveEventToolCall LiveEventType = "tool_call"
+	// LiveEventToolResultAck confirms that a tool result reached the model;
+	// speechkit-server emits it for server-executed tools.
+	LiveEventToolResultAck LiveEventType = "tool_result_ack"
+	// LiveEventInterrupted reports user barge-in.
+	LiveEventInterrupted LiveEventType = "interrupted"
+	// LiveEventTurnEnd marks the end of a model turn.
+	LiveEventTurnEnd LiveEventType = "turn_end"
+	// LiveEventSessionResumable reports that the session can be resumed after
+	// a reconnect.
 	LiveEventSessionResumable LiveEventType = "session_resumable"
-	LiveEventSessionEnd       LiveEventType = "session_end"
+	// LiveEventSessionEnd reports that the provider is ending the session.
+	LiveEventSessionEnd LiveEventType = "session_end"
 )
 
 // HostPromptKind identifies a trusted, locally generated text turn. These
@@ -264,8 +339,13 @@ const (
 // response.
 type HostPromptKind string
 
+// Host prompt kinds. The idle kinds are raised by [IdleTimer].
 const (
-	HostPromptIdleReminder   HostPromptKind = "idle_reminder"
+	// HostPromptIdleReminder asks the model to check in with a user who has
+	// been silent for [IdleConfig.ReminderAfter].
+	HostPromptIdleReminder HostPromptKind = "idle_reminder"
+	// HostPromptIdleDeactivate asks the model to say goodbye before the
+	// session is stopped after [IdleConfig.DeactivateAfter].
 	HostPromptIdleDeactivate HostPromptKind = "idle_deactivate"
 	// HostPromptAgentProgress carries progress from a long-running host-side
 	// tool (e.g. the external coding agent bridge) back into the dialogue.
@@ -274,8 +354,13 @@ const (
 	HostPromptAgentProgress HostPromptKind = "agent_progress"
 )
 
+// HostPromptEventType is the phase of a host prompt reported in a
+// [HostPromptEvent].
 type HostPromptEventType string
 
+// Host prompt phases. Started is delivered synchronously before the prompt is
+// sent and may be rejected through [Callbacks.OnHostPrompt]; exactly one of
+// Sent or SendFailed follows for an accepted prompt.
 const (
 	HostPromptStarted    HostPromptEventType = "started"
 	HostPromptSent       HostPromptEventType = "sent"

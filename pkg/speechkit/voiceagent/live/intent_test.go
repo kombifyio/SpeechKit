@@ -53,6 +53,35 @@ func TestResolveProviderIntentHonorsPreferredProviderOrder(t *testing.T) {
 	}
 }
 
+// Gemini Live is an opt-in BYOK provider: an intent that does not name it
+// never resolves to it, even when it matches every preferred capability; an
+// intent that names it does.
+func TestResolveProviderIntentPicksOptInGoogleOnlyWhenNamed(t *testing.T) {
+	t.Parallel()
+	implicit := ProviderIntent{
+		RequiredCapabilities:  []LiveCapabilityFlag{LiveCapabilityRealtimeAudio},
+		PreferredCapabilities: []LiveCapabilityFlag{LiveCapabilityReasoningEffort, LiveCapabilitySessionResume},
+		SelectionPolicy:       ProviderSelectionPolicy{AllowPreview: true},
+	}
+	plan, err := ResolveProviderIntent(implicit, nil)
+	if err != nil {
+		t.Fatalf("ResolveProviderIntent: %v", err)
+	}
+	if plan.Provider == "google" {
+		t.Fatalf("implicit intent resolved to opt-in provider: %+v", plan)
+	}
+
+	named := implicit
+	named.Provider = "gemini"
+	plan, err = ResolveProviderIntent(named, nil)
+	if err != nil {
+		t.Fatalf("ResolveProviderIntent(gemini): %v", err)
+	}
+	if plan.Provider != "google" || plan.ProfileID != "realtime.google.gemini-native-audio" {
+		t.Fatalf("named intent plan = %+v, want Gemini Live", plan)
+	}
+}
+
 func TestResolveProviderIntentUsesCustomDescriptorWithoutBuiltInProvider(t *testing.T) {
 	t.Parallel()
 	descriptors := []ProviderDescriptor{

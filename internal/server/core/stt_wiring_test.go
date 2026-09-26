@@ -7,8 +7,40 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/internal/config"
-	"github.com/kombifyio/SpeechKit/internal/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/assemblyai"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/openaicompat"
 )
+
+// Google Cloud STT needs its own credential: the Gemini GOOGLE_AI_API_KEY
+// alone must not register it, a dedicated STT key must.
+func TestBuildSTTRouterGoogleSTTNeedsDedicatedKey(t *testing.T) {
+	t.Setenv("GOOGLE_AI_API_KEY", "gemini-key")
+	t.Setenv("SPEECHKIT_GOOGLE_STT_API_KEY", "")
+	t.Setenv("GOOGLE_CLOUD_STT_API_KEY", "")
+	t.Setenv("GOOGLE_STT_API_KEY", "")
+
+	cfg := &config.Config{}
+	cfg.Providers.Google.Enabled = true
+	cfg.Providers.Google.APIKeyEnv = "GOOGLE_AI_API_KEY"
+	cfg.Providers.Google.STTModel = "latest_long"
+
+	_, providers, notes := buildSTTRouter(cfg)
+	if hasProvider(providers, "stt.google") {
+		t.Fatal("Google STT should not register with GOOGLE_AI_API_KEY alone")
+	}
+	if !hasNote(notes, "Google STT disabled") {
+		t.Fatalf("notes = %v, want disabled note", notes)
+	}
+
+	t.Setenv("SPEECHKIT_GOOGLE_STT_API_KEY", "speech-key")
+	_, providers, notes = buildSTTRouter(cfg)
+	if !hasProvider(providers, "stt.google") {
+		t.Fatal("Google STT should register when a dedicated STT key is set")
+	}
+	if !hasNote(notes, "source=SPEECHKIT_GOOGLE_STT_API_KEY") {
+		t.Fatalf("notes = %v, want dedicated key source", notes)
+	}
+}
 
 func TestBuildSTTRouterRegistersDeepgramWhenKeyIsSet(t *testing.T) {
 	t.Setenv("DEEPGRAM_API_KEY", "deepgram-key")
@@ -47,7 +79,7 @@ func TestBuildSTTRouterRegistersAssemblyAIWhenKeyIsSet(t *testing.T) {
 	if !hasNote(notes, "source=ASSEMBLYAI_API_KEY") {
 		t.Fatalf("notes = %v, want AssemblyAI key source", notes)
 	}
-	provider := findProvider[stt.AssemblyAIProvider](providers, "stt.assemblyai")
+	provider := findProvider[assemblyai.Provider](providers, "stt.assemblyai")
 	if provider == nil {
 		t.Fatalf("providers = %+v, want AssemblyAIProvider", providers)
 	}
@@ -66,7 +98,7 @@ func TestBuildSTTRouterUsesConfiguredOpenAIModel(t *testing.T) {
 
 	_, providers, notes := buildSTTRouter(cfg)
 
-	provider := findProvider[stt.OpenAICompatibleProvider](providers, "stt.openai")
+	provider := findProvider[openaicompat.Provider](providers, "stt.openai")
 	if provider == nil {
 		t.Fatalf("providers = %+v, want OpenAICompatibleProvider", providers)
 	}
@@ -88,7 +120,7 @@ func TestBuildSTTRouterUsesConfiguredGroqModel(t *testing.T) {
 
 	_, providers, notes := buildSTTRouter(cfg)
 
-	provider := findProvider[stt.OpenAICompatibleProvider](providers, "stt.groq")
+	provider := findProvider[openaicompat.Provider](providers, "stt.groq")
 	if provider == nil {
 		t.Fatalf("providers = %+v, want OpenAICompatibleProvider", providers)
 	}

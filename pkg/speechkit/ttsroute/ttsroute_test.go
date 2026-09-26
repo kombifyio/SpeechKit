@@ -11,7 +11,7 @@ func TestPreferredProvider(t *testing.T) {
 		{"  ", ""},
 		{"unknown.profile", ""},
 		{"tts.openai.nova", "openai"},
-		{"tts.google.studio-o", "retired-google-ai"},
+		{"tts.google.studio-o", "google"},
 		{"tts.huggingface.parler", "huggingface"},
 		{"tts.openedai.kokoro-v1", "kokoro"},
 		{"tts.kokoro.default", "kokoro"},

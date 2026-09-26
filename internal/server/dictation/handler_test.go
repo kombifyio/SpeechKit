@@ -9,6 +9,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"io"
 	"math"
 	"mime/multipart"
@@ -17,9 +19,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/kombifyio/SpeechKit/internal/stt"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 // fakeRouter is the test double we wire into the handler. It records the last

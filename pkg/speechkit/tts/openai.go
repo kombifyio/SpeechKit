@@ -72,6 +72,11 @@ type openAIRequest struct {
 	Speed          float64 `json:"speed,omitempty"`
 }
 
+// Synthesize posts to /v1/audio/speech with the configured model, the
+// resolved voice (default "nova"), the resolved format (wav, mp3, opus or
+// pcm; anything else becomes mp3) and the speed clamped to 0.25–4.0. It fails
+// on empty text, an endpoint that fails validation, a transport error, or a
+// non-200 response. The reported sample rate is 24 kHz.
 func (o *OpenAI) Synthesize(ctx context.Context, text string, opts SynthesizeOpts) (*Result, error) {
 	if text == "" {
 		return nil, fmt.Errorf("openai tts: empty text")
@@ -176,16 +181,22 @@ func (o *OpenAI) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 	}, nil
 }
 
+// Name returns "openai".
 func (o *OpenAI) Name() string { return "openai" }
 
+// Kind reports [ProviderKindDirectProvider]: OpenAI's own API.
 func (o *OpenAI) Kind() ProviderKind { return ProviderKindDirectProvider }
 
+// CloseIdleConnections drops idle keep-alive connections in the provider's
+// HTTP client. It is safe on a nil receiver.
 func (o *OpenAI) CloseIdleConnections() {
 	if o != nil && o.client != nil {
 		o.client.CloseIdleConnections()
 	}
 }
 
+// Health synthesizes a one-word mp3 clip, which is a billable request; it
+// fails fast when no API key is configured.
 func (o *OpenAI) Health(ctx context.Context) error {
 	if o.apiKey == "" {
 		return fmt.Errorf("openai tts: no API key configured")

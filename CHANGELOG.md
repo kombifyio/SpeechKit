@@ -9,6 +9,52 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.73.0](https://github.com/kombifyio/SpeechKit/compare/a5999471f8d81f6082631a3c550d8e261b64d6fc...a906f921b360aeb36841ba3627282992cd394ce8) (2026-09-26)
+
+### Highlights
+
+- **Bring your own Google voice**: Google Cloud speech-to-text, text-to-speech and Gemini Live are back as optional providers that run on your own key.
+- **Menus that work on tablets**: The speechkit.cc navigation opens with a tap and stays open, on iPad and every touch screen.
+- **Updates that finish the job**: Install and restart now relaunches SpeechKit on the first try.
+
+
+### ⚠ BREAKING CHANGES
+
+* **framework:** capture.OnCaptureDeviceRebound is removed; set capture.Config.OnDeviceRebound (and optionally Config.FramePool) on the session instead.
+
+### Features
+
+* **providers:** restore Google Cloud STT/TTS and Gemini Live as opt-in BYOK providers ([#559](https://github.com/kombifyio/SpeechKit/issues/559)) ([9518cfa](https://github.com/kombifyio/SpeechKit/commit/9518cfa7bf27ca7bd25392228e7766c1df913910))
+
+
+### Bug Fixes
+
+* **auth0:** create the SpeechKit Desktop client with the shared rotating refresh policy ([#563](https://github.com/kombifyio/SpeechKit/issues/563)) ([5277a7b](https://github.com/kombifyio/SpeechKit/commit/5277a7ba33db2026757c308c8cec6cf7f977bc4e))
+* **brand:** invalidate stale logo assets ([#536](https://github.com/kombifyio/SpeechKit/issues/536)) ([10b5aa7](https://github.com/kombifyio/SpeechKit/commit/10b5aa7db6b3f1be2106ed6be3055c481406d5e4))
+* **ci:** repin the internal updater with the org token ([#548](https://github.com/kombifyio/SpeechKit/issues/548)) ([2c4980a](https://github.com/kombifyio/SpeechKit/commit/2c4980a524561fc52ca169d3ba4ad09fb981341e))
+* **delivery:** report acknowledged-run progress from the runtime copy ([#552](https://github.com/kombifyio/SpeechKit/issues/552)) ([d6bff64](https://github.com/kombifyio/SpeechKit/commit/d6bff64b4e90fdaecd5a7ebd029c09f8603fa55f))
+* **deps:** update dependency @cloudflare/sandbox to ^0.12.10 ([#595](https://github.com/kombifyio/SpeechKit/issues/595)) ([db998af](https://github.com/kombifyio/SpeechKit/commit/db998aff8c9d9c985a57438528ff531d243cdb6e))
+* **deps:** update dependency @livekit/components-react to ^2.9.24 ([#596](https://github.com/kombifyio/SpeechKit/issues/596)) ([cadb7a9](https://github.com/kombifyio/SpeechKit/commit/cadb7a9429fadf824441eb2b74225d034024566b))
+* **deps:** update dependency @wailsio/runtime to ^3.0.0-beta.25 ([#597](https://github.com/kombifyio/SpeechKit/issues/597)) ([8d2387a](https://github.com/kombifyio/SpeechKit/commit/8d2387a0a97085ecd1c49636332dead9935ab4e7))
+* **deps:** update dependency livekit-client to ^2.22.3 ([#601](https://github.com/kombifyio/SpeechKit/issues/601)) ([9822542](https://github.com/kombifyio/SpeechKit/commit/9822542cc0360c08409b02bad4f1873644008e6e))
+* **deps:** update module github.com/gen2brain/malgo to v0.11.26 ([#602](https://github.com/kombifyio/SpeechKit/issues/602)) ([8432c35](https://github.com/kombifyio/SpeechKit/commit/8432c3565000ff33d1f144907d416aad5964ac02))
+* **deps:** update module github.com/github/copilot-sdk/go to v1.0.14 ([#603](https://github.com/kombifyio/SpeechKit/issues/603)) ([27a79cd](https://github.com/kombifyio/SpeechKit/commit/27a79cd219e2d8736e13eada4fa5a6c00f6c4493))
+* **deps:** update module github.com/k2-fsa/sherpa-onnx-go to v1.13.8 ([#604](https://github.com/kombifyio/SpeechKit/issues/604)) ([48b2562](https://github.com/kombifyio/SpeechKit/commit/48b2562353c04ab20c1796f5a1bcd0e30663b800))
+* **deps:** update module github.com/pion/webrtc/v4 to v4.2.21 ([#605](https://github.com/kombifyio/SpeechKit/issues/605)) ([3e56f66](https://github.com/kombifyio/SpeechKit/commit/3e56f662632c8cad5137c742cea483fbe712654b))
+* **deps:** update module golang.org/x/crypto to v0.56.0 [security] ([#573](https://github.com/kombifyio/SpeechKit/issues/573)) ([1fcd7fd](https://github.com/kombifyio/SpeechKit/commit/1fcd7fdeb1150da9b4eb8dcd8b5400f15d12ed2c))
+* **deps:** update room to v2.8.5 ([#607](https://github.com/kombifyio/SpeechKit/issues/607)) ([f571ef8](https://github.com/kombifyio/SpeechKit/commit/f571ef824dd5d9c3f68e2332326946974ef1360e))
+* **desktop:** first Install and restart must actually relaunch ([#530](https://github.com/kombifyio/SpeechKit/issues/530)) ([6e74415](https://github.com/kombifyio/SpeechKit/commit/6e74415f02faffe6c6f74461bf7298e09c8d7d9d))
+* **logos:** bake real vendor marks into the website and desktop app ([#558](https://github.com/kombifyio/SpeechKit/issues/558)) ([a8ad777](https://github.com/kombifyio/SpeechKit/commit/a8ad77741d6fd080ebb708c973ae2de194f20cf5))
+* **website:** keep nav dropdowns open on touch and tablet ([#610](https://github.com/kombifyio/SpeechKit/issues/610)) ([a906f92](https://github.com/kombifyio/SpeechKit/commit/a906f921b360aeb36841ba3627282992cd394ce8))
+* **website:** load the nav lockup from the WebP web tier ([#554](https://github.com/kombifyio/SpeechKit/issues/554)) ([571145a](https://github.com/kombifyio/SpeechKit/commit/571145a2fa763e42309a893236ea105b3bd3e3d1))
+
+
+### Code Refactoring
+
+* **framework:** dogfood the public SDK, per-session capture hooks, doc-gated pkg surface ([#540](https://github.com/kombifyio/SpeechKit/issues/540)) ([e5d8aea](https://github.com/kombifyio/SpeechKit/commit/e5d8aeaad22c2e660fa388d6edbc79168877517b))
+
+Notes cover changes after VERSION 0.72.0 (a5999471f8d81f6082631a3c550d8e261b64d6fc), the earliest available contiguous 0.72.x VERSION anchor, through selected source a906f921b360aeb36841ba3627282992cd394ce8.
+
 ## [0.72.1](https://github.com/kombifyio/SpeechKit/compare/v0.72.0...v0.72.1) (2026-09-20)
 
 

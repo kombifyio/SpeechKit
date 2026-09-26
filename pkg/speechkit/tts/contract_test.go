@@ -1,6 +1,8 @@
 package tts_test
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -22,6 +24,15 @@ func rawAudioSuccess(contentType string) http.HandlerFunc {
 	}
 }
 
+// googleAudioSuccess serves the Google base64 `{"audioContent": ...}` envelope.
+func googleAudioSuccess() http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"audioContent": base64.StdEncoding.EncodeToString([]byte("contract-fake-audio")),
+		})
+	}
+}
+
 // TestTTSProviderContract runs the shared conformance suite against the
 // HTTP-backed TTS providers that expose an overridable base URL.
 func TestTTSProviderContract(t *testing.T) {
@@ -36,6 +47,17 @@ func TestTTSProviderContract(t *testing.T) {
 				return p
 			},
 			Success: rawAudioSuccess("audio/mpeg"),
+		},
+		{
+			Name:         "google",
+			ExpectedName: "google",
+			NewProvider: func(baseURL string) tts.Provider {
+				p := tts.NewGoogle(tts.GoogleOpts{APIKey: "contract-key"})
+				p.BaseURL = baseURL
+				p.Validation = loopbackValidation
+				return p
+			},
+			Success: googleAudioSuccess(),
 		},
 		{
 			Name:         "huggingface",

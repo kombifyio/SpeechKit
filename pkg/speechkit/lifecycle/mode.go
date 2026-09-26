@@ -12,6 +12,8 @@ import (
 // the Device-Target and Server-Target adapter layers.
 type ModeKey string
 
+// Canonical mode keys, recognised by the Device-Target and Server-Target
+// adapter layers.
 const (
 	ModeDictation  ModeKey = "dictation"
 	ModeAssist     ModeKey = "assist"

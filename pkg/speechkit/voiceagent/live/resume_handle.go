@@ -24,6 +24,8 @@ type ResumeHandle struct {
 	now       func() time.Time // injectable for tests
 }
 
+// NewResumeHandle returns an empty handle whose TTL is measured against the
+// wall clock.
 func NewResumeHandle() *ResumeHandle {
 	return &ResumeHandle{now: time.Now}
 }

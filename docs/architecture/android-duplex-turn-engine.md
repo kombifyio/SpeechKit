@@ -131,8 +131,8 @@ endpointing to the provider the first time `noteProviderTurnEnd()` is called.
 
 - A cascaded pipeline never sends a provider turn signal and stays on
   client-side endpointing forever.
-- A provider with native turn detection — Deepgram Flux or gpt-realtime — sends
-  one on the first turn and takes over. Uplink then becomes
+- A provider with native turn detection — Deepgram Flux, gpt-realtime, Gemini
+  Live — sends one on the first turn and takes over. Uplink then becomes
   continuous, because a provider running its own VAD must hear everything.
 
 The consumer forwards the signal unconditionally in both cases and writes no

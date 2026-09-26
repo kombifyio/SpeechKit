@@ -14,7 +14,7 @@ const DefaultFrameCapacity = 4096
 
 // FramePool returns recyclable byte slices for short-lived PCM frame
 // buffers. The hot path it addresses is the malgo capture callback
-// (capture_malgo_cgo.go) which used to allocate a
+// (capture_device_malgo_cgo.go) which used to allocate a
 // fresh slice per callback (~33×/sec per active capture, ~3300×/sec
 // at 100 concurrent server sessions).
 //
@@ -59,9 +59,10 @@ type FramePool struct {
 	misses atomic.Uint64
 }
 
-// DefaultFramePool is the package-level pool. Most callers should use
-// the package functions Get / Put rather than constructing their own
-// pool. Tests that need isolation construct their own FramePool.
+// DefaultFramePool is the process-wide pool a session uses when
+// [Config.FramePool] is nil. Hosts that need isolation (several capture
+// sessions with different frame sizes, per-session statistics, tests)
+// construct their own FramePool and pass it in the session Config.
 var DefaultFramePool FramePool
 
 // Get returns a recyclable buffer from the default pool.

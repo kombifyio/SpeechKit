@@ -10,7 +10,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/internal/config"
 	"github.com/kombifyio/SpeechKit/internal/server/httpx"
-	"github.com/kombifyio/SpeechKit/internal/tts"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
 )
 
 type Handler struct {
@@ -85,6 +85,15 @@ func (h *Handler) voices(w http.ResponseWriter, r *http.Request) {
 			"id":        firstNonEmpty(h.cfg.TTS.OpenAI.Voice, h.cfg.Providers.OpenAI.TTSVoice, "nova"),
 			"locale":    "auto",
 			"default":   true,
+			"discovery": "configured",
+		})
+	}
+	if h.cfg != nil && h.cfg.TTS.Google.Enabled {
+		voices = append(voices, map[string]any{
+			"provider":  "google",
+			"id":        firstNonEmpty(h.cfg.TTS.Google.Voice, "en-US-Neural2-J"),
+			"locale":    "auto",
+			"default":   len(voices) == 0,
 			"discovery": "configured",
 		})
 	}

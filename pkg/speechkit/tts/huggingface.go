@@ -82,6 +82,13 @@ func voiceDescriptionForLocale(locale string) string {
 	}
 }
 
+// Synthesize posts text to the Inference API for the configured model. The
+// resolved Voice, when set, is sent as a Parler-TTS voice description;
+// otherwise a canned description for the resolved locale is used (none for
+// "auto"). The result format follows the response Content-Type (flac when
+// unrecognised) at a reported 24 kHz. It fails on empty text, a model id with
+// unsafe characters, an endpoint that fails validation, a transport error, or
+// a non-200 response.
 func (h *HuggingFace) Synthesize(ctx context.Context, text string, opts SynthesizeOpts) (*Result, error) {
 	if text == "" {
 		return nil, fmt.Errorf("huggingface tts: empty text")
@@ -168,16 +175,22 @@ func (h *HuggingFace) Synthesize(ctx context.Context, text string, opts Synthesi
 	}, nil
 }
 
+// Name returns "huggingface".
 func (h *HuggingFace) Name() string { return "huggingface" }
 
+// Kind reports [ProviderKindCloudProvider]: a hosted platform that routes to
+// models rather than a vendor's own API.
 func (h *HuggingFace) Kind() ProviderKind { return ProviderKindCloudProvider }
 
+// CloseIdleConnections drops idle keep-alive connections in the provider's
+// HTTP client. It is safe on a nil receiver.
 func (h *HuggingFace) CloseIdleConnections() {
 	if h != nil && h.client != nil {
 		h.client.CloseIdleConnections()
 	}
 }
 
+// Health only checks that a token is configured; it makes no request.
 func (h *HuggingFace) Health(ctx context.Context) error {
 	if h.token == "" {
 		return fmt.Errorf("huggingface tts: no token configured")

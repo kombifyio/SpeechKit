@@ -211,7 +211,7 @@ func (h *Handler) item(w http.ResponseWriter, r *http.Request) {
 }
 
 // uploadMetadata is the JSON part of the multipart upload. Field
-// names mirror the wakeword.TrainingRecord JSON sidecar produced by
+// names mirror the training.Record JSON sidecar produced by
 // the sidecar's capture pipeline so the client-side uploader can
 // re-use the bytes verbatim.
 type uploadMetadata struct {

@@ -94,8 +94,8 @@ func resolveCaptureDeviceHex(cfg Config) (string, error) {
 			"old_device_id", requested,
 			"new_device_id", selected,
 			"device_name", cfg.DeviceName)
-		if OnCaptureDeviceRebound != nil {
-			OnCaptureDeviceRebound(requested, selected, strings.TrimSpace(cfg.DeviceName))
+		if cfg.OnDeviceRebound != nil {
+			cfg.OnDeviceRebound(requested, selected, strings.TrimSpace(cfg.DeviceName))
 		}
 	}
 

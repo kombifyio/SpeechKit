@@ -1,3 +1,8 @@
+// Package huggingface adapts the Hugging Face Inference API (the hf-inference
+// route on router.huggingface.co) to [stt.STTProvider] for hosted ASR models
+// such as Whisper. It needs a Hugging Face access token and public https
+// egress; the model is addressed by its hub id and may answer 503 while it
+// loads.
 package huggingface
 
 import (
@@ -61,6 +66,11 @@ func (p *Provider) hfEndpoint(model string) (string, error) {
 	return netsec.BuildEndpoint(base, model, p.Validation)
 }
 
+// Transcribe implements [stt.STTProvider]: it posts the audio bytes as-is
+// (audio/wav) to the inference endpoint of opts.Model, else the configured
+// Model. No language is sent or returned, so the result Language echoes the
+// requested locale or "multi". A 503 means the model is still loading and a
+// 429 that the account is rate-limited; both surface as status errors.
 func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.TranscribeOpts) (*stt.Result, error) {
 	model := p.Model
 	if opts.Model != "" {
@@ -123,10 +133,14 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 	}, nil
 }
 
+// Name returns "huggingface".
 func (p *Provider) Name() string {
 	return "huggingface"
 }
 
+// Health issues an authenticated GET on the configured model's endpoint. A
+// 503 is reported as the model still loading; any other non-200 status is a
+// status error.
 func (p *Provider) Health(ctx context.Context) error {
 	endpoint, err := p.hfEndpoint(p.Model)
 	if err != nil {

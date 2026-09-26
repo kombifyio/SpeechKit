@@ -99,6 +99,15 @@ func (c *Client) CreateVoiceAgentSession(ctx context.Context) (*VoiceAgentTicket
 	return c.CreateVoiceAgentSessionWithOptions(ctx, VoiceAgentSessionOptions{})
 }
 
+// VoiceAgentSessionOptions is the optional POST /v1/voiceagent/sessions body
+// for [Client.CreateVoiceAgentSessionWithOptions]. AISessionID binds the
+// voice session to a durable agent conversation and is echoed back by the
+// server. Provider and TargetAgentID declare the intended backend: when the
+// edge bound the request to a registered agent, the server rejects the create
+// with 403 unless Provider is "kombify-agent" and TargetAgentID matches that
+// binding. The realtime backend itself is still chosen by the start frame
+// ([VoiceAgentStartFrame.Provider]) or the server default. The zero value
+// mints a plain native session.
 type VoiceAgentSessionOptions struct {
 	AISessionID   string `json:"ai_session_id,omitempty"`
 	Provider      string `json:"provider,omitempty"`

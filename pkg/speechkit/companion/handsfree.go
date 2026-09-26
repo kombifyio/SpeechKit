@@ -13,8 +13,16 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/wakeword"
 )
 
+// ErrMissingRuntime is returned by [NewHandsFree] when [Options.Runtime] is
+// nil, and by [HandsFree] methods called on a nil or runtime-less receiver.
 var ErrMissingRuntime = errors.New("speechkit companion: runtime is required")
+
+// ErrMissingAssist is returned when an Assist turn is requested but no
+// [Options.Assist] service was configured.
 var ErrMissingAssist = errors.New("speechkit companion: assist service is required")
+
+// ErrMissingContext is returned by [HandsFree.HandleWake] and
+// [HandsFree.ProcessAssist] when ctx is nil.
 var ErrMissingContext = errors.New("speechkit companion: context is required")
 
 // HandsFreeTarget identifies which strict SpeechKit mode a hands-free
@@ -45,15 +53,33 @@ type WakeRequestFunc func(context.Context, wakeword.DetectionEvent) (speechkit.A
 // idle sequence per Assist turn, with error as the terminal failure stage.
 type Stage string
 
+// Stage values reported to [Options.OnStage]. A hands-free Assist turn emits
+// them in the order listed, ending in StageIdle or StageError; the Voice
+// Agent and Dictation targets report only StageWake.
 const (
-	StageWake      Stage = "wake"
+	// StageWake follows the published wake event, before dispatch.
+	StageWake Stage = "wake"
+	// StageListening marks the host capturing the utterance through
+	// [Options.WakeRequest].
 	StageListening Stage = "listening"
-	StageThinking  Stage = "thinking"
-	StageSpeaking  Stage = "speaking"
-	StageIdle      Stage = "idle"
-	StageError     Stage = "error"
+	// StageThinking marks the Assist request being processed.
+	StageThinking Stage = "thinking"
+	// StageSpeaking is reported only when the result carries audio or
+	// SpeakText for the host to play.
+	StageSpeaking Stage = "speaking"
+	// StageIdle ends a turn, including one whose capture was aborted.
+	StageIdle Stage = "idle"
+	// StageError is terminal: the Assist service is missing or failed.
+	StageError Stage = "error"
 )
 
+// Options configures a [HandsFree] composer. Runtime is required. TargetMode,
+// when set, overrides the mode carried by each wake event. WakeSink, when
+// set, receives every detection after the wake event is published.
+// WakeRequest turns a detection into the Assist request; without it a wake
+// never starts an Assist turn. Assist, VoiceAgent, and TTS are the services
+// the respective targets use; TTS is optional and only synthesizes when the
+// result has SpeakText but no Audio.
 type Options struct {
 	Runtime     *speechkit.Runtime
 	TargetMode  HandsFreeTarget
@@ -73,6 +99,11 @@ type Options struct {
 	OnStage func(Stage)
 }
 
+// HandsFree composes wake-word activation with the strict SpeechKit modes
+// on top of a shared [speechkit.Runtime]. It publishes lifecycle events on
+// the runtime and reports [Stage] transitions to the host, but owns neither
+// audio playback nor UI. Build it with [NewHandsFree]; every method
+// tolerates a nil receiver.
 type HandsFree struct {
 	runtime            *speechkit.Runtime
 	targetMode         HandsFreeTarget
@@ -85,6 +116,10 @@ type HandsFree struct {
 	onStage            func(Stage)
 }
 
+// NewHandsFree builds a [HandsFree] from opts. It returns [ErrMissingRuntime]
+// when opts.Runtime is nil. A non-empty opts.TargetMode is normalized through
+// the same aliases accepted for wake-event modes (for example "dictate" or
+// "voice-agent"); unrecognized values fall back to [TargetAssist].
 func NewHandsFree(opts Options) (*HandsFree, error) {
 	if opts.Runtime == nil {
 		return nil, ErrMissingRuntime
@@ -112,6 +147,8 @@ func (h *HandsFree) stage(s Stage) {
 	}
 }
 
+// Runtime returns the shared [speechkit.Runtime] the composer publishes on,
+// or nil for a nil receiver.
 func (h *HandsFree) Runtime() *speechkit.Runtime {
 	if h == nil {
 		return nil
@@ -119,6 +156,8 @@ func (h *HandsFree) Runtime() *speechkit.Runtime {
 	return h.runtime
 }
 
+// Events returns the runtime's event channel (see [speechkit.Runtime.Events]),
+// or nil when the composer has no runtime.
 func (h *HandsFree) Events() <-chan speechkit.Event {
 	if h == nil || h.runtime == nil {
 		return nil
@@ -126,6 +165,9 @@ func (h *HandsFree) Events() <-chan speechkit.Event {
 	return h.runtime.Events()
 }
 
+// Start publishes [speechkit.EventCompanionSessionStarted] and then starts
+// the underlying runtime. It returns [ErrMissingRuntime] when no runtime is
+// bound.
 func (h *HandsFree) Start(ctx context.Context) error {
 	if h == nil || h.runtime == nil {
 		return ErrMissingRuntime
@@ -134,6 +176,10 @@ func (h *HandsFree) Start(ctx context.Context) error {
 	return h.runtime.Start(ctx)
 }
 
+// Stop stops the underlying runtime, publishes
+// [speechkit.EventCompanionSessionEnded] even when stopping failed, and
+// returns the runtime's error. It returns [ErrMissingRuntime] when no
+// runtime is bound.
 func (h *HandsFree) Stop(ctx context.Context) error {
 	if h == nil || h.runtime == nil {
 		return ErrMissingRuntime
@@ -143,6 +189,11 @@ func (h *HandsFree) Stop(ctx context.Context) error {
 	return err
 }
 
+// WakeSink adapts the composer to a [wakeword.Sink] so a wake-word pipeline
+// can drive it directly. Each detection runs [HandsFree.HandleWake] with a
+// background context; failures are published as
+// [speechkit.EventErrorRaised] rather than returned. It returns nil for a
+// nil receiver.
 func (h *HandsFree) WakeSink() wakeword.Sink {
 	if h == nil {
 		return nil
@@ -285,6 +336,8 @@ func (h *HandsFree) ProcessAssist(ctx context.Context, req speechkit.AssistReque
 	return result, nil
 }
 
+// Assist returns the configured [speechkit.AssistService], or nil when none
+// was set.
 func (h *HandsFree) Assist() speechkit.AssistService {
 	if h == nil {
 		return nil
@@ -292,6 +345,8 @@ func (h *HandsFree) Assist() speechkit.AssistService {
 	return h.assist
 }
 
+// VoiceAgent returns the configured [speechkit.VoiceAgentService], or nil
+// when none was set.
 func (h *HandsFree) VoiceAgent() speechkit.VoiceAgentService {
 	if h == nil {
 		return nil
@@ -299,6 +354,7 @@ func (h *HandsFree) VoiceAgent() speechkit.VoiceAgentService {
 	return h.voiceAgent
 }
 
+// TTS returns the configured [tts.Service], or nil when none was set.
 func (h *HandsFree) TTS() *tts.Service {
 	if h == nil {
 		return nil

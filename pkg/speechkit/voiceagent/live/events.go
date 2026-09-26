@@ -48,6 +48,11 @@ func InferLiveEventTypes(msg *LiveMessage) []LiveEventType {
 	return out
 }
 
+// NormalizeMessageEvents completes the event metadata of msg in place and
+// returns it: EventTypes is inferred with [InferLiveEventTypes] when empty,
+// EventType defaults to the first entry, and a non-empty providerEvent (the
+// native event name) is recorded as ProviderMetadata["provider_event"]
+// unless the provider already set one. A nil msg is returned unchanged.
 func NormalizeMessageEvents(msg *LiveMessage, providerEvent string) *LiveMessage {
 	if msg == nil {
 		return nil

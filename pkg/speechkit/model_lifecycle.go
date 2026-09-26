@@ -6,6 +6,8 @@ package speechkit
 // its model registry rows.
 type ModelLifecycle string
 
+// Model lifecycle stages, from generally available through preview and legacy
+// (still served but superseded) to deprecated (scheduled for removal).
 const (
 	ModelLifecycleGA         ModelLifecycle = "ga"
 	ModelLifecyclePreview    ModelLifecycle = "preview"

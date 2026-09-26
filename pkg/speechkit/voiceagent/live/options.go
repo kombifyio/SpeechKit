@@ -7,6 +7,13 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
+// ResolvedLiveOptions is the per-session view of the provider option layers
+// after [ResolveLiveOptions]: the effective locale, voice, context prompt,
+// language hints, key terms, reasoning effort and resume flag, plus the turn
+// detection and endpointing choices with the layer that set them, so a
+// provider can tell an explicit setting from its own default. EndpointingMs
+// is in milliseconds and zero when unset. Effective keeps the full
+// [provideropts.EffectiveOptions], including unsupported-option reports.
 type ResolvedLiveOptions struct {
 	Locale              string
 	Voice               string
@@ -22,6 +29,14 @@ type ResolvedLiveOptions struct {
 	Effective           provideropts.EffectiveOptions
 }
 
+// ResolveLiveOptions merges the option layers for provider's voice-agent
+// manifest, lowest precedence first: providerDefaults, cfg.Options,
+// providerOverrides merged with cfg.ProviderOptions, and a request layer
+// built from cfg.Locale, cfg.Voice and, when no key terms were configured
+// elsewhere, cfg.VocabularyHint split into terms. profileID is echoed into
+// the result. Options the provider cannot honour are logged at debug level
+// and listed in Effective.Unsupported; a provider without a manifest gets an
+// empty one.
 func ResolveLiveOptions(provider, profileID string, cfg LiveConfig, providerDefaults, providerOverrides provideropts.Values) ResolvedLiveOptions {
 	manifest, ok := provideropts.FindManifest(provider, provideropts.ModalityVoiceAgent)
 	if !ok {
@@ -92,11 +107,16 @@ func logUnsupportedOptions(reports []provideropts.UnsupportedOptionReport) {
 	}
 }
 
+// HasTurnDetectionOverride reports whether turn detection was set by a host
+// layer (global, provider or request) rather than left unset or to the
+// provider default.
 func (r ResolvedLiveOptions) HasTurnDetectionOverride() bool {
 	return r.TurnDetectionSource != provideropts.SourceUnset &&
 		r.TurnDetectionSource != provideropts.SourceProviderDefault
 }
 
+// HasEndpointingOverride reports whether endpointing was set by a host layer
+// rather than left unset or to the provider default.
 func (r ResolvedLiveOptions) HasEndpointingOverride() bool {
 	return r.EndpointingSource != provideropts.SourceUnset &&
 		r.EndpointingSource != provideropts.SourceProviderDefault
@@ -135,6 +155,8 @@ func splitOptionTerms(raw string) []string {
 	return out
 }
 
+// AppendContextPrompt appends contextPrompt to base under a "Context:"
+// heading. Both are trimmed; when either is empty the other is returned.
 func AppendContextPrompt(base, contextPrompt string) string {
 	base = strings.TrimSpace(base)
 	contextPrompt = strings.TrimSpace(contextPrompt)

@@ -1,7 +1,7 @@
 // Package toolbridge adapts Assist-mode tools (assist.ToolMatcher /
 // assist.ToolExecutor — the deterministic skill layer, e.g. the Home
 // Assistant bridge) into agentkit.Tools, so realtime voice agents
-// (for example Deepgram Voice Agent function calling) can invoke
+// (Deepgram Voice Agent function calling, Gemini Live tools) can invoke
 // the same skill implementations that one-shot Assist turns use.
 //
 // One tool vocabulary, two invocation styles: Assist matches on the raw
@@ -22,6 +22,9 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/assist"
 )
 
+// ErrMissingExecutor is returned by the constructor when Options lacks the
+// Matcher or the Executor; a bridged tool cannot gate or run calls without
+// both.
 var ErrMissingExecutor = errors.New("speechkit toolbridge: matcher and executor are required")
 
 // Options describe one bridged tool.

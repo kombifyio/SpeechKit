@@ -20,6 +20,9 @@
 //
 //   - [github.com/kombifyio/SpeechKit/pkg/speechkit/dictation]
 //   - [github.com/kombifyio/SpeechKit/pkg/speechkit/assist]
+//   - [github.com/kombifyio/SpeechKit/pkg/speechkit/assist/skills]
+//     (Voice-Companion skill catalog; the skills live in
+//     assist/skills/companion and the codeword intents in assist/shortcuts)
 //   - [github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent]
 //   - [github.com/kombifyio/SpeechKit/pkg/speechkit/agentkit] (tool
 //     registry, session memory, lifecycle hooks for Voice Agent hosts)
