@@ -162,6 +162,10 @@ type ShortcutLocaleConfig struct {
 }
 
 type UIConfig struct {
+	// Language is the explicit app UI language (BCP-47, for example "de").
+	// Empty follows the operating system. The desktop frontend owns the
+	// choice; the native tray mirrors it through the ui:locale event.
+	Language                string                         `toml:"language,omitempty"`
 	OverlayEnabled          bool                           `toml:"overlay_enabled"`
 	OverlayPosition         string                         `toml:"overlay_position"` // "top", "bottom", "left", "right"
 	OverlayMovable          bool                           `toml:"overlay_movable"`

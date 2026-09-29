@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="speechkit_ime_label">SpeechKit Entrada de voz</string>
+    <string name="speechkit_ime_subtype_de">Alemán (voz)</string>
+    <string name="speechkit_ime_subtype_en">Inglés (voz)</string>
+    <string name="speechkit_ime_mic_start">Iniciar dictado</string>
+    <string name="speechkit_ime_mic_stop">Detener dictado</string>
+    <string name="speechkit_ime_status_idle">Toca el micrófono para dictar</string>
+    <string name="speechkit_ime_status_connecting">Conectando…</string>
+    <string name="speechkit_ime_status_listening">Escuchando…</string>
+    <string name="speechkit_ime_status_finishing">Finalizando…</string>
+    <string name="speechkit_ime_status_committed">Insertado</string>
+    <string name="speechkit_ime_status_blocked">La entrada de voz está desactivada en los campos de contraseña</string>
+    <string name="speechkit_ime_status_needs_permission">Se necesita permiso del micrófono</string>
+    <string name="speechkit_ime_recording_indicator">Grabando</string>
+    <string name="speechkit_ime_action_retry">Reintentar</string>
+    <string name="speechkit_ime_switch_keyboard">Volver al teclado</string>
+    <string name="speechkit_ime_language_chip">Idioma de dictado</string>
+    <string name="speechkit_ime_error_generic">Error en el dictado</string>
+    <string name="speechkit_ime_error_not_configured">No hay servidor configurado: abre la app SpeechKit</string>
+    <string name="speechkit_ime_error_mic_denied">Permiso del micrófono denegado</string>
+    <string name="speechkit_ime_action_voice_agent">Asistente de voz</string>
+    <string name="speechkit_ime_agent_action_dictation">Dictado</string>
+    <string name="speechkit_ime_agent_action_end">Finalizar conversación</string>
+    <string name="speechkit_ime_agent_hold_to_talk">Mantén pulsado para hablar</string>
+    <string name="speechkit_ime_agent_release">Suelta</string>
+    <string name="speechkit_ime_agent_speaker_user">Tú</string>
+    <string name="speechkit_ime_agent_speaker_agent">Asistente</string>
+    <string name="speechkit_ime_agent_phase_inactive">Listo</string>
+    <string name="speechkit_ime_agent_phase_connecting">Conectando…</string>
+    <string name="speechkit_ime_agent_phase_listening">Escuchando</string>
+    <string name="speechkit_ime_agent_phase_processing">Pensando…</string>
+    <string name="speechkit_ime_agent_phase_speaking">Respondiendo</string>
+    <string name="speechkit_ime_agent_phase_ended">Finalizado</string>
+    <string name="speechkit_ime_agent_error_provider_unavailable">Este proveedor de voz no está configurado en el servidor</string>
+    <string name="speechkit_ime_agent_error_no_server">El asistente de voz necesita un servidor SpeechKit vinculado</string>
+</resources>

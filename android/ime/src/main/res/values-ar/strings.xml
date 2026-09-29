@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="speechkit_ime_label">إدخال SpeechKit الصوتي</string>
+    <string name="speechkit_ime_subtype_de">الألمانية (صوت)</string>
+    <string name="speechkit_ime_subtype_en">الإنجليزية (صوت)</string>
+    <string name="speechkit_ime_mic_start">بدء الإملاء</string>
+    <string name="speechkit_ime_mic_stop">إيقاف الإملاء</string>
+    <string name="speechkit_ime_status_idle">اضغط على الميكروفون للإملاء</string>
+    <string name="speechkit_ime_status_connecting">جارٍ الاتصال…</string>
+    <string name="speechkit_ime_status_listening">جارٍ الاستماع…</string>
+    <string name="speechkit_ime_status_finishing">جارٍ الإنهاء…</string>
+    <string name="speechkit_ime_status_committed">تم الإدراج</string>
+    <string name="speechkit_ime_status_blocked">الإدخال الصوتي معطّل في حقول كلمات المرور</string>
+    <string name="speechkit_ime_status_needs_permission">مطلوب إذن الميكروفون</string>
+    <string name="speechkit_ime_recording_indicator">جارٍ التسجيل</string>
+    <string name="speechkit_ime_action_retry">إعادة المحاولة</string>
+    <string name="speechkit_ime_switch_keyboard">العودة إلى لوحة المفاتيح</string>
+    <string name="speechkit_ime_language_chip">لغة الإملاء</string>
+    <string name="speechkit_ime_error_generic">فشل الإملاء</string>
+    <string name="speechkit_ime_error_not_configured">لم يتم إعداد أي خادم: افتح تطبيق SpeechKit</string>
+    <string name="speechkit_ime_error_mic_denied">تم رفض إذن الميكروفون</string>
+    <string name="speechkit_ime_action_voice_agent">المساعد الصوتي</string>
+    <string name="speechkit_ime_agent_action_dictation">الإملاء</string>
+    <string name="speechkit_ime_agent_action_end">إنهاء المحادثة</string>
+    <string name="speechkit_ime_agent_hold_to_talk">اضغط مع الاستمرار للتحدث</string>
+    <string name="speechkit_ime_agent_release">حرّر</string>
+    <string name="speechkit_ime_agent_speaker_user">أنت</string>
+    <string name="speechkit_ime_agent_speaker_agent">المساعد</string>
+    <string name="speechkit_ime_agent_phase_inactive">جاهز</string>
+    <string name="speechkit_ime_agent_phase_connecting">جارٍ الاتصال…</string>
+    <string name="speechkit_ime_agent_phase_listening">جارٍ الاستماع</string>
+    <string name="speechkit_ime_agent_phase_processing">جارٍ التفكير…</string>
+    <string name="speechkit_ime_agent_phase_speaking">جارٍ الإجابة</string>
+    <string name="speechkit_ime_agent_phase_ended">انتهت</string>
+    <string name="speechkit_ime_agent_error_provider_unavailable">لم يتم إعداد مزود الصوت هذا على الخادم</string>
+    <string name="speechkit_ime_agent_error_no_server">يحتاج المساعد الصوتي إلى خادم SpeechKit مقترن</string>
+</resources>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Per-app language list for Android 13+ system settings. Keep in step with
+     the values-* directories of app, ime and assistant. -->
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="en" />
+    <locale android:name="de" />
+    <locale android:name="es" />
+    <locale android:name="zh-Hans" />
+    <locale android:name="hi" />
+    <locale android:name="ar" />
+</locale-config>

@@ -42,25 +42,41 @@ func (h *Handler) transcribeAndReply(w http.ResponseWriter, r *http.Request, rea
 }
 
 func (h *Handler) transcribeBytes(w http.ResponseWriter, r *http.Request, raw []byte, contentType string, opts stt.TranscribeOpts) {
+	resp, failure := h.transcribe(r, raw, contentType, opts)
+	if failure != nil {
+		httpx.WriteError(w, failure.status, failure.code, failure.message)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// transcribeFailure is a mapped transcription error: HTTP status plus the
+// stable error-envelope code and message.
+type transcribeFailure struct {
+	status  int
+	code    string
+	message string
+}
+
+// transcribe decodes raw audio, routes it through the STT kernel, applies
+// customization and persists the transcript. It is shared by the native
+// dictation route and the OpenAI-compatible /v1/audio/transcriptions route so
+// both run the identical kernel path; only the wire shapes differ.
+func (h *Handler) transcribe(r *http.Request, raw []byte, contentType string, opts stt.TranscribeOpts) (*transcribeResponse, *transcribeFailure) {
 	decoded, err := audio.DecodeWithLimits(r.Context(), raw, contentType, h.decodeLimits)
 	if err != nil {
 		if errors.Is(err, audio.ErrUnsupportedFormat) {
-			httpx.WriteError(w, http.StatusUnsupportedMediaType, "unsupported_audio_format",
-				err.Error())
-			return
+			return nil, &transcribeFailure{http.StatusUnsupportedMediaType, "unsupported_audio_format", err.Error()}
 		}
 		if errors.Is(err, audio.ErrDecodedAudioTooLarge) {
-			httpx.WriteError(w, http.StatusRequestEntityTooLarge, "payload_too_large", err.Error())
-			return
+			return nil, &transcribeFailure{http.StatusRequestEntityTooLarge, "payload_too_large", err.Error()}
 		}
-		httpx.WriteError(w, http.StatusBadRequest, "invalid_audio",
-			"failed to decode audio: "+err.Error())
-		return
+		return nil, &transcribeFailure{http.StatusBadRequest, "invalid_audio", "failed to decode audio: " + err.Error()}
 	}
 	if len(decoded.PCM) == 0 {
-		httpx.WriteError(w, http.StatusBadRequest, "empty_audio",
-			"decoded audio contains no samples")
-		return
+		return nil, &transcribeFailure{http.StatusBadRequest, "empty_audio", "decoded audio contains no samples"}
 	}
 
 	started := time.Now()
@@ -78,19 +94,13 @@ func (h *Handler) transcribeBytes(w http.ResponseWriter, r *http.Request, raw []
 			"duration_ms", decoded.DurationMs,
 			"format", decoded.SourceFormat,
 		)
-		httpx.WriteError(w, http.StatusServiceUnavailable, "provider_unavailable",
-			"no STT provider could satisfy the request: "+err.Error())
-		return
+		return nil, &transcribeFailure{http.StatusServiceUnavailable, "provider_unavailable", "no STT provider could satisfy the request: " + err.Error()}
 	}
 	if result == nil {
-		httpx.WriteError(w, http.StatusInternalServerError, "empty_result",
-			"STT router returned nil result")
-		return
+		return nil, &transcribeFailure{http.StatusInternalServerError, "empty_result", "STT router returned nil result"}
 	}
 	if strings.TrimSpace(result.Text) == "" {
-		httpx.WriteError(w, http.StatusUnprocessableEntity, "empty_transcript",
-			"STT returned an empty transcript; the audio may contain no speech")
-		return
+		return nil, &transcribeFailure{http.StatusUnprocessableEntity, "empty_transcript", "STT returned an empty transcript; the audio may contain no speech"}
 	}
 	var customizationActions []speechkit.CustomizationAction
 	if len(replacements) > 0 {
@@ -104,7 +114,7 @@ func (h *Handler) transcribeBytes(w http.ResponseWriter, r *http.Request, raw []
 		}
 	}
 
-	resp := transcribeResponse{
+	resp := &transcribeResponse{
 		Text:       result.Text,
 		Language:   firstNonEmpty(result.Language, opts.Language),
 		DurationMs: decoded.DurationMs,
@@ -137,10 +147,7 @@ func (h *Handler) transcribeBytes(w http.ResponseWriter, r *http.Request, raw []
 			slog.Warn("dictation: persist transcript failed", "err", err)
 		}
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(resp)
+	return resp, nil
 }
 
 func (h *Handler) applyCustomizationHints(ctx context.Context, opts stt.TranscribeOpts) (stt.TranscribeOpts, []speechcustomize.Replacement) {

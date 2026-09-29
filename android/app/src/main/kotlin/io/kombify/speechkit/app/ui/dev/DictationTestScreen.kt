@@ -163,7 +163,7 @@ fun DictationTestScreen(profileSource: ConnectionProfileSource) {
 
     fun startRecording(open: StreamingSttSession) {
         if (open.capturesOwnAudio) {
-            appendLog("System recognizer owns the microphone")
+            appendLog(context.getString(R.string.dev_system_recognizer_owns_mic))
             return
         }
         recordJob = scope.launch {
@@ -275,7 +275,7 @@ fun DictationTestScreen(profileSource: ConnectionProfileSource) {
         }
 
         if (finals.isNotEmpty()) {
-            Text("Transkripte", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+            Text(stringResource(R.string.dev_transcripts), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
             finals.asReversed().forEach { text ->
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Text(text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(12.dp))
@@ -284,7 +284,7 @@ fun DictationTestScreen(profileSource: ConnectionProfileSource) {
         }
 
         Spacer(Modifier.height(4.dp))
-        Text("Protokoll", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+        Text(stringResource(R.string.dev_log), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
         log.forEach { line ->
             Text(
                 line,

@@ -147,4 +147,18 @@
     <string name="dev_connected_on_device">Verbunden (auf dem Gerät)</string>
     <string name="dev_connected_url">Verbunden (%1$s)</string>
     <string name="dev_unknown">unbekannt</string>
+    <string name="nav_home">Start</string>
+    <string name="nav_library">Bibliothek</string>
+    <string name="nav_settings">Einstellungen</string>
+    <string name="home_title">Übersicht</string>
+    <string name="home_stat_keyboard">Tastatur</string>
+    <string name="home_stat_keyboard_active">Aktiv</string>
+    <string name="library_intro">Hier erscheinen deine Transkripte, Kurznotizen und Assist-Antworten.</string>
+    <string name="library_tab_transcripts">Transkripte</string>
+    <string name="library_tab_quick_notes">Kurznotizen</string>
+    <string name="library_empty">Noch keine Einträge. Nutze die SpeechKit-Tastatur, um loszulegen.</string>
+    <string name="settings_about_tagline">KI-gestützte Sprachtastatur</string>
+    <string name="dev_transcripts">Transkripte</string>
+    <string name="dev_log">Protokoll</string>
+    <string name="dev_system_recognizer_owns_mic">Der System-Erkenner belegt das Mikrofon</string>
 </resources>

@@ -1,0 +1,106 @@
+# Local-only SpeechKit stack: no cloud provider, no cloud key.
+#
+#   speechkit-server   Dictation / Assist / Voice Agent + OpenAI-compatible
+#                      /v1/audio/transcriptions and /v1/audio/speech
+#   speechkit-whisper  whisper.cpp whisper-server (STT)
+#   speechkit-tts      Kokoro-FastAPI, OpenAI-compatible /v1/audio/speech (TTS)
+#   ollama             Assist / Voice Agent LLM. Omit this service and point
+#                      [local_llm] base_url at an existing Ollama instead.
+#
+# Config: deploy/config/server.local-only.toml. Contract, env and Open WebUI
+# wiring: docs/server/local-only-stack.md.
+#
+# Quick start (from this directory):
+#   export SPEECHKIT_SERVER_TOKEN="$(openssl rand -hex 32)"
+#   docker compose -f docker-compose.local-only.yml run --rm speechkit-models
+#   docker compose -f docker-compose.local-only.yml up -d
+#   docker compose -f docker-compose.local-only.yml exec ollama ollama pull gemma3:4b
+#   curl -fsS http://127.0.0.1:8080/healthz
+
+services:
+  speechkit-server:
+    image: ${SPEECHKIT_SERVER_IMAGE:-ghcr.io/kombifyio/speechkit-server:latest}
+    environment:
+      SPEECHKIT_SERVER_TOKEN: ${SPEECHKIT_SERVER_TOKEN:?set SPEECHKIT_SERVER_TOKEN for the server bearer token}
+      SPEECHKIT_PUBLIC_URL: ${SPEECHKIT_PUBLIC_URL:-}
+    volumes:
+      - ../config/server.local-only.toml:/etc/speechkit/config.toml:ro
+      - speechkit-data:/var/lib/speechkit/data
+    ports:
+      - "127.0.0.1:${SPEECHKIT_SERVER_PORT:-8080}:8080"
+    depends_on:
+      speechkit-whisper:
+        condition: service_healthy
+      speechkit-tts:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # One-shot model fetch into the shared volume (setup traffic only; no audio
+  # or text leaves the host). Re-run to change SPEECHKIT_WHISPER_MODEL_FILE.
+  speechkit-models:
+    profiles: ["setup"]
+    image: curlimages/curl:8.16.0
+    user: "0:0"
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        mkdir -p /models/whisper &&
+        test -s /models/whisper/$${SPEECHKIT_WHISPER_MODEL_FILE} ||
+        curl -fL --retry 5 -o /models/whisper/$${SPEECHKIT_WHISPER_MODEL_FILE}
+        https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$${SPEECHKIT_WHISPER_MODEL_FILE}
+    environment:
+      SPEECHKIT_WHISPER_MODEL_FILE: ${SPEECHKIT_WHISPER_MODEL_FILE:-ggml-large-v3-turbo.bin}
+    volumes:
+      - speechkit-models:/models
+
+  speechkit-whisper:
+    # Same pinned whisper.cpp build as deploy/docker/docker-compose.yml.
+    image: ${SPEECHKIT_WHISPER_IMAGE:-ghcr.io/ggml-org/whisper.cpp@sha256:fd7ca21c83126b08f610d02a50f68878a66388a4b96e90e2637ced84397013b5}
+    entrypoint: ["/app/build/bin/whisper-server"]
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --model
+      - /models/whisper/${SPEECHKIT_WHISPER_MODEL_FILE:-ggml-large-v3-turbo.bin}
+      - --inference-path
+      - /v1/audio/transcriptions
+    volumes:
+      - speechkit-models:/models:ro
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  speechkit-tts:
+    # Kokoro-FastAPI v0.9.0 (Apache-2.0), CPU build, Kokoro-82M weights
+    # (Apache-2.0) baked in. GPU hosts: ghcr.io/remsky/kokoro-fastapi-gpu.
+    image: ${SPEECHKIT_TTS_IMAGE:-ghcr.io/remsky/kokoro-fastapi-cpu:v0.9.0@sha256:ee3111d6a2c903ed62f3b4fa19543c6901205ed39fce3c177e895b34a8386b9c}
+    expose:
+      - "8880"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8880/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 60s
+    restart: unless-stopped
+
+  ollama:
+    image: ${SPEECHKIT_OLLAMA_IMAGE:-ollama/ollama:0.34.4}
+    volumes:
+      - ollama-models:/root/.ollama
+    expose:
+      - "11434"
+    restart: unless-stopped
+
+volumes:
+  speechkit-data:
+  speechkit-models:
+  ollama-models:

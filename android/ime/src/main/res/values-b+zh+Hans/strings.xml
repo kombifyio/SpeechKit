@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="speechkit_ime_label">SpeechKit 语音输入</string>
+    <string name="speechkit_ime_subtype_de">德语（语音）</string>
+    <string name="speechkit_ime_subtype_en">英语（语音）</string>
+    <string name="speechkit_ime_mic_start">开始听写</string>
+    <string name="speechkit_ime_mic_stop">停止听写</string>
+    <string name="speechkit_ime_status_idle">点按麦克风开始听写</string>
+    <string name="speechkit_ime_status_connecting">正在连接…</string>
+    <string name="speechkit_ime_status_listening">正在聆听…</string>
+    <string name="speechkit_ime_status_finishing">正在完成…</string>
+    <string name="speechkit_ime_status_committed">已插入</string>
+    <string name="speechkit_ime_status_blocked">密码输入框已禁用语音输入</string>
+    <string name="speechkit_ime_status_needs_permission">需要麦克风权限</string>
+    <string name="speechkit_ime_recording_indicator">正在录音</string>
+    <string name="speechkit_ime_action_retry">重试</string>
+    <string name="speechkit_ime_switch_keyboard">切换回键盘</string>
+    <string name="speechkit_ime_language_chip">听写语言</string>
+    <string name="speechkit_ime_error_generic">听写失败</string>
+    <string name="speechkit_ime_error_not_configured">未配置服务器：请打开 SpeechKit 应用</string>
+    <string name="speechkit_ime_error_mic_denied">麦克风权限被拒绝</string>
+    <string name="speechkit_ime_action_voice_agent">语音助手</string>
+    <string name="speechkit_ime_agent_action_dictation">听写</string>
+    <string name="speechkit_ime_agent_action_end">结束对话</string>
+    <string name="speechkit_ime_agent_hold_to_talk">按住说话</string>
+    <string name="speechkit_ime_agent_release">松开</string>
+    <string name="speechkit_ime_agent_speaker_user">你</string>
+    <string name="speechkit_ime_agent_speaker_agent">助手</string>
+    <string name="speechkit_ime_agent_phase_inactive">就绪</string>
+    <string name="speechkit_ime_agent_phase_connecting">正在连接…</string>
+    <string name="speechkit_ime_agent_phase_listening">正在聆听</string>
+    <string name="speechkit_ime_agent_phase_processing">正在思考…</string>
+    <string name="speechkit_ime_agent_phase_speaking">正在回答</string>
+    <string name="speechkit_ime_agent_phase_ended">已结束</string>
+    <string name="speechkit_ime_agent_error_provider_unavailable">服务器上未配置此语音提供方</string>
+    <string name="speechkit_ime_agent_error_no_server">语音助手需要已配对的 SpeechKit 服务器</string>
+</resources>

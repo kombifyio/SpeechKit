@@ -222,14 +222,15 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 				return fmt.Errorf("core.Run: build dictation handler: %w", err)
 			}
 			h.Mount(app.Mux)
+			h.MountOpenAICompat(app.Mux)
 			app.Health.SetReady("mode.dictation", StatusOK, "listening")
-			slog.Info("mode enabled", "mode", "dictation", "path", "/v1/dictation/transcribe")
+			slog.Info("mode enabled", "mode", "dictation", "path", "/v1/dictation/transcribe", "openai_compat_path", dictation.OpenAITranscriptionsPath)
 			// Streaming dictation rides on the same mode + STT router:
 			// session create + ticket-authenticated WS with live partials.
 			wireDictationStream(cfg, app)
 		}
 	} else {
-		mountModeDisabled(app.Mux, ModeDictation, "/v1/dictation/transcribe")
+		mountModeDisabled(app.Mux, ModeDictation, "/v1/dictation/transcribe", dictation.OpenAITranscriptionsPath)
 		app.Health.SetReady("mode.dictation", StatusDisabled, "configured off")
 	}
 
@@ -277,7 +278,9 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		}
 	}
 	if cfg.Server.Features.TTSDirect {
-		ttsapi.New(cfg, app.TTSRouter).Mount(app.Mux)
+		ttsHandler := ttsapi.New(cfg, app.TTSRouter)
+		ttsHandler.Mount(app.Mux)
+		ttsHandler.MountOpenAICompat(app.Mux)
 		switch {
 		case app.TTSRouter != nil && app.TTSEnabled:
 			app.Health.SetReady("api.tts_direct", StatusOK, "listening")

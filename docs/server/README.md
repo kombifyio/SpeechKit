@@ -184,6 +184,11 @@ Render it with any OpenAPI viewer or generate a typed client with
 `openapi-generator`. The canonical browser-facing API prefix is `/api/v1`; the
 original `/v1` paths remain available for compatibility.
 
+OpenAI-audio clients such as Open WebUI can use `POST /v1/audio/transcriptions`
+and `POST /v1/audio/speech` directly. See
+[`local-only-stack.md`](./local-only-stack.md) for these routes and for the
+keyless whisper.cpp, Kokoro and Ollama container set.
+
 Customization is built around first-class `/words`, `/replacements`,
 `/lexicons`, `/rulesets`, `/customization/templates`, and Customization Pack
 contracts. The template catalog routes let a server act as a live development

@@ -169,6 +169,34 @@ func ResolveEnabledProvidersWithAuth(cfg *config.Config, auth Auth) (tts.Enabled
 		}
 	}
 
+	// A self-hosted OpenAI-compatible server (Kokoro-FastAPI, Speaches) is a
+	// Local Provider: allowed in the open and local_network scopes, and pinned
+	// to local addresses whenever the scope is restricted.
+	if cfg.TTS.Local.Enabled && strings.TrimSpace(cfg.TTS.Local.URL) != "" {
+		scope := cfg.NetworkScope()
+		if allowed, _ := scope.AllowsProviderKind(framework.ProviderKindLocalProvider); !allowed {
+			notes = append(notes, "Privacy: self-hosted TTS server suspended (network scope "+string(scope)+")")
+		} else {
+			enabled.SelfHostedOpenAI = &tts.SelfHostedOpenAIOpts{
+				BaseURL:      strings.TrimSpace(cfg.TTS.Local.URL),
+				APIKey:       config.ResolveSecret(cfg.TTS.Local.APIKeyEnv),
+				Model:        selfHostedTTSModel(cfg.TTS.Local.Model),
+				Voice:        strings.TrimSpace(cfg.TTS.Local.Voice),
+				RequireLocal: scope.Restricted(),
+			}
+		}
+	}
+
 	enabled.PreferredProfileID = strings.TrimSpace(cfg.ModelSelection.TTS.PrimaryProfileID)
 	return enabled, notes
+}
+
+// selfHostedTTSModel maps the legacy [tts.local] model default (a Hugging Face
+// repo id) to the model name OpenAI-compatible Kokoro servers accept.
+func selfHostedTTSModel(model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" || strings.EqualFold(model, "hexgrad/Kokoro-82M") {
+		return "kokoro"
+	}
+	return model
 }

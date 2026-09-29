@@ -9,6 +9,33 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.73.3](https://github.com/kombifyio/SpeechKit/compare/v0.73.2...v0.73.3) (2026-09-29)
+
+
+### Bug Fixes
+
+* **website:** verify the localized release heading and version separately ([#648](https://github.com/kombifyio/SpeechKit/issues/648)) ([a23b97f](https://github.com/kombifyio/SpeechKit/commit/a23b97fdacf49f27faa58e9987f564834712f144))
+
+## [0.73.2](https://github.com/kombifyio/SpeechKit/compare/v0.73.1...v0.73.2) (2026-09-29)
+
+
+### Features
+
+* **i18n:** six-locale SpeechKit desktop app and tray ([#646](https://github.com/kombifyio/SpeechKit/issues/646)) ([86eea85](https://github.com/kombifyio/SpeechKit/commit/86eea8581d39698158b2ca2145bffbf1ac99a305))
+
+## [0.73.1](https://github.com/kombifyio/SpeechKit/compare/v0.73.0...v0.73.1) (2026-09-29)
+
+
+### Features
+
+* **i18n:** six-locale SpeechKit Android and website ([#642](https://github.com/kombifyio/SpeechKit/issues/642)) ([30dcb87](https://github.com/kombifyio/SpeechKit/commit/30dcb877644960eeea9ba713612472ce5eb87c98))
+* **server:** OpenAI-compatible audio endpoints and local-only stack ([#638](https://github.com/kombifyio/SpeechKit/issues/638)) ([d7b3e29](https://github.com/kombifyio/SpeechKit/commit/d7b3e2935ee51f2cc12f85c4bfe03fd7d9e41656))
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/wailsapp/wails/v3 to v3.0.0-beta.25 ([#606](https://github.com/kombifyio/SpeechKit/issues/606)) ([3888530](https://github.com/kombifyio/SpeechKit/commit/3888530d942f29bd2496e27575bfc625d635dd81))
+
 ## [0.73.0](https://github.com/kombifyio/SpeechKit/compare/a5999471f8d81f6082631a3c550d8e261b64d6fc...a906f921b360aeb36841ba3627282992cd394ce8) (2026-09-26)
 
 ### Highlights

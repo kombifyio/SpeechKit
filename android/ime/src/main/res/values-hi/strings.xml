@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="speechkit_ime_label">SpeechKit वॉइस इनपुट</string>
+    <string name="speechkit_ime_subtype_de">जर्मन (वॉइस)</string>
+    <string name="speechkit_ime_subtype_en">अंग्रेज़ी (वॉइस)</string>
+    <string name="speechkit_ime_mic_start">डिक्टेशन शुरू करें</string>
+    <string name="speechkit_ime_mic_stop">डिक्टेशन रोकें</string>
+    <string name="speechkit_ime_status_idle">डिक्टेट करने के लिए माइक्रोफ़ोन पर टैप करें</string>
+    <string name="speechkit_ime_status_connecting">कनेक्ट हो रहा है…</string>
+    <string name="speechkit_ime_status_listening">सुन रहा है…</string>
+    <string name="speechkit_ime_status_finishing">पूरा हो रहा है…</string>
+    <string name="speechkit_ime_status_committed">डाला गया</string>
+    <string name="speechkit_ime_status_blocked">पासवर्ड फ़ील्ड में वॉइस इनपुट बंद है</string>
+    <string name="speechkit_ime_status_needs_permission">माइक्रोफ़ोन की अनुमति आवश्यक है</string>
+    <string name="speechkit_ime_recording_indicator">रिकॉर्डिंग</string>
+    <string name="speechkit_ime_action_retry">फिर से कोशिश करें</string>
+    <string name="speechkit_ime_switch_keyboard">कीबोर्ड पर वापस जाएँ</string>
+    <string name="speechkit_ime_language_chip">डिक्टेशन भाषा</string>
+    <string name="speechkit_ime_error_generic">डिक्टेशन विफल रहा</string>
+    <string name="speechkit_ime_error_not_configured">कोई सर्वर कॉन्फ़िगर नहीं है: SpeechKit ऐप खोलें</string>
+    <string name="speechkit_ime_error_mic_denied">माइक्रोफ़ोन की अनुमति अस्वीकृत</string>
+    <string name="speechkit_ime_action_voice_agent">वॉइस असिस्टेंट</string>
+    <string name="speechkit_ime_agent_action_dictation">डिक्टेशन</string>
+    <string name="speechkit_ime_agent_action_end">बातचीत समाप्त करें</string>
+    <string name="speechkit_ime_agent_hold_to_talk">बोलने के लिए दबाए रखें</string>
+    <string name="speechkit_ime_agent_release">छोड़ें</string>
+    <string name="speechkit_ime_agent_speaker_user">आप</string>
+    <string name="speechkit_ime_agent_speaker_agent">असिस्टेंट</string>
+    <string name="speechkit_ime_agent_phase_inactive">तैयार</string>
+    <string name="speechkit_ime_agent_phase_connecting">कनेक्ट हो रहा है…</string>
+    <string name="speechkit_ime_agent_phase_listening">सुन रहा है</string>
+    <string name="speechkit_ime_agent_phase_processing">सोच रहा है…</string>
+    <string name="speechkit_ime_agent_phase_speaking">जवाब दे रहा है</string>
+    <string name="speechkit_ime_agent_phase_ended">समाप्त</string>
+    <string name="speechkit_ime_agent_error_provider_unavailable">यह वॉइस प्रदाता सर्वर पर कॉन्फ़िगर नहीं है</string>
+    <string name="speechkit_ime_agent_error_no_server">वॉइस असिस्टेंट को पेयर किए गए SpeechKit सर्वर की आवश्यकता है</string>
+</resources>

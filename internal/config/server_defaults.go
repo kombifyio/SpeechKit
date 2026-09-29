@@ -135,6 +135,18 @@ func ApplyServerRuntimeDefaults(cfg *Config) []string {
 		cfg.Store.SQLitePath = defaultServerSQLitePath
 	}
 
+	// A self-hosted OpenAI-compatible TTS sidecar (Kokoro-FastAPI, Speaches)
+	// gives the keyless install spoken output.
+	if ttsURL := strings.TrimSpace(os.Getenv("SPEECHKIT_SELFHOSTED_TTS_URL")); ttsURL != "" && strings.TrimSpace(cfg.TTS.Local.URL) == "" {
+		cfg.TTS.Enabled = true
+		cfg.TTS.Local.Enabled = true
+		cfg.TTS.Local.URL = ttsURL
+		if voice := strings.TrimSpace(os.Getenv("SPEECHKIT_SELFHOSTED_TTS_VOICE")); voice != "" && strings.TrimSpace(cfg.TTS.Local.Voice) == "" {
+			cfg.TTS.Local.Voice = voice
+		}
+		notes = append(notes, "self-hosted TTS default: "+ttsURL)
+	}
+
 	if noConfiguredTTSSecret(cfg) {
 		cfg.TTS.Enabled = false
 		notes = append(notes, "TTS disabled until a speech provider credential is configured")
@@ -227,6 +239,13 @@ func noConfiguredTTSSecret(cfg *Config) bool {
 		return false
 	}
 	if cfg.TTS.HuggingFace.Enabled && ProviderCredentialAvailable(cfg, "huggingface") {
+		return false
+	}
+	// Local engines need no credential.
+	if cfg.TTS.Local.Enabled && strings.TrimSpace(cfg.TTS.Local.URL) != "" {
+		return false
+	}
+	if cfg.TTS.Piper.Enabled && strings.TrimSpace(cfg.TTS.Piper.VoiceDir) != "" {
 		return false
 	}
 	return true

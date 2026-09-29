@@ -53,11 +53,21 @@ type TTSFoundry struct {
 	Voice   string `toml:"voice"` // alloy, echo, fable, onyx, nova, shimmer
 }
 
+// TTSLocal configures a Local Provider TTS server. When URL is set, SpeechKit
+// speaks the OpenAI /v1/audio/speech API to that operator-run server
+// (Kokoro-FastAPI, Speaches) as the "kokoro" provider; no cloud key needed.
 type TTSLocal struct {
 	Enabled   bool   `toml:"enabled"`
 	Model     string `toml:"model"`
 	ModelPath string `toml:"model_path"`
 	Port      int    `toml:"port"`
+	// URL is the OpenAI-compatible TTS server root, e.g.
+	// "http://speechkit-tts:8880". Empty keeps the provider unregistered.
+	URL string `toml:"url"`
+	// Voice is the server-specific default voice (Kokoro: "af_bella").
+	Voice string `toml:"voice"`
+	// APIKeyEnv optionally names an env var whose value is sent as bearer.
+	APIKeyEnv string `toml:"api_key_env"`
 }
 
 // TTSPiper configures the offline Piper subprocess TTS provider.

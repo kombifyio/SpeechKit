@@ -82,21 +82,20 @@ func registerLocalLLMHealth(ctx context.Context, app *App) {
 		deadline := time.Now().Add(15 * time.Minute)
 		var lastErr error
 		for {
-			req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, http.NoBody)
-			if err == nil {
-				resp, err := client.Do(req)
-				if err == nil {
-					_ = resp.Body.Close()
-					if resp.StatusCode == http.StatusOK {
-						app.Health.SetReady("llm.local", StatusOK, "ready")
-						return
-					}
-					lastErr = errStatus(resp.StatusCode)
-				} else {
-					lastErr = err
-				}
-			} else {
+			// llama-server answers /health; Ollama has no /health but serves
+			// the OpenAI-compatible /v1/models, so a 404 falls through to it.
+			status, err := probeLocalLLM(ctx, client, healthURL)
+			if err == nil && status == http.StatusNotFound {
+				status, err = probeLocalLLM(ctx, client, localLLMModelsURL(app.Cfg.LocalLLM.BaseURL))
+			}
+			switch {
+			case err != nil:
 				lastErr = err
+			case status == http.StatusOK:
+				app.Health.SetReady("llm.local", StatusOK, "ready")
+				return
+			default:
+				lastErr = errStatus(status)
 			}
 
 			if time.Now().After(deadline) {
@@ -110,6 +109,25 @@ func registerLocalLLMHealth(ctx context.Context, app *App) {
 			time.Sleep(10 * time.Second)
 		}
 	}()
+}
+
+func probeLocalLLM(ctx context.Context, client *http.Client, target string) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, http.NoBody)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	_ = resp.Body.Close()
+	return resp.StatusCode, nil
+}
+
+func localLLMModelsURL(baseURL string) string {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	baseURL = strings.TrimSuffix(baseURL, "/v1")
+	return baseURL + "/v1/models"
 }
 
 func localLLMHealthURL(baseURL string) string {

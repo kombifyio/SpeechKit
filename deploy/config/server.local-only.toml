@@ -1,0 +1,161 @@
+# SpeechKit Server — local-only provider profile.
+#
+# Every provider is a process on the operator's own host or private network:
+#   STT      whisper.cpp whisper-server sidecar      ([vps] -> /v1/audio/transcriptions)
+#   TTS      OpenAI-compatible Kokoro sidecar        ([tts.local] -> /v1/audio/speech)
+#   Assist   Ollama (or llama.cpp llama-server)      ([local_llm] -> OpenAI-compatible /v1)
+# No cloud provider is enabled. A cloud provider only runs when an operator
+# edits this file to enable it AND supplies its key; [privacy] network_scope =
+# "local_network" additionally keeps cloud TTS suspended and pins the TTS
+# sidecar to private addresses.
+#
+# Used by deploy/docker/docker-compose.local-only.yml; see
+# docs/server/local-only-stack.md for the container set and env contract.
+# Service URLs below are the compose service names; override them in place
+# when the sidecars run elsewhere on the private network.
+
+[general]
+language = "en"
+
+[privacy]
+network_scope = "local_network"
+allow_setup_traffic = false
+
+[server]
+listen_addr      = ":8080"
+modes            = ["dictation", "assist", "voiceagent"]
+auth_mode        = "bearer"                 # every /v1 route requires Authorization: Bearer $SPEECHKIT_SERVER_TOKEN
+bearer_token_env = "SPEECHKIT_SERVER_TOKEN"
+cors_allowed_origins = []
+rate_limit_rps   = 10.0
+rate_limit_burst = 20
+max_upload_mb    = 25
+model_dir        = "/var/lib/speechkit/models"
+log_format       = "json"
+log_level        = "info"
+
+[server.features]
+catalog         = true
+storage_reads   = true
+vocabulary      = true
+tts_direct      = true                      # also mounts the OpenAI-compatible POST /v1/audio/speech
+wakeword_models = false
+
+[server.wyoming]
+enabled = false
+
+[store]
+backend     = "sqlite"
+sqlite_path = "/var/lib/speechkit/data/speechkit.db"
+
+# ── STT: whisper.cpp sidecar ───────────────────────────────────────────────
+# The Server-Target reaches whisper.cpp over HTTP through the self-hosted
+# (VPS-shaped) OpenAI-compatible client; "cloud-only" is the routing strategy
+# that selects that network client. It does not enable any cloud provider.
+[vps]
+enabled     = true
+url         = "http://speechkit-whisper:8080"
+model       = "whisper-1"
+api_key_env = "SPEECHKIT_SELFHOSTED_STT_API_KEY"   # unset: whisper-server needs no key
+
+[routing]
+strategy = "cloud-only"
+
+[local]
+enabled = false
+
+# ── Assist / Voice Agent LLM: Ollama ───────────────────────────────────────
+# Any OpenAI-compatible local server works. Ollama: base_url
+# "http://ollama:11434/v1" plus a pulled model tag. llama.cpp llama-server:
+# "http://speechkit-llm:8080/v1" plus its GGUF model name.
+[local_llm]
+enabled       = true
+base_url      = "http://ollama:11434/v1"
+model         = "gemma3:4b"
+utility_model = "gemma3:4b"
+assist_model  = "gemma3:4b"
+agent_model   = "gemma3:4b"
+
+# ── TTS: OpenAI-compatible local server ────────────────────────────────────
+# Kokoro-FastAPI (Apache-2.0 code, Apache-2.0 Kokoro-82M weights) by default.
+# Speaches (MIT) exposes the same /v1/audio/speech API and adds Piper voices
+# for languages Kokoro lacks (e.g. German): point url at it and set voice.
+[tts]
+enabled  = true
+strategy = "local-only"
+format   = "mp3"
+speed    = 1.0
+
+[tts.local]
+enabled = true
+url     = "http://speechkit-tts:8880"
+model   = "kokoro"
+voice   = "af_bella"
+
+# Pin the self-hosted OpenAI-compatible server (provider "kokoro").
+[model_selection.tts]
+primary_profile_id = "tts.openedai.kokoro"
+
+[tts.openai]
+enabled = false
+
+[tts.google]
+enabled = false
+
+[tts.deepgram]
+enabled = false
+
+[tts.huggingface]
+enabled = false
+
+[tts.foundry]
+enabled = false
+
+# ── Cloud providers: all off ───────────────────────────────────────────────
+[huggingface]
+enabled = false
+
+[providers.openai]
+enabled = false
+
+[providers.groq]
+enabled = false
+
+[providers.deepgram]
+enabled = false
+
+[providers.assemblyai]
+enabled = false
+
+[providers.google]
+enabled = false
+
+[providers.openrouter]
+enabled = false
+
+[providers.foundry]
+enabled = false
+
+# ── Voice Agent: cascaded local STT -> LLM -> TTS ──────────────────────────
+[voice_agent]
+enabled  = true
+provider = "cascaded"
+
+[[personas]]
+id           = "default"
+display_name = "Default Assistant"
+description  = "Concise general-purpose local assistant."
+voice        = "af_bella"
+locale       = "en"
+default_role = "default-role"
+tags         = ["default", "local"]
+
+[[roles]]
+id            = "default-role"
+display_name  = "Default Behavior"
+system_prompt = "You are a helpful voice assistant. Be concise and answer in the user's language."
+locale        = "en"
+temperature   = 0.6
+automatic_activity_detection = true
+vad_start_sensitivity = "medium"
+vad_end_sensitivity   = "medium"

@@ -436,6 +436,8 @@ enabled = false
 model = "hexgrad/Kokoro-82M"
 model_path = ""
 port = 8081
+# url = "http://127.0.0.1:8880"  # OpenAI-compatible TTS server (Kokoro-FastAPI, Speaches); registers the "kokoro" Local Provider
+# voice = "af_bella"             # server-specific voice id
 
 [tts.piper]
 # Offline Piper subprocess TTS — Home-Assistant compatible voices, MIT licensed.

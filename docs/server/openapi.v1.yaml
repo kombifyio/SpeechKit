@@ -945,6 +945,111 @@ paths:
                     items: { $ref: '#/components/schemas/Voice' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
 
+  # ── OpenAI-compatible audio ────────────────────────────────────────────
+  # Drop-in routes for OpenAI-audio clients (Open WebUI with
+  # AUDIO_STT_ENGINE=openai / AUDIO_TTS_ENGINE=openai, the OpenAI SDKs).
+  # Set the client's OpenAI base URL to `<server>/v1` and its API key to the
+  # server bearer token. Same auth, rate limits and provider routing as the
+  # native Dictation and TTS routes.
+  /v1/audio/transcriptions:
+    post:
+      operationId: createOpenAITranscription
+      summary: OpenAI-compatible transcription
+      description: |
+        Runs the same kernel path as `/v1/dictation/transcribe` (decode,
+        customization, provider routing, transcript persistence) with the
+        OpenAI audio request and response shapes. Mounted only when the
+        Dictation mode is enabled.
+
+        `model` pins a provider only when it is an exact Dictation
+        provider-profile ID (see `GET /v1/catalog/profiles?mode=dictation`);
+        OpenAI model names such as `whisper-1`, or an empty model, leave the
+        server's configured routing in charge. Audio formats are those of
+        `/v1/dictation/transcribe`; the format comes from the part
+        Content-Type, else the file extension, else magic-byte sniffing.
+        Speech-free audio returns an empty `text` instead of an error.
+      tags: [openai-compat]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                model:
+                  type: string
+                  description: Ignored unless it is a Dictation provider-profile ID.
+                language:
+                  type: string
+                  description: Language hint, e.g. "en", "de".
+                prompt:
+                  type: string
+                response_format:
+                  type: string
+                  enum: [json, text, verbose_json]
+                  default: json
+          application/json:
+            schema: { $ref: '#/components/schemas/OpenAITranscriptionJSONRequest' }
+      responses:
+        '200':
+          description: Transcript in the requested response format.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OpenAITranscriptionResponse' }
+            text/plain:
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/ProviderUnavailable' }
+
+  /v1/audio/speech:
+    post:
+      operationId: createOpenAISpeech
+      summary: OpenAI-compatible speech synthesis
+      description: |
+        Synthesizes `input` through the server's TTS router and returns the
+        raw audio bytes. Mounted when `[server.features] tts_direct` is on.
+
+        `model` is accepted for compatibility and ignored; the configured
+        TTS routing picks the provider. OpenAI stock voice names (`alloy`,
+        `nova`, …) select the provider's default voice; any other `voice` is
+        passed to the provider. `response_format` defaults to `mp3`. Local
+        engines may not honor every format (Piper always emits WAV): the
+        `Content-Type` header reports the format actually returned.
+      tags: [openai-compat]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OpenAISpeechRequest' }
+      responses:
+        '200':
+          description: Synthesized audio.
+          headers:
+            X-SpeechKit-TTS-Provider:
+              description: Provider that produced the audio.
+              schema: { type: string }
+          content:
+            audio/mpeg:
+              schema: { type: string, format: binary }
+            audio/wav:
+              schema: { type: string, format: binary }
+            audio/ogg:
+              schema: { type: string, format: binary }
+            audio/pcm:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/ProviderUnavailable' }
+
   # ── Dictation ───────────────────────────────────────────────────────────
   /v1/dictation/transcribe:
     post:
@@ -2702,6 +2807,45 @@ components:
         duration_ms: { type: integer }
         provider: { type: string }
         voice: { type: string }
+
+    OpenAITranscriptionJSONRequest:
+      type: object
+      description: JSON variant sent by Open WebUI when AUDIO_STT_OPENAI_API_REQUEST_FORMAT=json.
+      required: [input_audio]
+      properties:
+        model: { type: string }
+        language: { type: string }
+        prompt: { type: string }
+        response_format: { type: string, enum: [json, text, verbose_json] }
+        input_audio:
+          type: object
+          required: [data]
+          properties:
+            data: { type: string, description: Base64-encoded audio file. }
+            format: { type: string, description: 'File extension, e.g. "wav", "mp3", "webm", "ogg".' }
+
+    OpenAITranscriptionResponse:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string }
+        task: { type: string, description: verbose_json only. }
+        language: { type: string, description: verbose_json only. }
+        duration: { type: number, description: 'verbose_json only; seconds.' }
+        segments:
+          type: array
+          description: verbose_json only; always empty.
+          items: { type: object }
+
+    OpenAISpeechRequest:
+      type: object
+      required: [input]
+      properties:
+        model: { type: string, description: Accepted and ignored. }
+        input: { type: string, maxLength: 4096 }
+        voice: { type: string }
+        response_format: { type: string, enum: [mp3, wav, opus, pcm], default: mp3 }
+        speed: { type: number, minimum: 0.25, maximum: 4.0 }
 
     Voice:
       type: object

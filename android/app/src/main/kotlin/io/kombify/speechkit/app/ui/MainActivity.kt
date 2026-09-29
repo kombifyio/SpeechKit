@@ -167,32 +167,32 @@ private fun SpeechKitApp(
                 NavigationBarItem(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    label = { Text("Home") },
+                    label = { Text(stringResource(R.string.nav_home)) },
                     icon = {},
                 )
                 NavigationBarItem(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    label = { Text("Library") },
+                    label = { Text(stringResource(R.string.nav_library)) },
                     icon = {},
                 )
                 NavigationBarItem(
                     selected = selectedTab == 2,
                     onClick = { selectedTab = 2 },
-                    label = { Text("Settings") },
+                    label = { Text(stringResource(R.string.nav_settings)) },
                     icon = {},
                 )
                 if (ShippedDefaults.showLabTabs) {
                     NavigationBarItem(
                         selected = selectedTab == 3,
                         onClick = { selectedTab = 3 },
-                        label = { Text("Dev") },
+                        label = { Text(stringResource(R.string.nav_dev)) },
                         icon = {},
                     )
                     NavigationBarItem(
                         selected = selectedTab == 4,
                         onClick = { selectedTab = 4 },
-                        label = { Text("Voice") },
+                        label = { Text(stringResource(R.string.nav_voice)) },
                         icon = {},
                     )
                 }
@@ -411,15 +411,15 @@ private fun HomeTab(onOpenVoiceAgent: () -> Unit = {}) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Dashboard", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.home_title), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
 
         // Status Cards
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            StatCard("Tastatur", "Aktiv", Modifier.weight(1f))
-            StatCard(stringResource(R.string.home_stat_mode), "Dictate", Modifier.weight(1f))
+            StatCard(stringResource(R.string.home_stat_keyboard), stringResource(R.string.home_stat_keyboard_active), Modifier.weight(1f))
+            StatCard(stringResource(R.string.home_stat_mode), stringResource(R.string.mode_dictate), Modifier.weight(1f))
         }
 
         Row(
@@ -435,9 +435,9 @@ private fun HomeTab(onOpenVoiceAgent: () -> Unit = {}) {
         // Quick Actions
         Text(stringResource(R.string.home_quick_actions), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
 
-        QuickActionRow("Dictate", stringResource(R.string.home_dictate_desc)) {}
-        QuickActionRow("Assist", stringResource(R.string.home_assist_desc)) {}
-        QuickActionRow("Voice Agent", stringResource(R.string.home_voice_agent_desc)) { onOpenVoiceAgent() }
+        QuickActionRow(stringResource(R.string.mode_dictate), stringResource(R.string.home_dictate_desc)) {}
+        QuickActionRow(stringResource(R.string.mode_assist), stringResource(R.string.home_assist_desc)) {}
+        QuickActionRow(stringResource(R.string.mode_voice_agent), stringResource(R.string.home_voice_agent_desc)) { onOpenVoiceAgent() }
     }
 }
 
@@ -480,9 +480,9 @@ private fun LibraryTab() {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Library", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.nav_library), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Text(
-            "Hier erscheinen deine Transkriptionen, Quick Notes und Assist-Antworten.",
+            stringResource(R.string.library_intro),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -490,13 +490,13 @@ private fun LibraryTab() {
         // Tabs for different content types
         var libraryTab by remember { mutableIntStateOf(0) }
         TabRow(selectedTabIndex = libraryTab) {
-            Tab(selected = libraryTab == 0, onClick = { libraryTab = 0 }) { Text("Transkriptionen", Modifier.padding(12.dp)) }
-            Tab(selected = libraryTab == 1, onClick = { libraryTab = 1 }) { Text("Quick Notes", Modifier.padding(12.dp)) }
-            Tab(selected = libraryTab == 2, onClick = { libraryTab = 2 }) { Text("Assist", Modifier.padding(12.dp)) }
+            Tab(selected = libraryTab == 0, onClick = { libraryTab = 0 }) { Text(stringResource(R.string.library_tab_transcripts), Modifier.padding(12.dp)) }
+            Tab(selected = libraryTab == 1, onClick = { libraryTab = 1 }) { Text(stringResource(R.string.library_tab_quick_notes), Modifier.padding(12.dp)) }
+            Tab(selected = libraryTab == 2, onClick = { libraryTab = 2 }) { Text(stringResource(R.string.mode_assist), Modifier.padding(12.dp)) }
         }
 
         Text(
-            "Noch keine Eintraege. Nutze die SpeechKit-Tastatur um loszulegen.",
+            stringResource(R.string.library_empty),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
             textAlign = TextAlign.Center,
@@ -523,7 +523,7 @@ private fun SettingsTab(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Einstellungen", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.nav_settings), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
 
         ServerConnectionCard(
             provisioner = companionProvisioner,
@@ -574,7 +574,7 @@ private fun SettingsTab(
                     stringResource(R.string.app_name) + " v" + BuildConfig.VERSION_NAME,
                     style = MaterialTheme.typography.bodySmall,
                 )
-                Text("AI-powered Voice Keyboard", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.settings_about_tagline), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("github.com/kombifyio/SpeechKit", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
         }

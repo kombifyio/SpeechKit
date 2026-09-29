@@ -18,6 +18,9 @@ type EnabledProviders struct {
 	// of Foundry / FoundrySpeech, not both.
 	FoundrySpeech *AzureSpeechOpts
 	Piper         *PiperOpts
+	// SelfHostedOpenAI registers an operator-run OpenAI-compatible TTS server
+	// (Kokoro-FastAPI, Speaches) as the "kokoro" Local Provider.
+	SelfHostedOpenAI *SelfHostedOpenAIOpts
 	// PreferredProfileID optionally pins the provider matching this
 	// model_selection profile to the front of the strategy order.
 	PreferredProfileID string
@@ -69,6 +72,16 @@ func BuildRouter(strategy Strategy, enabled EnabledProviders) (router *Router, o
 		} else {
 			providers = append(providers, piper)
 			notes = append(notes, "TTS: Piper registered (voice_dir="+strings.TrimSpace(enabled.Piper.VoiceDir)+")")
+		}
+	}
+
+	if enabled.SelfHostedOpenAI != nil {
+		local, err := NewSelfHostedOpenAI(*enabled.SelfHostedOpenAI)
+		if err != nil {
+			notes = append(notes, "TTS: self-hosted OpenAI-compatible server skipped: "+err.Error())
+		} else {
+			providers = append(providers, local)
+			notes = append(notes, "TTS: self-hosted OpenAI-compatible server registered (url="+strings.TrimSpace(enabled.SelfHostedOpenAI.BaseURL)+")")
 		}
 	}
 
