@@ -9,6 +9,18 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.73.4](https://github.com/kombifyio/SpeechKit/compare/v0.73.3...v0.73.4) (2026-09-29)
+
+
+### Features
+
+* **api:** annotate the server contract for the agent-native surface and guard MCP drift ([#650](https://github.com/kombifyio/SpeechKit/issues/650)) ([c4f2d68](https://github.com/kombifyio/SpeechKit/commit/c4f2d68008b92441b4f41f8de9d2bfa488da25b8))
+
+
+### Bug Fixes
+
+* **build:** resolve the sherpa-onnx native lib dir from go.mod ([#652](https://github.com/kombifyio/SpeechKit/issues/652)) ([b8eed62](https://github.com/kombifyio/SpeechKit/commit/b8eed6251b795db6b37f3b9400554c72199bfd60))
+
 ## [0.73.3](https://github.com/kombifyio/SpeechKit/compare/v0.73.2...v0.73.3) (2026-09-29)
 
 

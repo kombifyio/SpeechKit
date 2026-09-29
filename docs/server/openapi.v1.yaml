@@ -24,6 +24,18 @@ servers:
   - url: https://api.speechkit.dev
     description: Replace with your deployment's URL.
 
+# ── Agent-native surface (API-FIRST-STANDARD §9) ───────────────────────────
+# x-kombify-* annotations describe the speechkitctl CLI and speechkit-mcp
+# tools derived from this contract. They never change routing or auth.
+x-kombify-surface:
+  product: speechkit
+  cli:
+    command: speechkitctl
+  mcp:
+    transport: streamable-http
+    endpoint: /
+    protocolVersion: "2025-11-25"
+
 # ── Auth ────────────────────────────────────────────────────────────────────
 # Default server deployments require bearer auth. `auth_mode = "none"` is only
 # intended for loopback/dev deployments and must not be used on public binds.
@@ -38,6 +50,7 @@ paths:
   /healthz:
     get:
       operationId: getHealthz
+      x-kombify-mcp: false
       summary: Liveness probe
       description: |
         Always returns 200 while the process is up. Public — no auth required.
@@ -61,6 +74,10 @@ paths:
   /readyz:
     get:
       operationId: getReadyz
+      x-kombify-mcp:
+        toolName: speechkit_status
+        requiredCapability: speechkit.health.read
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
       summary: Readiness probe
       description: |
         Mode readiness for orchestrators. Returns 200 when every blocking
@@ -85,6 +102,7 @@ paths:
   /readyz/strict:
     get:
       operationId: getStrictReadyz
+      x-kombify-mcp: false
       summary: Strict readiness probe
       description: |
         Diagnostic readiness that returns 200 only when every registered
@@ -129,6 +147,7 @@ paths:
         '405': { $ref: '#/components/responses/MethodNotAllowed' }
     head:
       operationId: headDeploymentStatus
+      x-kombify-mcp: false
       summary: Probe authenticated deployment status
       description: |
         Authenticated no-body variant of `GET /v1/deployment/status`.
@@ -185,6 +204,7 @@ paths:
   /v1/server/admin/session:
     post:
       operationId: createServerAdminSession
+      x-kombify-mcp: false
       summary: Create browser admin session
       description: |
         Validates the standalone setup username/password when admin auth is
@@ -214,6 +234,10 @@ paths:
   /v1/catalog/profiles:
     get:
       operationId: listCatalogProfiles
+      x-kombify-mcp:
+        toolName: speechkit_provider_list
+        requiredCapability: speechkit.catalog.read
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
       summary: List provider profiles
       tags: [catalog]
       parameters:
@@ -322,6 +346,10 @@ paths:
   /v1/catalog/profiles/{id}/readiness:
     get:
       operationId: getCatalogProfileReadiness
+      x-kombify-mcp:
+        toolName: speechkit_provider_readiness
+        requiredCapability: speechkit.catalog.read
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
       summary: Get provider readiness
       tags: [catalog]
       parameters:
@@ -341,6 +369,10 @@ paths:
   /v1/config:
     get:
       operationId: getServerConfig
+      x-kombify-mcp:
+        toolName: speechkit_config_get
+        requiredCapability: speechkit.config.read
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
       summary: Read server configuration summary
       tags: [config]
       responses:
@@ -354,6 +386,10 @@ paths:
   /v1/vocabulary/dictionary:
     get:
       operationId: listVocabularyDictionaryEntries
+      x-kombify-mcp:
+        toolName: speechkit_vocabulary_get
+        requiredCapability: speechkit.vocabulary.read
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
       summary: List old dictionary-shaped migration entries
       tags: [vocabulary]
       parameters:
@@ -394,6 +430,11 @@ paths:
         '503': { $ref: '#/components/responses/ProviderUnavailable' }
     post:
       operationId: replaceVocabularyDictionaryEntries
+      x-kombify-confirmation: "This operation replaces every dictionary entry with the submitted list."
+      x-kombify-mcp:
+        toolName: speechkit_vocabulary_replace
+        requiredCapability: speechkit.vocabulary.write
+        annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }
       summary: Replace old dictionary-shaped migration entries
       description: Requires an admin identity.
       tags: [vocabulary]
@@ -441,11 +482,13 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
     post:
       operationId: replaceWords
+      x-kombify-confirmation: "This operation replaces every custom word with the submitted list."
       summary: Replace settings-sourced Words
       description: Requires an admin identity.
       tags: [vocabulary]
       parameters:
         - name: scope
+          x-kombify-name: query_scope
           in: query
           required: false
           schema: { type: string, enum: [builtin, app, install, org, workspace, user, session] }
@@ -459,6 +502,7 @@ paths:
             the same as omitting it and is rejected.
           schema: { type: string, minLength: 1 }
         - name: source
+          x-kombify-name: query_source
           in: query
           required: false
           schema: { type: string }
@@ -516,11 +560,13 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
     post:
       operationId: replaceReplacements
+      x-kombify-confirmation: "This operation replaces every replacement rule with the submitted list."
       summary: Replace settings-sourced Replacements
       description: Requires an admin identity.
       tags: [vocabulary]
       parameters:
         - name: scope
+          x-kombify-name: query_scope
           in: query
           required: false
           schema: { type: string, enum: [builtin, app, install, org, workspace, user, session] }
@@ -534,6 +580,7 @@ paths:
             the same as omitting it and is rejected.
           schema: { type: string, minLength: 1 }
         - name: source
+          x-kombify-name: query_source
           in: query
           required: false
           schema: { type: string }
@@ -587,6 +634,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
     post:
       operationId: replaceVocabulary
+      x-kombify-confirmation: "This operation replaces the customization vocabulary with the submitted one."
       summary: Replace Words and leftover Replacements in one write
       description: Requires an admin identity. Alias synonyms are materialized from Word.sounds_like.
       tags: [vocabulary]
@@ -635,11 +683,13 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
     post:
       operationId: replaceLexicons
+      x-kombify-confirmation: "This operation replaces every lexicon with the submitted list."
       summary: Replace settings-sourced Lexicons
       description: Requires an admin identity.
       tags: [vocabulary]
       parameters:
         - name: scope
+          x-kombify-name: query_scope
           in: query
           required: false
           schema: { type: string, enum: [builtin, app, install, org, workspace, user, session] }
@@ -653,6 +703,7 @@ paths:
             the same as omitting it and is rejected.
           schema: { type: string, minLength: 1 }
         - name: source
+          x-kombify-name: query_source
           in: query
           required: false
           schema: { type: string }
@@ -701,11 +752,13 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
     post:
       operationId: replaceRulesets
+      x-kombify-confirmation: "This operation replaces every ruleset with the submitted list."
       summary: Replace settings-sourced Rulesets
       description: Requires an admin identity.
       tags: [vocabulary]
       parameters:
         - name: scope
+          x-kombify-name: query_scope
           in: query
           required: false
           schema: { type: string, enum: [builtin, app, install, org, workspace, user, session] }
@@ -719,6 +772,7 @@ paths:
             the same as omitting it and is rejected.
           schema: { type: string, minLength: 1 }
         - name: source
+          x-kombify-name: query_source
           in: query
           required: false
           schema: { type: string }
@@ -763,6 +817,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
     post:
       operationId: importCustomizationPack
+      x-kombify-confirmation: "This operation replaces the scoped customization with the imported pack."
       summary: Import customization pack
       description: Requires an admin identity.
       tags: [vocabulary]
@@ -831,6 +886,10 @@ paths:
   /v1/transcripts:
     get:
       operationId: listTranscripts
+      x-kombify-mcp:
+        toolName: speechkit_transcripts_list
+        requiredCapability: speechkit.storage.read
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
       summary: List caller-scoped transcripts
       tags: [storage]
       parameters:
@@ -856,6 +915,10 @@ paths:
   /v1/transcripts/{id}:
     get:
       operationId: getTranscript
+      x-kombify-mcp:
+        toolName: speechkit_transcript_get
+        requiredCapability: speechkit.storage.read
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
       summary: Get caller-scoped transcript
       tags: [storage]
       parameters:
@@ -893,6 +956,10 @@ paths:
   /v1/voiceagent/sessions/{id}/summary:
     get:
       operationId: getVoiceAgentSessionSummary
+      x-kombify-mcp:
+        toolName: speechkit_voiceagent_session_summary
+        requiredCapability: speechkit.storage.read
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
       summary: Get persisted Voice Agent session summary
       tags: [storage, voiceagent]
       parameters:
@@ -910,6 +977,10 @@ paths:
   /v1/tts/synthesize:
     post:
       operationId: synthesizeTTS
+      x-kombify-mcp:
+        toolName: speechkit_tts_synthesize
+        requiredCapability: speechkit.tts.synthesize
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
       summary: Synthesize text to audio
       tags: [tts]
       requestBody:
@@ -954,6 +1025,7 @@ paths:
   /v1/audio/transcriptions:
     post:
       operationId: createOpenAITranscription
+      x-kombify-mcp: false
       summary: OpenAI-compatible transcription
       description: |
         Runs the same kernel path as `/v1/dictation/transcribe` (decode,
@@ -1012,6 +1084,7 @@ paths:
   /v1/audio/speech:
     post:
       operationId: createOpenAISpeech
+      x-kombify-mcp: false
       summary: OpenAI-compatible speech synthesis
       description: |
         Synthesizes `input` through the server's TTS router and returns the
@@ -1207,6 +1280,7 @@ paths:
   /v1/dictation/stream/sessions:
     post:
       operationId: createDictationStreamSession
+      x-kombify-mcp: false
       summary: Create a streaming Dictation session and ticket
       description: |
         Creates a streaming Dictation session and returns a one-time HMAC
@@ -1256,6 +1330,8 @@ paths:
   /v1/dictation/stream/sessions/{id}:
     delete:
       operationId: deleteDictationStreamSession
+      x-kombify-confirmation: "This operation ends the streaming dictation session."
+      x-kombify-mcp: false
       summary: Force close a streaming Dictation session
       tags: [dictation]
       parameters:
@@ -1277,6 +1353,7 @@ paths:
   /v1/voiceagent/sessions:
     post:
       operationId: createVoiceAgentSession
+      x-kombify-mcp: false
       summary: Create a Voice Agent session and ticket
       description: |
         Creates a session record and returns a one-time HMAC ticket the
@@ -1382,6 +1459,7 @@ paths:
   /v1/voiceagent/sessions/{id}/livekit-token:
     get:
       operationId: refreshVoiceAgentLiveKitToken
+      x-kombify-mcp: false
       summary: Refresh a LiveKit join token for a Voice Agent session
       tags: [voiceagent]
       parameters:
@@ -1412,6 +1490,8 @@ paths:
   /v1/voiceagent/sessions/{id}:
     delete:
       operationId: deleteVoiceAgentSession
+      x-kombify-confirmation: "This operation ends the Voice Agent session."
+      x-kombify-mcp: false
       summary: Force close a session
       tags: [voiceagent]
       parameters:
@@ -1434,6 +1514,10 @@ paths:
   /v1/personas:
     get:
       operationId: listPersonas
+      x-kombify-mcp:
+        toolName: speechkit_personas_list
+        requiredCapability: speechkit.persona.read
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
       summary: List personas
       tags: [persona]
       responses:
@@ -1450,6 +1534,10 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
     post:
       operationId: createPersona
+      x-kombify-mcp:
+        toolName: speechkit_persona_create
+        requiredCapability: speechkit.persona.write
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
       summary: Create a persona (admin)
       tags: [persona]
       requestBody:
@@ -1473,6 +1561,10 @@ paths:
       - { $ref: '#/components/parameters/PersonaID' }
     get:
       operationId: getPersona
+      x-kombify-mcp:
+        toolName: speechkit_persona_get
+        requiredCapability: speechkit.persona.read
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
       summary: Get a persona by id
       tags: [persona]
       responses:
@@ -1488,6 +1580,10 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
     patch:
       operationId: updatePersona
+      x-kombify-mcp:
+        toolName: speechkit_persona_update
+        requiredCapability: speechkit.persona.write
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
       summary: Update a persona (admin)
       tags: [persona]
       requestBody:
@@ -1507,6 +1603,11 @@ paths:
         '500': { $ref: '#/components/responses/PersistFailed' }
     delete:
       operationId: deletePersona
+      x-kombify-confirmation: "This operation permanently deletes the persona."
+      x-kombify-mcp:
+        toolName: speechkit_persona_delete
+        requiredCapability: speechkit.persona.write
+        annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }
       summary: Delete a persona (admin)
       tags: [persona]
       responses:
@@ -1523,6 +1624,10 @@ paths:
   /v1/roles:
     get:
       operationId: listRoles
+      x-kombify-mcp:
+        toolName: speechkit_roles_list
+        requiredCapability: speechkit.persona.read
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
       summary: List roles
       tags: [persona]
       responses:
@@ -1539,6 +1644,10 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
     post:
       operationId: createRole
+      x-kombify-mcp:
+        toolName: speechkit_role_create
+        requiredCapability: speechkit.persona.write
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
       summary: Create a role (admin)
       tags: [persona]
       requestBody:
@@ -1562,6 +1671,10 @@ paths:
       - { $ref: '#/components/parameters/RoleID' }
     get:
       operationId: getRole
+      x-kombify-mcp:
+        toolName: speechkit_role_get
+        requiredCapability: speechkit.persona.read
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
       summary: Get role
       tags: [persona]
       responses:
@@ -1577,6 +1690,10 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
     patch:
       operationId: updateRole
+      x-kombify-mcp:
+        toolName: speechkit_role_update
+        requiredCapability: speechkit.persona.write
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
       summary: Update role (admin)
       tags: [persona]
       requestBody:
@@ -1595,6 +1712,11 @@ paths:
         '500': { $ref: '#/components/responses/PersistFailed' }
     delete:
       operationId: deleteRole
+      x-kombify-confirmation: "This operation permanently deletes the role."
+      x-kombify-mcp:
+        toolName: speechkit_role_delete
+        requiredCapability: speechkit.persona.write
+        annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }
       summary: Delete role (admin)
       tags: [persona]
       responses:
@@ -1611,6 +1733,10 @@ paths:
   /v1/sequences:
     get:
       operationId: listSequences
+      x-kombify-mcp:
+        toolName: speechkit_sequences_list
+        requiredCapability: speechkit.persona.read
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
       summary: List sequences
       tags: [persona]
       responses:
@@ -1627,6 +1753,10 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
     post:
       operationId: createSequence
+      x-kombify-mcp:
+        toolName: speechkit_sequence_create
+        requiredCapability: speechkit.persona.write
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
       summary: Create sequence (admin)
       tags: [persona]
       requestBody:
@@ -1649,6 +1779,10 @@ paths:
       - { $ref: '#/components/parameters/SequenceID' }
     get:
       operationId: getSequence
+      x-kombify-mcp:
+        toolName: speechkit_sequence_get
+        requiredCapability: speechkit.persona.read
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
       summary: Get sequence
       tags: [persona]
       responses:
@@ -1664,6 +1798,10 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
     patch:
       operationId: updateSequence
+      x-kombify-mcp:
+        toolName: speechkit_sequence_update
+        requiredCapability: speechkit.persona.write
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
       summary: Update sequence (admin)
       tags: [persona]
       requestBody:
@@ -1682,6 +1820,11 @@ paths:
         '500': { $ref: '#/components/responses/PersistFailed' }
     delete:
       operationId: deleteSequence
+      x-kombify-confirmation: "This operation permanently deletes the sequence."
+      x-kombify-mcp:
+        toolName: speechkit_sequence_delete
+        requiredCapability: speechkit.persona.write
+        annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }
       summary: Delete sequence (admin)
       tags: [persona]
       responses:
@@ -1712,6 +1855,7 @@ paths:
   /v1/device-agent/register:
     post:
       operationId: registerDeviceAgent
+      x-kombify-internal: true
       summary: Register a paired device agent
       description: >
         Announces the device and what it can do. The server answers with the
@@ -1736,6 +1880,7 @@ paths:
   /v1/device-agent/events:
     post:
       operationId: reportDeviceAgentEvent
+      x-kombify-internal: true
       summary: Report a device-side lifecycle event
       description: >
         One event per call. The server records it for operators and evidence;
@@ -1759,6 +1904,7 @@ paths:
   /v1/device-agent/assist:
     post:
       operationId: processDeviceAgentAssist
+      x-kombify-internal: true
       summary: Run one Assist turn for a paired device
       description: >
         The transcript goes in, the spoken answer and whether an action ran
@@ -1783,6 +1929,7 @@ paths:
   /v1/device-agent/tts:
     post:
       operationId: synthesizeForDeviceAgent
+      x-kombify-internal: true
       summary: Synthesize the spoken answer for a prior Assist turn
       description: >
         Fetches audio for a `request_id` the server already answered, so the
@@ -1841,16 +1988,19 @@ components:
     PersonaID:
       name: id
       in: path
+      x-kombify-name: persona_id
       required: true
       schema: { type: string }
     RoleID:
       name: id
       in: path
+      x-kombify-name: role_id
       required: true
       schema: { type: string }
     SequenceID:
       name: id
       in: path
+      x-kombify-name: sequence_id
       required: true
       schema: { type: string }
 
