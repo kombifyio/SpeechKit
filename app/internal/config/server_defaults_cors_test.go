@@ -39,3 +39,12 @@ func TestApplyServerRuntimeDefaultsDeduplicatesPublicURL(t *testing.T) {
 		t.Fatalf("duplicate entry must be skipped, got %#v", cfg.Server.CORSAllowedOrigins)
 	}
 }
+
+func TestApplyServerRuntimeDefaultsReducesPublicURLPathToOrigin(t *testing.T) {
+	t.Setenv("SPEECHKIT_PUBLIC_URL", "https://api.kombify.io/v1/speechkit")
+	cfg := &Config{}
+	_ = ApplyServerRuntimeDefaults(cfg)
+	if len(cfg.Server.CORSAllowedOrigins) != 1 || cfg.Server.CORSAllowedOrigins[0] != "https://api.kombify.io" {
+		t.Fatalf("expected only the public URL origin, got %#v", cfg.Server.CORSAllowedOrigins)
+	}
+}

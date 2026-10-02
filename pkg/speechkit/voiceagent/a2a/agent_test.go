@@ -23,11 +23,15 @@ func TestAgentStreamsRegisteredA2ATurn(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		method = request.Method
 		sessionHeader = request.Header.Get("x-session-id")
-		body := "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":\"turn-1\",\"result\":{\"kind\":\"message\",\"role\":\"agent\",\"parts\":[{\"kind\":\"text\",\"text\":\"Your lab has three healthy nodes.\"}]}}\n\n"
+		// The agent streams token deltas; the space at a delta's edge is part of the answer.
+		var body strings.Builder
+		for _, delta := range []string{"Your lab", " has three", " healthy nodes."} {
+			fmt.Fprintf(&body, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":\"turn-1\",\"result\":{\"kind\":\"message\",\"role\":\"agent\",\"parts\":[{\"kind\":\"text\",\"text\":%q}]}}\n\n", delta)
+		}
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
-			Body:       io.NopCloser(strings.NewReader(body)),
+			Body:       io.NopCloser(strings.NewReader(body.String())),
 			Request:    request,
 		}, nil
 	})}

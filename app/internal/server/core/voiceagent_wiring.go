@@ -298,8 +298,8 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 		}
 		return &registeredAgentProviderFactory{
 			deps: vsserver.CascadedDeps{
-				STT: app.STTRouter, SpeakerStreamer: app.STTRouter, TTS: ttsImpl,
-				Config: vsserver.CascadedConfig{TTSFormat: firstNonEmpty(cfg.TTS.Format, "mp3"), TTSSpeed: nonZeroFloat(cfg.TTS.Speed, 1.0)},
+				STT: app.STTRouter, SpeakerStreamer: app.STTRouter, TTS: vsserver.NewDownlinkTTS(ttsImpl),
+				Config: vsserver.CascadedConfig{TTSFormat: "wav", TTSSpeed: nonZeroFloat(cfg.TTS.Speed, 1.0)},
 			},
 		}, status, nil
 

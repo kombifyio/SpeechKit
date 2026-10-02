@@ -190,8 +190,29 @@ func detectFormat(raw []byte, contentType string) string {
 // decodeWAV parses a canonical PCM WAV file, extracts the data chunk, and
 // normalizes to 16 kHz mono S16LE.
 func decodeWAV(raw []byte, limits DecodeLimits) (*DecodedAudio, error) {
+	pcm, sampleRate, channels, err := parseWAV(raw)
+	if err != nil {
+		return nil, err
+	}
+	normalized, err := normalize(pcm, sampleRate, channels)
+	if err != nil {
+		return nil, err
+	}
+	decoded := &DecodedAudio{
+		PCM:          normalized,
+		SourceFormat: "wav",
+		SourceRate:   sampleRate,
+		SourceCh:     channels,
+		DurationMs:   pcmDurationMs(normalized),
+	}
+	return decoded, enforceDecodedLimit(decoded, limits)
+}
+
+// parseWAV returns the S16LE data chunk of a PCM WAV file with its native
+// sample rate and channel count.
+func parseWAV(raw []byte) (pcm []byte, sampleRate, channels int, err error) {
 	if len(raw) < 44 || !bytes.Equal(raw[0:4], []byte("RIFF")) || !bytes.Equal(raw[8:12], []byte("WAVE")) {
-		return nil, errors.New("audio: invalid WAV header")
+		return nil, 0, 0, errors.New("audio: invalid WAV header")
 	}
 
 	// Walk chunks starting at offset 12. We need the fmt chunk and the data chunk.
@@ -199,8 +220,8 @@ func decodeWAV(raw []byte, limits DecodeLimits) (*DecodedAudio, error) {
 		haveFmt     bool
 		haveData    bool
 		audioFormat uint16
-		channels    uint16
-		sampleRate  uint32
+		wavChannels uint16
+		wavRate     uint32
 		bps         uint16
 		dataStart   int
 		dataEnd     int
@@ -218,11 +239,11 @@ func decodeWAV(raw []byte, limits DecodeLimits) (*DecodedAudio, error) {
 		switch id {
 		case "fmt ":
 			if size < 16 {
-				return nil, errors.New("audio: malformed WAV fmt chunk")
+				return nil, 0, 0, errors.New("audio: malformed WAV fmt chunk")
 			}
 			audioFormat = binary.LittleEndian.Uint16(raw[chunkStart : chunkStart+2])
-			channels = binary.LittleEndian.Uint16(raw[chunkStart+2 : chunkStart+4])
-			sampleRate = binary.LittleEndian.Uint32(raw[chunkStart+4 : chunkStart+8])
+			wavChannels = binary.LittleEndian.Uint16(raw[chunkStart+2 : chunkStart+4])
+			wavRate = binary.LittleEndian.Uint32(raw[chunkStart+4 : chunkStart+8])
 			bps = binary.LittleEndian.Uint16(raw[chunkStart+14 : chunkStart+16])
 			haveFmt = true
 		case "data":
@@ -238,34 +259,22 @@ func decodeWAV(raw []byte, limits DecodeLimits) (*DecodedAudio, error) {
 	}
 
 	if !haveFmt || !haveData {
-		return nil, errors.New("audio: WAV missing fmt or data chunk")
+		return nil, 0, 0, errors.New("audio: WAV missing fmt or data chunk")
 	}
 	if audioFormat != 1 {
-		return nil, fmt.Errorf("audio: WAV audio format %d not supported (only PCM=1 is accepted)", audioFormat)
+		return nil, 0, 0, fmt.Errorf("audio: WAV audio format %d not supported (only PCM=1 is accepted)", audioFormat)
 	}
 	if bps != 16 {
-		return nil, fmt.Errorf("audio: WAV bit depth %d not supported (only 16-bit PCM is accepted)", bps)
+		return nil, 0, 0, fmt.Errorf("audio: WAV bit depth %d not supported (only 16-bit PCM is accepted)", bps)
 	}
-	if channels == 0 || channels > 8 {
-		return nil, fmt.Errorf("audio: WAV channel count %d out of range", channels)
+	if wavChannels == 0 || wavChannels > 8 {
+		return nil, 0, 0, fmt.Errorf("audio: WAV channel count %d out of range", wavChannels)
 	}
-	if sampleRate == 0 {
-		return nil, errors.New("audio: WAV sample rate is zero")
+	if wavRate == 0 {
+		return nil, 0, 0, errors.New("audio: WAV sample rate is zero")
 	}
 
-	pcm := raw[dataStart:dataEnd]
-	normalized, err := normalize(pcm, int(sampleRate), int(channels))
-	if err != nil {
-		return nil, err
-	}
-	decoded := &DecodedAudio{
-		PCM:          normalized,
-		SourceFormat: "wav",
-		SourceRate:   int(sampleRate),
-		SourceCh:     int(channels),
-		DurationMs:   pcmDurationMs(normalized),
-	}
-	return decoded, enforceDecodedLimit(decoded, limits)
+	return raw[dataStart:dataEnd], int(wavRate), int(wavChannels), nil
 }
 
 // decodeMP3 uses hajimehoshi/go-mp3 (pure-Go) to produce S16LE PCM at the
@@ -324,6 +333,12 @@ func decodeRawPCM(raw []byte, limits DecodeLimits) (*DecodedAudio, error) {
 // normalize downmixes multi-channel PCM to mono and resamples to 16 kHz.
 // Input is S16LE; output is S16LE at TargetSampleRate mono.
 func normalize(pcm []byte, srcRate, srcCh int) ([]byte, error) {
+	return normalizeTo(pcm, srcRate, srcCh, TargetSampleRate)
+}
+
+// normalizeTo downmixes multi-channel S16LE PCM to mono and resamples it to
+// dstRate.
+func normalizeTo(pcm []byte, srcRate, srcCh, dstRate int) ([]byte, error) {
 	if len(pcm) == 0 {
 		return nil, errors.New("audio: normalize: empty PCM buffer")
 	}
@@ -335,10 +350,10 @@ func normalize(pcm []byte, srcRate, srcCh int) ([]byte, error) {
 	if srcCh != 1 {
 		mono = downmixToMono(pcm, srcCh)
 	}
-	if srcRate == TargetSampleRate {
+	if srcRate == dstRate {
 		return mono, nil
 	}
-	return resampleLinear(mono, srcRate, TargetSampleRate), nil
+	return resampleLinear(mono, srcRate, dstRate), nil
 }
 
 // downmixToMono averages every N channels into a single S16LE mono stream.

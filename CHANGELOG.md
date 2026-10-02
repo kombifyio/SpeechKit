@@ -9,6 +9,15 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.74.1](https://github.com/kombifyio/SpeechKit/compare/v0.74.0...v0.74.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **android:** stamp the delivery version into Firebase tester builds ([#705](https://github.com/kombifyio/SpeechKit/issues/705)) ([d71053e](https://github.com/kombifyio/SpeechKit/commit/d71053ea613a60e101a9b57e5fd358d3c2bd5182))
+* **server:** derive WS origin from public_url and free the session slot on rejected upgrade ([#707](https://github.com/kombifyio/SpeechKit/issues/707)) ([3c7d8f8](https://github.com/kombifyio/SpeechKit/commit/3c7d8f834475708198268eb61a08a6eca74ae6b0))
+* **voiceagent:** deliver agent speech as 24 kHz PCM and keep spaces between streamed words ([#708](https://github.com/kombifyio/SpeechKit/issues/708)) ([2bc0a18](https://github.com/kombifyio/SpeechKit/commit/2bc0a18d2db6dab353adc8a2ee3eb5cf88402ebf))
+
 ## [0.74.0](https://github.com/kombifyio/SpeechKit/compare/bb3e4fef280e89618e9ddf56d83ea8c659628609...9edcd395c43244db6a3a09762d462e5c21cf5c29) (2026-10-02)
 
 ### Highlights

@@ -185,12 +185,15 @@ func readAnswer(response *http.Response) (string, error) {
 	if err := json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(&envelope); err != nil {
 		return "", fmt.Errorf("speechkit a2a: decode response: %w", err)
 	}
-	if text := answerText(envelope); text != "" {
+	if text := strings.TrimSpace(answerText(envelope)); text != "" {
 		return text, nil
 	}
 	return "", errors.New("speechkit a2a: agent returned no text answer")
 }
 
+// readSSEAnswer joins the text of every streamed result event. Events carry
+// token deltas, so whitespace at a delta's edge belongs to the answer and is
+// trimmed only from the joined text.
 func readSSEAnswer(reader io.Reader) (string, error) {
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64*1024), 4<<20)
@@ -217,10 +220,11 @@ func readSSEAnswer(reader io.Reader) (string, error) {
 	if err := scanner.Err(); err != nil {
 		return "", fmt.Errorf("speechkit a2a: read stream: %w", err)
 	}
-	if len(answers) == 0 {
+	answer := strings.TrimSpace(strings.Join(answers, ""))
+	if answer == "" {
 		return "", errors.New("speechkit a2a: agent returned no text answer")
 	}
-	return strings.Join(answers, ""), nil
+	return answer, nil
 }
 
 func rpcError(value any) bool {
@@ -275,7 +279,7 @@ func partsText(value any) string {
 			text.WriteString(value)
 		}
 	}
-	return strings.TrimSpace(text.String())
+	return text.String()
 }
 
 var _ cascaded.Agent = (*Agent)(nil)

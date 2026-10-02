@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/url"
 	"os"
 	"strings"
 )
@@ -45,7 +46,10 @@ func ApplyServerRuntimeDefaults(cfg *Config) []string {
 	// in a browser) is exactly what shipped broken in v0.35.4 and required
 	// a hotfix. Auto-deriving here keeps OSS deployments behind a public
 	// origin working without operator intervention.
-	if origin := strings.TrimSpace(cfg.Server.PublicURL); origin != "" {
+	// A browser Origin is scheme://host[:port] and never carries a path, so a
+	// PublicURL such as https://api.kombify.io/v1/speechkit contributes only
+	// its origin.
+	if origin := originFromURL(cfg.Server.PublicURL); origin != "" {
 		if added := appendUniqueOrigin(&cfg.Server.CORSAllowedOrigins, origin); added {
 			notes = append(notes, "server CORS allow-list extended with PublicURL: "+origin)
 		}
@@ -307,4 +311,14 @@ func appendUniqueOrigin(origins *[]string, origin string) bool {
 	}
 	*origins = append(*origins, target)
 	return true
+}
+
+// originFromURL returns scheme://host[:port] for an absolute http(s) URL, or
+// "" when the value is not one.
+func originFromURL(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }

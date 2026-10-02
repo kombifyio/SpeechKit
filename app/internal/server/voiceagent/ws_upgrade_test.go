@@ -54,6 +54,44 @@ func TestWebSocketRejectsDisallowedOrigin(t *testing.T) {
 	}
 }
 
+func TestWebSocketOriginRejectionReleasesIdentitySlot(t *testing.T) {
+	manager := mustManager(t, Options{MaxPerIdentitySessions: 1})
+	handler, err := New(HandlerOptions{
+		Manager:        manager,
+		Provider:       staticProviderFactory{provider: newFakeProvider()},
+		Persona:        &fakeResolver{},
+		AllowedOrigins: []string{"https://app.example.com"},
+	})
+	if err != nil {
+		t.Fatalf("New handler: %v", err)
+	}
+	mux := http.NewServeMux()
+	handler.Mount(mux)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	identity := Identity{UserID: "user-1", OrgID: "org-1"}
+	session, ticket, err := manager.Create(identity)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/v1/voiceagent/sessions/" + session.ID + "/ws"
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+		HTTPHeader:   http.Header{"Origin": []string{"https://evil.example"}},
+		Subprotocols: []string{wsTicketSubprotocol(ticket)},
+	})
+	if err == nil {
+		_ = conn.Close(websocket.StatusNormalClosure, "")
+		t.Fatalf("websocket dial unexpectedly succeeded")
+	}
+
+	if _, _, err := manager.Create(identity); err != nil {
+		t.Fatalf("retry after rejected upgrade must not hit the per-identity limit: %v", err)
+	}
+}
+
 func TestWebSocketAllowsConfiguredBrowserOrigin(t *testing.T) {
 	manager := mustManager(t, Options{})
 	provider := newFakeProvider()

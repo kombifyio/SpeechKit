@@ -374,9 +374,9 @@ func (f *cascadedProviderFactory) NewProvider() vsserver.LiveProviderAdapter {
 		STT:             f.stt,
 		SpeakerStreamer: f.speakerStreamer,
 		Agent:           f.agent,
-		TTS:             f.tts,
+		TTS:             vsserver.NewDownlinkTTS(f.tts),
 		Config: vsserver.CascadedConfig{
-			TTSFormat: firstNonEmpty(f.cfg.TTS.Format, "mp3"),
+			TTSFormat: "wav",
 			TTSSpeed:  nonZeroFloat(f.cfg.TTS.Speed, 1.0),
 		},
 	})

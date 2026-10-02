@@ -22,6 +22,14 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 	// Ticketed native clients (no Origin header) proceed to ticket
 	// verification; browser requests stay subject to the Origin allowlist.
 	if !wssession.UpgradeOriginAllowed(r, h.allowedOrigins) {
+		// The rejected client holds a valid ticket for a pending session that
+		// will never attach. Release it now so the per-identity limit does not
+		// block the retry until the ticket expires. Requiring a valid ticket
+		// keeps unauthenticated callers from closing sessions they do not own.
+		ticket, _ := wssession.ExtractTicket(r)
+		if h.manager.VerifyTicket(sessionID, ticket) == nil {
+			h.manager.Remove(sessionID)
+		}
 		httpx.WriteError(w, http.StatusForbidden, "origin_not_allowed", "websocket origin is not allowed")
 		return
 	}
