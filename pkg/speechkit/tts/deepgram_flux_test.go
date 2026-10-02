@@ -55,8 +55,10 @@ func TestSnapDeepgramFluxSpeed(t *testing.T) {
 		1.0:  1.0,  // exact
 		1.07: 1.05, // between steps, rounds down
 		1.13: 1.15, // between steps, rounds up
-		3.0:  1.15, // above range, clamps
-		0.1:  0.85, // below range, clamps
+		0.72: 0.7,  // lower half of the widened range
+		1.42: 1.4,  // upper half of the widened range
+		3.0:  1.5,  // above range, clamps
+		0.1:  0.5,  // below range, clamps
 	}
 	for in, want := range cases {
 		if got := SnapDeepgramFluxSpeed(in); got != want {

@@ -6,6 +6,8 @@
 // differences that only make sense for a server the user owns: network
 // validation accepts loopback and private addresses, and the request timeout
 // tolerates a cold start.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package vps
 
 import (
@@ -19,21 +21,25 @@ import (
 // Provider is the OpenAI-compatible adapter pointed at a self-hosted server.
 type Provider = openaicompat.Provider
 
-// New creates a provider for a self-hosted whisper-server on its default
-// model. Loopback, private ranges and plain http are allowed because these
-// deployments live inside a VPN, on a home LAN, or on localhost.
-func New(baseURL, apiKey string) *Provider {
-	return NewWithModel(baseURL, apiKey, "whisper-1")
+// Options configures [New].
+type Options struct {
+	// BaseURL is the whisper-server endpoint root.
+	BaseURL string
+	// APIKey is sent as a bearer token. Empty for unauthenticated servers.
+	APIKey string
+	// Model pins the served model. Empty selects "whisper-1".
+	Model string
 }
 
-// NewWithModel creates a self-hosted whisper-server provider
-// pinned to model. An empty model defaults to "whisper-1".
-func NewWithModel(baseURL, apiKey, model string) *Provider {
-	model = strings.TrimSpace(model)
+// New creates a provider for a self-hosted whisper-server. Loopback, private
+// ranges and plain http are allowed because these deployments live inside a
+// VPN, on a home LAN, or on localhost.
+func New(opts Options) *Provider {
+	model := strings.TrimSpace(opts.Model)
 	if model == "" {
 		model = "whisper-1"
 	}
-	p := openaicompat.New("vps", baseURL, apiKey, model)
+	p := openaicompat.New(openaicompat.Options{Name: "vps", BaseURL: opts.BaseURL, APIKey: opts.APIKey, Model: model})
 	p.Validation = netsec.ValidationOptions{
 		AllowLoopback: true,
 		AllowPrivate:  true,

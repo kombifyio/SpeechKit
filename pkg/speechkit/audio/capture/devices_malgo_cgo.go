@@ -5,7 +5,6 @@ package capture
 import (
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/gen2brain/malgo"
@@ -82,7 +81,7 @@ func resolveCaptureDeviceHex(cfg Config) (string, error) {
 		for _, device := range devices {
 			names = append(names, device.Name)
 		}
-		slog.Warn("configured capture device not found; falling back to system default",
+		cfg.log().Warn("configured capture device not found; falling back to system default",
 			"requested_device_id", requested,
 			"requested_device_name", cfg.DeviceName,
 			"available_devices", strings.Join(names, "; "))
@@ -90,7 +89,7 @@ func resolveCaptureDeviceHex(cfg Config) (string, error) {
 	}
 
 	if !strings.EqualFold(selected, requested) {
-		slog.Warn("capture device re-enumerated with a new endpoint id; matched by persisted name",
+		cfg.log().Warn("capture device re-enumerated with a new endpoint id; matched by persisted name",
 			"old_device_id", requested,
 			"new_device_id", selected,
 			"device_name", cfg.DeviceName)

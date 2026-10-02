@@ -150,13 +150,13 @@ reverse-engineering the repository.
 ### Assist Voice Companion
 
 ```text
-Add a SpeechKit Assist Voice Companion to this Go app. Import only public packages from github.com/kombifyio/SpeechKit/pkg/speechkit/...: companion, wakeword, assist, tts, and speechkit for events. Wire companion.NewHandsFree with TargetMode: companion.TargetAssist. The host owns microphone capture and playback; SpeechKit owns wake event contracts, transcript request, Assist routing, optional TTS, and EventBus publication. Do not import internal/* or the Windows client.
+Add a SpeechKit Assist Voice Companion to this Go app. Import only public packages from github.com/kombifyio/SpeechKit/pkg/speechkit/...: companion, wakeword, assist, tts, and speechkit for events. Wire companion.NewHandsFree with TargetMode: companion.TargetAssist. The host owns microphone capture and playback; SpeechKit owns wake event contracts, transcript request, Assist routing, optional TTS, and EventBus publication. Do not import app/internal/* or the Windows client.
 ```
 
 ### Voice Agent Companion
 
 ```text
-Add a SpeechKit hands-free Voice Agent companion to this app. Use companion.NewHandsFree with TargetMode: companion.TargetVoiceAgent for wake activation, and use pkg/speechkit/client for a running speechkit-server or pkg/speechkit/agentkit for an embedded Go Voice Agent harness. Keep persona/role/sequence configuration in host-owned config, stream PCM 16 kHz S16LE mono into the session, and do not use internal/* packages.
+Add a SpeechKit hands-free Voice Agent companion to this app. Use companion.NewHandsFree with TargetMode: companion.TargetVoiceAgent for wake activation, and use pkg/speechkit/client for a running speechkit-server or pkg/speechkit/agentkit for an embedded Go Voice Agent harness. Keep persona/role/sequence configuration in host-owned config, stream PCM 16 kHz S16LE mono into the session, and do not use app/internal/* packages.
 ```
 
 ### Dictation UI-Assisted Activation
@@ -171,10 +171,10 @@ Agents should start from the docs and examples instead of reverse-engineering
 implementation packages:
 
 ```bash
-go run ./cmd/speechkit-mcp --mode=docs,test
-go run ./cmd/speechkit-cli init --template go-assist-voice-companion ./my-companion
-go run ./cmd/speechkit-cli init --template go-voice-agent-companion ./my-agent
-go run ./cmd/speechkit-cli init --template go-dictation-handsfree-ui ./my-dictation-ui
+go run ./app/cmd/speechkit-mcp --mode=docs,test
+go run ./app/cmd/speechkit-cli init --template go-assist-voice-companion ./my-companion
+go run ./app/cmd/speechkit-cli init --template go-voice-agent-companion ./my-agent
+go run ./app/cmd/speechkit-cli init --template go-dictation-handsfree-ui ./my-dictation-ui
 go run ./examples/embed-companion
 ```
 

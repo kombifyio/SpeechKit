@@ -66,11 +66,11 @@ Hi Codex, read speechkit.cc/llms.txt, then install the SpeechKit Server with Doc
 ```
 
 ```text
-Hi Codex, add SpeechKit as a Go framework dependency and use the documented Dictation, Assist, Voice Agent, and Hands-Free contracts. Prefer the go-assist-voice-companion, go-voice-agent-companion, or go-dictation-handsfree-ui scaffold when it fits, import only public pkg/speechkit/... components, and do not import internal/*.
+Hi Codex, add SpeechKit as a Go framework dependency and use the documented Dictation, Assist, Voice Agent, and Hands-Free contracts. Prefer the go-assist-voice-companion, go-voice-agent-companion, or go-dictation-handsfree-ui scaffold when it fits, import only public pkg/speechkit/... components, and do not import app/internal/*.
 ```
 
 ```text
-Hi Codex, add a SpeechKit Assist Voice Companion to this Go app. Import only pkg/speechkit/{companion,wakeword,assist,tts} plus pkg/speechkit for events, wire companion.NewHandsFree with TargetMode: companion.TargetAssist, keep microphone capture/playback host-owned, and do not import internal/* or the Windows client.
+Hi Codex, add a SpeechKit Assist Voice Companion to this Go app. Import only pkg/speechkit/{companion,wakeword,assist,tts} plus pkg/speechkit for events, wire companion.NewHandsFree with TargetMode: companion.TargetAssist, keep microphone capture/playback host-owned, and do not import app/internal/* or the Windows client.
 ```
 
 ```text
@@ -139,12 +139,15 @@ Core server surfaces:
 - AssemblyAI Voice Agent: native `wss://agents.assemblyai.com/v1/ws` adapter
   with `session.update`, `session.ready`, `input.audio`, `reply.audio`,
   user/agent transcripts, tool calls/results, interruptions, and `session.end`.
-- OpenAI Realtime: `gpt-realtime-2` under the same LiveProvider contract.
+- OpenAI Realtime: `gpt-realtime-2.1` (or `gpt-realtime-2.1-mini`) under the
+  same LiveProvider contract.
 - Gemini Live (opt-in BYOK only, never a default; needs the operator's own
   `GOOGLE_AI_API_KEY` and `[providers.google]`): profile
-  `realtime.google.gemini-native-audio` with `gemini-3.1-flash-live-preview`
-  primary and `gemini-2.5-flash-native-audio-preview-12-2025` as
-  previous-preview fallback.
+  `realtime.google.gemini-native-audio` with `gemini-3.8-live` (GA) and the
+  `gemini-3.8-live-extended-thinking` preview.
+- Retired model ids (for example `whisper-1`, `gpt-4o-transcribe`,
+  `gpt-realtime-2`, `gemini-2.5-*`, Groq Llama 3.x) are listed with their
+  successors in `catalog.RetiredModels`; persisted configs migrate on load.
 - Gemini Live Translate (opt-in BYOK only): `gemini-3.5-live-translate-preview`
   via profile `realtime.google.gemini-live-translate`; keep it separate from
   the general dialogue profile.
@@ -194,7 +197,7 @@ running server:
 
 Import the smallest public component that matches the job. A wake-only
 satellite should import `wakeword`; a TTS-only app should import `tts`; a
-server-connected Voice Agent should import `client`. Do not import `internal/*`
+server-connected Voice Agent should import `client`. Do not import `app/internal/*`
 or the Windows client from a library integration.
 
 Hands-Free target modes:
@@ -240,16 +243,18 @@ realtime profile IDs such as `realtime.deepgram.voice-agent`,
 Per-session switching resolves provider-specific API keys and model defaults,
 so one provider session does not inherit another provider's model.
 
-Two further live providers are device-side only and are not offered on the
+Three further live providers are device-side only and are not offered on the
 Server-Target WebSocket: Microsoft Foundry Realtime
 (`realtime.foundry.gpt-realtime-2`), which speaks the OpenAI Realtime protocol
-against a Foundry resource, and Microsoft Foundry Voice Live
+against a Foundry resource, Microsoft Foundry Voice Live
 (`realtime.foundry.voice-live`), a hosted brain model with Azure Speech in and
-out (MAI-Transcribe, MAI-Voice-2) and server-side semantic turn detection.
-They are listed apart from each other because each wire protocol dials a
-different set of models.
+out (MAI-Transcribe, MAI-Voice-2) and server-side semantic turn detection, and
+Microsoft Foundry GPT-Live (`realtime.foundry.gpt-live-1`), the OpenAI
+GPT-Live protocol served by a Foundry GPT-Live deployment. They are listed
+apart from each other because each wire protocol dials a different set of
+models.
 
-The credential-gated `.github/workflows/provider-live-gate.yml` covers three
+The credential-gated `.github/workflows/live-gates.yml` covers three
 providers: Deepgram, AssemblyAI, and OpenAI. Missing credentials must
 surface as `blocked_by_auth`; a blocked leg is not live provider proof. The
 Microsoft Foundry descriptors and the opt-in Gemini Live provider have no gate

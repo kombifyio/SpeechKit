@@ -16,7 +16,7 @@ import (
 )
 
 func newTestAssemblyAIProvider(serverURL string) *Provider {
-	p := New("assembly-test-key", "universal-3-pro,universal-2")
+	p := New(Options{APIKey: "assembly-test-key", Models: "universal-3-pro,universal-2"})
 	p.BaseURL = serverURL
 	p.Validation = testValidation
 	p.PollInterval = time.Millisecond

@@ -5,4 +5,6 @@
 // tool registry, lifecycle hooks, and a swappable session memory interface.
 // Use it when embedding SpeechKit into an agent host that needs predictable
 // tool registration and prompt/session lifecycle boundaries.
+//
+// Stability: Stable — no breaking change without a minor version bump and a changelog callout.
 package agentkit

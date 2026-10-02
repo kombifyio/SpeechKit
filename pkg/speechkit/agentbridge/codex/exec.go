@@ -25,20 +25,30 @@ type execTurn struct {
 // events into emit. It returns once the process is started (fast-ack); the
 // turn continues in background goroutines until the process exits.
 func startExecTurn(ctx context.Context, binary string, req agentbridge.TurnRequest, emit func(agentbridge.Event)) (*execTurn, error) {
-	args := []string{"exec", "--json"}
-	if req.Sandbox != "" {
-		args = append(args, "--sandbox", string(req.Sandbox))
+	// Exec mode runs without any approval round-trip, so it only ever gets
+	// the read-only sandbox; side-effectful turns need app-server mode.
+	if req.Sandbox != agentbridge.SandboxReadOnly {
+		return nil, fmt.Errorf("%w: exec mode has no approvals, so only the read-only sandbox is allowed (requested %q)", agentbridge.ErrUnsupported, req.Sandbox)
 	}
-	if strings.TrimSpace(req.ThreadID) != "" {
-		args = append(args, "resume", req.ThreadID)
+	args := []string{"exec", "--json", "--sandbox", string(req.Sandbox)}
+	if threadID := strings.TrimSpace(req.ThreadID); threadID != "" {
+		if !validThreadID(threadID) {
+			return nil, fmt.Errorf("codex exec: refusing malformed thread id")
+		}
+		args = append(args, "resume", threadID)
 	}
-	args = append(args, req.Prompt)
+	// The prompt is model-authored text. It never goes on the command line:
+	// "-" makes codex read it from stdin, so neither option parsing nor a
+	// script host's quoting (cmd.exe for a .cmd shim) can interpret it.
+	args = append(args, "-")
 
 	// The working directory IS the project allowlist enforcement point for
 	// exec mode: the caller passes only allowlisted paths (policy lives in
-	// the host/voicetools layer, validated again by internal/config).
-	cmd := exec.CommandContext(ctx, binary, args...)
+	// the host/voicetools layer, validated again by app/internal/config).
+	cmd := exec.CommandContext(ctx, binary, args...) // #nosec G204 -- binary comes from resolveBinary (absolute, .exe-only on Windows); args are fixed flags plus a validated thread id, and the prompt travels on stdin.
 	cmd.Dir = req.Project.Path
+	cmd.Env = codexEnv(binary)
+	cmd.Stdin = strings.NewReader(req.Prompt)
 	configureSysProcAttr(cmd)
 
 	stdout, err := cmd.StdoutPipe()
@@ -85,6 +95,22 @@ func startExecTurn(ctx context.Context, binary string, req agentbridge.TurnReque
 	}()
 
 	return turn, nil
+}
+
+// validThreadID accepts the identifier shapes codex reports (UUIDs and
+// similar token strings) and nothing that could be read as an option.
+func validThreadID(id string) bool {
+	if id == "" || len(id) > 128 || id[0] == '-' {
+		return false
+	}
+	for _, r := range id {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // ThreadID returns the thread id reported by the running turn, if any yet.

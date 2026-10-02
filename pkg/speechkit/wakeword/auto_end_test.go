@@ -3,6 +3,7 @@ package wakeword
 import (
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -49,31 +50,32 @@ func TestAutoEndPolicy_SilenceTimerFires(t *testing.T) {
 }
 
 func TestAutoEndPolicy_NotifyActivityResetsTimer(t *testing.T) {
-	t.Parallel()
-	policy := NewAutoEndPolicy(AutoEndConfig{
-		SilenceCutoff: 50 * time.Millisecond,
-	}, nil)
-	defer policy.Close()
+	synctest.Test(t, func(t *testing.T) {
+		policy := NewAutoEndPolicy(AutoEndConfig{
+			SilenceCutoff: 50 * time.Millisecond,
+		}, nil)
+		defer policy.Close()
 
-	policy.Start()
+		policy.Start()
 
-	// Three activity bursts at 20 ms intervals (well below cutoff) should
-	// keep the timer alive throughout. Total elapsed = 60 ms > cutoff, but
-	// no single silence window exceeds the cutoff.
-	for i := 0; i < 3; i++ {
-		time.Sleep(20 * time.Millisecond)
-		policy.NotifyActivity()
-	}
-
-	// Now stay silent — the timer should fire ~50ms after the last activity.
-	select {
-	case reason := <-policy.EndSignal():
-		if reason != EndReasonSilence {
-			t.Errorf("EndReason = %q, want silence", reason)
+		// Three activity bursts at 20 ms intervals (well below cutoff) should
+		// keep the timer alive throughout. Total elapsed = 60 ms > cutoff, but
+		// no single silence window exceeds the cutoff.
+		for i := 0; i < 3; i++ {
+			time.Sleep(20 * time.Millisecond)
+			policy.NotifyActivity()
 		}
-	case <-time.After(300 * time.Millisecond):
-		t.Fatal("silence timer never fired after activity bursts stopped")
-	}
+
+		// Now stay silent — the timer should fire ~50ms after the last activity.
+		select {
+		case reason := <-policy.EndSignal():
+			if reason != EndReasonSilence {
+				t.Errorf("EndReason = %q, want silence", reason)
+			}
+		case <-time.After(300 * time.Millisecond):
+			t.Fatal("silence timer never fired after activity bursts stopped")
+		}
+	})
 }
 
 func TestAutoEndPolicy_ExitPhraseMatch(t *testing.T) {
@@ -132,40 +134,41 @@ func TestAutoEndPolicy_ExitPhraseCaseInsensitive(t *testing.T) {
 }
 
 func TestAutoEndPolicy_NonMatchingTranscriptResetsTimerOnly(t *testing.T) {
-	t.Parallel()
-	policy := NewAutoEndPolicy(AutoEndConfig{
-		SilenceCutoff: 80 * time.Millisecond,
-		ExitPhrases:   []string{"goodbye"},
-	}, nil)
-	defer policy.Close()
+	synctest.Test(t, func(t *testing.T) {
+		policy := NewAutoEndPolicy(AutoEndConfig{
+			SilenceCutoff: 80 * time.Millisecond,
+			ExitPhrases:   []string{"goodbye"},
+		}, nil)
+		defer policy.Close()
 
-	policy.Start()
+		policy.Start()
 
-	// Non-matching transcript counts as activity — silence timer should
-	// reset, NOT fire immediately.
-	time.Sleep(50 * time.Millisecond)
-	policy.NotifyTranscript("Hello, what time is it?")
+		// Non-matching transcript counts as activity — silence timer should
+		// reset, NOT fire immediately.
+		time.Sleep(50 * time.Millisecond)
+		policy.NotifyTranscript("Hello, what time is it?")
 
-	// We should NOT see EndSignal in the next 30ms (well within the
-	// silence cutoff that just got reset).
-	select {
-	case reason, ok := <-policy.EndSignal():
-		if ok {
-			t.Fatalf("unexpected EndSignal fire after non-matching transcript: %v", reason)
+		// We should NOT see EndSignal in the next 30ms (well within the
+		// silence cutoff that just got reset).
+		select {
+		case reason, ok := <-policy.EndSignal():
+			if ok {
+				t.Fatalf("unexpected EndSignal fire after non-matching transcript: %v", reason)
+			}
+		case <-time.After(30 * time.Millisecond):
+			// expected
 		}
-	case <-time.After(30 * time.Millisecond):
-		// expected
-	}
 
-	// Then after the full cutoff elapses with silence, it should fire.
-	select {
-	case reason := <-policy.EndSignal():
-		if reason != EndReasonSilence {
-			t.Errorf("EndReason = %q, want silence", reason)
+		// Then after the full cutoff elapses with silence, it should fire.
+		select {
+		case reason := <-policy.EndSignal():
+			if reason != EndReasonSilence {
+				t.Errorf("EndReason = %q, want silence", reason)
+			}
+		case <-time.After(200 * time.Millisecond):
+			t.Fatal("silence timer never fired after non-matching transcript")
 		}
-	case <-time.After(200 * time.Millisecond):
-		t.Fatal("silence timer never fired after non-matching transcript")
-	}
+	})
 }
 
 func TestAutoEndPolicy_FiresOnlyOnce(t *testing.T) {

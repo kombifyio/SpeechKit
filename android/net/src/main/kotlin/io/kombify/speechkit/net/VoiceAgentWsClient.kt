@@ -115,7 +115,7 @@ interface VoiceAgentSession {
  * to /v1/voiceagent/sessions/{id}/ws.
  *
  * The ticket rides in the `Sec-WebSocket-Protocol` header ("ticket.<value>"),
- * mirroring internal/server/wssession — never in the URL, so it stays out of
+ * mirroring app/internal/server/wssession — never in the URL, so it stays out of
  * proxy access logs.
  *
  * Unlike the dictation stream, audio is bidirectional here: the client sends

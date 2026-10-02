@@ -16,7 +16,7 @@ func TestLocalTranscriptionRejectsPublicRedirect(t *testing.T) {
 		http.Redirect(w, r, "https://203.0.113.1/transcribe", http.StatusTemporaryRedirect)
 	}))
 	defer server.Close()
-	p := New(8080, "", "cpu")
+	p := New(Options{Port: 8080, GPU: "cpu"})
 	p.BaseURL = server.URL
 	p.ready.Store(true) // Inject runtime readiness; no model subprocess is started.
 	if result, err := p.Transcribe(context.Background(), []byte{1, 2}, stt.TranscribeOpts{}); err == nil || result != nil {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -137,6 +138,14 @@ func (d *Deepgram) Synthesize(ctx context.Context, text string, opts SynthesizeO
 	}, providerOverrides)
 
 	model := d.resolveModel(SynthesizeOpts{Locale: resolved.Locale, Voice: resolved.Voice})
+	if IsDeepgramFluxVoice(model) {
+		if deepgramLocaleIsEnglish(resolved.Locale) {
+			return d.synthesizeFlux(ctx, model, text, resolved)
+		}
+		// Flux TTS voices are English-only; any other locale keeps its
+		// Aura-2 voice rather than reading German text in an English voice.
+		model = deepgramLocaleAuraVoice(resolved.Locale)
+	}
 	_, actualFormat := speakParams(model, resolved.Format)
 	chunks := splitForDeepgramTTS(text, deepgramTTSMaxChars)
 
@@ -187,6 +196,70 @@ func (d *Deepgram) Synthesize(ctx context.Context, text string, opts SynthesizeO
 		Provider:   "deepgram",
 		Voice:      model,
 	}, nil
+}
+
+// synthesizeFlux renders text in one Flux TTS turn over the v2 streaming leg:
+// Speak, Flush, then collect linear16 audio until SpeechMetadata closes the
+// turn. The result is WAV unless raw PCM was asked for; compressed formats are
+// not offered on the streaming leg.
+func (d *Deepgram) synthesizeFlux(ctx context.Context, voice, text string, resolved ResolvedSynthesizeOptions) (*Result, error) {
+	flux := NewDeepgramFluxTTS(d.apiKey)
+	flux.BaseURL = firstNonEmptyTTS(d.BaseURL, deepgramTTSBaseURL)
+	flux.Validation = d.Validation
+	stream, err := flux.Open(ctx, FluxSpeechOptions{Voice: voice, SampleRateHz: deepgramTTSSampleRate, Speed: resolved.Speed})
+	if err != nil {
+		return nil, err
+	}
+	defer stream.Close() //nolint:errcheck // best-effort close after the turn completed or failed
+	if err := stream.Speak(ctx, text); err != nil {
+		return nil, fmt.Errorf("deepgram flux tts speak: %w", err)
+	}
+	if err := stream.Flush(ctx); err != nil {
+		return nil, fmt.Errorf("deepgram flux tts flush: %w", err)
+	}
+	var pcm []byte
+	for {
+		event, err := stream.Receive(ctx)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("deepgram flux tts receive: %w", err)
+		}
+		if event.IsAudio() {
+			if len(pcm)+len(event.Audio) > deepgramTTSMaxAudio {
+				return nil, fmt.Errorf("deepgram flux tts: audio exceeds %d bytes", deepgramTTSMaxAudio)
+			}
+			pcm = append(pcm, event.Audio...)
+			continue
+		}
+		if event.Type == FluxSpeechMetadata || event.Type == FluxSpeechInterrupt {
+			break
+		}
+	}
+	if len(pcm) == 0 {
+		return nil, fmt.Errorf("deepgram flux tts: no audio returned")
+	}
+	result := &Result{Audio: encodeAuraWAV(pcm), Format: "wav", SampleRate: stream.SampleRateHz(), Provider: "deepgram", Voice: voice}
+	if f := strings.ToLower(strings.TrimSpace(resolved.Format)); f == "pcm" || f == "linear16" {
+		result.Audio, result.Format = pcm, "pcm"
+	}
+	return result, nil
+}
+
+// deepgramLocaleIsEnglish reports whether a request locale may use an
+// English-only Flux voice; an unset locale counts as English, the default.
+func deepgramLocaleIsEnglish(locale string) bool {
+	locale = strings.ToLower(strings.TrimSpace(locale))
+	return locale == "" || locale == "en" || strings.HasPrefix(locale, "en-") || strings.HasPrefix(locale, "en_")
+}
+
+// deepgramLocaleAuraVoice returns the Aura-2 voice for a non-English locale.
+func deepgramLocaleAuraVoice(locale string) string {
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "de") {
+		return deepgramTTSDefaultDEModel
+	}
+	return deepgramTTSDefaultModel
 }
 
 // buildSpeakEndpoint resolves the /v1/speak request URL for a model + output

@@ -12,6 +12,15 @@
 //     a pending approval, but only the host UI answers it
 //     (Coordinator.RespondApproval, wired to the overlay card in the
 //     device adapter).
+//   - The model alone can never start agent work: call_gpt and every
+//     gpt_task/gpt_steer block on Notifier.ConfirmAction, a host-side
+//     confirmation the model cannot answer; no answer within
+//     Policy.ConfirmTimeout means deny.
+//   - Agent output (item summaries, agent messages, agent errors) is
+//     handed to the host as Narration.AgentOutput — untrusted data the host
+//     must frame as such, never as a trusted host prompt.
+//
+// Stability: Experimental — may change in any release.
 package voicetools
 
 import (
@@ -25,6 +34,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/agentbridge"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/agentkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 )
 
 // Tool names the model sees. call_gpt is the only entry point; everything
@@ -38,12 +48,45 @@ const (
 	ToolGPTStop   = "gpt_stop"
 )
 
-// Notifier is the host sink for narration and approval announcements. The
-// device adapter delivers Narrate as an agent_progress host prompt only while
-// the voice session is listening; AnnounceApproval renders the overlay card.
+// Notifier is the host sink for narration, approval announcements and
+// action confirmations. The device adapter delivers Narrate to the voice
+// session only while it is listening; AnnounceApproval renders the overlay
+// card.
 type Notifier interface {
-	Narrate(text string)
+	Narrate(Narration)
 	AnnounceApproval(agentbridge.ApprovalRequest)
+	// ConfirmAction asks the USER (an on-screen card, never the model or a
+	// spoken answer) whether the model-requested action may run. It blocks
+	// until the user decides or ctx ends; anything but an explicit approval
+	// must return false.
+	ConfirmAction(ctx context.Context, action Action) bool
+}
+
+// Narration is one progress line for the voice session. Text is authored by
+// this package (trusted, e.g. "GPT is done"); AgentOutput is text that came
+// from the coding agent — derived from repository content the agent read —
+// and must be passed to the model as clearly delimited untrusted data.
+type Narration struct {
+	Text        string
+	AgentOutput string
+}
+
+// String renders the line for display surfaces (transcript, logs).
+func (n Narration) String() string {
+	if n.AgentOutput == "" {
+		return n.Text
+	}
+	return n.Text + ": " + n.AgentOutput
+}
+
+// Action describes a model-requested action awaiting user confirmation.
+// Every field is shown to the user verbatim.
+type Action struct {
+	Tool    string // ToolCallGPT | ToolGPTTask | ToolGPTSteer
+	Project string // project alias (gpt_task)
+	Path    string // project directory (gpt_task)
+	Sandbox agentbridge.SandboxMode
+	Text    string // the prompt (gpt_task) or instruction (gpt_steer)
 }
 
 // Project is one allowlisted working directory (mirrors the
@@ -70,6 +113,9 @@ type Policy struct {
 	// NarrationMinInterval rate-limits progress narration (default 20s).
 	// Terminal events (done, error, approval) always narrate.
 	NarrationMinInterval time.Duration
+	// ConfirmTimeout bounds how long call_gpt, gpt_task and gpt_steer wait
+	// for the user's on-screen confirmation before denying (default 2m).
+	ConfirmTimeout time.Duration
 }
 
 func (p *Policy) normalize() {
@@ -81,6 +127,9 @@ func (p *Policy) normalize() {
 	}
 	if p.NarrationMinInterval <= 0 {
 		p.NarrationMinInterval = 20 * time.Second
+	}
+	if p.ConfirmTimeout <= 0 {
+		p.ConfirmTimeout = 2 * time.Minute
 	}
 }
 
@@ -104,12 +153,26 @@ type Coordinator struct {
 	idleTimer    *time.Timer
 }
 
+// errDeclined is the speakable refusal when the user did not confirm.
+var errDeclined = errors.New("the user did not confirm this on screen, so it was not done — ask the user to approve the card if they want it")
+
+// confirm blocks on the host-side confirmation, bounded by ConfirmTimeout.
+func (c *Coordinator) confirm(ctx context.Context, action Action) error {
+	ctx, cancel := context.WithTimeout(ctx, c.policy.ConfirmTimeout)
+	defer cancel()
+	if !c.notifier.ConfirmAction(ctx, action) {
+		c.logger.Info("voicetools: action not confirmed by the user", "tool", action.Tool, "project", action.Project)
+		return errDeclined
+	}
+	return nil
+}
+
 // New wires a Coordinator. newAgent is invoked once per call (and the agent
 // closed on hang-up), so no process outlives a call.
 func New(policy Policy, newAgent func() agentbridge.Agent, notifier Notifier, logger *slog.Logger) *Coordinator {
 	policy.normalize()
 	if logger == nil {
-		logger = slog.Default()
+		logger = logutil.Resolve(nil)
 	}
 	return &Coordinator{policy: policy, newAgent: newAgent, notifier: notifier, logger: logger, phase: "no_call"}
 }
@@ -145,7 +208,7 @@ func (c *Coordinator) Tools() []agentkit.Tool {
 		&agentkit.FuncTool{
 			ToolName: ToolCallGPT,
 			ToolDescription: "Place the call to GPT/Codex, the external coding agent. Use ONLY when the user " +
-				"explicitly asks to call GPT (\"call GPT\", \"ruf ChatGPT an\"). Reports connection, plan, and available projects.",
+				"explicitly asks to call GPT (\"call GPT\", \"ruf ChatGPT an\"). The user must confirm on screen first. Reports connection, plan, and available projects.",
 			Fn: c.callGPT,
 		},
 		&agentkit.FuncTool{
@@ -155,7 +218,7 @@ func (c *Coordinator) Tools() []agentkit.Tool {
 		},
 		&agentkit.FuncTool{
 			ToolName:        ToolGPTTask,
-			ToolDescription: "During an active GPT call: hand a coding task to the agent in one of the allowlisted projects. Returns immediately; progress is narrated.",
+			ToolDescription: "During an active GPT call: hand a coding task to the agent in one of the allowlisted projects. The user must confirm the task on screen first. Returns once started; progress is narrated.",
 			ToolSchema: agentkit.Schema{
 				"type": "object",
 				"properties": map[string]any{
@@ -174,7 +237,7 @@ func (c *Coordinator) Tools() []agentkit.Tool {
 		},
 		&agentkit.FuncTool{
 			ToolName:        ToolGPTSteer,
-			ToolDescription: "During an active GPT call: inject guidance into the running task without stopping it.",
+			ToolDescription: "During an active GPT call: inject guidance into the running task without stopping it. The user must confirm it on screen first.",
 			ToolSchema: agentkit.Schema{
 				"type":       "object",
 				"properties": map[string]any{"instruction": map[string]any{"type": "string"}},
@@ -193,6 +256,16 @@ func (c *Coordinator) Tools() []agentkit.Tool {
 func (c *Coordinator) callGPT(ctx context.Context, _ map[string]any) (map[string]any, error) {
 	if !c.policy.Enabled {
 		return nil, fmt.Errorf("the coding bridge is disabled in Settings — enable agent_bridge to use Call GPT")
+	}
+	c.mu.Lock()
+	if c.agent != nil {
+		c.mu.Unlock()
+		return map[string]any{"status": "already_connected", "hint": "the GPT call is already active"}, nil
+	}
+	c.mu.Unlock()
+
+	if err := c.confirm(ctx, Action{Tool: ToolCallGPT}); err != nil {
+		return nil, err
 	}
 	c.mu.Lock()
 	if c.agent != nil {
@@ -271,6 +344,19 @@ func (c *Coordinator) task(ctx context.Context, args map[string]any) (map[string
 		Prompt:  prompt,
 		Sandbox: minSandbox(c.policy.DefaultSandbox, project.Sandbox),
 	}
+	c.mu.Lock()
+	busy := c.busy
+	c.mu.Unlock()
+	if busy {
+		return nil, errAgentBusy
+	}
+	if err := c.confirm(ctx, Action{Tool: ToolGPTTask, Project: project.Alias, Path: project.Path, Sandbox: req.Sandbox, Text: prompt}); err != nil {
+		return nil, err
+	}
+	// The call may have ended (or been replaced) while the user decided.
+	if current, err := c.requireCall(); err != nil || current != agent {
+		return nil, fmt.Errorf("the GPT call ended before the task was confirmed — say \"Call GPT\" again")
+	}
 	if cont {
 		c.mu.Lock()
 		req.ThreadID = c.lastThread.ThreadID
@@ -279,7 +365,7 @@ func (c *Coordinator) task(ctx context.Context, args map[string]any) (map[string
 	ref, err := agent.StartTurn(ctx, req)
 	if err != nil {
 		if errors.Is(err, agentbridge.ErrBusy) {
-			return nil, fmt.Errorf("the coding agent is already working — steer it, stop it, or ask for status")
+			return nil, errAgentBusy
 		}
 		return nil, err
 	}
@@ -293,6 +379,8 @@ func (c *Coordinator) task(ctx context.Context, args map[string]any) (map[string
 	c.armIdleTimer() //nolint:contextcheck // detached cleanup: hangUp must run to completion on its own timeout, not the caller ctx
 	return map[string]any{"status": "started", "project": project.Alias, "sandbox": string(req.Sandbox), "thread_id": ref.ThreadID}, nil
 }
+
+var errAgentBusy = errors.New("the coding agent is already working — steer it, stop it, or ask for status")
 
 func (c *Coordinator) status(context.Context, map[string]any) (map[string]any, error) {
 	if _, err := c.requireCall(); err != nil {
@@ -320,6 +408,12 @@ func (c *Coordinator) steer(ctx context.Context, args map[string]any) (map[strin
 	instruction, _ := args["instruction"].(string)
 	if strings.TrimSpace(instruction) == "" {
 		return nil, fmt.Errorf("the steering instruction is empty")
+	}
+	if err := c.confirm(ctx, Action{Tool: ToolGPTSteer, Text: instruction}); err != nil {
+		return nil, err
+	}
+	if current, err := c.requireCall(); err != nil || current != agent {
+		return nil, fmt.Errorf("the GPT call ended before the instruction was confirmed")
 	}
 	c.mu.Lock()
 	ref := c.lastThread
@@ -422,7 +516,7 @@ func (c *Coordinator) armIdleTimer() {
 	c.idleTimer = time.AfterFunc(c.policy.CallIdleHangup, func() {
 		if c.CallActive() {
 			c.hangUp("idle timeout")
-			c.notifier.Narrate("The GPT call ended after inactivity. Say \"Call GPT\" to reconnect.")
+			c.notifier.Narrate(Narration{Text: "The GPT call ended after inactivity. Say \"Call GPT\" to reconnect."})
 		}
 	})
 }
@@ -440,28 +534,25 @@ func (c *Coordinator) observe(ev agentbridge.Event) {
 	if ev.ThreadID != "" {
 		c.lastThread = agentbridge.ThreadRef{ThreadID: ev.ThreadID, TurnID: ev.TurnID}
 	}
-	var narration string
+	var narration Narration
 	force := false
 	switch ev.Type {
 	case agentbridge.EventItemCompleted:
 		if ev.Item != nil && ev.Item.Summary != "" {
 			c.pushRecent(ev.Item.Kind + ": " + ev.Item.Summary)
 			if ev.Item.Kind == "command_execution" || ev.Item.Kind == "file_change" {
-				narration = "GPT: " + ev.Item.Summary
+				narration = Narration{Text: "GPT progress", AgentOutput: ev.Item.Summary}
 			}
 		}
 	case agentbridge.EventTurnCompleted:
 		c.busy = false
 		c.phase = "idle"
-		narration = "GPT is done"
-		if last := c.lastAgentMessage(); last != "" {
-			narration = "GPT is done: " + last
-		}
+		narration = Narration{Text: "GPT is done", AgentOutput: c.lastAgentMessage()}
 		force = true
 	case agentbridge.EventError:
 		c.busy = false
 		c.phase = "error"
-		narration = "GPT ran into a problem: " + ev.Err
+		narration = Narration{Text: "GPT ran into a problem", AgentOutput: ev.Err}
 		force = true
 	case agentbridge.EventApprovalRequested:
 		if ev.Approval != nil {
@@ -470,19 +561,21 @@ func (c *Coordinator) observe(ev agentbridge.Event) {
 			c.phase = "awaiting_approval"
 			c.mu.Unlock()
 			c.notifier.AnnounceApproval(appr)
-			c.notifier.Narrate("GPT wants to run: " + appr.Summary + " — there is an approval card on screen.")
+			c.notifier.Narrate(Narration{Text: "GPT is asking for approval — there is an approval card on screen; only the user can answer it there", AgentOutput: appr.Summary})
 			c.armIdleTimer()
 			return
 		}
 	case agentbridge.EventBridgeState:
-		narration = ev.Err
+		// Bridge-state text is authored by the agentbridge implementation
+		// (transport degradation notices), not by the agent's output.
+		narration = Narration{Text: ev.Err}
 		force = true
 	case agentbridge.EventThreadStarted, agentbridge.EventTurnStarted, agentbridge.EventItemStarted:
 		// Lifecycle bookkeeping only — the thread ref was captured above and
 		// starts are not narration-worthy (completions are).
 	}
 	now := time.Now()
-	if narration != "" && (force || now.Sub(c.lastNarrated) >= c.policy.NarrationMinInterval) {
+	if narration.Text != "" && (force || now.Sub(c.lastNarrated) >= c.policy.NarrationMinInterval) {
 		c.lastNarrated = now
 		c.mu.Unlock()
 		c.notifier.Narrate(narration)

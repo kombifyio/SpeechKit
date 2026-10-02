@@ -10,6 +10,8 @@
 // own gating (e.g. "did Home Assistant resolve an intent?") keeps
 // working, and reports an unmatched query back to the agent instead of
 // failing the call — the model then answers from its own knowledge.
+//
+// Stability: Experimental — may change in any release.
 package toolbridge
 
 import (

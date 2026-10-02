@@ -11,7 +11,7 @@ import java.nio.FloatBuffer
 /**
  * Silero VAD implementation via ONNX Runtime.
  *
- * Mirrors: internal/vad/silero.go SileroDetector.
+ * Mirrors: app/internal/vad/silero.go SileroDetector.
  * Processes 512-byte PCM frames (256 samples at 16kHz) and returns
  * speech probability in [0.0, 1.0].
  *

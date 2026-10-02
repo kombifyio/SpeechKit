@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
 
@@ -40,7 +39,7 @@ func (p *Provider) Connect(ctx context.Context, cfg live.LiveConfig) error {
 			if err != nil {
 				return fmt.Errorf("openai realtime: dial primary %q + fallback %q failed: %w", model, fallback, err)
 			}
-			slog.Info("openai realtime: connected via fallback model", "primary", model, "fallback", fallback)
+			p.log().Info("openai realtime: connected via fallback model", "primary", model, "fallback", fallback)
 			model = fallback
 		} else {
 			return fmt.Errorf("openai realtime: dial %q: %w", model, err)

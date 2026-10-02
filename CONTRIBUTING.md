@@ -12,7 +12,7 @@ Releases, not developed directly in this public source tree.
 - Read [docs/README.md](./docs/README.md) for framework, server, MCP, and API docs.
 - Keep imports on the public surface: `<module path>/pkg/speechkit/...` (see
   [Repository identities](#repository-identities) for which module path applies).
-- Do not import `internal/*` from downstream applications.
+- Do not import `app/internal/*` from downstream applications.
 
 ## Repository Identities
 
@@ -27,6 +27,10 @@ One codebase carries three names. Knowing which is which avoids most
 
 Rules that follow from this:
 
+- The repository has two Go modules: the root SDK module (`pkg/speechkit/...`)
+  and the nested app module `.../app` (`app/cmd`, `app/internal`, `app/tools`).
+  SDK code must never import the app module; the root `go.work` joins them for
+  development, so run app commands from the root with `./app/...` paths.
 - Never change the module path in `go.mod`. It is an import path that every
   consumer, the public export rewrite and the API-diff gate depend on; renaming
   the repository does not rename the module.
@@ -56,10 +60,11 @@ Rules that follow from this:
 | Path | Purpose |
 |---|---|
 | `pkg/speechkit/` | Public Go framework packages for embedders |
-| `cmd/speechkit-server/` | Linux self-host server entry point |
-| `cmd/speechkit-cli/` | CLI diagnostics and scaffolding |
-| `cmd/speechkit-mcp/` | MCP server for agent docs, validation, and management |
-| `internal/` | Implementation packages used by the public binaries |
+| `app/cmd/speechkit-server/` | Linux self-host server entry point |
+| `app/cmd/speechkit-cli/` | CLI diagnostics and scaffolding |
+| `app/cmd/speechkit-mcp/` | MCP server for agent docs, validation, and management |
+| `app/internal/` | Implementation packages used by the public binaries |
+| `app/go.mod` | Nested Go module for the reference apps; the root `go.work` joins it with the SDK module (see [ADR 0004](docs/ADR/0004-sdk-module-boundary.md)) |
 | `examples/` | Runnable framework and server integration examples |
 | `docs/` | Public framework, server, API, and agent documentation |
 | `deploy/` | Dockerfile, Compose example, and server config templates |
@@ -70,10 +75,10 @@ Rules that follow from this:
 Run these before opening a pull request:
 
 ```bash
-go test ./pkg/... ./cmd/speechkit-cli/... ./cmd/speechkit-mcp/... ./examples/...
-GOOS=linux CGO_ENABLED=0 go test ./cmd/speechkit-server/...
-GOOS=linux CGO_ENABLED=0 go build ./cmd/speechkit-server ./cmd/speechkit-mcp ./cmd/speechkit-cli
-go vet ./pkg/... ./cmd/speechkit-cli/... ./cmd/speechkit-mcp/... ./examples/...
+go test ./pkg/... ./app/cmd/speechkit-cli/... ./app/cmd/speechkit-mcp/... ./examples/...
+GOOS=linux CGO_ENABLED=0 go test ./app/cmd/speechkit-server/...
+GOOS=linux CGO_ENABLED=0 go build ./app/cmd/speechkit-server ./app/cmd/speechkit-mcp ./app/cmd/speechkit-cli
+go vet ./pkg/... ./app/cmd/speechkit-cli/... ./app/cmd/speechkit-mcp/... ./examples/...
 node scripts/release/check-doc-links.mjs
 gitleaks detect --source . --redact
 ```

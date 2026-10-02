@@ -25,7 +25,12 @@ func TestOpenAICompat_BearerTokenWinsOverAPIKey(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New("foundry", server.URL, "static-key", "gpt-4o-mini-transcribe")
+	p := New(Options{
+		Name:    "foundry",
+		BaseURL: server.URL,
+		APIKey:  "static-key",
+		Model:   "gpt-4o-mini-transcribe",
+	})
 	p.Validation = testValidation
 	calls := 0
 	p.BearerToken = func(ctx context.Context) (string, error) {
@@ -57,7 +62,7 @@ func TestOpenAICompat_BearerTokenFailureIsReportedNotRetriedWithKey(t *testing.T
 	}))
 	defer server.Close()
 
-	p := New("foundry", server.URL, "static-key", "m")
+	p := New(Options{Name: "foundry", BaseURL: server.URL, APIKey: "static-key", Model: "m"})
 	p.Validation = testValidation
 	wantErr := errors.New("not signed in")
 	p.BearerToken = func(ctx context.Context) (string, error) { return "", wantErr }

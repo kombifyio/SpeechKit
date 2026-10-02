@@ -26,7 +26,7 @@ func TestVPS_Transcribe_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New(server.URL, "vps-key")
+	p := New(Options{BaseURL: server.URL, APIKey: "vps-key"})
 
 	result, err := p.Transcribe(context.Background(), []byte("wav"), stt.TranscribeOpts{Language: "de"})
 	if err != nil {
@@ -47,7 +47,7 @@ func TestVPS_Transcribe_ServerError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New(server.URL, "key")
+	p := New(Options{BaseURL: server.URL, APIKey: "key"})
 	_, err := p.Transcribe(context.Background(), []byte("wav"), stt.TranscribeOpts{})
 	if err == nil {
 		t.Fatal("expected error")
@@ -66,14 +66,14 @@ func TestVPS_Health_OK(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New(server.URL, "key")
+	p := New(Options{BaseURL: server.URL, APIKey: "key"})
 	if err := p.Health(context.Background()); err != nil {
 		t.Errorf("Health: %v", err)
 	}
 }
 
 func TestVPS_Health_Unreachable(t *testing.T) {
-	p := New("http://127.0.0.1:1", "key")
+	p := New(Options{BaseURL: "http://127.0.0.1:1", APIKey: "key"})
 	p.SetHTTPClient(&http.Client{Timeout: 100 * time.Millisecond})
 	err := p.Health(context.Background())
 	if err == nil {
@@ -82,14 +82,14 @@ func TestVPS_Health_Unreachable(t *testing.T) {
 }
 
 func TestVPS_Name(t *testing.T) {
-	p := New("http://example.com", "key")
+	p := New(Options{BaseURL: "http://example.com", APIKey: "key"})
 	if p.Name() != "vps" {
 		t.Errorf("Name() = %q", p.Name())
 	}
 }
 
 func TestNewVPSProvider_Defaults(t *testing.T) {
-	p := New("http://vps.example.com", "vps-key")
+	p := New(Options{BaseURL: "http://vps.example.com", APIKey: "vps-key"})
 	if p.Name() != "vps" {
 		t.Errorf("Name() = %q, want %q", p.Name(), "vps")
 	}

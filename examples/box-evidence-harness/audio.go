@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// Wire-contract rates (internal/server/voiceagent/protocol.go): the client
+// Wire-contract rates (app/internal/server/voiceagent/protocol.go): the client
 // streams 16 kHz PCM and the server returns 24 kHz PCM, both S16LE mono.
 const (
 	wsUplinkRate   = 16000

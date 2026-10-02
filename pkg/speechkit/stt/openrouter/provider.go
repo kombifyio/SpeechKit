@@ -2,6 +2,8 @@
 // (https://openrouter.ai/api/v1/audio/transcriptions) to [stt.STTProvider].
 // OpenRouter is a routing gateway in front of vendor models; audio is sent
 // base64-encoded. It needs an OpenRouter API key and public https egress.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package openrouter
 
 import (
@@ -21,7 +23,7 @@ import (
 
 const (
 	openRouterSTTBaseURL     = "https://openrouter.ai/api/v1"
-	openRouterDefaultSTT     = "openai/whisper-1"
+	openRouterDefaultSTT     = "openai/gpt-transcribe"
 	openRouterMaxResponse    = 1 << 20
 	openRouterAudioFormatWAV = "wav"
 )
@@ -37,15 +39,24 @@ type Provider struct {
 	client     *http.Client
 }
 
-// New creates an OpenRouter provider. Model defaults to
-// the provider default if empty.
-func New(apiKey, model string) *Provider {
+// Options configures [New].
+type Options struct {
+	// APIKey is the OpenRouter API key.
+	APIKey string
+	// Model is the OpenRouter model id. Empty selects the provider default.
+	Model string
+}
+
+// New creates an OpenRouter provider. Zero Options values select the provider
+// defaults.
+func New(opts Options) *Provider {
+	model := opts.Model
 	if model == "" {
 		model = openRouterDefaultSTT
 	}
 	p := &Provider{
 		BaseURL: openRouterSTTBaseURL,
-		APIKey:  apiKey,
+		APIKey:  opts.APIKey,
 		Model:   model,
 	}
 	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second, DialValidation: &p.Validation})
@@ -89,7 +100,7 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 	if opts.Model != "" {
 		model = opts.Model
 	}
-	resolved := stt.ResolveTranscribeOptions("openrouter", "stt.openrouter.whisper-1", opts, nil, nil)
+	resolved := stt.ResolveTranscribeOptions("openrouter", "stt.openrouter.gpt-transcribe", opts, nil, nil)
 	requestBody := openRouterTranscriptionRequest{
 		InputAudio: openRouterInputAudio{
 			Data:   base64.StdEncoding.EncodeToString(stt.EnsureTranscriptionWAV(audio)),
@@ -116,7 +127,7 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 	start := time.Now()
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("openrouter request: %w", err)
+		return nil, fmt.Errorf("openrouter request: %w", stt.ClassifyTransportError("openrouter", err))
 	}
 	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 	duration := time.Since(start)
@@ -126,7 +137,7 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 		return nil, fmt.Errorf("read openrouter response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, netsec.ProviderStatusError("openrouter", resp.StatusCode, respBody)
+		return nil, stt.HTTPError("openrouter", resp, respBody)
 	}
 
 	var result openRouterTranscriptionResponse
@@ -173,7 +184,7 @@ func (p *Provider) Health(ctx context.Context) error {
 	}
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("openrouter health: status %d", resp.StatusCode)
+		return stt.HTTPError("openrouter health", resp, nil)
 	}
 	return nil
 }

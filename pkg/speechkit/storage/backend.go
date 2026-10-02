@@ -2,6 +2,8 @@
 // capabilities and metadata, install/device/user/tenant scopes with their
 // enforcement policies, and the configuration shape hosts use to construct
 // a backend.
+//
+// Stability: Stable — no breaking change without a minor version bump and a changelog callout.
 package storage
 
 import "fmt"

@@ -1,0 +1,63 @@
+package store
+
+import (
+	"fmt"
+
+	speechstorage "github.com/kombifyio/SpeechKit/pkg/speechkit/storage"
+)
+
+// StoreConfig holds configuration for store backend selection.
+type StoreConfig struct {
+	Backend            string `toml:"backend"` // "sqlite" | "postgres" | registered name
+	SQLitePath         string `toml:"sqlite_path"`
+	PostgresDSN        string `toml:"postgres_dsn"`
+	SaveAudio          bool   `toml:"save_audio"`
+	AudioRetentionDays int    `toml:"audio_retention_days"`
+	// MeetingRetentionDays discards finished meetings older than this. Zero
+	// keeps them forever, which is the default: a meeting is work, not a
+	// by-product, so nothing is thrown away unless the user asks for it.
+	MeetingRetentionDays int `toml:"meeting_retention_days"`
+	// TranscriptRetentionDays discards dictation and Assist transcripts,
+	// Voice Agent conversations and dictation recording sessions older than
+	// this, with their audio. Zero keeps them forever. Pinned transcripts and
+	// pinned sessions are kept either way.
+	TranscriptRetentionDays int `toml:"transcript_retention_days"`
+	MaxAudioStorageMB       int `toml:"max_audio_storage_mb"`
+	TranscriptionModelHints map[string]string
+	DefaultScope            speechstorage.Scope
+	ScopePolicy             speechstorage.ScopePolicy
+}
+
+// BackendFactory creates a Store from config.
+type BackendFactory func(cfg StoreConfig) (Store, error)
+
+var registeredBackends = map[string]BackendFactory{}
+
+// RegisterBackend allows external modules (e.g. kombify) to register custom backends.
+// Called from init() in private modules -- SpeechKit itself never knows about kombify.
+func RegisterBackend(name string, factory BackendFactory) {
+	registeredBackends[name] = factory
+}
+
+// New creates a Store backend based on the config.
+func New(cfg StoreConfig) (Store, error) {
+	if cfg.Backend == "" {
+		cfg.Backend = "sqlite"
+	}
+
+	switch cfg.Backend {
+	case "sqlite":
+		return NewSQLiteStore(cfg)
+	case "postgres":
+		return NewPostgresStore(cfg)
+	default:
+		if factory, ok := registeredBackends[cfg.Backend]; ok {
+			return factory(cfg)
+		}
+		available := []string{"sqlite", "postgres"}
+		for name := range registeredBackends {
+			available = append(available, name)
+		}
+		return nil, fmt.Errorf("unknown store backend %q (available: %v)", cfg.Backend, available)
+	}
+}

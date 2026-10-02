@@ -3,6 +3,7 @@ package capture
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	audiopkg "github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
@@ -147,6 +148,9 @@ type Config struct {
 	// with different frame sizes, or that want isolated pool statistics,
 	// pass their own.
 	FramePool *FramePool
+	// Logger receives the backend's diagnostics. Nil falls back to
+	// slog.Default() at log time.
+	Logger *slog.Logger
 }
 
 // Session records microphone PCM and exposes both level and live-audio callbacks.

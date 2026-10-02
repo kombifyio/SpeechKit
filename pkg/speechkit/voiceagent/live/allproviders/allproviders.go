@@ -6,6 +6,8 @@
 // a host that offers a provider choice at runtime. A host that speaks exactly
 // one realtime protocol imports that provider's own package instead and stays
 // free of the others' dependencies.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package allproviders
 
 import (
@@ -13,12 +15,14 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/assemblyai"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/deepgram"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/foundry"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/gemini"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openai"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openailive"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/voicelive"
 )
 
@@ -45,6 +49,8 @@ func DefaultProviderFactories() ProviderFactoryRegistry {
 		"openai":            func() live.LiveProvider { return openai.New() },
 		"foundry":           func() live.LiveProvider { return foundry.New() },
 		"foundry-voicelive": func() live.LiveProvider { return voicelive.New() },
+		"gpt-live":          func() live.LiveProvider { return openailive.New() },
+		"foundry-gpt-live":  func() live.LiveProvider { return openailive.NewFoundry() },
 	}
 }
 
@@ -91,6 +97,11 @@ func NormalizeLiveConfig(cfg live.LiveConfig) (live.LiveConfig, error) {
 		return cfg, fmt.Errorf("%w: %s", ErrUnknownLiveProvider, selector)
 	}
 	cfg.Provider = descriptor.Provider
+	// A retired model id (see catalog.RetiredModels) dials its successor, so
+	// an embedder that pinned an old id keeps working after the retirement.
+	if model := strings.TrimSpace(cfg.Model); model != "" {
+		cfg.Model = catalog.CurrentModelID(descriptor.Provider, model)
+	}
 	if strings.TrimSpace(cfg.ProfileID) == "" {
 		cfg.ProfileID = descriptor.ProfileID
 	}
@@ -137,6 +148,14 @@ func findDescriptorByModel(modelID string) (live.ProviderDescriptor, bool) {
 			if strings.EqualFold(model.ModelID, modelID) {
 				return descriptor, true
 			}
+		}
+	}
+	for _, retired := range catalog.RetiredModels() {
+		if !strings.EqualFold(retired.ModelID, modelID) {
+			continue
+		}
+		if descriptor, ok := live.FindProviderDescriptor(retired.Provider); ok {
+			return descriptor, true
 		}
 	}
 	return live.ProviderDescriptor{}, false

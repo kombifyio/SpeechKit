@@ -4,7 +4,6 @@ package capture
 
 import (
 	"fmt"
-	"log/slog"
 	"runtime"
 	"time"
 
@@ -42,7 +41,7 @@ func (s *MalgoSession) drainFrames(frames <-chan []byte, done chan<- struct{}) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if err := setCurrentThreadPriority(threadPriorityAboveNormal); err != nil {
-		slog.Debug("audio drain thread priority raise failed", "err", err)
+		s.cfg.log().Debug("audio drain thread priority raise failed", "err", err)
 	}
 	defer close(done)
 
@@ -109,7 +108,7 @@ func (s *MalgoSession) watchCaptureStall(done <-chan struct{}) {
 				continue
 			}
 			stalled = true
-			slog.Warn("audio capture stalled — device running but no frames arriving",
+			s.cfg.log().Warn("audio capture stalled — device running but no frames arriving",
 				"since_ms", since.Milliseconds())
 			s.emit(Event{
 				Type:    EventStalled,
@@ -134,7 +133,7 @@ func (s *MalgoSession) enqueueFrame(frames chan<- []byte, inputSamples []byte) {
 	default:
 		s.framePool().Put(buf)
 		if n := s.overruns.Add(1); n == 1 || n%100 == 0 {
-			slog.Warn("audio frame dispatcher overrun — dropping level/VAD frames (full capture unaffected)",
+			s.cfg.log().Warn("audio frame dispatcher overrun — dropping level/VAD frames (full capture unaffected)",
 				"dropped_frames", n)
 			s.emit(Event{
 				Type:    EventOverrun,
@@ -170,11 +169,11 @@ func (s *MalgoSession) stopFrameDispatch() {
 		select {
 		case <-drainDone:
 		case <-time.After(drainStopTimeout):
-			slog.Warn("audio frame drain did not complete before stop timeout")
+			s.cfg.log().Warn("audio frame drain did not complete before stop timeout")
 		}
 	}
 	if n := s.overruns.Load(); n > 0 {
-		slog.Warn("audio frame dispatcher dropped frames this session (full capture unaffected)",
+		s.cfg.log().Warn("audio frame dispatcher dropped frames this session (full capture unaffected)",
 			"dropped_frames", n)
 	}
 }

@@ -1,0 +1,1318 @@
+<!doctype html>
+<!-- GENERATED FILE — do not edit the embedded copy. Source:
+     clients/typescript/apps/assistant-web (pnpm --filter @kombifyio/speechkit-assistant-web build). -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark light" />
+<title>SpeechKit Voice Assistant</title>
+<style>
+/* GENERATED FILE — do not edit. Source: tokens.json (scripts/build-tokens.mjs). */
+
+:root {
+  --sk-blur: 16px;
+  --sk-radius: 14px;
+  --sk-radius-pill: 999px;
+  --sk-gap: 8px;
+  --sk-font-size: 13px;
+  --sk-font-size-small: 11px;
+  --sk-motion-fast: 80ms;
+  --sk-motion-slow: 1600ms;
+  --sk-motion-base: 180ms;
+  --sk-motion-level: 90ms;
+  --sk-motion-ease: cubic-bezier(0.2, 0, 0, 1);
+  --sk-orb-size: 56px;
+  --sk-orb-core-size: 22px;
+  --sk-assistant-orb: 30px;
+  --sk-assistant-orb-watch: 84px;
+  --sk-assistant-orb-hero: 92px;
+  --sk-assistant-mark-ratio: 34%;
+  --sk-assistant-user-dot: #8fa9ff;
+  --sk-assistant-agent-dot: #47e3c1;
+  --sk-assistant-wave-input: #34d399;
+  --sk-assistant-wave-output: var(--sk-accent);
+  --sk-assistant-wave-compact-w: 72px;
+  --sk-assistant-wave-compact-h: 22px;
+  --sk-aura-inactive-a: 156, 163, 184;
+  --sk-aura-inactive-b: 100, 116, 139;
+  --sk-aura-connecting-a: 56, 189, 248;
+  --sk-aura-connecting-b: 129, 140, 248;
+  --sk-aura-listening-a: 52, 211, 153;
+  --sk-aura-listening-b: 56, 189, 248;
+  --sk-aura-processing-a: 251, 191, 36;
+  --sk-aura-processing-b: 244, 114, 182;
+  --sk-aura-speaking-a: 129, 140, 248;
+  --sk-aura-speaking-b: 167, 139, 250;
+  --sk-aura-recovering-a: 34, 211, 238;
+  --sk-aura-recovering-b: 129, 140, 248;
+  --sk-aura-settling-a: 52, 211, 153;
+  --sk-aura-settling-b: 129, 140, 248;
+  --sk-aura-error-a: 248, 113, 113;
+  --sk-aura-error-b: 251, 113, 133;
+  --sk-dialog-blur: 22px;
+  --sk-dialog-radius: 18px;
+  --sk-dialog-width: 340px;
+  --sk-dialog-max-height: 260px;
+  --sk-dialog-fade: 28px;
+  --sk-chip-radius: 999px;
+  --sk-chip-height: 30px;
+  --sk-indicator-bar-width: 3px;
+  --sk-indicator-bar-gap: 2px;
+  --sk-indicator-height: 14px;
+  --sk-accent: oklch(0.65 0.13 210);
+  --sk-accent-contrast: #ffffff;
+  --sk-surface: color-mix(in srgb, #ffffff 72%, transparent);
+  --sk-surface-strong: color-mix(in srgb, #ffffff 92%, transparent);
+  --sk-text: #101418;
+  --sk-text-muted: color-mix(in srgb, #101418 55%, transparent);
+  --sk-border: color-mix(in srgb, #101418 12%, transparent);
+  --sk-shadow: 0 12px 40px -12px rgba(16, 20, 24, 0.25);
+  --sk-live: #dc2626;
+  --sk-danger: #dc2626;
+  --sk-pending: #d97706;
+  --sk-dialog-surface: color-mix(in srgb, #ffffff 58%, transparent);
+  --sk-dialog-shadow: 0 18px 48px -20px rgba(16, 20, 24, 0.35);
+  --sk-chip-surface: color-mix(in srgb, #ffffff 84%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-sk-theme="light"]) {
+    --sk-accent: oklch(0.72 0.12 210);
+    --sk-accent-contrast: #0b1014;
+    --sk-surface: color-mix(in srgb, #14181d 68%, transparent);
+    --sk-surface-strong: color-mix(in srgb, #14181d 90%, transparent);
+    --sk-text: #f2f5f7;
+    --sk-text-muted: color-mix(in srgb, #f2f5f7 60%, transparent);
+    --sk-border: color-mix(in srgb, #f2f5f7 14%, transparent);
+    --sk-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.6);
+    --sk-live: #f87171;
+    --sk-danger: #f87171;
+    --sk-pending: #fbbf24;
+    --sk-dialog-surface: color-mix(in srgb, #0b0e12 56%, transparent);
+    --sk-dialog-shadow: 0 18px 48px -20px rgba(0, 0, 0, 0.7);
+    --sk-chip-surface: color-mix(in srgb, #14181d 86%, transparent);
+  }
+}
+
+[data-sk-theme="dark"] {
+  --sk-accent: oklch(0.72 0.12 210);
+  --sk-accent-contrast: #0b1014;
+  --sk-surface: color-mix(in srgb, #14181d 68%, transparent);
+  --sk-surface-strong: color-mix(in srgb, #14181d 90%, transparent);
+  --sk-text: #f2f5f7;
+  --sk-text-muted: color-mix(in srgb, #f2f5f7 60%, transparent);
+  --sk-border: color-mix(in srgb, #f2f5f7 14%, transparent);
+  --sk-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.6);
+  --sk-live: #f87171;
+  --sk-danger: #f87171;
+  --sk-pending: #fbbf24;
+  --sk-dialog-surface: color-mix(in srgb, #0b0e12 56%, transparent);
+  --sk-dialog-shadow: 0 18px 48px -20px rgba(0, 0, 0, 0.7);
+  --sk-chip-surface: color-mix(in srgb, #14181d 86%, transparent);
+}
+
+[data-sk-theme="light"] {
+  --sk-accent: oklch(0.65 0.13 210);
+  --sk-accent-contrast: #ffffff;
+  --sk-surface: color-mix(in srgb, #ffffff 72%, transparent);
+  --sk-surface-strong: color-mix(in srgb, #ffffff 92%, transparent);
+  --sk-text: #101418;
+  --sk-text-muted: color-mix(in srgb, #101418 55%, transparent);
+  --sk-border: color-mix(in srgb, #101418 12%, transparent);
+  --sk-shadow: 0 12px 40px -12px rgba(16, 20, 24, 0.25);
+  --sk-live: #dc2626;
+  --sk-danger: #dc2626;
+  --sk-pending: #d97706;
+  --sk-dialog-surface: color-mix(in srgb, #ffffff 58%, transparent);
+  --sk-dialog-shadow: 0 18px 48px -20px rgba(16, 20, 24, 0.35);
+  --sk-chip-surface: color-mix(in srgb, #ffffff 84%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --sk-motion-fast: 0ms;
+    --sk-motion-slow: 0ms;
+    --sk-motion-base: 0ms;
+    --sk-motion-level: 0ms;
+  }
+}
+
+/* Page shell around the kit element. The kit's own tokens.css is prepended by
+   the build; these rules only lay out the page and keep contrast independent
+   of any backdrop effects. */
+:root {
+  color-scheme: dark;
+  --page-bg: #0b0f14;
+  --page-panel: rgba(20, 24, 29, 0.72);
+  --page-border: rgba(242, 245, 247, 0.12);
+  --page-text: #f2f5f7;
+  --page-text-muted: rgba(242, 245, 247, 0.6);
+  --page-accent: oklch(0.72 0.12 210);
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  color: var(--page-text);
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(56, 189, 248, 0.08), transparent 45%),
+    radial-gradient(ellipse at 90% 100%, rgba(129, 140, 248, 0.07), transparent 50%),
+    var(--page-bg);
+}
+.shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100dvh;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px;
+}
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.kicker {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--page-text-muted);
+}
+.topbar h1 { margin: 0; font-size: 18px; }
+.topbar-actions { display: flex; gap: 8px; }
+button {
+  font: inherit;
+  color: var(--page-text);
+  background: var(--page-panel);
+  border: 1px solid var(--page-border);
+  border-radius: 999px;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+button:hover { border-color: rgba(242, 245, 247, 0.3); }
+button.primary {
+  background: color-mix(in srgb, var(--page-accent) 24%, transparent);
+  border-color: color-mix(in srgb, var(--page-accent) 45%, transparent);
+}
+button:disabled { opacity: 0.5; cursor: default; }
+button.subtle { border: 0; background: transparent; color: var(--page-text-muted); padding: 4px 8px; }
+.appearance-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid var(--page-border);
+  border-radius: 16px;
+  background: var(--page-panel);
+  padding: 10px 14px;
+}
+.field { display: flex; align-items: center; gap: 8px; }
+.field-label, .token-row span {
+  font-size: 11px;
+  color: var(--page-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.chip-row { display: flex; gap: 6px; }
+.chip-row button { padding: 4px 10px; font-size: 12px; }
+.chip-row button[data-active="true"] {
+  border-color: color-mix(in srgb, var(--page-accent) 60%, transparent);
+  background: color-mix(in srgb, var(--page-accent) 18%, transparent);
+}
+.field-inline { font-size: 13px; gap: 6px; }
+.assistant-host {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--page-border);
+  border-radius: 20px;
+  background: var(--page-panel);
+  overflow: hidden;
+}
+.assistant-host speechkit-voice-assistant { display: block; height: 100%; }
+.statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--page-text-muted);
+}
+.token-row { display: flex; align-items: center; gap: 8px; }
+.token-row input {
+  font: inherit;
+  color: var(--page-text);
+  background: var(--page-panel);
+  border: 1px solid var(--page-border);
+  border-radius: 10px;
+  padding: 5px 9px;
+  min-width: 220px;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --page-bg: #f4f6f8;
+    --page-panel: rgba(255, 255, 255, 0.82);
+    --page-border: rgba(16, 20, 24, 0.12);
+    --page-text: #101418;
+    --page-text-muted: rgba(16, 20, 24, 0.55);
+  }
+}
+</style>
+</head>
+<body data-smoke-token="__SPEECHKIT_SMOKE_TOKEN__">
+<main class="shell">
+  <header class="topbar">
+    <div class="topbar-title">
+      <span class="kicker">SpeechKit</span>
+      <h1>Voice Assistant</h1>
+    </div>
+    <div class="topbar-actions">
+      <button type="button" id="appearance-toggle" aria-haspopup="true" aria-expanded="false" title="Appearance">Appearance</button>
+      <button type="button" id="session-toggle" class="primary" disabled>Start</button>
+    </div>
+  </header>
+
+  <section id="appearance-panel" class="appearance-panel" hidden>
+    <div class="field">
+      <span class="field-label">Animation</span>
+      <div class="chip-row" id="variant-chips">
+        <button type="button" data-variant="aura">Aura Orb</button>
+        <button type="button" data-variant="waveform">Waveform</button>
+      </div>
+    </div>
+    <div class="field">
+      <span class="field-label">Logo</span>
+      <div class="chip-row" id="mark-chips">
+        <button type="button" data-mark="rosette">Rosette</button>
+        <button type="button" data-mark="k">k monogram</button>
+        <button type="button" data-mark="none">None</button>
+      </div>
+    </div>
+    <label class="field field-inline">
+      <input type="checkbox" id="transcript-toggle" />
+      <span>Show live transcript</span>
+    </label>
+    <button type="button" id="appearance-reset" class="subtle">Use server defaults</button>
+  </section>
+
+  <section class="assistant-host">
+    <speechkit-voice-assistant id="assistant" size="expanded" frame="panel" transcript></speechkit-voice-assistant>
+  </section>
+
+  <footer class="statusbar">
+    <span id="connection-note">Checking server…</span>
+    <label class="token-row" id="token-row" hidden>
+      <span>Bearer token</span>
+      <input type="password" id="token-input" autocomplete="off" placeholder="paste your server token" />
+    </label>
+  </footer>
+</main>
+<script>
+"use strict";(()=>{function te(s){return{surface:s.surface,mode:s.mode,session_id:s.session.session_id,ai_session_id:s.session.ai_session_id,status:"idle",transcript_draft:"",transcript_final:"",spoken_response:"",barge_in:!1,events:[]}}function we(s,e){let t={...s,surface:e.surface,mode:e.mode,session_id:e.session_id??s.session_id,ai_session_id:e.ai_session_id??s.ai_session_id,last_event_type:e.type,events:[...s.events,e]};switch(e.type){case"voice.capture_started":return{...t,status:"capturing",reason_code:void 0,denial:void 0,barge_in:!1};case"voice.capture_stopped":return{...t,status:"processing"};case"voice.transcript_draft":return{...t,status:"capturing",transcript_draft:e.text??s.transcript_draft};case"voice.transcript_final":return{...t,status:"processing",transcript_draft:"",transcript_final:e.text??s.transcript_final};case"voice.assist_result":case"voice.agent_turn":return{...t,status:e.speak_text||e.output_text?"speaking":"processing",spoken_response:e.speak_text??e.output_text??s.spoken_response};case"voice.tts_started":return{...t,status:"speaking",spoken_response:e.speak_text??s.spoken_response};case"voice.tts_finished":return{...t,status:"idle"};case"voice.cancelled":return{...t,status:"cancelled",reason_code:e.reason_code};case"voice.barge_in":return{...t,status:"capturing",barge_in:!0,reason_code:e.reason_code};case"voice.denied":return{...t,status:"denied",denial:e.error,reason_code:e.error?.reason_code??e.reason_code}}}function E(s,e){switch(e.type){case"voice.transcript_draft":return _e(s,"user",e.text??"");case"voice.transcript_final":return Ee(s,"user",e.text??"");case"voice.agent_turn":return e.final===!0?Ee(s,"agent",e.output_text??""):_e(s,"agent",e.output_text??"");case"voice.barge_in":return et(s,"agent");default:return s}}function ie(s,e){for(let t=s.length-1;t>=0;t-=1){let i=s[t];if(i!==void 0&&i.role===e&&!i.final)return t}return-1}function _e(s,e,t){let i=ie(s,e),n=i===-1?void 0:s[i];return n===void 0?t?[...s,{role:e,text:t,final:!1,interrupted:!1}]:s:se(s,i,{...n,text:t})}function Ee(s,e,t){let i=ie(s,e),n=i===-1?void 0:s[i];return n===void 0?t?[...s,{role:e,text:t,final:!0,interrupted:!1}]:s:se(s,i,{...n,text:t||n.text,final:!0})}function et(s,e){let t=ie(s,e),i=t===-1?void 0:s[t];return i===void 0?s:se(s,t,{...i,final:!0,interrupted:!0})}function se(s,e,t){let i=[...s];return i[e]=t,i}var tt=new Set(["capturing","processing","speaking"]);function y(s){return tt.has(s)}function $(s){for(let e of Object.getOwnPropertyNames(s)){let t=Object.getOwnPropertyDescriptor(s,e);if(!t||!("value"in t))continue;let i=Object.getPrototypeOf(s),n;for(;i&&i!==HTMLElement.prototype&&(n=Object.getOwnPropertyDescriptor(i,e),!n);)i=Object.getPrototypeOf(i);if(!n?.set)continue;let r=t.value;delete s[e],s[e]=r}}var Se="speechkit-voice-controller",ne=class extends Event{context;callback;subscribe;constructor(e,t,i){super("context-request",{bubbles:!0,composed:!0}),this.context=e,this.callback=t,i!==void 0&&(this.subscribe=i)}};function Ae(s,e){let t;return s.dispatchEvent(new ne(Se,(i,n)=>{t=n,e(i)},!0)),()=>t?.()}var V=class extends HTMLElement{static tagName="speechkit-voice-provider";#e=null;#t=new Set;#i=e=>{let t=e;if(t.context===Se&&t.target!==this){if(e.stopPropagation(),t.subscribe){let i=t.callback;this.#t.add(i),i(this.#e,()=>this.#t.delete(i));return}t.callback(this.#e)}};get controller(){return this.#e}set controller(e){this.#e=e;for(let t of this.#t)t(e)}connectedCallback(){$(this),this.addEventListener("context-request",this.#i)}disconnectedCallback(){this.removeEventListener("context-request",this.#i),this.#t.clear()}};var re=["en","de","es","zh-Hans","hi","ar"],I={"sk.voice.button.dictation.start":"Start voice dictation","sk.voice.button.dictation.stop":"Stop recording","sk.voice.button.cancel":"Cancel voice input","sk.voice.button.agent":"Switch to voice conversation","sk.voice.button.agent_locked":"Voice conversation (locked)","sk.voice.state.idle":"Ready","sk.voice.state.capturing":"Listening","sk.voice.state.processing":"Processing","sk.voice.state.speaking":"Speaking","sk.voice.state.cancelled":"Cancelled","sk.voice.state.denied":"Unavailable","sk.voice.agent.connecting":"Connecting","sk.voice.agent.listening":"Listening","sk.voice.agent.speaking":"Speaking","sk.voice.agent.interrupt":"Tap to interrupt","sk.voice.agent.interrupted":"Interrupted","sk.voice.agent.you":"You","sk.voice.agent.assistant":"Assistant","sk.voice.agent.live":"Live","sk.voice.agent.jumpToLive":"Jump to live","sk.voice.agent.ended":"The voice session has ended.","sk.voice.agent.reconnect":"Reconnect","sk.voice.agent.exit":"Exit voice mode","sk.voice.denied.retry":"Try again","sk.voice.consent.title":"Use voice with kombify hosted processing?","sk.voice.consent.capture":"What is captured: your microphone audio, only while you record.","sk.voice.consent.destination":"Where it goes: kombify hosted voice at api.kombify.io, to transcribe and process your speech.","sk.voice.consent.accept":"Accept and enable voice","sk.voice.consent.decline":"Decline","sk.voice.consent.declined":"Voice input is off: you declined voice capture on this surface.","sk.voice.consent.continuous":"Voice conversation streams your microphone continuously to kombify hosted voice (api.kombify.io) for the entire session \u2014 not only while you press record. Streaming stops when you exit voice mode.","sk.voice.state.requesting":"Waiting for microphone","sk.voice.notice.mic_denied":"Microphone is blocked","sk.voice.notice.mic_denied.hint":"Allow microphone access for this site in the browser's address bar or settings, then try again.","sk.voice.notice.mic_unavailable":"No microphone found","sk.voice.notice.mic_unavailable.hint":"Connect a microphone or pick another input device, then try again.","sk.voice.notice.mic_busy":"Microphone is in use","sk.voice.notice.mic_busy.hint":"Close the other app that uses the microphone, then try again.","sk.voice.notice.mic_unsupported":"Voice input not supported","sk.voice.notice.mic_unsupported.hint":"This browser or page can't capture audio. Use a current browser on a secure (HTTPS) page.","sk.voice.notice.connection":"Couldn't connect to voice","sk.voice.notice.connection.hint":"Check your connection and try again.","sk.voice.notice.not_available":"Voice isn't available here","sk.voice.notice.not_available.hint":"This voice feature isn't enabled for your account or workspace.","sk.voice.notice.quota":"Voice limit reached","sk.voice.notice.quota.hint":"The usage limit for voice has been reached. Try again later.","sk.voice.notice.consent":"Voice needs confirmation","sk.voice.notice.consent.hint":"Confirm voice capture once to continue; you can revoke it at any time.","sk.voice.notice.generic":"Voice stopped unexpectedly","sk.voice.notice.generic.hint":"Try again. If it keeps happening, share the reference below with support.","sk.voice.notice.details":"Details","sk.voice.notice.hide_details":"Hide details","sk.voice.notice.dismiss":"Dismiss","sk.voice.notice.code":"Code","sk.voice.notice.reference":"Reference","sk.voice.dialog.label":"Voice conversation","sk.voice.dialog.end":"End conversation","sk.voice.dialog.hide":"Hide conversation","sk.voice.transcript.label":"Live transcript"},it={"sk.voice.button.dictation.start":"Sprachdiktat starten","sk.voice.button.dictation.stop":"Aufnahme beenden","sk.voice.button.cancel":"Spracheingabe abbrechen","sk.voice.button.agent":"Zur Sprachkonversation wechseln","sk.voice.button.agent_locked":"Sprachkonversation (gesperrt)","sk.voice.state.idle":"Bereit","sk.voice.state.capturing":"H\xF6rt zu","sk.voice.state.processing":"Verarbeitet","sk.voice.state.speaking":"Antwortet","sk.voice.state.cancelled":"Abgebrochen","sk.voice.state.denied":"Nicht verf\xFCgbar","sk.voice.agent.connecting":"Verbindet","sk.voice.agent.listening":"H\xF6rt zu","sk.voice.agent.speaking":"Spricht","sk.voice.agent.interrupt":"Tippen zum Unterbrechen","sk.voice.agent.interrupted":"Unterbrochen","sk.voice.agent.you":"Du","sk.voice.agent.assistant":"Assistent","sk.voice.agent.live":"Live","sk.voice.agent.jumpToLive":"Zum Live-Ende springen","sk.voice.agent.ended":"Die Sprachsitzung wurde beendet.","sk.voice.agent.reconnect":"Erneut verbinden","sk.voice.agent.exit":"Sprachmodus beenden","sk.voice.denied.retry":"Erneut versuchen","sk.voice.consent.title":"Sprache mit kombify Hosted-Verarbeitung nutzen?","sk.voice.consent.capture":"Was erfasst wird: dein Mikrofon-Audio, nur w\xE4hrend der Aufnahme.","sk.voice.consent.destination":"Wohin es geht: kombify Hosted Voice unter api.kombify.io, um deine Sprache zu transkribieren und zu verarbeiten.","sk.voice.consent.accept":"Akzeptieren und Sprache aktivieren","sk.voice.consent.decline":"Ablehnen","sk.voice.consent.declined":"Spracheingabe ist aus: du hast die Sprachaufnahme auf dieser Oberfl\xE4che abgelehnt.","sk.voice.consent.continuous":"Die Sprachkonversation streamt dein Mikrofon w\xE4hrend der gesamten Sitzung fortlaufend an kombify Hosted Voice (api.kombify.io) \u2014 nicht nur w\xE4hrend du aufnimmst. Das Streaming endet, sobald du den Sprachmodus verl\xE4sst.","sk.voice.state.requesting":"Warte auf Mikrofon","sk.voice.notice.mic_denied":"Mikrofon ist blockiert","sk.voice.notice.mic_denied.hint":"Erlaube den Mikrofonzugriff f\xFCr diese Seite in der Adressleiste oder den Browser-Einstellungen und versuche es erneut.","sk.voice.notice.mic_unavailable":"Kein Mikrofon gefunden","sk.voice.notice.mic_unavailable.hint":"Schlie\xDFe ein Mikrofon an oder w\xE4hle ein anderes Eingabeger\xE4t und versuche es erneut.","sk.voice.notice.mic_busy":"Mikrofon wird verwendet","sk.voice.notice.mic_busy.hint":"Schlie\xDFe die andere App, die das Mikrofon nutzt, und versuche es erneut.","sk.voice.notice.mic_unsupported":"Spracheingabe nicht unterst\xFCtzt","sk.voice.notice.mic_unsupported.hint":"Dieser Browser oder diese Seite kann kein Audio aufnehmen. Nutze einen aktuellen Browser auf einer sicheren (HTTPS-)Seite.","sk.voice.notice.connection":"Sprache nicht erreichbar","sk.voice.notice.connection.hint":"Pr\xFCfe deine Verbindung und versuche es erneut.","sk.voice.notice.not_available":"Sprache hier nicht verf\xFCgbar","sk.voice.notice.not_available.hint":"Diese Sprachfunktion ist f\xFCr dein Konto oder deinen Workspace nicht aktiviert.","sk.voice.notice.quota":"Sprachlimit erreicht","sk.voice.notice.quota.hint":"Das Nutzungslimit f\xFCr Sprache ist erreicht. Versuche es sp\xE4ter erneut.","sk.voice.notice.consent":"Sprache braucht Best\xE4tigung","sk.voice.notice.consent.hint":"Best\xE4tige die Sprachaufnahme einmalig, um fortzufahren; du kannst sie jederzeit widerrufen.","sk.voice.notice.generic":"Sprache unerwartet beendet","sk.voice.notice.generic.hint":"Versuche es erneut. Wenn es weiter passiert, gib dem Support die Referenz unten.","sk.voice.notice.details":"Details","sk.voice.notice.hide_details":"Details ausblenden","sk.voice.notice.dismiss":"Schlie\xDFen","sk.voice.notice.code":"Code","sk.voice.notice.reference":"Referenz","sk.voice.dialog.label":"Sprachkonversation","sk.voice.dialog.end":"Konversation beenden","sk.voice.dialog.hide":"Konversation ausblenden","sk.voice.transcript.label":"Live-Transkript"},st={"sk.voice.button.dictation.start":"Iniciar dictado por voz","sk.voice.button.dictation.stop":"Detener la grabaci\xF3n","sk.voice.button.cancel":"Cancelar la entrada de voz","sk.voice.button.agent":"Cambiar a conversaci\xF3n por voz","sk.voice.button.agent_locked":"Conversaci\xF3n por voz (bloqueada)","sk.voice.state.idle":"Listo","sk.voice.state.capturing":"Escuchando","sk.voice.state.processing":"Procesando","sk.voice.state.speaking":"Hablando","sk.voice.state.cancelled":"Cancelado","sk.voice.state.denied":"No disponible","sk.voice.agent.connecting":"Conectando","sk.voice.agent.listening":"Escuchando","sk.voice.agent.speaking":"Hablando","sk.voice.agent.interrupt":"Toca para interrumpir","sk.voice.agent.interrupted":"Interrumpido","sk.voice.agent.you":"T\xFA","sk.voice.agent.assistant":"Asistente","sk.voice.agent.live":"En vivo","sk.voice.agent.jumpToLive":"Ir al directo","sk.voice.agent.ended":"La sesi\xF3n de voz ha terminado.","sk.voice.agent.reconnect":"Reconectar","sk.voice.agent.exit":"Salir del modo de voz","sk.voice.denied.retry":"Intentar de nuevo","sk.voice.consent.title":"\xBFUsar voz con el procesamiento alojado de kombify?","sk.voice.consent.capture":"Qu\xE9 se captura: el audio de tu micr\xF3fono, solo mientras grabas.","sk.voice.consent.destination":"Ad\xF3nde va: a la voz alojada de kombify en api.kombify.io, para transcribir y procesar tu voz.","sk.voice.consent.accept":"Aceptar y activar la voz","sk.voice.consent.decline":"Rechazar","sk.voice.consent.declined":"La entrada de voz est\xE1 desactivada: rechazaste la captura de voz en esta superficie.","sk.voice.consent.continuous":"La conversaci\xF3n por voz transmite tu micr\xF3fono de forma continua a la voz alojada de kombify (api.kombify.io) durante toda la sesi\xF3n, no solo mientras grabas. La transmisi\xF3n se detiene al salir del modo de voz.","sk.voice.state.requesting":"Esperando el micr\xF3fono","sk.voice.notice.mic_denied":"Micr\xF3fono bloqueado","sk.voice.notice.mic_denied.hint":"Permite el acceso al micr\xF3fono para este sitio en la barra de direcciones o en la configuraci\xF3n del navegador y vuelve a intentarlo.","sk.voice.notice.mic_unavailable":"No se encontr\xF3 ning\xFAn micr\xF3fono","sk.voice.notice.mic_unavailable.hint":"Conecta un micr\xF3fono o elige otro dispositivo de entrada y vuelve a intentarlo.","sk.voice.notice.mic_busy":"El micr\xF3fono est\xE1 en uso","sk.voice.notice.mic_busy.hint":"Cierra la otra aplicaci\xF3n que usa el micr\xF3fono y vuelve a intentarlo.","sk.voice.notice.mic_unsupported":"La entrada de voz no es compatible aqu\xED","sk.voice.notice.mic_unsupported.hint":"Este navegador o esta p\xE1gina no puede capturar audio. Usa un navegador actual en una p\xE1gina segura (HTTPS).","sk.voice.notice.connection":"No se pudo conectar con la voz","sk.voice.notice.connection.hint":"Comprueba tu conexi\xF3n y vuelve a intentarlo.","sk.voice.notice.not_available":"La voz no est\xE1 disponible aqu\xED","sk.voice.notice.not_available.hint":"Esta funci\xF3n de voz no est\xE1 activada para tu cuenta o espacio de trabajo.","sk.voice.notice.quota":"Se alcanz\xF3 el l\xEDmite de voz","sk.voice.notice.quota.hint":"Se alcanz\xF3 el l\xEDmite de uso de voz. Vuelve a intentarlo m\xE1s tarde.","sk.voice.notice.consent":"La voz necesita tu confirmaci\xF3n","sk.voice.notice.consent.hint":"Confirma la captura de voz una vez para continuar; puedes revocarla en cualquier momento.","sk.voice.notice.generic":"La voz se detuvo inesperadamente","sk.voice.notice.generic.hint":"Vuelve a intentarlo. Si sigue ocurriendo, comparte la referencia de abajo con el soporte.","sk.voice.notice.details":"Detalles","sk.voice.notice.hide_details":"Ocultar detalles","sk.voice.notice.dismiss":"Descartar","sk.voice.notice.code":"C\xF3digo","sk.voice.notice.reference":"Referencia","sk.voice.dialog.label":"Conversaci\xF3n por voz","sk.voice.dialog.end":"Terminar la conversaci\xF3n","sk.voice.dialog.hide":"Ocultar la conversaci\xF3n","sk.voice.transcript.label":"Transcripci\xF3n en vivo"},nt={"sk.voice.button.dictation.start":"\u5F00\u59CB\u8BED\u97F3\u542C\u5199","sk.voice.button.dictation.stop":"\u505C\u6B62\u5F55\u97F3","sk.voice.button.cancel":"\u53D6\u6D88\u8BED\u97F3\u8F93\u5165","sk.voice.button.agent":"\u5207\u6362\u5230\u8BED\u97F3\u5BF9\u8BDD","sk.voice.button.agent_locked":"\u8BED\u97F3\u5BF9\u8BDD\uFF08\u5DF2\u9501\u5B9A\uFF09","sk.voice.state.idle":"\u5C31\u7EEA","sk.voice.state.capturing":"\u6B63\u5728\u8046\u542C","sk.voice.state.processing":"\u6B63\u5728\u5904\u7406","sk.voice.state.speaking":"\u6B63\u5728\u56DE\u7B54","sk.voice.state.cancelled":"\u5DF2\u53D6\u6D88","sk.voice.state.denied":"\u4E0D\u53EF\u7528","sk.voice.agent.connecting":"\u6B63\u5728\u8FDE\u63A5","sk.voice.agent.listening":"\u6B63\u5728\u8046\u542C","sk.voice.agent.speaking":"\u6B63\u5728\u56DE\u7B54","sk.voice.agent.interrupt":"\u70B9\u6309\u4EE5\u6253\u65AD","sk.voice.agent.interrupted":"\u5DF2\u6253\u65AD","sk.voice.agent.you":"\u4F60","sk.voice.agent.assistant":"\u52A9\u624B","sk.voice.agent.live":"\u5B9E\u65F6","sk.voice.agent.jumpToLive":"\u8DF3\u8F6C\u5230\u5B9E\u65F6\u4F4D\u7F6E","sk.voice.agent.ended":"\u8BED\u97F3\u4F1A\u8BDD\u5DF2\u7ED3\u675F\u3002","sk.voice.agent.reconnect":"\u91CD\u65B0\u8FDE\u63A5","sk.voice.agent.exit":"\u9000\u51FA\u8BED\u97F3\u6A21\u5F0F","sk.voice.denied.retry":"\u91CD\u8BD5","sk.voice.consent.title":"\u4F7F\u7528 kombify \u6258\u7BA1\u8BED\u97F3\u5904\u7406\uFF1F","sk.voice.consent.capture":"\u91C7\u96C6\u5185\u5BB9\uFF1A\u4EC5\u5728\u5F55\u97F3\u671F\u95F4\u91C7\u96C6\u4F60\u7684\u9EA6\u514B\u98CE\u97F3\u9891\u3002","sk.voice.consent.destination":"\u6570\u636E\u53BB\u5411\uFF1A\u53D1\u9001\u5230 api.kombify.io \u4E0A\u7684 kombify \u6258\u7BA1\u8BED\u97F3\u670D\u52A1\uFF0C\u7528\u4E8E\u8F6C\u5199\u548C\u5904\u7406\u4F60\u7684\u8BED\u97F3\u3002","sk.voice.consent.accept":"\u63A5\u53D7\u5E76\u542F\u7528\u8BED\u97F3","sk.voice.consent.decline":"\u62D2\u7EDD","sk.voice.consent.declined":"\u8BED\u97F3\u8F93\u5165\u5DF2\u5173\u95ED\uFF1A\u4F60\u5728\u6B64\u754C\u9762\u62D2\u7EDD\u4E86\u8BED\u97F3\u91C7\u96C6\u3002","sk.voice.consent.continuous":"\u8BED\u97F3\u5BF9\u8BDD\u4F1A\u5728\u6574\u4E2A\u4F1A\u8BDD\u671F\u95F4\u5C06\u4F60\u7684\u9EA6\u514B\u98CE\u97F3\u9891\u6301\u7EED\u4F20\u8F93\u5230 kombify \u6258\u7BA1\u8BED\u97F3\u670D\u52A1\uFF08api.kombify.io\uFF09\uFF0C\u800C\u4E0D\u4EC5\u662F\u5728\u5F55\u97F3\u65F6\u3002\u9000\u51FA\u8BED\u97F3\u6A21\u5F0F\u540E\u4F20\u8F93\u5373\u505C\u6B62\u3002","sk.voice.state.requesting":"\u6B63\u5728\u7B49\u5F85\u9EA6\u514B\u98CE","sk.voice.notice.mic_denied":"\u9EA6\u514B\u98CE\u88AB\u963B\u6B62","sk.voice.notice.mic_denied.hint":"\u8BF7\u5728\u6D4F\u89C8\u5668\u5730\u5740\u680F\u6216\u8BBE\u7F6E\u4E2D\u5141\u8BB8\u6B64\u7F51\u7AD9\u8BBF\u95EE\u9EA6\u514B\u98CE\uFF0C\u7136\u540E\u91CD\u8BD5\u3002","sk.voice.notice.mic_unavailable":"\u672A\u627E\u5230\u9EA6\u514B\u98CE","sk.voice.notice.mic_unavailable.hint":"\u8BF7\u8FDE\u63A5\u9EA6\u514B\u98CE\u6216\u9009\u62E9\u5176\u4ED6\u8F93\u5165\u8BBE\u5907\uFF0C\u7136\u540E\u91CD\u8BD5\u3002","sk.voice.notice.mic_busy":"\u9EA6\u514B\u98CE\u6B63\u88AB\u5360\u7528","sk.voice.notice.mic_busy.hint":"\u8BF7\u5173\u95ED\u6B63\u5728\u4F7F\u7528\u9EA6\u514B\u98CE\u7684\u5176\u4ED6\u5E94\u7528\uFF0C\u7136\u540E\u91CD\u8BD5\u3002","sk.voice.notice.mic_unsupported":"\u6B64\u5904\u4E0D\u652F\u6301\u8BED\u97F3\u8F93\u5165","sk.voice.notice.mic_unsupported.hint":"\u6B64\u6D4F\u89C8\u5668\u6216\u9875\u9762\u65E0\u6CD5\u91C7\u96C6\u97F3\u9891\u3002\u8BF7\u5728\u5B89\u5168\uFF08HTTPS\uFF09\u9875\u9762\u4E0A\u4F7F\u7528\u6700\u65B0\u7684\u6D4F\u89C8\u5668\u3002","sk.voice.notice.connection":"\u65E0\u6CD5\u8FDE\u63A5\u5230\u8BED\u97F3\u670D\u52A1","sk.voice.notice.connection.hint":"\u8BF7\u68C0\u67E5\u7F51\u7EDC\u8FDE\u63A5\uFF0C\u7136\u540E\u91CD\u8BD5\u3002","sk.voice.notice.not_available":"\u6B64\u5904\u65E0\u6CD5\u4F7F\u7528\u8BED\u97F3","sk.voice.notice.not_available.hint":"\u4F60\u7684\u8D26\u6237\u6216\u5DE5\u4F5C\u533A\u672A\u542F\u7528\u6B64\u8BED\u97F3\u529F\u80FD\u3002","sk.voice.notice.quota":"\u5DF2\u8FBE\u5230\u8BED\u97F3\u4F7F\u7528\u4E0A\u9650","sk.voice.notice.quota.hint":"\u8BED\u97F3\u4F7F\u7528\u91CF\u5DF2\u8FBE\u4E0A\u9650\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002","sk.voice.notice.consent":"\u8BED\u97F3\u9700\u8981\u4F60\u7684\u786E\u8BA4","sk.voice.notice.consent.hint":"\u786E\u8BA4\u4E00\u6B21\u8BED\u97F3\u91C7\u96C6\u5373\u53EF\u7EE7\u7EED\uFF1B\u4F60\u53EF\u4EE5\u968F\u65F6\u64A4\u9500\u3002","sk.voice.notice.generic":"\u8BED\u97F3\u610F\u5916\u505C\u6B62","sk.voice.notice.generic.hint":"\u8BF7\u91CD\u8BD5\u3002\u5982\u679C\u95EE\u9898\u6301\u7EED\u51FA\u73B0\uFF0C\u8BF7\u5C06\u4E0B\u65B9\u7684\u53C2\u8003\u7F16\u53F7\u63D0\u4F9B\u7ED9\u652F\u6301\u56E2\u961F\u3002","sk.voice.notice.details":"\u8BE6\u60C5","sk.voice.notice.hide_details":"\u9690\u85CF\u8BE6\u60C5","sk.voice.notice.dismiss":"\u5173\u95ED","sk.voice.notice.code":"\u4EE3\u7801","sk.voice.notice.reference":"\u53C2\u8003\u7F16\u53F7","sk.voice.dialog.label":"\u8BED\u97F3\u5BF9\u8BDD","sk.voice.dialog.end":"\u7ED3\u675F\u5BF9\u8BDD","sk.voice.dialog.hide":"\u9690\u85CF\u5BF9\u8BDD","sk.voice.transcript.label":"\u5B9E\u65F6\u8F6C\u5199"},rt={"sk.voice.button.dictation.start":"\u0935\u0949\u0907\u0938 \u0921\u093F\u0915\u094D\u091F\u0947\u0936\u0928 \u0936\u0941\u0930\u0942 \u0915\u0930\u0947\u0902","sk.voice.button.dictation.stop":"\u0930\u093F\u0915\u0949\u0930\u094D\u0921\u093F\u0902\u0917 \u0930\u094B\u0915\u0947\u0902","sk.voice.button.cancel":"\u0935\u0949\u0907\u0938 \u0907\u0928\u092A\u0941\u091F \u0930\u0926\u094D\u0926 \u0915\u0930\u0947\u0902","sk.voice.button.agent":"\u0935\u0949\u0907\u0938 \u0935\u093E\u0930\u094D\u0924\u093E\u0932\u093E\u092A \u092A\u0930 \u091C\u093E\u090F\u0901","sk.voice.button.agent_locked":"\u0935\u0949\u0907\u0938 \u0935\u093E\u0930\u094D\u0924\u093E\u0932\u093E\u092A (\u0932\u0949\u0915)","sk.voice.state.idle":"\u0924\u0948\u092F\u093E\u0930","sk.voice.state.capturing":"\u0938\u0941\u0928 \u0930\u0939\u093E \u0939\u0948","sk.voice.state.processing":"\u092A\u094D\u0930\u094B\u0938\u0947\u0938 \u0939\u094B \u0930\u0939\u093E \u0939\u0948","sk.voice.state.speaking":"\u092C\u094B\u0932 \u0930\u0939\u093E \u0939\u0948","sk.voice.state.cancelled":"\u0930\u0926\u094D\u0926 \u0915\u093F\u092F\u093E \u0917\u092F\u093E","sk.voice.state.denied":"\u0909\u092A\u0932\u092C\u094D\u0927 \u0928\u0939\u0940\u0902","sk.voice.agent.connecting":"\u0915\u0928\u0947\u0915\u094D\u091F \u0939\u094B \u0930\u0939\u093E \u0939\u0948","sk.voice.agent.listening":"\u0938\u0941\u0928 \u0930\u0939\u093E \u0939\u0948","sk.voice.agent.speaking":"\u092C\u094B\u0932 \u0930\u0939\u093E \u0939\u0948","sk.voice.agent.interrupt":"\u092C\u0940\u091A \u092E\u0947\u0902 \u0930\u094B\u0915\u0928\u0947 \u0915\u0947 \u0932\u093F\u090F \u091F\u0948\u092A \u0915\u0930\u0947\u0902","sk.voice.agent.interrupted":"\u092C\u0940\u091A \u092E\u0947\u0902 \u0930\u094B\u0915\u093E \u0917\u092F\u093E","sk.voice.agent.you":"\u0906\u092A","sk.voice.agent.assistant":"\u0905\u0938\u093F\u0938\u094D\u091F\u0947\u0902\u091F","sk.voice.agent.live":"\u0932\u093E\u0907\u0935","sk.voice.agent.jumpToLive":"\u0932\u093E\u0907\u0935 \u092A\u0930 \u091C\u093E\u090F\u0901","sk.voice.agent.ended":"\u0935\u0949\u0907\u0938 \u0938\u0924\u094D\u0930 \u0938\u092E\u093E\u092A\u094D\u0924 \u0939\u094B \u0917\u092F\u093E \u0939\u0948\u0964","sk.voice.agent.reconnect":"\u092B\u093F\u0930 \u0938\u0947 \u0915\u0928\u0947\u0915\u094D\u091F \u0915\u0930\u0947\u0902","sk.voice.agent.exit":"\u0935\u0949\u0907\u0938 \u092E\u094B\u0921 \u0938\u0947 \u092C\u093E\u0939\u0930 \u0928\u093F\u0915\u0932\u0947\u0902","sk.voice.denied.retry":"\u092B\u093F\u0930 \u0938\u0947 \u0906\u091C\u093C\u092E\u093E\u090F\u0901","sk.voice.consent.title":"kombify \u0939\u094B\u0938\u094D\u091F\u0947\u0921 \u092A\u094D\u0930\u094B\u0938\u0947\u0938\u093F\u0902\u0917 \u0915\u0947 \u0938\u093E\u0925 \u0935\u0949\u0907\u0938 \u0915\u093E \u0909\u092A\u092F\u094B\u0917 \u0915\u0930\u0947\u0902?","sk.voice.consent.capture":"\u0915\u094D\u092F\u093E \u0915\u0948\u092A\u094D\u091A\u0930 \u0939\u094B\u0924\u093E \u0939\u0948: \u0906\u092A\u0915\u0947 \u092E\u093E\u0907\u0915\u094D\u0930\u094B\u092B\u093C\u094B\u0928 \u0915\u093E \u0911\u0921\u093F\u092F\u094B, \u0915\u0947\u0935\u0932 \u0930\u093F\u0915\u0949\u0930\u094D\u0921\u093F\u0902\u0917 \u0915\u0947 \u0926\u094C\u0930\u093E\u0928\u0964","sk.voice.consent.destination":"\u092F\u0939 \u0915\u0939\u093E\u0901 \u091C\u093E\u0924\u093E \u0939\u0948: \u0906\u092A\u0915\u0940 \u0906\u0935\u093E\u091C\u093C \u0915\u094B \u091F\u094D\u0930\u093E\u0902\u0938\u0915\u094D\u0930\u093E\u0907\u092C \u0914\u0930 \u092A\u094D\u0930\u094B\u0938\u0947\u0938 \u0915\u0930\u0928\u0947 \u0915\u0947 \u0932\u093F\u090F api.kombify.io \u092A\u0930 kombify \u0939\u094B\u0938\u094D\u091F\u0947\u0921 \u0935\u0949\u0907\u0938 \u0915\u094B\u0964","sk.voice.consent.accept":"\u0938\u094D\u0935\u0940\u0915\u093E\u0930 \u0915\u0930\u0947\u0902 \u0914\u0930 \u0935\u0949\u0907\u0938 \u091A\u093E\u0932\u0942 \u0915\u0930\u0947\u0902","sk.voice.consent.decline":"\u0905\u0938\u094D\u0935\u0940\u0915\u093E\u0930 \u0915\u0930\u0947\u0902","sk.voice.consent.declined":"\u0935\u0949\u0907\u0938 \u0907\u0928\u092A\u0941\u091F \u092C\u0902\u0926 \u0939\u0948: \u0906\u092A\u0928\u0947 \u0907\u0938 \u0938\u0924\u0939 \u092A\u0930 \u0935\u0949\u0907\u0938 \u0915\u0948\u092A\u094D\u091A\u0930 \u0905\u0938\u094D\u0935\u0940\u0915\u093E\u0930 \u0915\u093F\u092F\u093E \u0939\u0948\u0964","sk.voice.consent.continuous":"\u0935\u0949\u0907\u0938 \u0935\u093E\u0930\u094D\u0924\u093E\u0932\u093E\u092A \u092A\u0942\u0930\u0947 \u0938\u0924\u094D\u0930 \u0915\u0947 \u0926\u094C\u0930\u093E\u0928 \u0906\u092A\u0915\u0947 \u092E\u093E\u0907\u0915\u094D\u0930\u094B\u092B\u093C\u094B\u0928 \u0915\u093E \u0911\u0921\u093F\u092F\u094B \u0932\u0917\u093E\u0924\u093E\u0930 kombify \u0939\u094B\u0938\u094D\u091F\u0947\u0921 \u0935\u0949\u0907\u0938 (api.kombify.io) \u0915\u094B \u0938\u094D\u091F\u094D\u0930\u0940\u092E \u0915\u0930\u0924\u093E \u0939\u0948 \u2014 \u0915\u0947\u0935\u0932 \u0930\u093F\u0915\u0949\u0930\u094D\u0921\u093F\u0902\u0917 \u0915\u0947 \u0926\u094C\u0930\u093E\u0928 \u0928\u0939\u0940\u0902\u0964 \u0935\u0949\u0907\u0938 \u092E\u094B\u0921 \u0938\u0947 \u092C\u093E\u0939\u0930 \u0928\u093F\u0915\u0932\u0924\u0947 \u0939\u0940 \u0938\u094D\u091F\u094D\u0930\u0940\u092E\u093F\u0902\u0917 \u0930\u0941\u0915 \u091C\u093E\u0924\u0940 \u0939\u0948\u0964","sk.voice.state.requesting":"\u092E\u093E\u0907\u0915\u094D\u0930\u094B\u092B\u093C\u094B\u0928 \u0915\u0940 \u092A\u094D\u0930\u0924\u0940\u0915\u094D\u0937\u093E","sk.voice.notice.mic_denied":"\u092E\u093E\u0907\u0915\u094D\u0930\u094B\u092B\u093C\u094B\u0928 \u092C\u094D\u0932\u0949\u0915 \u0939\u0948","sk.voice.notice.mic_denied.hint":"\u092C\u094D\u0930\u093E\u0909\u091C\u093C\u0930 \u0915\u0947 \u090F\u0921\u094D\u0930\u0947\u0938 \u092C\u093E\u0930 \u092F\u093E \u0938\u0947\u091F\u093F\u0902\u0917\u094D\u0938 \u092E\u0947\u0902 \u0907\u0938 \u0938\u093E\u0907\u091F \u0915\u0947 \u0932\u093F\u090F \u092E\u093E\u0907\u0915\u094D\u0930\u094B\u092B\u093C\u094B\u0928 \u090F\u0915\u094D\u0938\u0947\u0938 \u0915\u0940 \u0905\u0928\u0941\u092E\u0924\u093F \u0926\u0947\u0902, \u092B\u093F\u0930 \u0938\u0947 \u0906\u091C\u093C\u092E\u093E\u090F\u0901\u0964","sk.voice.notice.mic_unavailable":"\u0915\u094B\u0908 \u092E\u093E\u0907\u0915\u094D\u0930\u094B\u092B\u093C\u094B\u0928 \u0928\u0939\u0940\u0902 \u092E\u093F\u0932\u093E","sk.voice.notice.mic_unavailable.hint":"\u092E\u093E\u0907\u0915\u094D\u0930\u094B\u092B\u093C\u094B\u0928 \u0915\u0928\u0947\u0915\u094D\u091F \u0915\u0930\u0947\u0902 \u092F\u093E \u0915\u094B\u0908 \u0926\u0942\u0938\u0930\u093E \u0907\u0928\u092A\u0941\u091F \u0921\u093F\u0935\u093E\u0907\u0938 \u091A\u0941\u0928\u0947\u0902, \u092B\u093F\u0930 \u0938\u0947 \u0906\u091C\u093C\u092E\u093E\u090F\u0901\u0964","sk.voice.notice.mic_busy":"\u092E\u093E\u0907\u0915\u094D\u0930\u094B\u092B\u093C\u094B\u0928 \u0909\u092A\u092F\u094B\u0917 \u092E\u0947\u0902 \u0939\u0948","sk.voice.notice.mic_busy.hint":"\u092E\u093E\u0907\u0915\u094D\u0930\u094B\u092B\u093C\u094B\u0928 \u0915\u093E \u0909\u092A\u092F\u094B\u0917 \u0915\u0930\u0928\u0947 \u0935\u093E\u0932\u093E \u0926\u0942\u0938\u0930\u093E \u0910\u092A \u092C\u0902\u0926 \u0915\u0930\u0947\u0902, \u092B\u093F\u0930 \u0938\u0947 \u0906\u091C\u093C\u092E\u093E\u090F\u0901\u0964","sk.voice.notice.mic_unsupported":"\u092F\u0939\u093E\u0901 \u0935\u0949\u0907\u0938 \u0907\u0928\u092A\u0941\u091F \u0938\u092E\u0930\u094D\u0925\u093F\u0924 \u0928\u0939\u0940\u0902 \u0939\u0948","sk.voice.notice.mic_unsupported.hint":"\u092F\u0939 \u092C\u094D\u0930\u093E\u0909\u091C\u093C\u0930 \u092F\u093E \u092A\u0947\u091C \u0911\u0921\u093F\u092F\u094B \u0915\u0948\u092A\u094D\u091A\u0930 \u0928\u0939\u0940\u0902 \u0915\u0930 \u0938\u0915\u0924\u093E\u0964 \u0938\u0941\u0930\u0915\u094D\u0937\u093F\u0924 (HTTPS) \u092A\u0947\u091C \u092A\u0930 \u0928\u092F\u093E \u092C\u094D\u0930\u093E\u0909\u091C\u093C\u0930 \u0909\u092A\u092F\u094B\u0917 \u0915\u0930\u0947\u0902\u0964","sk.voice.notice.connection":"\u0935\u0949\u0907\u0938 \u0938\u0947 \u0915\u0928\u0947\u0915\u094D\u091F \u0928\u0939\u0940\u0902 \u0939\u094B \u0938\u0915\u093E","sk.voice.notice.connection.hint":"\u0905\u092A\u0928\u093E \u0915\u0928\u0947\u0915\u094D\u0936\u0928 \u091C\u093E\u0901\u091A\u0947\u0902 \u0914\u0930 \u092B\u093F\u0930 \u0938\u0947 \u0906\u091C\u093C\u092E\u093E\u090F\u0901\u0964","sk.voice.notice.not_available":"\u092F\u0939\u093E\u0901 \u0935\u0949\u0907\u0938 \u0909\u092A\u0932\u092C\u094D\u0927 \u0928\u0939\u0940\u0902 \u0939\u0948","sk.voice.notice.not_available.hint":"\u092F\u0939 \u0935\u0949\u0907\u0938 \u0938\u0941\u0935\u093F\u0927\u093E \u0906\u092A\u0915\u0947 \u0916\u093E\u0924\u0947 \u092F\u093E \u0935\u0930\u094D\u0915\u0938\u094D\u092A\u0947\u0938 \u0915\u0947 \u0932\u093F\u090F \u091A\u093E\u0932\u0942 \u0928\u0939\u0940\u0902 \u0939\u0948\u0964","sk.voice.notice.quota":"\u0935\u0949\u0907\u0938 \u0938\u0940\u092E\u093E \u092A\u0942\u0930\u0940 \u0939\u094B \u0917\u0908","sk.voice.notice.quota.hint":"\u0935\u0949\u0907\u0938 \u0915\u0940 \u0909\u092A\u092F\u094B\u0917 \u0938\u0940\u092E\u093E \u092A\u0942\u0930\u0940 \u0939\u094B \u0917\u0908 \u0939\u0948\u0964 \u092C\u093E\u0926 \u092E\u0947\u0902 \u092B\u093F\u0930 \u0938\u0947 \u0906\u091C\u093C\u092E\u093E\u090F\u0901\u0964","sk.voice.notice.consent":"\u0935\u0949\u0907\u0938 \u0915\u0947 \u0932\u093F\u090F \u0906\u092A\u0915\u0940 \u092A\u0941\u0937\u094D\u091F\u093F \u091C\u093C\u0930\u0942\u0930\u0940 \u0939\u0948","sk.voice.notice.consent.hint":"\u091C\u093E\u0930\u0940 \u0930\u0916\u0928\u0947 \u0915\u0947 \u0932\u093F\u090F \u090F\u0915 \u092C\u093E\u0930 \u0935\u0949\u0907\u0938 \u0915\u0948\u092A\u094D\u091A\u0930 \u0915\u0940 \u092A\u0941\u0937\u094D\u091F\u093F \u0915\u0930\u0947\u0902; \u0906\u092A \u0907\u0938\u0947 \u0915\u092D\u0940 \u092D\u0940 \u0935\u093E\u092A\u0938 \u0932\u0947 \u0938\u0915\u0924\u0947 \u0939\u0948\u0902\u0964","sk.voice.notice.generic":"\u0935\u0949\u0907\u0938 \u0905\u091A\u093E\u0928\u0915 \u0930\u0941\u0915 \u0917\u092F\u093E","sk.voice.notice.generic.hint":"\u092B\u093F\u0930 \u0938\u0947 \u0906\u091C\u093C\u092E\u093E\u090F\u0901\u0964 \u0905\u0917\u0930 \u0910\u0938\u093E \u0939\u094B\u0924\u093E \u0930\u0939\u0947, \u0924\u094B \u0928\u0940\u091A\u0947 \u0926\u093F\u092F\u093E \u0917\u092F\u093E \u0938\u0902\u0926\u0930\u094D\u092D \u0938\u092A\u094B\u0930\u094D\u091F \u0915\u0947 \u0938\u093E\u0925 \u0938\u093E\u091D\u093E \u0915\u0930\u0947\u0902\u0964","sk.voice.notice.details":"\u0935\u093F\u0935\u0930\u0923","sk.voice.notice.hide_details":"\u0935\u093F\u0935\u0930\u0923 \u091B\u093F\u092A\u093E\u090F\u0901","sk.voice.notice.dismiss":"\u0916\u093E\u0930\u093F\u091C \u0915\u0930\u0947\u0902","sk.voice.notice.code":"\u0915\u094B\u0921","sk.voice.notice.reference":"\u0938\u0902\u0926\u0930\u094D\u092D","sk.voice.dialog.label":"\u0935\u0949\u0907\u0938 \u0935\u093E\u0930\u094D\u0924\u093E\u0932\u093E\u092A","sk.voice.dialog.end":"\u0935\u093E\u0930\u094D\u0924\u093E\u0932\u093E\u092A \u0938\u092E\u093E\u092A\u094D\u0924 \u0915\u0930\u0947\u0902","sk.voice.dialog.hide":"\u0935\u093E\u0930\u094D\u0924\u093E\u0932\u093E\u092A \u091B\u093F\u092A\u093E\u090F\u0901","sk.voice.transcript.label":"\u0932\u093E\u0907\u0935 \u091F\u094D\u0930\u093E\u0902\u0938\u0915\u094D\u0930\u093F\u092A\u094D\u091F"},ot={"sk.voice.button.dictation.start":"\u0628\u062F\u0621 \u0627\u0644\u0625\u0645\u0644\u0627\u0621 \u0627\u0644\u0635\u0648\u062A\u064A","sk.voice.button.dictation.stop":"\u0625\u064A\u0642\u0627\u0641 \u0627\u0644\u062A\u0633\u062C\u064A\u0644","sk.voice.button.cancel":"\u0625\u0644\u063A\u0627\u0621 \u0627\u0644\u0625\u062F\u062E\u0627\u0644 \u0627\u0644\u0635\u0648\u062A\u064A","sk.voice.button.agent":"\u0627\u0644\u062A\u0628\u062F\u064A\u0644 \u0625\u0644\u0649 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0627\u0644\u0635\u0648\u062A\u064A\u0629","sk.voice.button.agent_locked":"\u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0627\u0644\u0635\u0648\u062A\u064A\u0629 (\u0645\u0642\u0641\u0644\u0629)","sk.voice.state.idle":"\u062C\u0627\u0647\u0632","sk.voice.state.capturing":"\u064A\u0633\u062A\u0645\u0639","sk.voice.state.processing":"\u0642\u064A\u062F \u0627\u0644\u0645\u0639\u0627\u0644\u062C\u0629","sk.voice.state.speaking":"\u064A\u062A\u062D\u062F\u062B","sk.voice.state.cancelled":"\u0623\u064F\u0644\u063A\u064A","sk.voice.state.denied":"\u063A\u064A\u0631 \u0645\u062A\u0627\u062D","sk.voice.agent.connecting":"\u062C\u0627\u0631\u064D \u0627\u0644\u0627\u062A\u0635\u0627\u0644","sk.voice.agent.listening":"\u064A\u0633\u062A\u0645\u0639","sk.voice.agent.speaking":"\u064A\u062A\u062D\u062F\u062B","sk.voice.agent.interrupt":"\u0627\u0646\u0642\u0631 \u0644\u0644\u0645\u0642\u0627\u0637\u0639\u0629","sk.voice.agent.interrupted":"\u062A\u0645\u062A \u0627\u0644\u0645\u0642\u0627\u0637\u0639\u0629","sk.voice.agent.you":"\u0623\u0646\u062A","sk.voice.agent.assistant":"\u0627\u0644\u0645\u0633\u0627\u0639\u062F","sk.voice.agent.live":"\u0645\u0628\u0627\u0634\u0631","sk.voice.agent.jumpToLive":"\u0627\u0644\u0627\u0646\u062A\u0642\u0627\u0644 \u0625\u0644\u0649 \u0627\u0644\u0628\u062B \u0627\u0644\u0645\u0628\u0627\u0634\u0631","sk.voice.agent.ended":"\u0627\u0646\u062A\u0647\u062A \u0627\u0644\u062C\u0644\u0633\u0629 \u0627\u0644\u0635\u0648\u062A\u064A\u0629.","sk.voice.agent.reconnect":"\u0625\u0639\u0627\u062F\u0629 \u0627\u0644\u0627\u062A\u0635\u0627\u0644","sk.voice.agent.exit":"\u0627\u0644\u062E\u0631\u0648\u062C \u0645\u0646 \u0627\u0644\u0648\u0636\u0639 \u0627\u0644\u0635\u0648\u062A\u064A","sk.voice.denied.retry":"\u062D\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649","sk.voice.consent.title":"\u0647\u0644 \u062A\u0631\u064A\u062F \u0627\u0633\u062A\u062E\u062F\u0627\u0645 \u0627\u0644\u0635\u0648\u062A \u0645\u0639 \u0627\u0644\u0645\u0639\u0627\u0644\u062C\u0629 \u0627\u0644\u0645\u0633\u062A\u0636\u0627\u0641\u0629 \u0645\u0646 kombify\u061F","sk.voice.consent.capture":"\u0645\u0627 \u064A\u062A\u0645 \u0627\u0644\u062A\u0642\u0627\u0637\u0647: \u0635\u0648\u062A \u0627\u0644\u0645\u064A\u0643\u0631\u0648\u0641\u0648\u0646 \u0644\u062F\u064A\u0643 \u0623\u062B\u0646\u0627\u0621 \u0627\u0644\u062A\u0633\u062C\u064A\u0644 \u0641\u0642\u0637.","sk.voice.consent.destination":"\u0625\u0644\u0649 \u0623\u064A\u0646 \u064A\u0630\u0647\u0628: \u0625\u0644\u0649 \u062E\u062F\u0645\u0629 \u0627\u0644\u0635\u0648\u062A \u0627\u0644\u0645\u0633\u062A\u0636\u0627\u0641\u0629 \u0645\u0646 kombify \u0639\u0644\u0649 api.kombify.io \u0644\u062A\u062D\u0648\u064A\u0644 \u0643\u0644\u0627\u0645\u0643 \u0625\u0644\u0649 \u0646\u0635 \u0648\u0645\u0639\u0627\u0644\u062C\u062A\u0647.","sk.voice.consent.accept":"\u0627\u0644\u0645\u0648\u0627\u0641\u0642\u0629 \u0648\u062A\u0641\u0639\u064A\u0644 \u0627\u0644\u0635\u0648\u062A","sk.voice.consent.decline":"\u0631\u0641\u0636","sk.voice.consent.declined":"\u0627\u0644\u0625\u062F\u062E\u0627\u0644 \u0627\u0644\u0635\u0648\u062A\u064A \u0645\u062A\u0648\u0642\u0641: \u0644\u0642\u062F \u0631\u0641\u0636\u062A \u0627\u0644\u062A\u0642\u0627\u0637 \u0627\u0644\u0635\u0648\u062A \u0639\u0644\u0649 \u0647\u0630\u0647 \u0627\u0644\u0648\u0627\u062C\u0647\u0629.","sk.voice.consent.continuous":"\u062A\u0628\u062B\u0651 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0627\u0644\u0635\u0648\u062A\u064A\u0629 \u0635\u0648\u062A \u0627\u0644\u0645\u064A\u0643\u0631\u0648\u0641\u0648\u0646 \u0644\u062F\u064A\u0643 \u0628\u0627\u0633\u062A\u0645\u0631\u0627\u0631 \u0625\u0644\u0649 \u062E\u062F\u0645\u0629 \u0627\u0644\u0635\u0648\u062A \u0627\u0644\u0645\u0633\u062A\u0636\u0627\u0641\u0629 \u0645\u0646 kombify \u200F(api.kombify.io) \u0637\u0648\u0627\u0644 \u0627\u0644\u062C\u0644\u0633\u0629 \u0643\u0627\u0645\u0644\u0629 \u2014 \u0648\u0644\u064A\u0633 \u0623\u062B\u0646\u0627\u0621 \u0627\u0644\u062A\u0633\u062C\u064A\u0644 \u0641\u0642\u0637. \u064A\u062A\u0648\u0642\u0641 \u0627\u0644\u0628\u062B \u0639\u0646\u062F \u062E\u0631\u0648\u062C\u0643 \u0645\u0646 \u0627\u0644\u0648\u0636\u0639 \u0627\u0644\u0635\u0648\u062A\u064A.","sk.voice.state.requesting":"\u0641\u064A \u0627\u0646\u062A\u0638\u0627\u0631 \u0627\u0644\u0645\u064A\u0643\u0631\u0648\u0641\u0648\u0646","sk.voice.notice.mic_denied":"\u0627\u0644\u0645\u064A\u0643\u0631\u0648\u0641\u0648\u0646 \u0645\u062D\u0638\u0648\u0631","sk.voice.notice.mic_denied.hint":"\u0627\u0633\u0645\u062D \u0628\u0627\u0644\u0648\u0635\u0648\u0644 \u0625\u0644\u0649 \u0627\u0644\u0645\u064A\u0643\u0631\u0648\u0641\u0648\u0646 \u0644\u0647\u0630\u0627 \u0627\u0644\u0645\u0648\u0642\u0639 \u0645\u0646 \u0634\u0631\u064A\u0637 \u0627\u0644\u0639\u0646\u0648\u0627\u0646 \u0623\u0648 \u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u0645\u062A\u0635\u0641\u062D\u060C \u062B\u0645 \u062D\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649.","sk.voice.notice.mic_unavailable":"\u0644\u0645 \u064A\u062A\u0645 \u0627\u0644\u0639\u062B\u0648\u0631 \u0639\u0644\u0649 \u0645\u064A\u0643\u0631\u0648\u0641\u0648\u0646","sk.voice.notice.mic_unavailable.hint":"\u0648\u0635\u0651\u0644 \u0645\u064A\u0643\u0631\u0648\u0641\u0648\u0646\u064B\u0627 \u0623\u0648 \u0627\u062E\u062A\u0631 \u062C\u0647\u0627\u0632 \u0625\u062F\u062E\u0627\u0644 \u0622\u062E\u0631\u060C \u062B\u0645 \u062D\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649.","sk.voice.notice.mic_busy":"\u0627\u0644\u0645\u064A\u0643\u0631\u0648\u0641\u0648\u0646 \u0642\u064A\u062F \u0627\u0644\u0627\u0633\u062A\u062E\u062F\u0627\u0645","sk.voice.notice.mic_busy.hint":"\u0623\u063A\u0644\u0642 \u0627\u0644\u062A\u0637\u0628\u064A\u0642 \u0627\u0644\u0622\u062E\u0631 \u0627\u0644\u0630\u064A \u064A\u0633\u062A\u062E\u062F\u0645 \u0627\u0644\u0645\u064A\u0643\u0631\u0648\u0641\u0648\u0646\u060C \u062B\u0645 \u062D\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649.","sk.voice.notice.mic_unsupported":"\u0627\u0644\u0625\u062F\u062E\u0627\u0644 \u0627\u0644\u0635\u0648\u062A\u064A \u063A\u064A\u0631 \u0645\u062F\u0639\u0648\u0645 \u0647\u0646\u0627","sk.voice.notice.mic_unsupported.hint":"\u0644\u0627 \u064A\u0633\u062A\u0637\u064A\u0639 \u0647\u0630\u0627 \u0627\u0644\u0645\u062A\u0635\u0641\u062D \u0623\u0648 \u0647\u0630\u0647 \u0627\u0644\u0635\u0641\u062D\u0629 \u0627\u0644\u062A\u0642\u0627\u0637 \u0627\u0644\u0635\u0648\u062A. \u0627\u0633\u062A\u062E\u062F\u0645 \u0645\u062A\u0635\u0641\u062D\u064B\u0627 \u062D\u062F\u064A\u062B\u064B\u0627 \u0639\u0644\u0649 \u0635\u0641\u062D\u0629 \u0622\u0645\u0646\u0629 (HTTPS).","sk.voice.notice.connection":"\u062A\u0639\u0630\u0651\u0631 \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0628\u062E\u062F\u0645\u0629 \u0627\u0644\u0635\u0648\u062A","sk.voice.notice.connection.hint":"\u062A\u062D\u0642\u0642 \u0645\u0646 \u0627\u062A\u0635\u0627\u0644\u0643 \u0648\u062D\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649.","sk.voice.notice.not_available":"\u0627\u0644\u0635\u0648\u062A \u063A\u064A\u0631 \u0645\u062A\u0627\u062D \u0647\u0646\u0627","sk.voice.notice.not_available.hint":"\u0645\u064A\u0632\u0629 \u0627\u0644\u0635\u0648\u062A \u0647\u0630\u0647 \u063A\u064A\u0631 \u0645\u0641\u0639\u0651\u0644\u0629 \u0644\u062D\u0633\u0627\u0628\u0643 \u0623\u0648 \u0644\u0645\u0633\u0627\u062D\u0629 \u0639\u0645\u0644\u0643.","sk.voice.notice.quota":"\u062A\u0645 \u0628\u0644\u0648\u063A \u062D\u062F \u0627\u0633\u062A\u062E\u062F\u0627\u0645 \u0627\u0644\u0635\u0648\u062A","sk.voice.notice.quota.hint":"\u062A\u0645 \u0628\u0644\u0648\u063A \u062D\u062F \u0627\u0633\u062A\u062E\u062F\u0627\u0645 \u0627\u0644\u0635\u0648\u062A. \u062D\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649 \u0644\u0627\u062D\u0642\u064B\u0627.","sk.voice.notice.consent":"\u064A\u062D\u062A\u0627\u062C \u0627\u0644\u0635\u0648\u062A \u0625\u0644\u0649 \u062A\u0623\u0643\u064A\u062F\u0643","sk.voice.notice.consent.hint":"\u0623\u0643\u0651\u062F \u0627\u0644\u062A\u0642\u0627\u0637 \u0627\u0644\u0635\u0648\u062A \u0645\u0631\u0629 \u0648\u0627\u062D\u062F\u0629 \u0644\u0644\u0645\u062A\u0627\u0628\u0639\u0629\u061B \u064A\u0645\u0643\u0646\u0643 \u0625\u0644\u063A\u0627\u0621 \u0630\u0644\u0643 \u0641\u064A \u0623\u064A \u0648\u0642\u062A.","sk.voice.notice.generic":"\u062A\u0648\u0642\u0641 \u0627\u0644\u0635\u0648\u062A \u0628\u0634\u0643\u0644 \u063A\u064A\u0631 \u0645\u062A\u0648\u0642\u0639","sk.voice.notice.generic.hint":"\u062D\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649. \u0625\u0630\u0627 \u062A\u0643\u0631\u0631 \u0630\u0644\u0643\u060C \u0634\u0627\u0631\u0643 \u0627\u0644\u0645\u0631\u062C\u0639 \u0623\u062F\u0646\u0627\u0647 \u0645\u0639 \u0627\u0644\u062F\u0639\u0645.","sk.voice.notice.details":"\u0627\u0644\u062A\u0641\u0627\u0635\u064A\u0644","sk.voice.notice.hide_details":"\u0625\u062E\u0641\u0627\u0621 \u0627\u0644\u062A\u0641\u0627\u0635\u064A\u0644","sk.voice.notice.dismiss":"\u0625\u063A\u0644\u0627\u0642","sk.voice.notice.code":"\u0627\u0644\u0631\u0645\u0632","sk.voice.notice.reference":"\u0627\u0644\u0645\u0631\u062C\u0639","sk.voice.dialog.label":"\u0645\u062D\u0627\u062F\u062B\u0629 \u0635\u0648\u062A\u064A\u0629","sk.voice.dialog.end":"\u0625\u0646\u0647\u0627\u0621 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629","sk.voice.dialog.hide":"\u0625\u062E\u0641\u0627\u0621 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629","sk.voice.transcript.label":"\u0627\u0644\u0646\u0635 \u0627\u0644\u0645\u0628\u0627\u0634\u0631"},Ce={en:I,de:it,es:st,"zh-Hans":nt,hi:rt,ar:ot};function at(s){let e=s?.trim().toLowerCase();if(!e)return"en";let t=re.find(r=>r.toLowerCase()===e);if(t)return t;let i=e.split("-")[0];return i==="zh"?"zh-Hans":re.find(r=>r.toLowerCase()===i)??"en"}function Te(s,e){let t=Ce[at(s)];return t===I&&!e?I:{...I,...t,...e}}var Le=new Map;function ct(s){return"adoptedStyleSheets"in s&&typeof CSSStyleSheet<"u"&&typeof CSSStyleSheet.prototype.replaceSync=="function"}var k=class extends HTMLElement{static get observedAttributes(){return["locale"]}root;#e=null;#t=!1;#i;#o;#n=!1;#a=!1;#s;state;constructor(e){super(),this.root=this.attachShadow({mode:"open"}),this.#d(e)}#d(e){if(ct(this.root)){let i=Le.get(e);i||(i=new CSSStyleSheet,i.replaceSync(e),Le.set(e,i)),this.root.adoptedStyleSheets=[...this.root.adoptedStyleSheets,i];return}let t=document.createElement("style");t.textContent=e,this.root.append(t)}get controller(){return this.#e}set controller(e){this.#t=!0,this.#h(e)}get messages(){return this.#s}set messages(e){this.#s=e,this.requestUpdate()}#h(e){this.#e!==e&&(this.#i?.(),this.#i=void 0,this.#e=e,e&&this.#a&&this.#p(e),this.onControllerChanged(e),this.requestUpdate())}#p(e){this.#i=e.subscribe(t=>{this.state=t,this.onSessionState(t),this.requestUpdate()})}onControllerChanged(e){}onSessionState(e){}resolvedLocale(){return this.getAttribute("locale")??this.closest("[lang]")?.lang??document.documentElement.lang??void 0}msgs(){return Te(this.resolvedLocale(),this.#s)}emitKitEvent(e,t){this.dispatchEvent(new CustomEvent(e,{detail:t,bubbles:!0,composed:!0}))}requestUpdate(){this.#n||!this.#a||(this.#n=!0,queueMicrotask(()=>{this.#n=!1,this.#a&&this.render()}))}connectedCallback(){$(this),this.#a=!0,!this.#t&&!this.#e?this.#o=Ae(this,e=>{this.#t||this.#h(e)}):this.#e&&!this.#i&&this.#p(this.#e),this.render()}disconnectedCallback(){this.#a=!1,this.#i?.(),this.#i=void 0,this.#o?.(),this.#o=void 0}attributeChangedCallback(){this.requestUpdate()}};var S=class{#e=0;#t=0;#i=0;set target(e){this.#t=Math.max(0,Math.min(1,e))}tick(e){let t=this.#i===0?16:Math.min(100,e-this.#i);return this.#i=e,this.#t>this.#e?this.#e+=(this.#t-this.#e)*.55:(this.#e*=Math.exp(-t/1e3*5),this.#e<.002&&(this.#e=0)),this.#e}get value(){return this.#e}};function M(s,e=!1){switch(s){case"capturing":return"listening";case"processing":return"processing";case"speaking":return"speaking";case"denied":return"error";case"idle":case"cancelled":return e?"requesting":"idle"}}var Ne=5;function lt(s,e=Ne){let t=(e-1)/2;return Array.from({length:e},(i,n)=>{let a=.6+.4*(1-Math.abs(n-t)/Math.max(t,1)),o=(Math.sin((n+1)*1.618+e*.75)+1)/2;return Math.max(.18,Math.min(1,s*a*(.8+o*.4)))})}var O=`
+.ind {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: var(--sk-indicator-height, 14px);
+  flex: none;
+  color: var(--sk-accent, oklch(0.65 0.13 210));
+}
+.ind-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: var(--sk-radius-pill, 999px);
+  background: currentColor;
+  transition: background-color var(--sk-motion-base, 180ms) ease;
+}
+.ind-bars {
+  display: none;
+  align-items: center;
+  gap: var(--sk-indicator-bar-gap, 2px);
+  height: 100%;
+}
+.ind-bar {
+  width: var(--sk-indicator-bar-width, 3px);
+  height: 100%;
+  border-radius: var(--sk-radius-pill, 999px);
+  background: currentColor;
+  transform: scaleY(var(--h, 0.18));
+  transition: transform var(--sk-motion-level, 90ms) linear;
+}
+.ind[data-state="requesting"] .ind-dot {
+  background: var(--sk-pending, #d97706);
+  animation: sk-ind-pulse 1.2s ease-in-out infinite;
+}
+.ind[data-state="listening"] { color: var(--sk-live, #dc2626); }
+.ind[data-state="listening"] .ind-dot { background: var(--sk-live, #dc2626); }
+.ind:is([data-state="listening"], [data-state="processing"], [data-state="speaking"]) .ind-bars {
+  display: inline-flex;
+}
+.ind:is([data-state="processing"], [data-state="speaking"]) .ind-dot { display: none; }
+/* Error is a hollow ring so it never reads as the solid "recording" dot. */
+.ind[data-state="error"] .ind-dot {
+  box-sizing: border-box;
+  background: transparent;
+  border: 2px solid var(--sk-danger, #dc2626);
+}
+.ind[data-state="processing"] .ind-bar {
+  animation: sk-ind-sweep 900ms ease-in-out infinite;
+}
+.ind:not([data-levels]):is([data-state="listening"], [data-state="speaking"]) .ind-bar {
+  animation: sk-ind-wave 1100ms ease-in-out infinite;
+}
+.ind-bar:nth-child(2) { animation-delay: 90ms; }
+.ind-bar:nth-child(3) { animation-delay: 180ms; }
+.ind-bar:nth-child(4) { animation-delay: 270ms; }
+.ind-bar:nth-child(5) { animation-delay: 360ms; }
+@keyframes sk-ind-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@keyframes sk-ind-sweep {
+  0%, 100% { transform: scaleY(0.25); opacity: 0.5; }
+  40% { transform: scaleY(0.75); opacity: 1; }
+}
+@keyframes sk-ind-wave {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(0.85); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ind-dot, .ind-bar { animation: none !important; transition: none !important; }
+  .ind-bar { transform: scaleY(0.45) !important; }
+  .ind-bar:nth-child(2), .ind-bar:nth-child(4) { transform: scaleY(0.7) !important; }
+  .ind-bar:nth-child(3) { transform: scaleY(1) !important; }
+}
+`;function dt(){return typeof matchMedia=="function"&&matchMedia("(prefers-reduced-motion: reduce)").matches}var A=class{element;#e=[];#t=new S;#i=new S;#o="idle";#n=0;#a=!1;constructor(){this.element=document.createElement("span"),this.element.className="ind",this.element.setAttribute("part","indicator"),this.element.setAttribute("aria-hidden","true"),this.element.dataset.state="idle";let e=document.createElement("span");e.className="ind-dot";let t=document.createElement("span");t.className="ind-bars";for(let i=0;i<Ne;i+=1){let n=document.createElement("span");n.className="ind-bar",this.#e.push(n),t.append(n)}this.element.append(e,t)}get state(){return this.#o}setState(e){e!==this.#o&&(this.#o=e,this.element.dataset.state=e,this.#s())}setLevelFeed(e){this.#a=e,this.element.toggleAttribute("data-levels",e),this.#s()}setLevel(e,t="input"){t==="output"?this.#i.target=e:this.#t.target=e}resume(){this.#s()}stop(){this.#n&&cancelAnimationFrame(this.#n),this.#n=0}#s(){if((this.#o==="listening"||this.#o==="speaking")&&this.#a&&!dt()&&typeof requestAnimationFrame=="function")this.#n||(this.#n=requestAnimationFrame(this.#d));else{this.stop();for(let t of this.#e)t.style.removeProperty("--h")}}#d=e=>{let t=this.#t.tick(e),i=this.#i.tick(e),n=Math.max(this.#o==="speaking"?i:t,Math.max(t,i)*.6),r=lt(n,this.#e.length);this.#e.forEach((a,o)=>{let u=.2+.14*(.5+.5*Math.sin(e/320+o*.9));a.style.setProperty("--h",Math.max(r[o]??0,u).toFixed(3))}),this.#n=requestAnimationFrame(this.#d)}};function oe(){return globalThis.navigator?.mediaDevices}function Me(){return globalThis.isSecureContext===!1?!1:typeof oe()?.getUserMedia=="function"}function ae(s){if(s)for(let e of s.getTracks())try{e.stop()}catch{}}function ce(s){switch(s?.name){case"NotAllowedError":case"PermissionDeniedError":case"SecurityError":return"microphone_permission_denied";case"NotFoundError":case"DevicesNotFoundError":case"OverconstrainedError":return"microphone_unavailable";case"NotReadableError":case"TrackStartError":case"AbortError":return"microphone_in_use";case"TypeError":case"NotSupportedError":return"microphone_unsupported";default:return"microphone_permission_denied"}}async function Oe(s={}){if(!Me())return"unsupported";let e=globalThis.navigator?.permissions;if(e&&typeof e.query=="function")try{let n=await e.query({name:"microphone"});if(n.state==="granted"||n.state==="denied"||n.state==="prompt")return n.state}catch{}let t=oe();if(typeof t?.enumerateDevices=="function")try{if((await t.enumerateDevices()).filter(r=>r.kind==="audioinput").some(r=>r.label.length>0))return"granted"}catch{}if(!s.probe)return"prompt";let i=await ut();if(i.ok)return ae(i.stream),"granted";switch(i.reason){case"microphone_permission_denied":return"denied";case"microphone_unsupported":return"unsupported";case"microphone_in_use":return"granted";case"microphone_unavailable":return"prompt"}}async function ut(s={echoCancellation:!0,noiseSuppression:!0,channelCount:1}){if(!Me())return{ok:!1,reason:"microphone_unsupported"};try{return{ok:!0,stream:await oe().getUserMedia({audio:s})}}catch(e){return{ok:!1,reason:ce(e),error:e}}}var le="speechkit.voice.consent.v1";var ht=["one_shot","continuous"];function pt(){try{return globalThis.localStorage??null}catch{return null}}function ze(s){if(!s||typeof s!="object")return null;let e=s,t=e.decision;if(t!=="granted"&&t!=="declined")return null;let i=Array.isArray(e.scopes)?e.scopes.filter(a=>ht.includes(a)):[],n=e.consent_version,r=e.decided_at;return{decision:t,scopes:t==="declined"?[]:i,consent_version:typeof n=="string"?n:"1",decided_at:typeof r=="string"?r:""}}function Ve(s={}){let e=s.surface??"default",t=s.storageKey??le,i=s.consentVersion??"1",n=s.storage===void 0?pt():s.storage,r=new Set,a;function o(){if(!n)return{};try{let c=JSON.parse(n.getItem(t)??"{}");return c&&typeof c=="object"&&!Array.isArray(c)?c:{}}catch{return{}}}function u(){return a!==void 0?a:ze(o()[e])}function d(c){if(a=c,n){let h=o();c?h[e]=c:delete h[e];try{n.setItem(t,JSON.stringify(h)),a=void 0}catch{}}for(let h of r)h(l())}function l(){let c=u();return c&&c.consent_version===i?c:null}return{consentVersion:i,read(c){let h=l();return h?h.decision==="declined"?"declined":c==="one_shot"||h.scopes.includes("continuous")?"granted":"unset":"unset"},write(c,h){let v=l(),p=c==="declined"?[]:[...new Set([...v?.decision==="granted"?v.scopes:[],"one_shot",...h==="continuous"?["continuous"]:[]])],g={decision:c,scopes:p,consent_version:i,decided_at:new Date().toISOString()};d(g),s.onConsentChange?.(g)},getRecord:l,setConsentRecord(c){d(c?ze(c):null)},revoke(){d(null),s.onConsentChange?.(null)},subscribe(c){return r.add(c),()=>r.delete(c)}}}var mt=new Set(["mic_denied","mic_unavailable","mic_busy","connection","generic"]);function C(s){let e=(s??"").toLowerCase();if(!e)return"generic";let t=/(^|[_.\-])(mic|microphone|audio_capture|getusermedia)/.test(e);if(t||/not_?allowed|permission/.test(e)){if(/unsupported|not_supported|insecure/.test(e))return"mic_unsupported";if(/unavailable|not_?found|missing|no_device|no_input/.test(e))return"mic_unavailable";if(/in_use|busy|not_?readable|track_start/.test(e))return"mic_busy";if(/denied|not_?allowed|permission|blocked|refused/.test(e)||t)return"mic_denied"}return/^no_microphone$/.test(e)?"mic_unavailable":/unsupported|insecure_context/.test(e)?"mic_unsupported":/consent/.test(e)?"consent":/quota|rate_?limit|limit_reached|too_many|usage_limit|budget/.test(e)?"quota":/(server|service|upstream|gateway|provider)_?unavailable/.test(e)?"connection":/entitle|plan|subscription|upgrade|forbidden|capability|not_available|unavailable|locked|feature|controller_missing|disabled/.test(e)?"not_available":/network|connect|socket|timeout|timed_out|offline|unreachable|session|server|gateway|upstream|transport|ticket|closed/.test(e)?"connection":"generic"}function B(s){if(!s)return"generic";let e=C(s.reason_code);return e==="generic"?C(s.error_code):e}function Ie(s){return mt.has(s)}function j(s,e){return e[`sk.voice.notice.${s}`]}function Re(s,e){return e[`sk.voice.notice.${s}.hint`]}var vt=/\b(?:[a-z][a-z0-9+.-]*:\/\/|www\.)\S+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\/\S*/gi;function R(s){return s.replace(vt,"").replace(/\s{2,}/g," ").trim()}var ft='<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',gt='<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',kt=`
+:host {
+  display: inline-block;
+  max-width: 100%;
+  color: var(--sk-text, inherit);
+  font-size: var(--sk-font-size-small, 11px);
+}
+:host([data-empty]) { display: none; }
+.wrap { display: grid; gap: 4px; max-width: 100%; }
+.notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--sk-chip-height, 30px);
+  box-sizing: border-box;
+  padding: 0 4px 0 10px;
+  border-radius: var(--sk-chip-radius, 999px);
+  background: var(--sk-chip-surface, color-mix(in srgb, #ffffff 84%, transparent));
+  backdrop-filter: blur(var(--sk-blur, 16px));
+  -webkit-backdrop-filter: blur(var(--sk-blur, 16px));
+  box-shadow: var(--sk-dialog-shadow, 0 18px 48px -20px rgba(16, 20, 24, 0.35));
+  animation: sk-notice-in var(--sk-motion-base, 180ms) var(--sk-motion-ease, ease-out);
+}
+.mark {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: var(--sk-radius-pill, 999px);
+  background: var(--sk-danger, #dc2626);
+}
+:host([tone="warning"]) .mark { background: var(--sk-pending, #d97706); }
+:host([tone="info"]) .mark { background: var(--sk-accent, oklch(0.65 0.13 210)); }
+.msg {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+button {
+  flex: none;
+  border: 0;
+  border-radius: var(--sk-radius-pill, 999px);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  padding: 4px 8px;
+  white-space: nowrap;
+  transition: background-color var(--sk-motion-base, 180ms) ease;
+}
+button:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
+button:focus-visible {
+  outline: 2px solid var(--sk-accent, oklch(0.65 0.13 210));
+  outline-offset: -2px;
+}
+button[hidden] { display: none; }
+/* Flat: inside another card (dialog, overlay) \u2014 no chip surface of its own. */
+:host([flat]) { display: block; }
+:host([flat]) .notice {
+  display: flex;
+  padding-inline-start: 2px;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.toggle, .toggle svg { transition: transform var(--sk-motion-base, 180ms) ease; }
+.toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.retry { color: var(--sk-accent, oklch(0.65 0.13 210)); }
+.close {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+}
+.details {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0 12px;
+  font-size: var(--sk-font-size-small, 11px);
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.details[hidden] { display: none; }
+.details p { margin: 0; }
+.meta { font-variant-numeric: tabular-nums; opacity: 0.85; }
+@keyframes sk-notice-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notice { animation: none; }
+}
+`,bt=0,w=class extends k{static tagName="speechkit-voice-notice";static get observedAttributes(){return[...super.observedAttributes,"reason","tone","retryable","no-retry","no-dismiss","request-id","flat"]}#e;#t;#i;#o;#n=!1;#a="";#s;#d;#h;#p;#v;#c;constructor(){super(kt);let e=document.createElement("div");e.className="wrap",this.#s=document.createElement("div"),this.#s.className="notice",this.#s.setAttribute("part","notice");let t=document.createElement("span");t.className="mark",t.setAttribute("aria-hidden","true"),this.#d=document.createElement("span"),this.#d.className="msg",this.#d.setAttribute("part","message"),this.#h=this.#r("toggle","details-toggle",()=>{this.#n=!this.#n,this.#a="",this.requestUpdate()}),this.#p=this.#r("retry","retry",()=>this.retry()),this.#v=this.#r("close","dismiss",()=>this.dismiss()),this.#v.innerHTML=gt,this.#h.innerHTML=ft,this.#c=document.createElement("div"),this.#c.className="details",this.#c.setAttribute("part","details"),this.#c.id=`sk-notice-details-${bt+=1}`,this.#c.hidden=!0,this.#h.setAttribute("aria-controls",this.#c.id),this.#s.append(t,this.#d,this.#h,this.#p,this.#v),e.append(this.#s,this.#c),this.root.append(e)}#r(e,t,i){let n=document.createElement("button");return n.type="button",n.className=e,n.setAttribute("part",t),n.addEventListener("click",i),n}get denial(){return this.#e}set denial(e){this.#e=e,this.#o=void 0,this.requestUpdate()}get message(){return this.#t}set message(e){this.#t=e,this.requestUpdate()}get details(){return this.#i}set details(e){this.#i=e,this.requestUpdate()}get reason(){return this.getAttribute("reason")}set reason(e){e===null?this.removeAttribute("reason"):this.setAttribute("reason",e)}retry(){let e=this.#u(),t=this.dispatchEvent(new CustomEvent("speechkit-retry",{detail:{reason:this.#l(e)},bubbles:!0,composed:!0,cancelable:!0}));this.#o=this.#g(e),this.requestUpdate(),t&&this.controller&&this.state?.status==="denied"&&this.controller.start(this.state.mode)}dismiss(){this.#o=this.#g(this.#u()),this.#n=!1,this.emitKitEvent("speechkit-dismiss"),this.requestUpdate()}#u(){if(this.#e)return this.#e;if(!this.hasAttribute("reason"))return this.state?.status==="denied"?this.state.denial:void 0}#l(e){return this.getAttribute("reason")??e?.reason_code??(this.state?.status==="denied"&&!this.#e?this.state.reason_code:void 0)??void 0}#g(e){let t=this.state,i=this.getAttribute("reason")??e?.reason_code??t?.reason_code??"",n=!this.#e&&!this.hasAttribute("reason")?t?.events.length??0:0;return`${i}|${e?.request_id??""}|${n}`}#m(e){let t=this.getAttribute("reason");return t?C(t):e?B(e):C(this.state?.reason_code)}render(){let e=this.msgs(),t=this.#u(),i=this.#l(t),n=(this.hasAttribute("reason")||t!==void 0||this.#t!==void 0)&&this.#o!==this.#g(t);if(this.toggleAttribute("data-empty",!n),!n)return;let r=this.#m(t),a=this.#t?R(this.#t):j(r,e),o=this.hasAttribute("no-retry")?!1:this.hasAttribute("retryable")||(t?.retryable??Ie(r)),u=this.getAttribute("request-id")??t?.request_id,d=(t?.user_guidance.next_steps??[]).map(R).filter(p=>p.length>0&&!/^[\w.:/-]+$/.test(p)),l=this.#i?R(this.#i):"",c=JSON.stringify([a,r,o,u,d,l,i,this.#n,this.hasAttribute("no-dismiss"),this.resolvedLocale()]);if(c===this.#a)return;this.#a=c;let h=this.getAttribute("tone");this.#s.setAttribute("role",h==="info"?"status":"alert"),this.#d.textContent=a,this.#d.title=a;let v=this.#n?e["sk.voice.notice.hide_details"]:e["sk.voice.notice.details"];if(this.#h.setAttribute("aria-label",v),this.#h.title=v,this.#h.setAttribute("aria-expanded",String(this.#n)),this.#p.hidden=!o,this.#p.textContent=e["sk.voice.denied.retry"],this.#v.hidden=this.hasAttribute("no-dismiss"),this.#v.setAttribute("aria-label",e["sk.voice.notice.dismiss"]),this.#v.title=e["sk.voice.notice.dismiss"],this.#c.hidden=!this.#n,this.#c.replaceChildren(),this.#n){let p=[Re(r,e),...d];l&&p.push(l);for(let g of p){let x=document.createElement("p");x.textContent=g,this.#c.append(x)}i&&this.#c.append(this.#k(e["sk.voice.notice.code"],i)),u&&this.#c.append(this.#k(e["sk.voice.notice.reference"],u))}}#k(e,t){let i=document.createElement("p");return i.className="meta",i.textContent=`${e}: ${R(t)}`,i}};var xt=500,yt=2e4,wt=`
+:host {
+  display: inline-flex;
+  font-size: var(--sk-font-size, 13px);
+}
+.split {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  overflow: visible;
+  border: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
+  border-radius: var(--sk-radius, 14px);
+  background: var(--sk-surface, color-mix(in srgb, #ffffff 72%, transparent));
+  backdrop-filter: blur(var(--sk-blur, 16px));
+  -webkit-backdrop-filter: blur(var(--sk-blur, 16px));
+  box-shadow: var(--sk-shadow, 0 12px 40px -12px rgba(16, 20, 24, 0.25));
+  color: var(--sk-text, inherit);
+}
+button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 8px 12px;
+}
+button:focus-visible {
+  outline: 2px solid var(--sk-accent, oklch(0.65 0.13 210));
+  outline-offset: -2px;
+}
+.primary {
+  border-start-start-radius: var(--sk-radius, 14px);
+  border-end-start-radius: var(--sk-radius, 14px);
+}
+:host(:not([agent])) .primary {
+  border-radius: var(--sk-radius, 14px);
+}
+.primary {
+  transition: color var(--sk-motion-base, 180ms) ease, background-color var(--sk-motion-base, 180ms) ease;
+}
+.primary[data-indicator="listening"] {
+  color: var(--sk-live, #dc2626);
+  background: color-mix(in srgb, var(--sk-live, #dc2626) 9%, transparent);
+}
+.primary:is([data-indicator="processing"], [data-indicator="speaking"]) {
+  color: var(--sk-accent, oklch(0.65 0.13 210));
+}
+.state-label {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.state-label[hidden], .label[hidden] { display: none; }
+:host([compact]) .state-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Without motion the visible label carries "you are being recorded". */
+  :host([compact]) .state-label {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip: auto;
+  }
+}
+.agent {
+  border-inline-start: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
+  border-start-end-radius: var(--sk-radius, 14px);
+  border-end-end-radius: var(--sk-radius, 14px);
+  padding: 8px 10px;
+}
+.agent[data-locked] {
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+}
+.chevron {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-inline-start: 4px solid transparent;
+  border-inline-end: 4px solid transparent;
+  border-top: 5px solid currentColor;
+}
+.lock {
+  font-size: var(--sk-font-size-small, 11px);
+  line-height: 1;
+}
+.denial {
+  position: absolute;
+  inset-inline-end: 0;
+  bottom: calc(100% + 6px);
+  z-index: 1;
+  width: max-content;
+  max-width: min(92vw, 360px);
+}
+.denial[hidden] { display: none; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+${O}
+`,P=class extends k{static tagName="speechkit-voice-button";static get observedAttributes(){return[...super.observedAttributes,"agent","disabled","for","compact","no-notice"]}#e;#t;#i;#o;#n=new A;#a;#s;#d=!1;#h;#p;#v=0;#c;#r=!1;#u;constructor(){super(wt);let e=document.createElement("div");e.className="split",e.setAttribute("part","button"),this.#e=document.createElement("button"),this.#e.type="button",this.#e.className="primary",this.#e.setAttribute("part","primary"),this.#e.addEventListener("click",()=>this.#m()),this.#e.addEventListener("pointerdown",t=>this.#y(t)),this.#e.addEventListener("pointerup",()=>this.#x()),this.#e.addEventListener("pointerleave",()=>this.#x()),this.#e.addEventListener("contextmenu",t=>{(this.#c!==void 0||this.#r)&&t.preventDefault()}),this.#t=document.createElement("button"),this.#t.type="button",this.#t.className="agent",this.#t.setAttribute("part","agent"),this.#t.addEventListener("click",()=>this.#w()),this.#a=document.createElement("span"),this.#a.className="label",this.#a.append(document.createElement("slot")),this.#s=document.createElement("span"),this.#s.className="state-label",this.#s.setAttribute("part","state-label"),this.#s.hidden=!0,this.#e.append(this.#n.element,this.#a,this.#s),this.#i=document.createElement("div"),this.#i.className="denial",this.#i.setAttribute("part","denial"),this.#i.hidden=!0,this.#o=document.createElement(w.tagName),this.#o.addEventListener("speechkit-dismiss",()=>this.#_()),this.#o.addEventListener("speechkit-retry",()=>this.#_()),this.#i.append(this.#o),e.append(this.#e,this.#t,this.#i),this.root.append(e)}#l(){return this.state?.status??this.controller?.getState().status??"idle"}#g(){return this.controller?.contract.capabilities.voice_agent??!1}#m(){if(this.#r){this.#r=!1;return}this.#_();let e=this.controller;if(!e)return;let t=this.#l();t==="capturing"?e.stop():t==="processing"?e.cancel():y(t)||this.#k(e.start("dictation"))}#k(e){this.#f(!0),e&&typeof e.catch=="function"&&e.catch(()=>this.#f(!1))}#f(e){this.#h!==void 0&&clearTimeout(this.#h),this.#h=void 0,e&&(this.#h=setTimeout(()=>this.#f(!1),yt)),this.#d!==e&&(this.#d=e,this.requestUpdate())}get indicatorState(){return this.#n.state}#y(e){e.button!==0||!this.hasAttribute("agent")||(this.#x(),this.#c=setTimeout(()=>{this.#c=void 0,this.#r=!0,this.#w()},xt))}#x(){this.#c!==void 0&&(clearTimeout(this.#c),this.#c=void 0)}#w(){this.emitKitEvent("speechkit-agent-request");let e=this.controller;if(!this.#g()){e?e.start("voice_agent"):(this.#u=_t(),this.requestUpdate()),this.#E();return}this.#b()||e&&this.#k(e.start("voice_agent"))}#b(){let e=this.getAttribute("for");if(!e)return!1;let t=this.getRootNode().getElementById?.(e);return t&&"show"in t&&typeof t.show=="function"?(t.show(),!0):!1}#E(){queueMicrotask(()=>this.requestUpdate())}#_(){this.#u=void 0,this.#S=this.state?.events.length??0,this.#i.hidden||(this.#i.hidden=!0)}#S=-1;onControllerChanged(e){this.#p?.(),this.#p=void 0,this.#o.controller=e,this.#n.setLevelFeed(!!e?.subscribeLevel),e?.subscribeLevel&&(this.#p=e.subscribeLevel((t,i)=>this.#n.setLevel(t,i)))}connectedCallback(){super.connectedCallback(),this.#n.resume()}disconnectedCallback(){super.disconnectedCallback(),this.#n.stop(),this.#f(!1)}onSessionState(e){e.events.length>this.#v&&this.#f(!1);for(let t=this.#v;t<e.events.length;t+=1){let i=e.events[t];i!==void 0&&(this.emitKitEvent("speechkit-voice-event",i),i.type==="voice.transcript_draft"||i.type==="voice.transcript_final"?this.emitKitEvent("speechkit-transcript",{text:i.text??"",final:i.type==="voice.transcript_final"}):i.type==="voice.denied"&&i.error&&this.emitKitEvent("speechkit-denied",i.error))}this.#v=e.events.length}render(){let e=this.msgs(),t=this.#l(),i=t==="capturing",n=this.hasAttribute("disabled");this.#e.disabled=n,this.#e.dataset.status=t;let r=M(t,this.#d);this.#n.setState(r),this.#e.dataset.indicator=r,this.#e.toggleAttribute("aria-busy",r==="requesting"||r==="processing");let a=r==="requesting"?e["sk.voice.state.requesting"]:r==="listening"?e["sk.voice.state.capturing"]:r==="processing"?e["sk.voice.state.processing"]:r==="speaking"?e["sk.voice.state.speaking"]:"";this.#s.textContent=a,this.#s.hidden=a==="",this.#a.hidden=a!=="";let o=i?e["sk.voice.button.dictation.stop"]:e["sk.voice.button.dictation.start"];this.#e.setAttribute("aria-label",a?`${o} (${a})`:o),this.#e.title=o;let u=this.hasAttribute("agent"),d=this.#g();if(this.#t.hidden=!u,u){let h=!d;if(this.#t.replaceChildren(),h){this.#t.dataset.locked="";let v=document.createElement("span");v.className="lock",v.setAttribute("aria-hidden","true"),v.textContent="\u{1F512}",this.#t.append(v),this.#t.setAttribute("aria-label",e["sk.voice.button.agent_locked"]),this.#t.title=e["sk.voice.button.agent_locked"]}else{delete this.#t.dataset.locked;let v=document.createElement("span");v.className="chevron",v.setAttribute("aria-hidden","true");let p=document.createElement("slot");p.name="agent-icon",this.#t.append(p,v),this.#t.setAttribute("aria-label",e["sk.voice.button.agent"]),this.#t.title=e["sk.voice.button.agent"]}}let l=this.#u??(t==="denied"?this.state?.denial:void 0),c=!this.#u&&this.#S===(this.state?.events.length??0);if(l&&!c&&!this.hasAttribute("no-notice")){this.#o.denial=l;let h=this.getAttribute("locale");h&&this.#o.setAttribute("locale",h),this.#i.hidden=!1}else this.#i.hidden=!0}};function _t(){return{error_code:"voice_agent_unavailable",reason_code:"voice_agent_controller_missing",capability:"speechkit.voiceagent.live",required_features:[],missing_features:[],retryable:!1,remediation:"Assign a VoiceUiController (or wrap in <speechkit-voice-provider>) before enabling the agent segment.",user_guidance:{title:"Voice conversation is not available",body:"This surface has no live voice controller, so no session or audio capture was started.",next_steps:["Use dictation instead.","Contact the host application if voice conversation should be available here."]}}}function de(s="default",e=le){return Ve({surface:s,storageKey:e})}var Et=`
+:host {
+  display: grid;
+  gap: var(--sk-gap, 8px);
+  color: var(--sk-text, inherit);
+  font-size: var(--sk-font-size, 13px);
+  text-align: start;
+}
+strong {
+  font-size: calc(var(--sk-font-size, 13px) + 1px);
+}
+p {
+  margin: 0;
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+  font-size: var(--sk-font-size-small, 11px);
+  line-height: 1.5;
+}
+.actions {
+  display: flex;
+  gap: var(--sk-gap, 8px);
+}
+button {
+  border: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
+  border-radius: var(--sk-radius, 14px);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--sk-font-size, 13px);
+  padding: 6px 12px;
+}
+button:focus-visible {
+  outline: 2px solid var(--sk-accent, oklch(0.65 0.13 210));
+  outline-offset: -2px;
+}
+.accept {
+  border-color: transparent;
+  background: var(--sk-accent, oklch(0.65 0.13 210));
+  color: var(--sk-accent-contrast, #ffffff);
+}
+.declined {
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+}
+`,T=class extends k{static tagName="speechkit-voice-consent";static get observedAttributes(){return[...super.observedAttributes,"scope","surface"]}#e;get consentAdapter(){return this.#e||(this.#e=de(this.getAttribute("surface")??"default")),this.#e}set consentAdapter(e){this.#e=e,this.requestUpdate()}get scope(){return this.getAttribute("scope")==="continuous"?"continuous":"one_shot"}get decision(){return this.consentAdapter.read(this.scope)}#t(e){this.consentAdapter.write(e,this.scope),this.emitKitEvent("speechkit-consent-change",{decision:e,scope:this.scope}),this.requestUpdate()}constructor(){super(Et)}render(){let e=this.msgs();if(this.root.replaceChildren(...this.root.querySelectorAll("style")),this.decision==="declined"){let d=document.createElement("p");d.className="declined",d.setAttribute("part","declined"),d.textContent=e["sk.voice.consent.declined"];let l=document.createElement("button");l.type="button",l.textContent=e["sk.voice.consent.accept"],l.addEventListener("click",()=>this.#t("granted")),this.root.append(d,l);return}let i=document.createElement("strong");i.setAttribute("part","title"),i.textContent=e["sk.voice.consent.title"];let n=document.createElement("p");n.textContent=e["sk.voice.consent.capture"];let r=document.createElement("p");if(r.textContent=e["sk.voice.consent.destination"],this.root.append(i,n,r),this.scope==="continuous"){let d=document.createElement("p");d.textContent=e["sk.voice.consent.continuous"],this.root.append(d)}let a=document.createElement("div");a.className="actions",a.setAttribute("part","actions");let o=document.createElement("button");o.type="button",o.className="accept",o.setAttribute("part","accept"),o.textContent=e["sk.voice.consent.accept"],o.addEventListener("click",()=>this.#t("granted"));let u=document.createElement("button");u.type="button",u.setAttribute("part","decline"),u.textContent=e["sk.voice.consent.decline"],u.addEventListener("click",()=>this.#t("declined")),a.append(o,u),this.root.append(a)}};var St=["idle","connecting","listening","processing","speaking","error"];function ue(s){switch(s){case"capturing":return"listening";case"processing":return"processing";case"speaking":return"speaking";case"denied":return"error";case"idle":case"cancelled":return"idle"}}var At=`
+:host {
+  display: inline-grid;
+  place-items: center;
+}
+.halo {
+  display: grid;
+  place-items: center;
+  width: var(--sk-orb-size, 56px);
+  height: var(--sk-orb-size, 56px);
+  border-radius: var(--sk-radius-pill, 999px);
+  background: color-mix(in srgb, var(--sk-accent, oklch(0.65 0.13 210)) 14%, transparent);
+}
+:host([state="speaking"]) .halo {
+  background: color-mix(in srgb, var(--sk-accent, oklch(0.65 0.13 210)) 24%, transparent);
+}
+.core {
+  width: var(--sk-orb-core-size, 22px);
+  height: var(--sk-orb-core-size, 22px);
+  border-radius: var(--sk-radius-pill, 999px);
+  background: var(--sk-accent, oklch(0.65 0.13 210));
+  transform: scale(calc(1 + var(--sk-voice-level, 0) * 0.85));
+  transition: transform var(--sk-motion-fast, 80ms) linear;
+}
+:host([variant="pill"]) .halo {
+  width: calc(var(--sk-orb-size, 56px) * 1.6);
+  height: calc(var(--sk-orb-size, 56px) * 0.55);
+}
+:host([variant="dot"]) .halo {
+  width: calc(var(--sk-orb-size, 56px) * 0.5);
+  height: calc(var(--sk-orb-size, 56px) * 0.5);
+}
+:host([variant="dot"]) .core {
+  width: calc(var(--sk-orb-core-size, 22px) * 0.6);
+  height: calc(var(--sk-orb-core-size, 22px) * 0.6);
+}
+:host([state="connecting"]) .core {
+  animation: sk-breathe 1.2s ease-in-out infinite;
+  opacity: 0.4;
+}
+:host([state="listening"]) .core {
+  animation: sk-breathe var(--sk-motion-slow, 1600ms) ease-in-out infinite;
+}
+:host([state="processing"]) .core {
+  animation: sk-breathe 0.9s ease-in-out infinite;
+  opacity: 0.75;
+}
+:host([state="speaking"]) .core {
+  animation: sk-pulse 0.8s ease-in-out infinite;
+}
+:host([state="error"]) .core {
+  animation: none;
+  opacity: 0.5;
+}
+@keyframes sk-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+@keyframes sk-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--sk-accent, oklch(0.65 0.13 210)) 45%, transparent); }
+  50% { box-shadow: 0 0 0 10px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .core {
+    animation: none !important;
+    transform: none;
+    transition: none;
+  }
+}
+:host([static]) .core {
+  animation: none !important;
+  transform: none;
+  transition: none;
+}
+`,L=class extends k{static tagName="speechkit-voice-visualizer";static get observedAttributes(){return[...super.observedAttributes,"variant","state","level","static"]}#e;#t;#i;constructor(){super(At),this.#t=document.createElement("div"),this.#t.className="halo",this.#t.setAttribute("part","halo"),this.#i=document.createElement("div"),this.#i.className="core",this.#i.setAttribute("part","core"),this.#i.setAttribute("aria-hidden","true"),this.#t.append(this.#i),this.root.append(this.#t)}set level(e){let t=Math.min(1,Math.max(0,e));this.#i.style.setProperty("--sk-voice-level",t.toFixed(3))}onControllerChanged(e){this.#e?.(),this.#e=void 0,e?.subscribeLevel&&(this.#e=e.subscribeLevel(t=>{this.level=t}))}disconnectedCallback(){super.disconnectedCallback(),this.#e?.(),this.#e=void 0}render(){if(this.state){let t=ue(this.state.status);this.getAttribute("state")!==t&&this.setAttribute("state",t)}else{let t=this.getAttribute("state");t!==null&&!St.includes(t)&&this.removeAttribute("state")}let e=this.getAttribute("level");if(e!==null){let t=Number.parseFloat(e);Number.isNaN(t)||(this.level=t)}}};var Ct='<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',Tt=`
+:host {
+  display: none;
+  color: var(--sk-text, inherit);
+  font-size: var(--sk-font-size, 13px);
+}
+:host([open]) {
+  display: block;
+}
+.overlay {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(60vh, 420px);
+  width: min(92vw, var(--sk-dialog-width, 340px));
+  border: 0;
+  border-radius: var(--sk-dialog-radius, 18px);
+  background: var(--sk-dialog-surface, color-mix(in srgb, #ffffff 58%, transparent));
+  backdrop-filter: blur(var(--sk-dialog-blur, 22px)) saturate(1.2);
+  -webkit-backdrop-filter: blur(var(--sk-dialog-blur, 22px)) saturate(1.2);
+  box-shadow: var(--sk-dialog-shadow, 0 18px 48px -20px rgba(16, 20, 24, 0.35));
+  overflow: hidden;
+}
+:host([placement="center"]) {
+  position: fixed;
+  inset: 0;
+  display: none;
+  place-items: center;
+  background: color-mix(in srgb, #000 20%, transparent);
+  z-index: 2147483000;
+}
+:host([placement="center"][open]) {
+  display: grid;
+}
+.transcript-wrap {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+.transcript {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  padding: 16px 14px 4px;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 var(--sk-dialog-fade, 28px));
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--sk-dialog-fade, 28px));
+}
+.transcript:empty { display: none; }
+.turn {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.role {
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.turn .text {
+  font-weight: 600;
+}
+.turn[data-role="user"] .text {
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+  font-size: calc(var(--sk-font-size, 13px) - 1px);
+  font-weight: 500;
+}
+.turn[data-draft] .text {
+  opacity: 0.55;
+}
+.turn[data-interrupted] .text::after {
+  content: " \\2026";
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+}
+.jump {
+  position: absolute;
+  bottom: 8px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  border: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
+  border-radius: var(--sk-radius-pill, 999px);
+  background: var(--sk-surface-strong, color-mix(in srgb, #ffffff 92%, transparent));
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--sk-font-size-small, 11px);
+  font-weight: 600;
+  padding: 4px 10px;
+}
+:host(:dir(rtl)) .jump {
+  transform: translateX(50%);
+}
+.stage {
+  display: grid;
+  flex: 0 0 auto;
+  justify-items: center;
+  gap: 6px;
+  padding: 12px 14px 12px;
+}
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--sk-font-size-small, 11px);
+  font-weight: 700;
+}
+.status[data-state="listening"] { color: var(--sk-live, #dc2626); }
+.hint {
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+  font-size: var(--sk-font-size-small, 11px);
+}
+.ended {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+  font-size: var(--sk-font-size-small, 11px);
+}
+.reconnect {
+  border: 0;
+  border-radius: var(--sk-radius-pill, 999px);
+  background: transparent;
+  color: var(--sk-accent, oklch(0.65 0.13 210));
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  padding: 4px 8px;
+}
+.reconnect:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+.exit {
+  position: absolute;
+  top: 8px;
+  inset-inline-end: 8px;
+  z-index: 1;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--sk-radius-pill, 999px);
+  background: transparent;
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+  cursor: pointer;
+  padding: 0;
+}
+.exit:hover { background: color-mix(in srgb, currentColor 10%, transparent); color: var(--sk-text, inherit); }
+.orb {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.consent-wrap {
+  padding: 16px 14px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+button:focus-visible {
+  outline: 2px solid var(--sk-accent, oklch(0.65 0.13 210));
+  outline-offset: -2px;
+}
+${O}
+`,q=class extends k{static tagName="speechkit-voice-overlay";static get observedAttributes(){return[...super.observedAttributes,"open","placement","modal"]}#e=[];#t;#i;#o;#n;#a=!1;#s=!1;#d=0;#h;#p=!1;#v=null;#c;#r;#u;#l;#g;#m;#k;#f=new A;#y=!0;#x=!1;#w=e=>{e.key==="Escape"&&this.hasAttribute("open")&&(e.stopPropagation(),this.exit())};constructor(){super(Tt);let e=document.createElement("div");e.className="overlay",e.setAttribute("part","overlay"),e.setAttribute("role","dialog"),e.setAttribute("aria-label","Voice");let t=document.createElement("div");t.className="transcript-wrap",this.#r=document.createElement("div"),this.#r.className="transcript",this.#r.setAttribute("part","transcript"),this.#r.setAttribute("aria-live","polite"),this.#r.addEventListener("scroll",()=>this.#S()),this.#u=document.createElement("button"),this.#u.type="button",this.#u.className="jump",this.#u.setAttribute("part","jump-to-live"),this.#u.hidden=!0,this.#u.addEventListener("click",()=>this.#L()),t.append(this.#r,this.#u),this.#l=document.createElement("div"),this.#l.className="stage",this.#l.setAttribute("part","actions"),this.#m=document.createElement("button"),this.#m.type="button",this.#m.className="exit",this.#m.setAttribute("part","exit"),this.#m.innerHTML=Ct,this.#m.addEventListener("click",()=>this.exit()),this.#k=document.createElement(w.tagName),this.#k.setAttribute("part","denied"),this.#k.setAttribute("flat",""),this.#k.addEventListener("speechkit-retry",i=>{i.preventDefault(),this.#E()}),this.#k.addEventListener("speechkit-dismiss",()=>this.exit()),e.append(this.#m,t,this.#l),this.root.append(e)}get turns(){return this.#t??this.#e}set turns(e){this.#t=e,this.requestUpdate()}set status(e){this.#i=e,this.requestUpdate()}set denial(e){this.#o=e,this.requestUpdate()}set ended(e){this.#n=e,this.requestUpdate()}set level(e){this.#g&&(this.#g.level=e),this.#f.setLevel(e)}get consentAdapter(){return this.#h||(this.#h=de(this.controller?.contract.surface??"default")),this.#h}set consentAdapter(e){this.#h=e}show(){this.#v=document.activeElement,this.#a=!1,this.#s=!1,this.consentAdapter.read("continuous")!=="granted"?this.#p=!0:y(this.#A())||this.#b(),this.setAttribute("open",""),this.requestUpdate()}#b(){this.#e=[],this.#d=this.state?.events.length??0,this.controller?.start("voice_agent")}hide(){this.removeAttribute("open"),this.#p=!1;let e=this.#v;this.#v=null,e instanceof HTMLElement&&e.focus()}exit(){this.controller?.stop(),this.emitKitEvent("speechkit-exit"),this.hide()}#E(){this.#a=!1,this.#e=[],this.#d=this.state?.events.length??0,this.emitKitEvent("speechkit-reconnect"),this.controller?.start("voice_agent"),this.requestUpdate()}#_(){this.#A()==="speaking"&&(this.controller?.interrupt?.(),this.emitKitEvent("speechkit-interrupt"))}connectedCallback(){super.connectedCallback(),this.addEventListener("keydown",this.#w),this.#f.resume()}disconnectedCallback(){super.disconnectedCallback(),this.removeEventListener("keydown",this.#w),this.#f.stop(),this.#c?.(),this.#c=void 0}onControllerChanged(e){this.#c?.(),this.#c=void 0,this.#k.controller=e,this.#f.setLevelFeed(!!e?.subscribeLevel),e?.subscribeLevel&&(this.#c=e.subscribeLevel((t,i)=>{this.#g&&(this.#g.level=t),this.#f.setLevel(t,i)}))}onSessionState(e){for(let t=this.#d;t<e.events.length;t+=1){let i=e.events[t];i!==void 0&&(this.#e=E(this.#e,i),this.emitKitEvent("speechkit-voice-event",i))}this.#d=e.events.length,y(e.status)?(this.#s=!0,this.#a=!1):this.#s&&this.hasAttribute("open")&&e.status!=="denied"&&(this.#a=!0)}#S(){if(this.#x){this.#x=!1;return}let e=this.#r.scrollHeight-this.#r.scrollTop-this.#r.clientHeight<24;e!==this.#y&&(this.#y=e,this.#u.hidden=e)}#C(){let e=this.#r.scrollHeight-this.#r.clientHeight;Math.abs(this.#r.scrollTop-e)<1||(this.#x=!0,this.#r.scrollTop=this.#r.scrollHeight)}#L(){this.#y=!0,this.#u.hidden=!0,this.#C()}#A(){return this.#i??this.state?.status??"idle"}#N(){return this.#o??(this.#A()==="denied"?this.state?.denial:void 0)}#O(){return this.#n??this.#a}render(){let e=this.msgs();if(this.#p){this.#T();return}this.#z(e),this.#V(e),this.#y&&this.#C()}#T(){this.#r.replaceChildren(),this.#l.replaceChildren();let e=document.createElement("div");e.className="consent-wrap",e.setAttribute("part","consent");let t=document.createElement(T.tagName);t.setAttribute("scope","continuous");let i=this.getAttribute("locale");i&&t.setAttribute("locale",i),t.consentAdapter=this.consentAdapter,t.addEventListener("speechkit-consent-change",n=>{let r=n.detail;this.#p=!1,r.decision==="granted"?(this.#b(),this.requestUpdate()):this.hide()}),e.append(t),this.#l.replaceChildren(e)}#z(e){let t=this.turns;this.#r.replaceChildren();for(let i of t){let n=document.createElement("p");n.className="turn",n.setAttribute("part",i.role==="user"?"turn turn-user":"turn turn-agent"),n.dataset.role=i.role,i.final||(n.dataset.draft=""),i.interrupted&&(n.dataset.interrupted="");let r=document.createElement("span");r.className="role",r.textContent=i.role==="user"?e["sk.voice.agent.you"]:e["sk.voice.agent.assistant"];let a=document.createElement("span");a.className="text",a.textContent=i.text,n.append(r,a),this.#r.append(n)}this.#u.textContent=e["sk.voice.agent.jumpToLive"],this.#u.hidden=this.#y}#V(e){this.#l.replaceChildren();let t=this.#A(),i=this.#N(),n=this.#O(),r=t==="speaking";if(this.#m.setAttribute("aria-label",e["sk.voice.agent.exit"]),this.#m.title=e["sk.voice.agent.exit"],i){this.#k.denial=this.#o;let l=this.getAttribute("locale");l&&this.#k.setAttribute("locale",l),this.#l.append(this.#k);return}if(n){let l=document.createElement("span");l.className="ended",l.setAttribute("role","status"),l.append(document.createTextNode(e["sk.voice.agent.ended"]));let c=document.createElement("button");c.type="button",c.className="reconnect",c.setAttribute("part","reconnect"),c.textContent=e["sk.voice.agent.reconnect"],c.addEventListener("click",()=>this.#E()),l.append(c),this.#l.append(l);return}let a=t==="capturing"?e["sk.voice.agent.listening"]:t==="processing"?e["sk.voice.state.processing"]:r?e["sk.voice.agent.speaking"]:e["sk.voice.agent.connecting"],o=document.createElement("button");o.type="button",o.className="orb",o.setAttribute("part","orb"),o.setAttribute("aria-label",r?e["sk.voice.agent.interrupt"]:a),o.addEventListener("click",()=>this.#_()),this.#g=document.createElement(L.tagName),this.#g.setAttribute("state",this.state||this.#i?ue(t):"connecting"),o.append(this.#g),this.#l.append(o);let u=M(t,!y(t));this.#f.setState(u);let d=document.createElement("span");if(d.className="status",d.setAttribute("part","status"),d.setAttribute("role","status"),d.dataset.state=u,t==="capturing"){let l=document.createElement("span");l.className="sr-only",l.textContent=e["sk.voice.agent.live"],d.append(l)}if(d.append(this.#f.element,document.createTextNode(a)),this.#l.append(d),r){let l=document.createElement("span");l.className="hint",l.textContent=e["sk.voice.agent.interrupt"],this.#l.append(l)}}};var Lt=`
+:host {
+  display: block;
+  min-width: 0;
+  color: var(--sk-text, inherit);
+  font-size: var(--sk-font-size, 13px);
+  --sk-transcript-line: 1.4em;
+}
+:host([data-empty]) { display: none; }
+.view {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  max-height: calc(var(--sk-transcript-line) * var(--sk-transcript-lines, 2));
+  overflow: hidden;
+  line-height: var(--sk-transcript-line);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 0.9em);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 0.9em);
+}
+:host([lines="1"]) .view {
+  --sk-transcript-lines: 1;
+  /* Row + flex-end: an over-long line overflows at the start edge, so the
+     newest words stay visible in both LTR and RTL. */
+  flex-direction: row;
+  align-items: center;
+  mask-image: linear-gradient(to right, transparent 0, #000 2.5em);
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 2.5em);
+}
+:host([lines="1"]:dir(rtl)) .view {
+  mask-image: linear-gradient(to left, transparent 0, #000 2.5em);
+  -webkit-mask-image: linear-gradient(to left, transparent 0, #000 2.5em);
+}
+.text {
+  margin: 0;
+  overflow-wrap: anywhere;
+  transition: opacity var(--sk-motion-base, 180ms) var(--sk-motion-ease, ease);
+}
+:host([lines="1"]) .text {
+  flex: none;
+  white-space: nowrap;
+}
+.text[data-draft] { opacity: 0.62; }
+.text[data-role="agent"] { font-weight: 500; }
+.placeholder { color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent)); }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .text { transition: none; }
+}
+`,U=class extends k{static tagName="speechkit-live-transcript";static get observedAttributes(){return[...super.observedAttributes,"lines","source","placeholder"]}#e=[];#t=0;#i;#o=!1;#n="";#a;#s;#d;constructor(){super(Lt),this.#a=document.createElement("div"),this.#a.className="view",this.#a.setAttribute("part","transcript"),this.#a.setAttribute("aria-hidden","true"),this.#s=document.createElement("p"),this.#s.className="text",this.#s.setAttribute("part","text"),this.#a.append(this.#s),this.#d=document.createElement("span"),this.#d.className="sr-only",this.#d.setAttribute("aria-live","polite"),this.#d.setAttribute("role","status"),this.root.append(this.#a,this.#d)}get text(){return this.#i}set text(e){this.#i=e,this.requestUpdate()}get final(){return this.#o}set final(e){this.#o=e,this.requestUpdate()}clear(){this.#e=[],this.#n="",this.#d.textContent="",this.requestUpdate()}onSessionState(e){e.events.length<this.#t&&(this.#e=[],this.#t=0);for(let t=this.#t;t<e.events.length;t+=1){let i=e.events[t];i!==void 0&&(i.type==="voice.capture_started"&&e.mode==="dictation"&&(this.#e=[]),this.#e=E(this.#e,i))}this.#t=e.events.length}#h(){if(this.#i!==void 0)return{text:this.#i,final:this.#o,role:"user"};let e=this.getAttribute("source");for(let t=this.#e.length-1;t>=0;t-=1){let i=this.#e[t];if(!(!i||!i.text)&&!((e==="user"||e==="agent")&&i.role!==e))return{text:i.text,final:i.final,role:i.role}}return null}render(){let e=this.msgs(),t=this.#h(),i=this.state?.status==="capturing",n=!t&&i&&this.hasAttribute("placeholder");if(this.toggleAttribute("data-empty",!t&&!n),this.#d.setAttribute("aria-label",e["sk.voice.transcript.label"]),n){this.#s.textContent=e["sk.voice.state.capturing"],this.#s.className="text placeholder",delete this.#s.dataset.draft;return}if(this.#s.className="text",!t){this.#s.textContent="";return}this.#s.textContent!==t.text&&(this.#s.textContent=t.text),this.#s.toggleAttribute("data-draft",!t.final),this.#s.dataset.role=t.role,t.final&&t.text!==this.#n&&(this.#n=t.text,this.#d.textContent=t.text)}};var Nt='<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="2" fill="currentColor"/></svg>',Mt='<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',Ot=`
+:host {
+  display: none;
+  color: var(--sk-text, inherit);
+  font-size: var(--sk-font-size, 13px);
+  z-index: 2147482000;
+}
+:host([open]) { display: block; }
+:host([anchor]) { position: absolute; }
+:host([anchor="above"]) { bottom: calc(100% + 8px); inset-inline-start: 0; }
+:host([anchor="below"]) { top: calc(100% + 8px); inset-inline-start: 0; }
+:host([anchor="start"]) { inset-inline-end: calc(100% + 8px); bottom: 0; }
+:host([anchor="end"]) { inset-inline-start: calc(100% + 8px); bottom: 0; }
+.card {
+  display: flex;
+  flex-direction: column;
+  width: min(92vw, var(--sk-dialog-width, 340px));
+  max-height: var(--sk-dialog-max-height, 260px);
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--sk-dialog-radius, 18px);
+  background: var(--sk-dialog-surface, color-mix(in srgb, #ffffff 58%, transparent));
+  backdrop-filter: blur(var(--sk-dialog-blur, 22px)) saturate(1.2);
+  -webkit-backdrop-filter: blur(var(--sk-dialog-blur, 22px)) saturate(1.2);
+  box-shadow: var(--sk-dialog-shadow, 0 18px 48px -20px rgba(16, 20, 24, 0.35));
+  overflow: hidden;
+  animation: sk-dialog-in var(--sk-motion-base, 180ms) var(--sk-motion-ease, ease-out);
+}
+.turns {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  padding: 12px 14px 4px;
+  scrollbar-width: none;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 var(--sk-dialog-fade, 28px));
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--sk-dialog-fade, 28px));
+}
+.turns::-webkit-scrollbar { display: none; }
+.turns:empty { display: none; }
+.turn {
+  max-width: 88%;
+  margin: 0;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.turn[data-role="agent"] { align-self: flex-start; }
+.turn[data-role="user"] {
+  align-self: flex-end;
+  text-align: end;
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+  font-size: calc(var(--sk-font-size, 13px) - 1px);
+}
+.turn[data-draft] { opacity: 0.62; }
+.turn[data-interrupted]::after {
+  content: " \\2026";
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+}
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 4px 6px 4px 12px;
+}
+.status {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+  font-size: var(--sk-font-size-small, 11px);
+  font-weight: 600;
+}
+.bar[data-state="listening"] .status { color: var(--sk-live, #dc2626); }
+.notice-slot { flex: 1 1 auto; min-width: 0; }
+.notice-slot:empty { display: none; }
+.icon {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border: 0;
+  border-radius: var(--sk-radius-pill, 999px);
+  background: transparent;
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+  cursor: pointer;
+  padding: 0;
+  transition: background-color var(--sk-motion-base, 180ms) ease, color var(--sk-motion-base, 180ms) ease;
+}
+.icon:hover { background: color-mix(in srgb, currentColor 10%, transparent); color: var(--sk-text, inherit); }
+.icon.end:hover { color: var(--sk-danger, #dc2626); }
+.icon:focus-visible { outline: 2px solid var(--sk-accent, oklch(0.65 0.13 210)); outline-offset: 1px; }
+.icon[hidden], .ind[hidden], .status[hidden] { display: none; }
+.bar[data-state="error"] .icon { align-self: flex-start; margin-top: 3px; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+@keyframes sk-dialog-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card { animation: none; }
+}
+${O}
+`,K=class extends k{static tagName="speechkit-voice-dialog";static get observedAttributes(){return[...super.observedAttributes,"open","anchor","no-dismiss","no-end","auto-open"]}#e=[];#t;#i;#o;#n=0;#a=!1;#s=!1;#d=null;#h=0;#p;#v;#c;#r;#u;#l;#g;#m;#k;#f=new A;#y=e=>{e.key==="Escape"&&this.hasAttribute("open")&&!this.hasAttribute("no-dismiss")&&(e.stopPropagation(),this.dismiss())};constructor(){super(Ot);let e=document.createElement("section");e.className="card",e.setAttribute("part","dialog"),this.#v=document.createElement("div"),this.#v.className="turns",this.#v.setAttribute("part","turns"),this.#v.setAttribute("role","log"),this.#v.setAttribute("aria-live","off"),this.#c=document.createElement("div"),this.#c.className="bar",this.#c.setAttribute("part","bar");let t=document.createElement("slot");t.name="leading",this.#r=document.createElement("span"),this.#r.className="status",this.#r.setAttribute("part","status"),this.#r.setAttribute("role","status"),this.#u=document.createElement("div"),this.#u.className="notice-slot",this.#l=document.createElement(w.tagName),this.#l.setAttribute("part","notice"),this.#l.setAttribute("flat",""),this.#l.addEventListener("speechkit-dismiss",n=>{n.stopPropagation(),this.dismiss()}),this.#l.addEventListener("speechkit-retry",n=>{n.preventDefault(),this.#w()});let i=document.createElement("slot");i.name="actions",this.#g=this.#x("end","end-session",Nt,()=>this.end()),this.#m=this.#x("close","dismiss",Mt,()=>this.dismiss()),this.#c.append(t,this.#f.element,this.#r,this.#u,i,this.#g,this.#m),this.#k=document.createElement("span"),this.#k.className="sr-only",this.#k.setAttribute("aria-live","polite"),e.append(this.#v,this.#c,this.#k),this.root.append(e)}#x(e,t,i,n){let r=document.createElement("button");return r.type="button",r.className=`icon ${e}`,r.setAttribute("part",t),r.innerHTML=i,r.addEventListener("click",n),r}get turns(){return this.#t??this.#e}set turns(e){this.#t=e,this.requestUpdate()}set status(e){this.#i=e,this.requestUpdate()}set denial(e){this.#o=e,this.requestUpdate()}setLevel(e,t="input"){this.#f.setLevelFeed(!0),this.#f.setLevel(e,t)}show(){this.setAttribute("open","")}hide(){this.removeAttribute("open")}dismiss(){this.#s=!0,this.hide(),this.emitKitEvent("speechkit-dismiss")}end(){this.dispatchEvent(new CustomEvent("speechkit-end-session",{bubbles:!0,composed:!0,cancelable:!0}))&&this.controller?.stop()}#w(){this.#e=[],this.#n=this.state?.events.length??0,this.#a=!1,this.controller?.start("voice_agent"),this.requestUpdate()}connectedCallback(){super.connectedCallback(),this.addEventListener("keydown",this.#y),this.#f.resume()}disconnectedCallback(){super.disconnectedCallback(),this.removeEventListener("keydown",this.#y),this.#f.stop()}onControllerChanged(e){this.#p?.(),this.#p=void 0,this.#l.controller=e,this.#f.setLevelFeed(!!e?.subscribeLevel),e?.subscribeLevel&&(this.#p=e.subscribeLevel((t,i)=>this.#f.setLevel(t,i)))}onSessionState(e){e.events.length<this.#n&&(this.#e=[],this.#n=0);for(let t=this.#n;t<e.events.length;t+=1){let i=e.events[t];i!==void 0&&(i.type==="voice.capture_started"&&!y(this.#b)&&(this.#e=[],this.#s=!1,this.#h=0),this.#e=E(this.#e,i),this.#b=i.type==="voice.capture_started"?"capturing":this.#b)}this.#n=e.events.length,this.#b=e.status,y(e.status)&&(this.#a=!0),this.hasAttribute("auto-open")&&!this.#s&&e.mode==="voice_agent"&&(y(e.status)||e.status==="denied")&&this.show()}#b="idle";#E(){return this.#i??this.state?.status??"idle"}#_(e,t,i){if(t)return i["sk.voice.agent.connecting"];switch(e){case"capturing":return i["sk.voice.agent.listening"];case"processing":return i["sk.voice.state.processing"];case"speaking":return i["sk.voice.agent.speaking"];default:return i["sk.voice.agent.ended"]}}render(){let e=this.msgs(),t=this.#E(),i=this.#o??(t==="denied"?this.state?.denial:void 0),n=y(t),r=!n&&!i&&!this.#a&&this.#i===void 0,a=M(t,r);if(this.#f.setState(i?"error":a),this.#c.dataset.state=this.#f.state,this.#u.replaceChildren(),i){this.#l.denial=this.#o;let o=this.getAttribute("locale");o&&this.#l.setAttribute("locale",o),this.#u.append(this.#l),this.#r.hidden=!0,this.#f.element.hidden=!0}else this.#f.element.hidden=!1,this.#r.hidden=!1,this.#r.textContent=this.#_(t,r,e);this.#g.hidden=this.hasAttribute("no-end")||!(n||r),this.#g.setAttribute("aria-label",e["sk.voice.dialog.end"]),this.#g.title=e["sk.voice.dialog.end"],this.#m.hidden=this.hasAttribute("no-dismiss")||i!==void 0,this.#l.toggleAttribute("no-dismiss",this.hasAttribute("no-dismiss")),this.#m.setAttribute("aria-label",e["sk.voice.dialog.hide"]),this.#m.title=e["sk.voice.dialog.hide"],this.root.querySelector(".card")?.setAttribute("aria-label",e["sk.voice.dialog.label"]),this.#S(e)}#S(e){let t=this.turns;if(t===this.#d)return;let i=this.#v,n=i.scrollHeight-i.scrollTop-i.clientHeight<24;i.replaceChildren();for(let r of t){if(!r.text)continue;let a=document.createElement("p");a.className="turn",a.setAttribute("part",r.role==="user"?"turn turn-user":"turn turn-agent"),a.dataset.role=r.role,r.final||(a.dataset.draft=""),r.interrupted&&(a.dataset.interrupted="");let o=document.createElement("span");o.className="sr-only",o.textContent=`${r.role==="user"?e["sk.voice.agent.you"]:e["sk.voice.agent.assistant"]}: `,a.append(o,document.createTextNode(r.text)),i.append(a)}t.length<this.#h&&(this.#h=0);for(let r=this.#h;r<t.length;r+=1){let a=t[r];if(!a?.final)break;let o=a.role==="user"?e["sk.voice.agent.you"]:e["sk.voice.agent.assistant"];this.#k.textContent=`${o}: ${a.text}`,this.#h=r+1}this.#d=t,n&&(i.scrollTop=i.scrollHeight)}};var W=class{element;#e;#t;#i=[];#o=0;#n=0;constructor(e){this.#t=e,this.element=document.createElement("button"),this.element.type="button",this.element.className="wave-visual",this.element.setAttribute("part","orb"),this.element.dataset.layout=e,this.#e=document.createElement("canvas"),this.element.append(this.#e);for(let t=0;t<72;t+=1)this.#i.push({input:0,output:0})}onFrame(e,t,i,n){let r=this.#n===0?16:Math.min(100,i-this.#n);if(this.#n=i,n.active&&!n.reducedMotion)for(this.#o+=r;this.#o>=45;)this.#o-=45,this.#i.push({input:e,output:t}),this.#i.length>72&&this.#i.shift();this.#s(n)}#a(){let e=getComputedStyle(this.element);return{output:e.getPropertyValue("--sk-assistant-wave-output").trim()||"#38bdf8",input:e.getPropertyValue("--sk-assistant-wave-input").trim()||"#34d399"}}#s(e){let t=this.#e,i=t.getBoundingClientRect();if(i.width===0||i.height===0)return;let n=window.devicePixelRatio||1,r=Math.round(i.width*n),a=Math.round(i.height*n);(t.width!==r||t.height!==a)&&(t.width=r,t.height=a);let o=t.getContext("2d");if(!o)return;o.clearRect(0,0,r,a);let u=this.#a(),d=e.reducedMotion?this.#d():this.#i,l=e.active?1:.35;this.#t==="radial"?this.#p(o,r,a,u,d,l,n):this.#h(o,r,a,u,d,l),o.globalAlpha=1}#d(){return this.#i.map(()=>({input:0,output:0}))}#h(e,t,i,n,r,a){let o=r.length,u=t/o,d=Math.max(1.5,u*.55),l=i/2,c=Math.max(1.5,i*.03);for(let h=0;h<o;h+=1){let v=r[h];if(!v)continue;let p=h*u+(u-d)/2,g=v.output*(i*.46),x=v.input*(i*.46);e.fillStyle=n.output,e.globalAlpha=.85*a,e.fillRect(p,l-Math.max(c,g),d,Math.max(c,g)*2),x>c&&(e.fillStyle=n.input,e.globalAlpha=.9*a,e.fillRect(p,l-x,d*.6,x*2))}}#p(e,t,i,n,r,a,o){let u=t/2,d=i/2,l=Math.min(t,i)*.34,c=Math.min(t,i)*.14,h=r.length;e.lineCap="round";for(let v=0;v<h;v+=1){let p=r[v];if(!p)continue;let g=v/h*Math.PI*2-Math.PI/2,x=Math.max(p.output,p.input),f=p.input>p.output,m=Math.max(2,x*c);e.strokeStyle=f?n.input:n.output,e.globalAlpha=(.35+x*.6)*a,e.lineWidth=Math.max(1.5,o*1.5),e.beginPath(),e.moveTo(u+Math.cos(g)*l,d+Math.sin(g)*l),e.lineTo(u+Math.cos(g)*(l+m),d+Math.sin(g)*(l+m)),e.stroke()}}};var H,zt=["inactive","connecting","listening","processing","speaking","recovering","settling","error"];function Vt(s){switch(s){case"connecting":return"connecting";case"capturing":return"listening";case"processing":return"processing";case"speaking":return"speaking";case"denied":return"error";case"idle":case"cancelled":return"inactive"}}function It(s){return zt.includes(s)}var Rt=`
+:host {
+  display: block;
+  color: var(--sk-text, inherit);
+  font-size: var(--sk-font-size, 13px);
+  height: 100%;
+}
+:host([size="orb"]) {
+  display: inline-grid;
+  place-items: center;
+  height: auto;
+}
+.va {
+  height: 100%;
+  display: flex;
+  --level: 0;
+  --aura-a: var(--sk-aura-inactive-a, 156, 163, 184);
+  --aura-b: var(--sk-aura-inactive-b, 100, 116, 139);
+  --tone: rgb(var(--aura-a));
+  --tone-soft: rgba(var(--aura-a), 0.22);
+}
+.va[data-aura="connecting"] { --aura-a: var(--sk-aura-connecting-a, 56, 189, 248); --aura-b: var(--sk-aura-connecting-b, 129, 140, 248); }
+.va[data-aura="listening"] { --aura-a: var(--sk-aura-listening-a, 52, 211, 153); --aura-b: var(--sk-aura-listening-b, 56, 189, 248); }
+.va[data-aura="processing"] { --aura-a: var(--sk-aura-processing-a, 251, 191, 36); --aura-b: var(--sk-aura-processing-b, 244, 114, 182); }
+.va[data-aura="speaking"] { --aura-a: var(--sk-aura-speaking-a, 129, 140, 248); --aura-b: var(--sk-aura-speaking-b, 167, 139, 250); }
+.va[data-aura="recovering"] { --aura-a: var(--sk-aura-recovering-a, 34, 211, 238); --aura-b: var(--sk-aura-recovering-b, 129, 140, 248); }
+.va[data-aura="settling"] { --aura-a: var(--sk-aura-settling-a, 52, 211, 153); --aura-b: var(--sk-aura-settling-b, 129, 140, 248); }
+.va[data-aura="error"] { --aura-a: var(--sk-aura-error-a, 248, 113, 113); --aura-b: var(--sk-aura-error-b, 251, 113, 133); }
+
+/* \u2500\u2500 Orb \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+   Layer stack (outward \u2192 inward): breathing glow, aurora sweep,
+   counter-rotating inner sweep, level-reactive halo ring, glassy
+   core, centre spark, brand mark. Identical geometry and timings in
+   the Compose and LVGL ports (tokens.json \u2192 assistant). */
+.orb {
+  position: relative;
+  width: var(--sk-assistant-orb, 30px);
+  height: var(--sk-assistant-orb, 30px);
+  aspect-ratio: 1;
+  flex: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: default;
+  font: inherit;
+  color: inherit;
+}
+.va[data-status="speaking"] .orb { cursor: pointer; }
+.orb:focus-visible { outline: 2px solid var(--sk-accent, oklch(0.65 0.13 210)); outline-offset: 2px; border-radius: 50%; }
+.orb > * { position: absolute; border-radius: 50%; }
+.orb .glow {
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(var(--aura-a), 0.38), rgba(var(--aura-a), 0.08) 55%, rgba(var(--aura-a), 0) 72%);
+  animation: sk-aura-breathe 4.5s ease-in-out infinite;
+}
+.orb .sweep {
+  inset: 6%;
+  overflow: hidden;
+  opacity: 0.9;
+  background: conic-gradient(from 0deg, rgba(var(--aura-a), 0) 0deg, rgba(var(--aura-a), 0.55) 90deg, rgba(var(--aura-b), 0) 200deg, rgba(var(--aura-b), 0.45) 300deg, rgba(var(--aura-a), 0) 360deg);
+  filter: blur(6px);
+  animation: sk-aura-spin 9s linear infinite;
+}
+.orb .sweep-inner {
+  inset: 16%;
+  overflow: hidden;
+  opacity: 0.8;
+  background: conic-gradient(from 180deg, rgba(var(--aura-b), 0) 0deg, rgba(var(--aura-b), 0.4) 120deg, rgba(var(--aura-a), 0) 260deg);
+  filter: blur(4px);
+  animation: sk-aura-spin-reverse 13s linear infinite;
+}
+.orb .halo {
+  inset: 10%;
+  border: 1px solid rgba(var(--aura-a), 0.5);
+  box-shadow: 0 0 18px rgba(var(--aura-a), 0.35) inset, 0 0 12px rgba(var(--aura-b), 0.28);
+  transform: scale(calc(0.82 + var(--level) * 0.3));
+  opacity: calc(0.35 + var(--level) * 0.5);
+  transition: transform 120ms ease-out, opacity 200ms ease-out;
+}
+.orb .core {
+  inset: 26%;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  background: radial-gradient(circle at 38% 32%, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.06) 46%, rgba(255, 255, 255, 0.02) 70%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  animation: sk-aura-core 3.2s ease-in-out infinite;
+}
+/* Centre spark \u2014 backlight for the brand mark. */
+.orb .spark {
+  left: 50%;
+  top: 50%;
+  width: 12%;
+  height: 12%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(var(--aura-a), 0.95), rgba(var(--aura-a), 0.2) 70%, rgba(var(--aura-a), 0) 100%);
+  opacity: 0.85;
+}
+/* Resting states: no motion, thinned effects. */
+.va:is([data-aura="inactive"], [data-aura="error"]) .orb :is(.glow, .sweep, .sweep-inner, .core) { animation: none; }
+.va:is([data-aura="inactive"], [data-aura="error"]) .orb .halo { opacity: 0.18; box-shadow: 0 0 18px rgba(var(--aura-a), 0.12) inset, 0 0 12px rgba(var(--aura-b), 0.08); }
+.va:is([data-aura="inactive"], [data-aura="error"]) .orb .spark { opacity: 0.4; }
+
+@keyframes sk-aura-spin { to { transform: rotate(360deg); } }
+@keyframes sk-aura-spin-reverse { to { transform: rotate(-360deg); } }
+@keyframes sk-aura-breathe {
+  0%, 100% { transform: scale(0.92); opacity: 0.55; }
+  50% { transform: scale(1.06); opacity: 0.9; }
+}
+@keyframes sk-aura-core {
+  0%, 100% { opacity: 0.78; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .orb > *, .mark img { animation: none !important; transition: none !important; }
+  .orb .halo, .mark img { transform: none; }
+  .orb .spark { transform: translate(-50%, -50%); }
+}
+
+/* \u2500\u2500 Brand mark (host-provided via mark-src) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+   Part of the motion system, not a sticker: greyscale ghost while
+   resting, full colour plus level-driven glow and scale when live. */
+.mark {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.mark img {
+  width: var(--sk-assistant-mark-ratio, 34%);
+  height: var(--sk-assistant-mark-ratio, 34%);
+  object-fit: contain;
+  filter: saturate(1.15) drop-shadow(0 0 calc(4px + var(--level) * 12px) rgba(var(--aura-a), calc(0.35 + var(--level) * 0.4)));
+  opacity: 1;
+  transform: scale(calc(1 + var(--level) * 0.08));
+  transition: filter 420ms ease, opacity 420ms ease, transform 420ms ease;
+}
+.va:is([data-aura="inactive"], [data-aura="error"]) .mark img {
+  filter: grayscale(1) brightness(0.95);
+  opacity: 0.5;
+  transform: none;
+}
+
+/* \u2500\u2500 Waveform variant (variant="waveform") \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+   The dual-hue level-history motif in the orb's slot; drawing spec
+   in tokens.json \u2192 assistant-variants.waveform. */
+.wave-visual {
+  position: relative;
+  flex: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: default;
+  font: inherit;
+  color: inherit;
+}
+.va[data-status="speaking"] .wave-visual { cursor: pointer; }
+.wave-visual:focus-visible { outline: 2px solid var(--sk-accent, oklch(0.65 0.13 210)); outline-offset: 2px; border-radius: 8px; }
+.wave-visual canvas { display: block; width: 100%; height: 100%; }
+.wave-visual[data-layout="radial"] {
+  width: var(--sk-assistant-orb, 30px);
+  height: var(--sk-assistant-orb, 30px);
+  border-radius: 50%;
+}
+.wave-visual[data-layout="linear"] {
+  width: var(--sk-assistant-wave-compact-w, 72px);
+  height: var(--sk-assistant-wave-compact-h, 22px);
+  border-radius: 6px;
+}
+.va[data-frame="keyboard"] .wave-visual[data-layout="linear"] { flex: 1; width: auto; }
+
+/* \u2500\u2500 Compact: pill (overlay/phone/panel) / bar (keyboard) \u2500\u2500\u2500\u2500\u2500\u2500 */
+.compact-shell {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 14px 8px 9px;
+  border-radius: var(--sk-radius-pill, 999px);
+  background: var(--sk-surface, color-mix(in srgb, #ffffff 72%, transparent));
+  border: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
+  backdrop-filter: blur(var(--sk-blur, 16px));
+  -webkit-backdrop-filter: blur(var(--sk-blur, 16px));
+  box-shadow: var(--sk-shadow, 0 12px 40px -12px rgba(16, 20, 24, 0.25));
+  min-width: 0; max-width: 100%;
+  margin: auto;
+}
+.va[data-frame="keyboard"] .compact-shell { width: 100%; border-radius: var(--sk-radius, 14px); margin: 0; }
+.compact-line { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.compact-line .who { color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent)); font-size: var(--sk-font-size-small, 11px); margin-right: 6px; text-transform: uppercase; letter-spacing: 0.08em; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--tone); flex: none; }
+.va:is([data-status="capturing"], [data-status="speaking"]) .status-dot { animation: sk-aura-pulse 1.2s ease-in-out infinite; }
+@keyframes sk-aura-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .status-dot { animation: none; } }
+
+/* \u2500\u2500 Compact: watch face \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.watch-shell { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; padding: 12px; max-width: 100%; }
+.watch-shell :is(.orb, .wave-visual) { --sk-assistant-orb: var(--sk-assistant-orb-watch, 84px); }
+.watch-line { font-size: 13px; line-height: 1.35; max-height: 3.9em; overflow: hidden; color: var(--sk-text, inherit); }
+.watch-status { font-size: var(--sk-font-size-small, 11px); color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent)); text-transform: uppercase; letter-spacing: 0.14em; }
+
+/* \u2500\u2500 Expanded: hero + turn list \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.expanded-shell { display: flex; flex-direction: column; height: 100%; width: 100%; background: var(--sk-surface, color-mix(in srgb, #ffffff 72%, transparent)); backdrop-filter: blur(var(--sk-blur, 16px)); -webkit-backdrop-filter: blur(var(--sk-blur, 16px)); }
+.hero { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 26px 16px 18px; }
+.hero :is(.orb, .wave-visual) { --sk-assistant-orb: var(--sk-assistant-orb-hero, 92px); }
+.status-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 12px; border-radius: var(--sk-radius-pill, 999px);
+  border: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
+  background: var(--sk-surface-strong, color-mix(in srgb, #ffffff 92%, transparent));
+  font-size: var(--sk-font-size-small, 11px);
+}
+.turns-wrap { position: relative; display: flex; flex: 1; min-height: 0; }
+.turns { flex: 1; overflow-y: auto; padding: 4px 18px 14px; display: flex; flex-direction: column; gap: 2px; scrollbar-width: thin; }
+.turn { padding: 9px 0; border-top: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent)); }
+.turn:first-child { border-top: none; }
+.turn-head { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
+.turn-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sk-assistant-user-dot, #8fa9ff); }
+.turn[data-role="agent"] .turn-dot { background: var(--sk-assistant-agent-dot, #47e3c1); }
+.turn-role { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent)); }
+.turn-flag { font-size: 10px; color: var(--sk-live, #dc2626); border: 1px solid color-mix(in srgb, var(--sk-live, #dc2626) 40%, transparent); border-radius: var(--sk-radius-pill, 999px); padding: 0 6px; }
+.turn-text { margin: 0; line-height: 1.45; overflow-wrap: anywhere; }
+.turn[data-draft] .turn-text { color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent)); }
+.turn[data-draft] .turn-text::after { content: "\\258d"; color: var(--tone); animation: sk-aura-pulse 1s ease-in-out infinite; }
+.jump {
+  position: absolute;
+  bottom: 8px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  border: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
+  border-radius: var(--sk-radius-pill, 999px);
+  background: var(--sk-surface-strong, color-mix(in srgb, #ffffff 92%, transparent));
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--sk-font-size-small, 11px);
+  font-weight: 600;
+  padding: 4px 10px;
+}
+:host(:dir(rtl)) .jump { transform: translateX(50%); }
+.hidden { display: none !important; }
+`,z=class extends k{static tagName="speechkit-voice-assistant";static get observedAttributes(){return[...super.observedAttributes,"size","transcript","frame","variant","mark-src","aura-state"]}#e=[];#t;#i;#o;#n=0;#a=new S;#s=new S;#d;#h=0;#p=null;#v=null;#c=null;#r=null;#u=null;#l=null;#g=null;#m=null;#k=[];#f=[];#y="";#x=null;#w=-1;#b=!0;#E=!1;constructor(){super(Rt)}get size(){let e=this.getAttribute("size");return e==="expanded"||e==="orb"?e:"compact"}set size(e){this.setAttribute("size",e)}get transcriptEnabled(){return this.hasAttribute("transcript")}set transcriptEnabled(e){this.toggleAttribute("transcript",e)}get frame(){let e=this.getAttribute("frame");return e==="overlay"||e==="keyboard"||e==="watch"||e==="phone"?e:"panel"}set frame(e){this.setAttribute("frame",e)}get variant(){return this.getAttribute("variant")==="waveform"?"waveform":"aura"}set variant(e){this.setAttribute("variant",e)}get markSrc(){return this.getAttribute("mark-src")}set markSrc(e){e===null?this.removeAttribute("mark-src"):this.setAttribute("mark-src",e)}get turns(){return this.#t??this.#e}set turns(e){this.#t=e,this.requestUpdate()}set status(e){this.#i=e,this.requestUpdate()}get auraState(){if(this.#o)return this.#o;let e=this.getAttribute("aura-state");return e!==null&&It(e)?e:Vt(this.#T())}set auraState(e){this.#o=e,this.requestUpdate()}set level(e){this.#a.target=e}setLevel(e,t="input"){t==="output"?this.#s.target=e:this.#a.target=e}onControllerChanged(e){this.#d?.(),this.#d=void 0,e?.subscribeLevel&&(this.#d=e.subscribeLevel((t,i)=>{i==="output"?this.#s.target=t:this.#a.target=t}))}onSessionState(e){e.events.length<this.#n&&(this.#e=[],this.#n=0);for(let t=this.#n;t<e.events.length;t+=1){let i=e.events[t];i!==void 0&&(this.#e=E(this.#e,i))}this.#n=e.events.length}static#_;static#S(){return H.#_===void 0&&(H.#_=typeof matchMedia=="function"?matchMedia("(prefers-reduced-motion: reduce)"):null),H.#_?.matches??!1}#C=e=>{let t=this.#a.tick(e),i=this.#s.tick(e);if(this.#p?.style.setProperty("--level",Math.max(t,i).toFixed(3)),this.#f.length>0){let n=this.auraState,r={active:n!=="inactive"&&n!=="error",reducedMotion:H.#S()};for(let a of this.#f)a.onFrame(t,i,e,r)}this.#h=requestAnimationFrame(this.#C)};connectedCallback(){super.connectedCallback(),this.#h=requestAnimationFrame(this.#C)}disconnectedCallback(){cancelAnimationFrame(this.#h),this.#d?.(),this.#d=void 0,super.disconnectedCallback()}#L(){this.#T()==="speaking"&&(this.controller?.interrupt?.(),this.emitKitEvent("speechkit-interrupt"))}#A(){if(this.#E){this.#E=!1;return}let e=this.#l;if(!e)return;let t=e.scrollHeight-e.scrollTop-e.clientHeight<24;t!==this.#b&&(this.#b=t,this.#m&&(this.#m.hidden=t))}#N(){let e=this.#l;if(!e)return;let t=e.scrollHeight-e.clientHeight;Math.abs(e.scrollTop-t)<1||(this.#E=!0,e.scrollTop=e.scrollHeight)}#O(){this.#b=!0,this.#m&&(this.#m.hidden=!0),this.#N()}#T(){return this.#i?this.#i:this.state?this.state.status:this.controller?"connecting":"idle"}#z(e,t){if(e==="connecting")return t["sk.voice.agent.connecting"];if(e==="denied"&&this.state?.status==="denied"){let i=this.state.denial?B(this.state.denial):C(this.state.reason_code);return j(i,t)}return t[`sk.voice.state.${e}`]}#V(){let e=document.createElement("button");e.type="button",e.className="orb",e.setAttribute("part","orb"),e.addEventListener("click",()=>this.#L());for(let i of["glow","sweep","sweep-inner","halo","core","spark"]){let n=document.createElement("div");n.className=i,e.append(n)}let t=this.markSrc;if(t){let i=document.createElement("div");i.className="mark",i.setAttribute("part","mark");let n=document.createElement("img");n.src=t,n.alt="",n.setAttribute("aria-hidden","true"),i.append(n),e.append(i)}return this.#k.push(e),e}#M(e){if(this.variant==="waveform"){let t=new W(e);return t.element.addEventListener("click",()=>this.#L()),this.#k.push(t.element),this.#f.push(t),t.element}return this.#V()}#I(){let e=document.createElement("div");if(e.className="va",e.setAttribute("part","assistant"),this.#k=[],this.#f=[],this.size==="orb")return e.append(this.#M("radial")),e;if(this.size==="expanded"){let t=document.createElement("div");t.className="expanded-shell";let i=document.createElement("div");i.className="hero",i.setAttribute("part","hero"),i.append(this.#M("radial")),this.#u=document.createElement("span"),this.#u.className="status-pill",this.#u.setAttribute("part","status"),this.#u.setAttribute("role","status");let n=document.createElement("span");n.className="status-dot",n.setAttribute("aria-hidden","true");let r=document.createElement("span");r.className="status-text",this.#u.append(n,r),i.append(this.#u),this.#g=document.createElement("div"),this.#g.className="turns-wrap",this.#l=document.createElement("div"),this.#l.className="turns",this.#l.setAttribute("part","transcript"),this.#l.setAttribute("aria-live","polite"),this.#l.addEventListener("scroll",()=>this.#A()),this.#m=document.createElement("button"),this.#m.type="button",this.#m.className="jump",this.#m.setAttribute("part","jump-to-live"),this.#m.hidden=!0,this.#m.addEventListener("click",()=>this.#O()),this.#g.append(this.#l,this.#m),t.append(i,this.#g),e.append(t)}else if(this.frame==="watch"){let t=document.createElement("div");t.className="watch-shell",this.#r=document.createElement("div"),this.#r.className="watch-status",this.#r.setAttribute("part","status"),this.#r.setAttribute("role","status"),this.#c=document.createElement("div"),this.#c.className="watch-line",this.#c.setAttribute("aria-live","polite"),t.append(this.#M("radial"),this.#r,this.#c),e.append(t)}else{let t=document.createElement("div");t.className="compact-shell",t.setAttribute("part","shell"),this.#v=document.createElement("div"),this.#v.className="compact-line",this.#v.setAttribute("aria-live","polite");let i=document.createElement("span");i.className="status-dot",i.setAttribute("aria-hidden","true"),t.append(this.#M("linear"),this.#v,i),e.append(t)}return e}#R(){let e=this.turns,t=e.length>0?e[e.length-1]:void 0;if(!t||!t.text)return null;let i=t.text.split(/(?<=[.!?…])\s+/).filter(r=>r.length>0),n=i.length>0?i[i.length-1]??t.text:t.text;return{role:t.role,text:n}}#P(e){let t=this.#l;if(t){t.replaceChildren();for(let i of this.turns){let n=document.createElement("article");n.className="turn",n.setAttribute("part",i.role==="user"?"turn turn-user":"turn turn-agent"),n.dataset.role=i.role,i.final||(n.dataset.draft="");let r=document.createElement("header");r.className="turn-head";let a=document.createElement("span");a.className="turn-dot",a.setAttribute("aria-hidden","true");let o=document.createElement("span");if(o.className="turn-role",o.textContent=i.role==="user"?e["sk.voice.agent.you"]:e["sk.voice.agent.assistant"],r.append(a,o),i.interrupted){let d=document.createElement("span");d.className="turn-flag",d.textContent=e["sk.voice.agent.interrupted"],r.append(d)}let u=document.createElement("p");u.className="turn-text",u.textContent=i.text,n.append(r,u),t.append(n)}}}render(){let e=this.msgs(),t=`${this.size}/${this.frame}/${this.variant}/${this.markSrc??""}`;this.#p&&this.#y!==t&&(this.#p.remove(),this.#p=null,this.#v=this.#c=this.#r=null,this.#u=this.#l=this.#g=null,this.#m=null,this.#x=null,this.#w=-1,this.#b=!0),this.#p||(this.#y=t,this.#p=this.#I(),this.root.append(this.#p));let i=this.#T();this.#p.dataset.status=i,this.#p.dataset.aura=this.auraState,this.#p.dataset.frame=this.frame,this.#p.dataset.variant=this.variant;let n=this.#z(i,e),r=i==="speaking";for(let o of this.#k)o.setAttribute("aria-label",r?e["sk.voice.agent.interrupt"]:n);if(this.size==="orb")return;let a=this.#R();if(this.#v)if(this.#v.classList.toggle("hidden",!this.transcriptEnabled),this.#v.replaceChildren(),a&&this.transcriptEnabled){let o=document.createElement("span");o.className="who",o.textContent=a.role==="user"?e["sk.voice.agent.you"]:e["sk.voice.agent.assistant"],this.#v.append(o,document.createTextNode(a.text))}else{let o=document.createElement("span");o.className="who",o.textContent=n,this.#v.append(o)}if(this.#r&&(this.#r.textContent=n),this.#c&&(this.#c.classList.toggle("hidden",!this.transcriptEnabled),this.#c.textContent=this.transcriptEnabled?a?.text??"":""),this.#u){let o=this.#u.querySelector(".status-text");o&&(o.textContent=n)}if(this.#g&&this.#l){this.#g.classList.toggle("hidden",!this.transcriptEnabled);let o=this.turns;(o!==this.#x||o.length!==this.#w)&&(this.#P(e),this.#x=o,this.#w=o.length),this.#m&&(this.#m.textContent=e["sk.voice.agent.jumpToLive"]),this.#b&&this.#N()}}};H=z;var Pe=["rosette","k","none"];function Y(s){return Pe.includes(s)}function he(s,e){return s==="none"?null:e[s]??null}function pe(s){return s==="k"?"27%":void 0}function qe(){let s=[[V.tagName,V],[w.tagName,w],[U.tagName,U],[L.tagName,L],[T.tagName,T],[P.tagName,P],[q.tagName,q],[K.tagName,K],[z.tagName,z]];for(let[e,t]of s)customElements.get(e)||customElements.define(e,t)}qe();function me(s,e){return s?e?e.startsWith(s)?e:s.endsWith(e)?s:s+e:s:e}var Ue=16e3,ve=24e3,Ke="ticket.";var G=class{socket;hooks;tools;start;opened=!1;constructor(e,t){this.socket=e,this.hooks=t.hooks??{},this.tools=t.tools??{},this.start=t.start,e.addEventListener("open",()=>{this.opened=!0,this.sendFrame({type:"start",...this.start})}),e.addEventListener("message",i=>{this.handleMessage(i.data)}),e.addEventListener("error",i=>{let n=i instanceof Error?i:new Error("ws error");this.hooks.onError?.(n)}),e.addEventListener("close",i=>{this.opened=!1,this.hooks.onClose?.(i.reason||`closed (${i.code})`)})}sendText(e){this.sendFrame({type:"text",text:e})}sendAudioChunk(e){this.socket.send(e)}endAudio(){this.sendFrame({type:"audio_end"})}ping(){this.sendFrame({type:"ping"})}cancel(){this.sendFrame({type:"cancel"})}advanceStep(e){this.sendFrame(e!==void 0?{type:"advance_step",reason:e}:{type:"advance_step"})}close(){if(this.opened)try{this.sendFrame({type:"stop"})}catch{}this.socket.close()}sendFrame(e){this.socket.send(JSON.stringify(e))}async handleMessage(e){if(typeof e=="string"){let t;try{t=JSON.parse(e)}catch(i){this.hooks.onError?.(i);return}await this.handleFrame(t);return}if(e instanceof ArrayBuffer){this.hooks.onAudio?.(e);return}if(typeof e=="object"&&e!==null&&"buffer"in e&&ArrayBuffer.isView(e)){let t=e,i=t.buffer.slice(t.byteOffset,t.byteOffset+t.byteLength);this.hooks.onAudio?.(i)}}async handleFrame(e){switch(e.type){case"state":this.hooks.onState?.(e.state);return;case"input_transcript":this.hooks.onUserTranscript?.(e.text,e.done);return;case"output_transcript":this.hooks.onAgentTranscript?.(e.text,e.done);return;case"tool_call":this.hooks.onToolCall?.(e),await this.dispatchTool(e);return;case"event":this.hooks.onEvent?.(e);return;case"error":this.hooks.onError?.(e);return;case"session_end":this.hooks.onClose?.(e.reason);return;case"interrupted":this.hooks.onInterrupted?.(e);return;case"sequence_step":case"pong":return}}async dispatchTool(e){let t=this.tools[e.name];if(!t){this.sendFrame({type:"tool_response",id:e.id,name:e.name,response:{error:`unknown tool: ${e.name}`}});return}let i;try{i=await t(e)??{}}catch(n){i={error:n.message}}this.sendFrame({type:"tool_response",id:e.id,name:e.name,response:i})}};async function He(s){let e={"Content-Type":"application/json"};s.token&&(e.Authorization=`Bearer ${s.token}`);let t=s.fetch??fetch,i=s.serverUrl.replace(/\/+$/,""),n=await t(`${i}${$e(s.basePath)}/voiceagent/sessions`,{method:"POST",headers:e,body:JSON.stringify(s.body??{})});if(!n.ok)throw new Error(`speechkit: mint session failed: HTTP ${n.status} ${await n.text()}`);return await n.json()}function Fe(s,e,t){return e.ws_url?e.ws_url:`${s.replace(/^http/,"ws").replace(/\/+$/,"")}${$e(t)}/voiceagent/sessions/${encodeURIComponent(e.session_id)}/ws`}function De(s){return s.ws_subprotocol??`${Ke}${s.ticket}`}function $e(s){let e=(s??"/v1").trim();return e===""||e==="/"?"":(e.startsWith("/")?e:`/${e}`).replace(/\/+$/,"")}async function Be(s){let e=s.presetTicket??await He({serverUrl:s.serverUrl,...s.token!==void 0?{token:s.token}:{},...s.ticket!==void 0?{body:s.ticket}:{},...s.basePath!==void 0?{basePath:s.basePath}:{}}),t=s.resolveWsUrl?s.resolveWsUrl(e):Fe(s.serverUrl,e,s.basePath),i=new WebSocket(t,[De(e)]);i.binaryType="arraybuffer";let n={start:s.start,...s.hooks!==void 0?{hooks:s.hooks}:{},...s.tools!==void 0?{tools:s.tools}:{}},r=new G(i,n),a=Dt(s.onPlaybackLevel);return{session:r,socket:i,ticket:e,attachMicrophone:u=>qt(r,u),playChunk:u=>a.play(u),flushPlayback:()=>a.flush(),close:()=>{r.close(),a.dispose()}}}var Pt=`
+registerProcessor("speechkit-capture", class extends AudioWorkletProcessor {
+  process(inputs) {
+    const channel = inputs[0] && inputs[0][0];
+    if (channel && channel.length > 0) {
+      const copy = new Float32Array(channel.length);
+      copy.set(channel);
+      this.port.postMessage(copy, [copy.buffer]);
+    }
+    return true;
+  }
+});
+`;function qt(s,e){let t=new AudioContext,i=t.createMediaStreamSource(e),n=t.sampleRate,r=null,a=!1,o=null,u=d=>{if(a)return;let l=r?Kt(r,d):new Float32Array(d),{pcm16:c,remaining:h}=Ht(l,n,Ue);r=h,c.length>0&&s.sendAudioChunk(c)};return(async()=>{let d=await Ut(t,i,u);if(a){d.dispose();return}o=d.dispose})(),()=>{a=!0,o?.(),o=null,i.disconnect(),t.close(),e.getTracks().forEach(d=>d.stop())}}async function Ut(s,e,t){let i=s.createGain();if(i.gain.value=0,i.connect(s.destination),typeof AudioWorkletNode=="function"&&s.audioWorklet)try{let r=new Blob([Pt],{type:"application/javascript"}),a=URL.createObjectURL(r);try{await s.audioWorklet.addModule(a)}finally{URL.revokeObjectURL(a)}let o=new AudioWorkletNode(s,"speechkit-capture",{numberOfInputs:1,numberOfOutputs:1,channelCount:1});return o.port.onmessage=u=>t(u.data),e.connect(o),o.connect(i),{dispose:()=>{o.port.onmessage=null,o.disconnect(),i.disconnect()}}}catch{}let n=s.createScriptProcessor(4096,1,1);return n.onaudioprocess=r=>{t(r.inputBuffer.getChannelData(0))},e.connect(n),n.connect(i),{dispose:()=>{n.onaudioprocess=null,n.disconnect(),i.disconnect()}}}function Kt(s,e){let t=new Float32Array(s.length+e.length);return t.set(s,0),t.set(e,s.length),t}function Ht(s,e,t){if(e===t)return{pcm16:Ft(s),remaining:new Float32Array(0)};let i=e/t,n=Math.floor(s.length/i),r=new Int16Array(n);for(let o=0;o<n;o++){let u=o*i,d=Math.floor(u),l=Math.min(d+1,s.length-1),c=u-d,h=(s[d]??0)*(1-c)+(s[l]??0)*c;r[o]=je(h*32767)}let a=Math.floor(n*i);return{pcm16:r,remaining:s.slice(a)}}function Ft(s){let e=new Int16Array(s.length);for(let t=0;t<s.length;t++)e[t]=je((s[t]??0)*32767);return e}function je(s){return s>32767?32767:s<-32768?-32768:Math.round(s)}function Dt(s){let e=null,t=0,i=new Set;function n(){return e||(e=new AudioContext({sampleRate:ve}),t=e.currentTime),e}return{play(r){let a=n(),o=new Int16Array(r),u=a.createBuffer(1,o.length,ve),d=u.getChannelData(0),l=0;for(let v=0;v<o.length;v++){let p=(o[v]??0)/32767;d[v]=p,l+=p*p}s?.(Math.min(1,Math.sqrt(l/Math.max(1,o.length))*3));let c=a.createBufferSource();c.buffer=u,c.connect(a.destination),i.add(c),c.onended=()=>{i.delete(c),i.size===0&&s?.(0)};let h=Math.max(a.currentTime,t);c.start(h),t=h+u.duration},flush(){for(let r of i){r.onended=null;try{r.stop()}catch{}}i.clear(),e&&(t=e.currentTime),s?.(0)},dispose(){this.flush(),e&&(e.close(),e=null)}}}function $t(s){return{version:"speechkit.voice_surface.v1",surface:s.surface??"floating_panel",mode:"voice_agent",capture_policy:"push_to_talk",transport:"voiceagent_ws_ticket",capabilities:{dictation:!1,assist:!1,voice_agent:!0,wakeword_local:!1,tts:!0,barge_in:!0,local_pairing:!1},session:{},provider:s.start?.provider!==void 0?{provider_id:s.start.provider}:{}}}function J(s,e){let t=s.startsWith("microphone_");return{error_code:s,reason_code:s,capability:"speechkit.voiceagent.live",required_features:[],missing_features:[],retryable:e,user_guidance:{title:t?"Microphone is not available":"Live voice session failed",body:t?"The microphone could not be opened, so no voice session was started.":"The voice session could not be started or was interrupted.",next_steps:t?["Allow or connect a microphone, then try again."]:e?["Check the connection and try again."]:["Check the voice-agent configuration."]}}}function Bt(){return navigator.mediaDevices.getUserMedia({audio:{echoCancellation:!0,noiseSuppression:!0,channelCount:1}})}function jt(s,e){if(typeof AudioContext>"u")return()=>{};let t=new AudioContext,i=t.createAnalyser();i.fftSize=1024,t.createMediaStreamSource(s).connect(i);let n=new Float32Array(i.fftSize),r=setInterval(()=>{i.getFloatTimeDomainData(n);let a=0;for(let o=0;o<n.length;o++)a+=(n[o]??0)**2;e(Math.min(1,Math.sqrt(a/n.length)*4))},50);return()=>{clearInterval(r),e(0),t.close()}}function We(s){let e=$t(s),t=te(e),i=new Set,n=new Set,r=!1,a=!1,o=null,u=null,d=null,l="",c="",h=f=>s.onDiagnostic?.(f),v=(f,m)=>{for(let b of n)b(f,m)};function p(f){if(r)return;let m={surface:e.surface,mode:e.mode,...f};t=we(t,m);for(let b of i)b(t)}function g(){u?.(),u=null,d?.(),d=null;let f=o;if(o=null,a=!1,f)try{f.flushPlayback(),f.close()}catch{}v(0,"input"),v(0,"output")}async function x(){if(t=te(e),l="",c="",!s.getAudioStream){let m=await Oe();if(m==="denied"||m==="unsupported"){let b=m==="denied"?"microphone_permission_denied":"microphone_unsupported";h(`microphone ${m}`),p({type:"voice.denied",error:J(b,m==="denied")});return}}h("requesting microphone\u2026");let f;try{f=await(s.getAudioStream??Bt)()}catch(m){h(`microphone failed: ${m?.message??String(m)}`),p({type:"voice.denied",error:J(ce(m),!0)});return}h(`minting session at ${s.serverUrl}\u2026`);try{o=await Be({serverUrl:s.serverUrl,...s.token!==void 0?{token:s.token}:{},...s.basePath!==void 0?{basePath:s.basePath}:{},start:s.start??{},onPlaybackLevel:m=>v(m,"output"),hooks:{onState:m=>h(`agent state: ${m}`),onUserTranscript:(m,b)=>{l=me(l,m),b?(p({type:"voice.transcript_final",text:l,final:!0}),l=""):p({type:"voice.transcript_draft",text:l})},onAgentTranscript:(m,b)=>{c=me(c,m),p({type:"voice.agent_turn",output_text:c,final:b}),b&&(c="")},onAudio:m=>o?.playChunk(m),onInterrupted:()=>{o?.flushPlayback(),p({type:"voice.barge_in",reason_code:"user_spoke_during_tts"})},onError:m=>{let b=m instanceof Error?m.message:`${m.code}: ${m.message}`;h(`error: ${b}`),g(),p({type:"voice.denied",error:J("session_error",!0)})},onClose:m=>{h(`session closed: ${m}`),a&&(g(),p({type:"voice.tts_finished"}))}}})}catch(m){ae(f),h(`connect failed: ${m.message}`),p({type:"voice.denied",error:J("session_connect_failed",!0)});return}u=o.attachMicrophone(f),d=jt(f,m=>v(m,"input")),a=!0,h(`session ${o.ticket.session_id} live`),p({type:"voice.capture_started"})}return{contract:e,start(f){if(!(a||r))return x()},stop(){a&&(p({type:"voice.capture_stopped"}),g(),p({type:"voice.tts_finished"}))},cancel(){g(),p({type:"voice.cancelled",reason_code:"user_cancelled"})},interrupt(){o?.flushPlayback(),p({type:"voice.barge_in",reason_code:"user_interrupt_button"})},subscribe(f){return i.add(f),f(t),()=>i.delete(f)},getState(){return t},subscribeLevel(f){return n.add(f),()=>n.delete(f)},dispose(){g(),r=!0,i.clear(),n.clear()}}}var Wt={rosette:"/assistant/marks/rosette.png",k:"/assistant/marks/k.png"},ye="speechkit.assistant.appearance",Qe="speechkit.assistant.token",Z={variant:"aura",mark:"rosette",transcript:!0};function Ze(s){return s==="aura"||s==="waveform"}function Ye(s,e){if(typeof s!="object"||s===null)return e;let t=s;return{variant:Ze(t.variant)?t.variant:e.variant,mark:typeof t.mark=="string"&&Y(t.mark)?t.mark:e.mark,transcript:typeof t.transcript=="boolean"?t.transcript:e.transcript}}function _(s){let e=document.getElementById(s);if(!e)throw new Error(`missing #${s}`);return e}var N=_("assistant"),X=_("session-toggle"),Ge=_("appearance-toggle"),Je=_("appearance-panel"),Yt=_("appearance-reset"),fe=_("transcript-toggle"),Gt=_("connection-note"),Xe=_("token-row"),Q=_("token-input"),ge={...Z},ee={...Z},F=null,ke=!1;function Jt(){try{let s=localStorage.getItem(ye);return s?JSON.parse(s):null}catch{return null}}function D(s,e){ee=s,N.setAttribute("variant",s.variant);let t=he(s.mark,Wt);t?N.setAttribute("mark-src",t):N.removeAttribute("mark-src");let i=pe(s.mark);i?N.style.setProperty("--sk-assistant-mark-ratio",i):N.style.removeProperty("--sk-assistant-mark-ratio"),N.toggleAttribute("transcript",s.transcript),fe.checked=s.transcript;for(let n of document.querySelectorAll("#variant-chips button"))n.dataset.active=String(n.dataset.variant===s.variant);for(let n of document.querySelectorAll("#mark-chips button"))n.dataset.active=String(n.dataset.mark===s.mark);if(e)try{localStorage.setItem(ye,JSON.stringify(s))}catch{}}function be(){return document.body.dataset.smokeToken?.trim()??""}function Xt(){let s=be();return s||Q.value.trim()}function xe(s){Gt.textContent=s}function Qt(){F?.dispose(),F=null}function Zt(){Qt();let s={serverUrl:window.location.origin,surface:"floating_panel",onDiagnostic:i=>xe(i)},e=Xt();e&&(s.token=e);let t=We(s);return F=t,N.controller=t,t.subscribe(i=>{ke=i.status!=="idle"&&i.status!=="cancelled"&&i.status!=="denied",X.textContent=ke?"Stop":"Start"}),t}X.addEventListener("click",()=>{if(ke&&F){F.stop();return}Zt().start("voice_agent")});Ge.addEventListener("click",()=>{let s=Je.hidden;Je.hidden=!s,Ge.setAttribute("aria-expanded",String(s))});for(let s of document.querySelectorAll("#variant-chips button"))s.addEventListener("click",()=>{let e=s.dataset.variant;Ze(e)&&D({...ee,variant:e},!0)});for(let s of document.querySelectorAll("#mark-chips button"))s.addEventListener("click",()=>{let e=s.dataset.mark;typeof e=="string"&&Y(e)&&D({...ee,mark:e},!0)});fe.addEventListener("change",()=>{D({...ee,transcript:fe.checked},!0)});Yt.addEventListener("click",()=>{try{localStorage.removeItem(ye)}catch{}D({...ge},!1)});Q.addEventListener("change",()=>{try{localStorage.setItem(Qe,Q.value.trim())}catch{}});async function ei(){try{Q.value=localStorage.getItem(Qe)??""}catch{}try{let s=await fetch("/v1/server/settings",{cache:"no-store"});if(!s.ok)throw new Error(`settings request failed: ${s.status}`);let e=await s.json();ge=Ye(e.assistant_ui??{},{...Z,transcript:ti(e.assistant_ui)});let t=e.auth,n=(typeof t?.mode=="string"?t.mode:"")!=="none"&&be()==="";Xe.hidden=!n;let r=typeof e.version=="string"?e.version:"";xe(`Connected to ${window.location.host}${r?` \xB7 ${r}`:""}`),X.disabled=!1}catch{xe("Server settings unavailable \u2014 you can still try starting a session."),Xe.hidden=be()!=="",X.disabled=!1}D(Ye(Jt(),ge),!1)}function ti(s){if(typeof s=="object"&&s!==null){let e=s;if(typeof e.transcript_default=="boolean")return e.transcript_default}return Z.transcript}ei();})();
+</script>
+</body>
+</html>

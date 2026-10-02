@@ -335,7 +335,7 @@ func TestDeepgramBuildSpeak(t *testing.T) {
 	}
 
 	// Flux uses the array form with Aura-2 as the fallback entry.
-	flux := (&Provider{SpeakModel: deepgramSpeakModelFluxEN, SpeakSpeed: 1.13}).
+	flux := (&Provider{SpeakModel: deepgramSpeakModelFluxEN, SpeakSpeed: 1.13, SpeakExpressivity: 1}).
 		buildSpeak("en-US", "", []string{"en"})
 	entries, ok := flux.([]any)
 	if !ok || len(entries) != 2 {
@@ -347,6 +347,9 @@ func TestDeepgramBuildSpeak(t *testing.T) {
 	}
 	if primary["speed"] != 1.15 {
 		t.Errorf("speed should snap to the nearest Flux step, got %v", primary["speed"])
+	}
+	if primary["expressivity"] != 1 {
+		t.Errorf("expressivity should reach the Flux speak provider, got %v", primary["expressivity"])
 	}
 	fallback := entries[1].(map[string]any)["provider"].(map[string]any)
 	if fallback["model"] != deepgramSpeakModelDefaultEN {

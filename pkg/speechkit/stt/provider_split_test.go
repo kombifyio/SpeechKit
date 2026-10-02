@@ -25,16 +25,16 @@ func TestProviderPackagesSatisfyTheContract(t *testing.T) {
 		want string
 		got  stt.STTProvider
 	}{
-		{"stt/google.New", "google", google.New("k", "latest_long")},
-		{"stt/deepgram.New", "deepgram", deepgram.New("k", "nova-3")},
-		{"stt/assemblyai.New", "assemblyai", assemblyai.New("k", "universal")},
-		{"stt/huggingface.New", "huggingface", huggingface.New("m", "t")},
-		{"stt/openrouter.New", "openrouter", openrouter.New("k", "m")},
-		{"stt/openaicompat.NewOpenAI", "openai", openaicompat.NewOpenAI("k")},
-		{"stt/openaicompat.NewGroq", "groq", openaicompat.NewGroq("k")},
-		{"stt/openaicompat.NewOllama", "ollama", openaicompat.NewOllama("http://h:1", "m")},
-		{"stt/vps.New", "vps", vps.New("http://h:1", "k")},
-		{"stt/local.New", "local", local.New(1, "p", "")},
+		{"stt/google.New", "google", google.New(google.Options{APIKey: "k", Model: "latest_long"})},
+		{"stt/deepgram.New", "deepgram", deepgram.New(deepgram.Options{APIKey: "k", Model: "nova-3"})},
+		{"stt/assemblyai.New", "assemblyai", assemblyai.New(assemblyai.Options{APIKey: "k", Models: "universal"})},
+		{"stt/huggingface.New", "huggingface", huggingface.New(huggingface.Options{Model: "m", APIKey: "t"})},
+		{"stt/openrouter.New", "openrouter", openrouter.New(openrouter.Options{APIKey: "k", Model: "m"})},
+		{"stt/openaicompat.NewOpenAI", "openai", openaicompat.NewOpenAI(openaicompat.Options{APIKey: "k"})},
+		{"stt/openaicompat.NewGroq", "groq", openaicompat.NewGroq(openaicompat.Options{APIKey: "k"})},
+		{"stt/openaicompat.NewOllama", "ollama", openaicompat.NewOllama(openaicompat.Options{BaseURL: "http://h:1", Model: "m"})},
+		{"stt/vps.New", "vps", vps.New(vps.Options{BaseURL: "http://h:1", APIKey: "k"})},
+		{"stt/local.New", "local", local.New(local.Options{Port: 1, ModelPath: "p"})},
 	}
 
 	for _, tc := range cases {

@@ -80,6 +80,58 @@ Errors are sentinels: `dictation.ErrMissingRecorder`, `ErrAudioTooShort`,
 `ErrNotRecording`, `capture.ErrBackendUnavailable`, `live.Err*`,
 `assist.ErrMissingExecutor` — branch with `errors.Is`, never on message text.
 
+## Quickstart per mode
+
+Each snippet is the core of a runnable program; the linked directory is the
+full version (with env handling and a prompt loop) and is what CI builds.
+
+**Dictation** — record, transcribe, return the text (no LLM, never rewritten).
+Full local program: [`examples/local-dictation`](../../examples/local-dictation/README.md).
+
+```go
+rec, _ := capture.Open(capture.Config{}) // Windows+cgo; elsewhere bring your own speechkit.AudioRecorder
+stt := openaicompat.NewOpenAI(openaicompat.Options{APIKey: os.Getenv("OPENAI_API_KEY")})
+svc, _ := dictation.NewService(dictation.Options{
+	Recorder:    rec,
+	Transcriber: sttpkg.AsTranscriber(stt), // import sttpkg ".../pkg/speechkit/stt"
+	Language:    "en",
+})
+_ = svc.Start(ctx)
+// ... user speaks ...
+run, _ := svc.Stop(ctx)
+fmt.Println(run.Transcript.Text)
+```
+
+**Assist** — one-shot text in, answer (and optional speech) out, with any LLM
+you call yourself. Full program with an OpenAI-compatible/llama.cpp generator:
+[`examples/assist/in-process`](../../examples/assist/in-process/main.go).
+
+```go
+svc, _ := assist.NewService(assist.Options{
+	Generator: assist.GenerateFunc(func(ctx context.Context, req speechkit.AssistRequest) (speechkit.AssistResult, error) {
+		return speechkit.AssistResult{Text: callYourLLM(ctx, req.Text), Locale: req.Locale}, nil
+	}),
+})
+res, _ := svc.Process(ctx, speechkit.AssistRequest{Text: "summarise my day", Locale: "en"})
+fmt.Println(res.Text)
+```
+
+**Voice Agent** — realtime audio-to-audio session, text or PCM in. Full
+program: [`examples/voice-agent/in-process`](../../examples/voice-agent/in-process/main.go)
+(OpenAI Realtime). Offline `Example*` functions for `voiceagent`,
+`voiceagent/live` and `voiceagent/cascaded` show the same entry points with
+in-memory providers.
+
+```go
+sess := live.NewSession(openai.New(), live.Callbacks{ // live/openai = OpenAI Realtime
+	OnOutputTranscript: func(text string, done bool) { fmt.Print(text) },
+	OnAudio:            func(pcm []byte) { /* play 24 kHz PCM16 mono */ },
+})
+_ = sess.Start(ctx, live.LiveConfig{APIKey: os.Getenv("OPENAI_API_KEY"), Locale: "en"}, live.DefaultIdleConfig())
+defer sess.Stop()
+_ = sess.SendText("Hello!") // or sess.SendAudio(pcm16kMono)
+```
+
 ## 4. Pick a provider and a policy
 
 - **Providers** live in `stt/{local,openaicompat,deepgram,google,assemblyai,huggingface,openrouter,vps}`;

@@ -184,6 +184,13 @@ Render it with any OpenAPI viewer or generate a typed client with
 `openapi-generator`. The canonical browser-facing API prefix is `/api/v1`; the
 original `/v1` paths remain available for compatibility.
 
+This is the **server** spec. The similarly named
+[`docs/api/openapi.v1.yaml`](../api/openapi.v1.yaml) ("SpeechKit Local Control
+API") describes the separate desktop-host control plane; see
+[`docs/api/README.md`](../api/README.md). The TypeScript client types in
+`clients/typescript/packages/client/src/generated/openapi.ts` are generated from
+this file (`pnpm run gen:types` in that package; CI fails on drift).
+
 OpenAI-audio clients such as Open WebUI can use `POST /v1/audio/transcriptions`
 and `POST /v1/audio/speech` directly. See
 [`local-only-stack.md`](./local-only-stack.md) for these routes and for the
@@ -503,7 +510,7 @@ The server then answers DNS-SD queries for `_speechkit._tcp` with a TXT record
 carrying `url=<advertise_url>`, `modes=<enabled modes>`, and `version=`.
 Discovery only removes the need to type an address: authentication
 (`auth_mode`, bearer/OIDC) applies unchanged, and the TXT record never carries
-credentials. Implementation: `internal/server/discovery`. The Android app
+credentials. Implementation: `app/internal/server/discovery`. The Android app
 browses the same service type from Settings and fills the server URL; it
 never takes a token from TXT. The Windows Settings Server Target card
 browses the same service type.
@@ -534,10 +541,10 @@ ships as a release asset for desktop workflows.
 ## Directory layout
 
 ```text
-cmd/speechkit-server/     # Linux entry point (//go:build linux)
-cmd/speechkit-mcp/        # Agent MCP server for docs, validation, management
-cmd/speechkit-cli/        # CLI diagnostics and scaffolding
-internal/server/          # Server bootstrap, auth, handlers, health
+app/cmd/speechkit-server/     # Linux entry point (//go:build linux)
+app/cmd/speechkit-mcp/        # Agent MCP server for docs, validation, management
+app/cmd/speechkit-cli/        # CLI diagnostics and scaffolding
+app/internal/server/          # Server bootstrap, auth, handlers, health
 internal/{ai,assist,...}/ # Shared implementation used by server and examples
 pkg/speechkit/            # Public SDK imports for host applications
 deploy/docker/            # Dockerfile and self-host compose example

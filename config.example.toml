@@ -62,6 +62,7 @@ hotkey_mode = "hold_to_talk"
 auto_stop_silence_ms = 1500
 fast_mode_silence_ms = 1500
 dictate_silence_timeout_sec = 3  # Seconds of silence before toggle dictation auto-stops. 0 disables.
+max_recording_seconds = 600      # Hard cap on one dictation/Assist recording, even during continuous speech. Meetings are not capped.
 dictation_intermediate_segment_ms = 6000 # Minimum utterance duration before segment_batch emits a pause-bounded live segment.
 dictation_processing_mode = "auto" # auto | final_full | segment_batch | provider_stream. auto = provider-native live streaming when the selected STT profile supports it (lowest latency), else final_full.
 dictation_live_commit = "passage" # immediate | phrase | passage. Live field inject: passage waits ~2 sentences (or a pause) so Deepgram/AssemblyAI can clean a chunk first. Overlay drafts stay word-level.
@@ -170,8 +171,8 @@ enabled = false           # Legacy STT toggle for HF routed inference; dedicated
 model = "openai/whisper-large-v3" # Routed/shared provider model, not a dedicated endpoint deployment
 token_env = "HF_TOKEN"    # Fallback env var when no stored host token exists
 # utility_model = "Qwen/Qwen3.5-9B"
-# assist_model = "Qwen/Qwen3.5-27B"
-# agent_model = "Qwen/Qwen3.5-27B" # Voice Agent pipeline fallback / legacy agent flow
+# assist_model = "Qwen/Qwen3.8-27B"
+# agent_model = "Qwen/Qwen3.8-27B" # Voice Agent pipeline fallback / legacy agent flow
 
 [routing]
 strategy = "local-only"   # dynamic, local-only, cloud-only
@@ -201,15 +202,20 @@ auto_download = true
 # manifest_url = "https://api.github.com/repos/kombifyio/SpeechKit/releases/latest"
 #
 # How a downloaded installer is trusted, in order of strength:
-#   1. Authenticode signature (releases signed by the publisher certificate).
+#   1. Authenticode signature whose signer certificate subject O (or CN when
+#      there is no O) equals the expected publisher exactly.
 #   2. SHA-256 digest published as SHA256SUMS.txt alongside the release —
 #      used while releases are not signed yet. Proves the download arrived
-#      intact; does not prove publisher identity.
+#      intact; does NOT prove publisher identity ("checksum only").
+# Checksum-only updates are never installed automatically by a build stamped
+# to require signed updates, nor once this client has verified a signed one.
 # A release offering neither is never installed automatically; the app links
-# to the release page instead.
+# to the release page instead. In every mode the installer's own version must
+# equal the release version and be newer than the running build.
 #
-# signature_pin_thumbprint pins the expected Authenticode SHA-1 thumbprint as
-# an extra check against a compromised signing certificate.
+# signature_pin_thumbprint additionally pins the signing certificate (SHA-1
+# thumbprint, or SHA-256). It is required on top of the publisher match, never
+# instead of it.
 # signature_pin_thumbprint = ""
 
 [logging]
@@ -251,8 +257,10 @@ backend = "sqlite"        # Local mode default
 sqlite_path = ""          # Auto: %APPDATA%/SpeechKit/feedback.db (audio files live in sibling audio/)
 postgres_dsn = ""         # Required when backend = "postgres"
 save_audio = true         # Persist raw WAV files locally
-audio_retention_days = 7  # 0 disables automatic deletion
+audio_retention_days = 7  # 0 disables automatic deletion; applies even after save_audio is turned off
 max_audio_storage_mb = 500
+meeting_retention_days = 0     # Delete finished meetings after N days; 0 keeps them; pinned meetings are kept
+transcript_retention_days = 0  # Delete dictation/Assist/Voice Agent history after N days; 0 keeps it; pinned transcripts are kept
 
 [vocabulary]
 dictionary = ""           # Migration/compat only. One entry per line; mapped into Words plus substitution Replacements.
@@ -275,12 +283,12 @@ active_template_ids = ["standard-punctuation-de-en"] # Native Words/Replacements
 # ──────────────────────────────────────────────
 
 [model_selection.dictate]
-primary_profile_id = "stt.local.whispercpp"    # Default local built-in primary. Alternatives: stt.ollama.gemma4-e4b-transcribe, stt.routed.whisper-large-v3, stt.openai.gpt-4o-transcribe
+primary_profile_id = "stt.local.whispercpp"    # Default local built-in primary. Alternatives: stt.ollama.gemma4-e4b-transcribe, stt.routed.whisper-large-v3, stt.openai.gpt-transcribe
 fallback_profile_id = ""
 mode_source = "local"  # "local" | "server"
 
 [model_selection.assist]
-primary_profile_id = "assist.builtin.gemma4-e4b"    # Default local built-in Assist LLM. Alternatives: assist.ollama.gemma4-e4b, assist.openai.gpt-5.4
+primary_profile_id = "assist.builtin.gemma4-e4b"    # Default local built-in Assist LLM. Alternatives: assist.ollama.gemma4-e4b, assist.openai.gpt-6
 fallback_profile_id = ""
 mode_source = "local"
 
@@ -413,7 +421,7 @@ format = "mp3"                # mp3, wav, opus, pcm
 
 [tts.openai]
 enabled = true
-model = "tts-1"               # tts-1 or tts-1-hd
+model = "gpt-4o-mini-tts"               # gpt-4o-mini-tts (tts-1/tts-1-hd are retired)
 voice = "nova"                # alloy, echo, fable, onyx, nova, shimmer
 
 [tts.deepgram]
@@ -461,7 +469,7 @@ timeout_sec = 30                         # subprocess timeout
 [voice_agent]
 enabled = true
 provider = "openai"                         # Realtime backend: "openai", "deepgram", "assemblyai", or opt-in BYOK "gemini" (needs [providers.google]); Server-Target also accepts "cascaded"/"moshi"
-model = "gpt-realtime-2"                    # OpenAI Realtime model; provider-native defaults apply when empty.
+model = "gpt-realtime-2.1"                    # OpenAI Realtime model; provider-native defaults apply when empty.
 fallback_model = ""
 voice = "Kore"                             # Voice for real-time model
 agent_profile_id = "default"               # default, brainstorming_companion, humor_companion, support_companion
@@ -519,11 +527,11 @@ vad_silence_duration_ms = 700
 # [providers.openai]
 # enabled = false
 # api_key_env = "OPENAI_API_KEY"
-# stt_model = "gpt-4o-transcribe"
-# utility_model = "gpt-4o-mini"
-# assist_model = "gpt-4o"
-# agent_model = "gpt-4o"
-# tts_model = "tts-1"
+# stt_model = "gpt-transcribe"
+# utility_model = "gpt-6-luna"
+# assist_model = "gpt-6.1-sol"
+# agent_model = "gpt-6.1-sol"
+# tts_model = "gpt-4o-mini-tts"
 # tts_voice = "nova"
 # realtime_model = "gpt-realtime-2.1-mini"   # the small realtime variant; gpt-realtime-mini is deprecated
 
@@ -531,9 +539,9 @@ vad_silence_duration_ms = 700
 # enabled = false
 # api_key_env = "GROQ_API_KEY"
 # stt_model = "whisper-large-v3-turbo"
-# utility_model = "llama-3.1-8b-instant"
-# assist_model = "llama-3.3-70b-versatile"
-# agent_model = "llama-3.3-70b-versatile"
+# utility_model = "openai/gpt-oss-20b"
+# assist_model = "openai/gpt-oss-120b"
+# agent_model = "openai/gpt-oss-120b"
 
 # Opt-in BYOK only — Google Cloud STT (batch, streaming, diarization), Google
 # Cloud TTS, and Gemini Live with YOUR OWN Google credentials. Never a default;
@@ -566,7 +574,7 @@ vad_silence_duration_ms = 700
 # enabled = false
 # api_key_env = "ASSEMBLYAI_API_KEY"
 # stt_models = "universal-3-5-pro,universal-2"
-# streaming_model = "universal-3-5-pro"
+# streaming_model = "universal-3-6-pro"
 # streaming_base_url = "wss://streaming.assemblyai.com"
 # Short clips (80ms–120s) ride the synchronous Universal-3.5 Pro endpoint
 # (finished transcript in one request, ~134ms p50) with prompt steering,
@@ -645,6 +653,13 @@ vad_silence_duration_ms = 700
 # # ignores this flag — there the integrating client decides whether to
 # # send the `app` / `window_title` request fields.
 # include_window_context = true
+# # capture_selection copies the foreground app's current selection (a
+# # synthetic Ctrl+C / Command-C) on each Assist request and sends it to the
+# # Assist provider — possibly a cloud model — as context. Terminals and
+# # remote-desktop windows never receive the copy chord (Ctrl+C would
+# # interrupt the running program). Set to false so Assist never reads a
+# # selection you did not ask about. Default: true.
+# capture_selection = true
 
 # [assist.home_assistant]
 # # Server-owned Smart-Home bridge. The local device-agent G0 path requires
@@ -731,9 +746,9 @@ vad_silence_duration_ms = 700
 # #   tts.local.piper                     Local Built-in (MIT, HA-compatible voice catalog)
 # #   tts.openedai.kokoro                 Local Provider (OpenAI-compatible Kokoro container)
 # #   tts.huggingface.parler-multilingual Cloud Provider (HF Inference Router)
-# #   tts.openai.tts-1-hd                 Direct Provider (OpenAI TTS-1-HD, six voices)
+# #   tts.openai.gpt-4o-mini-tts          Direct Provider (OpenAI GPT-4o mini TTS, 13 voices)
 # #   tts.google.studio-o-de              Direct Provider (Studio-O DE, opt-in BYOK via [providers.google]; never a default)
-# primary_profile_id = "tts.openai.tts-1-hd"
+# primary_profile_id = "tts.openai.gpt-4o-mini-tts"
 # fallback_profile_id = "tts.local.kokoro-82m"     # Local fallback when cloud is unavailable
 # mode_source = "local"
 
@@ -751,10 +766,11 @@ vad_silence_duration_ms = 700
 #
 # [agent_bridge.codex]
 # enabled = false
-# binary_path = ""                    # empty = PATH lookup; set to pin an absolute path
-# mode = "auto"                       # auto | app_server | exec
+# binary_path = ""                    # empty = PATH lookup; set to pin an absolute path (Windows: codex.exe only, never codex.cmd)
+# mode = "auto"                       # auto | app_server | exec (exec runs read-only tasks only: it has no approvals)
 # sandbox = "read-only"               # global ceiling: read-only | workspace-write
-# approval_timeout_sec = 120          # unanswered approval card => deny
+# approval_timeout_sec = 120          # unanswered approval/confirmation card => deny
+#                                     # (Call GPT, each task and each steer need an on-screen confirmation)
 # narration = "summary"               # off | summary | verbose
 # max_concurrent_turns = 1
 #

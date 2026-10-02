@@ -2,7 +2,7 @@
 // (GET /v1/voiceagent/sessions/{id}/ws).
 //
 // Kotlin mirror of the Voice Agent wire contract. Source of truth: the Go
-// structs in internal/server/voiceagent/protocol.go (the producer).
+// structs in app/internal/server/voiceagent/protocol.go (the producer).
 // docs/server/fixtures/voiceagent.v1.json is the interchange artifact all
 // consumers verify against — VoiceAgentFrameCodecTest replays it here
 // (consumer drift-check); docs/server/asyncapi.v1.yaml documents the channel.

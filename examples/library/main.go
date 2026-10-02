@@ -137,7 +137,7 @@ func main() {
 		Policy: speechkit.RuntimePolicy{
 			EnabledModes: []speechkit.Mode{speechkit.ModeDictation},
 			FixedProfiles: map[speechkit.Mode]string{
-				speechkit.ModeDictation: "stt.openai.whisper-1",
+				speechkit.ModeDictation: "stt.openai.gpt-transcribe",
 			},
 		},
 	})

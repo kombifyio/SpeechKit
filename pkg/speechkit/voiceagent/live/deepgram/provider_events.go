@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"strings"
 
 	"github.com/coder/websocket"
@@ -70,7 +69,7 @@ func (p *Provider) parseEvent(data []byte) (*live.LiveMessage, bool, error) {
 			Description string `json:"description"`
 		}
 		_ = json.Unmarshal(data, &ev)
-		slog.Warn("deepgram agent: server warning", "description", ev.Description)
+		p.log().Warn("deepgram agent: server warning", "description", ev.Description)
 		return nil, true, nil
 	case "UserStartedSpeaking":
 		// Barge-in: the kernel state machine uses this for interruption.
@@ -116,7 +115,7 @@ func (p *Provider) parseEvent(data []byte) (*live.LiveMessage, bool, error) {
 		args := map[string]any{}
 		if len(ev.Input) > 0 {
 			if err := json.Unmarshal(ev.Input, &args); err != nil {
-				slog.Warn("deepgram agent: function call input not an object", "name", ev.FunctionName)
+				p.log().Warn("deepgram agent: function call input not an object", "name", ev.FunctionName)
 			}
 		}
 		return live.NormalizeMessageEvents(&live.LiveMessage{

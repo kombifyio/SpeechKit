@@ -29,8 +29,8 @@ func TestOpenAISynthesize(t *testing.T) {
 		if err := json.Unmarshal(body, &req); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
-		if req.Model != "tts-1" {
-			t.Errorf("expected model tts-1, got %s", req.Model)
+		if req.Model != "gpt-4o-mini-tts" {
+			t.Errorf("expected model gpt-4o-mini-tts, got %s", req.Model)
 		}
 		if req.Input != "Hallo Welt" {
 			t.Errorf("expected input 'Hallo Welt', got %s", req.Input)

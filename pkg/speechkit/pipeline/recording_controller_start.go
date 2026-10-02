@@ -177,8 +177,49 @@ func (c *RecordingController) Start(opts speechkit.RecordingStartOptions) error 
 			c.startIdleWatcher(sessionID, observer, opts.IdleTimeout, opts.OnIdleTimeoutCallback)
 		}
 	}
+	if opts.MaxDuration > 0 && opts.OnMaxDurationCallback != nil {
+		c.startMaxDurationTimer(sessionID, opts.MaxDuration, opts.OnMaxDurationCallback)
+	}
 
 	return nil
+}
+
+// startMaxDurationTimer arms the hard recording-length cap for one session.
+// The callback fires at most once, and only while that same session is
+// still recording and not already stopping; Stop disarms the timer.
+//
+// Start arms the timer after it released c.mu, so a fast Stop and a new
+// Start can run in between. The session id is the generation: a timer is
+// installed only while its own session is still the current, recording one,
+// so an older Start can never disarm or replace a newer session's cap.
+func (c *RecordingController) startMaxDurationTimer(sessionID uint64, limit time.Duration, callback func()) {
+	timer := time.AfterFunc(limit, func() {
+		c.mu.Lock()
+		active := c.sessionID == sessionID && c.recording && !c.stopping
+		c.mu.Unlock()
+		if !active {
+			return
+		}
+		c.onLog(fmt.Sprintf("Maximum recording length reached (%.0fs) — stopping.", limit.Seconds()), "warning")
+		callback()
+	})
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.sessionID != sessionID || !c.recording || c.stopping {
+		timer.Stop()
+		return
+	}
+	c.stopMaxDurationTimerLocked()
+	c.maxDurationTimer = timer
+}
+
+// stopMaxDurationTimerLocked disarms the current session's length cap. The
+// caller holds c.mu.
+func (c *RecordingController) stopMaxDurationTimerLocked() {
+	if c.maxDurationTimer != nil {
+		c.maxDurationTimer.Stop()
+		c.maxDurationTimer = nil
+	}
 }
 
 // startIdleWatcher spawns a goroutine that polls observer.IdleSince()

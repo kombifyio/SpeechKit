@@ -18,7 +18,7 @@ release/latest/windows/*.msi
 release/latest/windows/*.zip
 
 # Server-target Linux binary (no extension, dropped at repo root by
-# `go build ./cmd/speechkit-server`). Catches it on Windows dev hosts
+# `go build ./app/cmd/speechkit-server`). Catches it on Windows dev hosts
 # where *.exe doesn't apply.
 /speechkit-server
 /speechkit-cli
@@ -64,7 +64,7 @@ config.toml
 /SpeechKit/
 /audio/
 /data/
-/internal/store/audio/
+/app/internal/store/audio/
 
 # Local tooling state
 .cache/
@@ -142,7 +142,7 @@ infra/cloudflare/**/.wrangler/
 # ignored via android/.gitignore.
 
 # Embedded frontend build output (regenerated on every frontend build)
-internal/frontendassets/dist/
+app/internal/frontendassets/dist/
 clients/typescript/**/dist/
 # RepoWise local development index/cache
 .repowise/
@@ -161,3 +161,6 @@ tools/wakeword-training/corpus-packages/
 # SpeechKit website: generated Paraglide output
 Website/src/paraglide/
 Website/project.inlang/cache/
+
+# Local desktop build output (`go build ./app/cmd/speechkit` from its directory).
+/app/cmd/speechkit/speechkit

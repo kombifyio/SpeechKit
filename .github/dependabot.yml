@@ -10,6 +10,19 @@ updates:
       go-minor-patch:
         update-types: [minor, patch]
 
+  - package-ecosystem: gomod
+    directory: /app
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    labels: [dependencies, go]
+    groups:
+      go-minor-patch:
+        update-types: [minor, patch]
+    ignore:
+      # The root SDK module is resolved through the replace directive in app/go.mod.
+      - dependency-name: github.com/kombifyio/SpeechKit
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

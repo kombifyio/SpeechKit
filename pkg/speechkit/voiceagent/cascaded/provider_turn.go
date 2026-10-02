@@ -3,10 +3,10 @@ package cascaded
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
@@ -204,7 +204,7 @@ func (p *Provider) renderHistorySnapshot() string {
 }
 
 func (p *Provider) emitError(code, message string) {
-	slog.Warn("cascaded: emit error", "code", code, "err", message)
+	logutil.Resolve(p.logger).Warn("cascaded: emit error", "code", code, "err", message)
 	select {
 	case p.messages <- &Message{OutputTranscript: "[" + code + "] " + message, OutputTranscriptDone: true}:
 	case <-p.closedCh:

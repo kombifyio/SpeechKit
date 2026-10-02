@@ -10,6 +10,8 @@
 // tool executor plus the strict-mode policy fields from the host config.
 // The ready-made Voice-Companion skills live in the skills subpackage; the
 // codeword catalog they match against lives in the shortcuts subpackage.
+//
+// Stability: Stable — no breaking change without a minor version bump and a changelog callout.
 package assist
 
 import (
@@ -20,8 +22,10 @@ import (
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/localization"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/telemetry"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
 )
 
@@ -199,11 +203,14 @@ type Options struct {
 	// leaves the router's own defaults in charge.
 	TTS *TTSOptions
 	// TTSBestEffort keeps the text result when synthesis fails: the failure
-	// is recorded as [speechkit.OutcomeAssistTTSFailed] and logged, and the
+	// is recorded as [telemetry.OutcomeAssistTTSFailed] and logged, and the
 	// result is returned without audio. Hosts that would rather show text
 	// than nothing set it; the default fails the request so a broken voice
 	// path stays visible.
 	TTSBestEffort bool
+	// Logger receives the service's diagnostics. Nil falls back to
+	// slog.Default() at log time.
+	Logger *slog.Logger
 }
 
 // Service is the embeddable Assist Mode implementation of
@@ -219,7 +226,8 @@ type Service struct {
 	ttsBestEffort bool
 	// tts is the service's private clone of Options.TTS; a pointer keeps
 	// Service comparable for existing SDK consumers.
-	tts *TTSOptions
+	tts    *TTSOptions
+	logger *slog.Logger
 }
 
 var _ speechkit.AssistService = (*Service)(nil)
@@ -242,6 +250,7 @@ func NewService(opts Options) (*Service, error) {
 		ttsRouter:     opts.TTSRouter,
 		ttsEnabled:    opts.TTSEnabled,
 		ttsBestEffort: opts.TTSBestEffort,
+		logger:        opts.Logger,
 	}
 	if opts.TTS != nil {
 		service.tts = &TTSOptions{
@@ -358,7 +367,7 @@ func (s *Service) synthesize(ctx context.Context, result speechkit.AssistResult)
 	}
 	if text == "" || result.Surface == speechkit.AssistSurfaceSilent {
 		if text == "" && result.Surface != speechkit.AssistSurfaceSilent {
-			speechkit.RecordOutcome(ctx, speechkit.OutcomeAssistEmptySpeak, errors.New("assist empty speak"))
+			telemetry.RecordOutcome(ctx, telemetry.OutcomeAssistEmptySpeak, errors.New("assist empty speak"))
 		}
 		return result, nil
 	}
@@ -370,8 +379,8 @@ func (s *Service) synthesize(ctx context.Context, result speechkit.AssistResult)
 	audio, err := s.ttsRouter.Synthesize(ctx, text, synthOpts)
 	if err != nil {
 		if s.ttsBestEffort {
-			speechkit.RecordOutcome(ctx, speechkit.OutcomeAssistTTSFailed, err)
-			slog.Warn("speechkit assist: TTS failed; returning the text result without audio", "err", err)
+			telemetry.RecordOutcome(ctx, telemetry.OutcomeAssistTTSFailed, err)
+			logutil.Resolve(s.logger).Warn("speechkit assist: TTS failed; returning the text result without audio", "err", err)
 			return result, nil
 		}
 		return result, err

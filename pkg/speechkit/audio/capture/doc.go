@@ -20,5 +20,7 @@
 // its PooledPCMRecorder optimisation).
 //
 // Playback (TTS/voice-agent output) is intentionally not part of this
-// package; the reference app keeps it in internal/audio.
+// package; the reference app keeps it in app/internal/audio.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package capture

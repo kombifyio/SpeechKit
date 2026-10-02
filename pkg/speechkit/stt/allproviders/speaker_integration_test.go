@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kombifyio/SpeechKit/internal/testutil"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/testutil"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
@@ -32,7 +32,7 @@ func TestIntegrationDeepgramDiarization(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), speakerIntegrationTimeout)
 	defer cancel()
 
-	result, err := deepgram.New(key, "nova-3").Transcribe(ctx, audio, speakerIntegrationOptions())
+	result, err := deepgram.New(deepgram.Options{APIKey: key, Model: "nova-3"}).Transcribe(ctx, audio, speakerIntegrationOptions())
 	if err != nil {
 		t.Fatalf("Deepgram Transcribe: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestIntegrationAssemblyAIDiarization(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), speakerIntegrationTimeout)
 	defer cancel()
 
-	provider := assemblyai.New(key, "universal-3-pro,universal-2")
+	provider := assemblyai.New(assemblyai.Options{APIKey: key, Models: "universal-3-pro,universal-2"})
 	provider.PollTimeout = speakerIntegrationTimeout
 	result, err := provider.Transcribe(ctx, audio, speakerIntegrationOptions())
 	if err != nil {
@@ -72,7 +72,7 @@ func TestIntegrationGoogleSTTDiarization(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), speakerIntegrationTimeout)
 	defer cancel()
 
-	result, err := google.New(key, "latest_long").Transcribe(ctx, audio, speakerIntegrationOptions())
+	result, err := google.New(google.Options{APIKey: key, Model: "latest_long"}).Transcribe(ctx, audio, speakerIntegrationOptions())
 	if err != nil {
 		t.Fatalf("Google STT Transcribe: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestIntegrationDeepgramSpeakerStreaming(t *testing.T) {
 
 	opts := speakerIntegrationOptions().Speaker
 	opts.PreferStreaming = true
-	stream, err := deepgram.New(key, "nova-3").StartSpeakerStream(ctx, opts, format)
+	stream, err := deepgram.New(deepgram.Options{APIKey: key, Model: "nova-3"}).StartSpeakerStream(ctx, opts, format)
 	if err != nil {
 		t.Fatalf("Deepgram StartSpeakerStream: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestIntegrationAssemblyAISpeakerStreaming(t *testing.T) {
 
 	opts := speakerIntegrationOptions().Speaker
 	opts.PreferStreaming = true
-	provider := assemblyai.New(key, "universal-3-pro,universal-2")
+	provider := assemblyai.New(assemblyai.Options{APIKey: key, Models: "universal-3-pro,universal-2"})
 	provider.StreamingModel = "universal-3-5-pro"
 	stream, err := provider.StartSpeakerStream(ctx, opts, format)
 	if err != nil {
@@ -419,7 +419,7 @@ func TestIntegrationGoogleSTTStreamingTranscription(t *testing.T) {
 
 	opts := speakerIntegrationOptions().Speaker
 	opts.PreferStreaming = true
-	stream, err := google.New("", "latest_long").StartSpeakerStream(ctx, opts, format)
+	stream, err := google.New(google.Options{Model: "latest_long"}).StartSpeakerStream(ctx, opts, format)
 	if err != nil {
 		t.Fatalf("Google StartSpeakerStream: %v", err)
 	}

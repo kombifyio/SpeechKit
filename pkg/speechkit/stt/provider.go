@@ -9,6 +9,8 @@
 // assemblyai and azurespeech; allproviders assembles all of them and
 // sttcontract is their conformance suite. Every adapter dials through
 // [github.com/kombifyio/SpeechKit/pkg/speechkit/netsec].
+//
+// Stability: Stable — no breaking change without a minor version bump and a changelog callout.
 package stt
 
 import (

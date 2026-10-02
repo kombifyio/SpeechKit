@@ -1,6 +1,6 @@
 {
   "schema": "speechkit.provider_option_matrix.v1",
-  "audited_at": "2026-09-04",
+  "audited_at": "2026-09-30",
   "source_of_truth": "pkg/speechkit/provideropts",
   "option_ids": [
     "language",
@@ -89,32 +89,31 @@
       "provider": "openai",
       "modality": "stt",
       "profile_ids": [
-        "stt.openai.gpt-4o-transcribe",
-        "stt.openai.whisper-1"
+        "stt.openai.gpt-transcribe"
       ],
-      "evidence_url": "https://platform.openai.com/docs/guides/speech-to-text",
+      "evidence_url": "https://developers.openai.com/api/docs/models/gpt-transcribe",
       "supports": {
         "language": "native",
         "detect_language": "derived",
         "prompt_hint": "native",
         "timestamps": "unsupported",
         "vocabulary_bias": "derived",
-        "keyterms": "unsupported",
+        "keyterms": "native",
         "punctuation": "unsupported",
         "smart_format": "unsupported",
         "endpointing_ms": "unsupported",
         "speaker_diarization": "unsupported",
-        "no_store": "unsupported"
+        "no_store": "unsupported",
+        "language_hints": "native"
       }
     },
     {
       "provider": "openai",
       "modality": "tts",
       "profile_ids": [
-        "tts.openai.tts-1-hd",
-        "tts.openai.tts-1"
+        "tts.openai.gpt-4o-mini-tts"
       ],
-      "evidence_url": "https://platform.openai.com/docs/guides/text-to-speech",
+      "evidence_url": "https://developers.openai.com/api/docs/guides/text-to-speech",
       "supports": {
         "voice": "native",
         "speed": "native",
@@ -151,7 +150,8 @@
       "modality": "stt",
       "profile_ids": [
         "stt.google.latest-long",
-        "stt.google.latest-long-diarization"
+        "stt.google.latest-long-diarization",
+        "stt.google.chirp-3"
       ],
       "evidence_url": "https://docs.cloud.google.com/speech-to-text/docs/reference/rest/v1/RecognitionConfig",
       "supports": {
@@ -280,7 +280,7 @@
       "provider": "openrouter",
       "modality": "stt",
       "profile_ids": [
-        "stt.openrouter.whisper-1"
+        "stt.openrouter.gpt-transcribe"
       ],
       "evidence_url": "https://openrouter.ai/docs/api/api-reference/transcriptions/create-audio-transcriptions",
       "supports": {
@@ -405,6 +405,53 @@
         "speed": "unsupported",
         "audio_format": "unsupported",
         "no_store": "provider_default"
+      }
+    },
+    {
+      "provider": "gemini",
+      "modality": "stt",
+      "profile_ids": [
+        "stt.google.gemini-3.5-transcribe"
+      ],
+      "evidence_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-transcribe",
+      "supports": {
+        "language": "native",
+        "detect_language": "derived",
+        "language_hints": "native",
+        "keyterms": "native",
+        "prompt_hint": "unsupported",
+        "speaker_diarization": "unsupported",
+        "endpointing_ms": "unsupported"
+      }
+    },
+    {
+      "provider": "gemini",
+      "modality": "tts",
+      "profile_ids": [
+        "tts.google.gemini-3.8-tts"
+      ],
+      "evidence_url": "https://ai.google.dev/gemini-api/docs/speech-generation",
+      "supports": {
+        "voice": "native",
+        "language": "native",
+        "audio_format": "derived",
+        "speed": "unsupported"
+      }
+    },
+    {
+      "provider": "gpt-live",
+      "modality": "voice_agent",
+      "profile_ids": [
+        "realtime.openai.gpt-live-1"
+      ],
+      "evidence_url": "https://developers.openai.com/api/docs/models/gpt-live-1",
+      "supports": {
+        "voice": "native",
+        "context_prompt": "native",
+        "reasoning_effort": "native",
+        "turn_detection": "unsupported",
+        "language_hints": "unsupported",
+        "resume": "unsupported"
       }
     }
   ]

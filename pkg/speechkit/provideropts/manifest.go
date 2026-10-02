@@ -7,7 +7,7 @@ const (
 	SchemaProviderOptions = "speechkit.provider_options.v1"
 	// ManifestUpdated is the date (YYYY-MM-DD) the built-in manifests were
 	// last audited against vendor documentation.
-	ManifestUpdated = "2026-08-25"
+	ManifestUpdated = "2026-09-30"
 
 	// Modalities a manifest describes; [FindManifest] keys on them.
 	ModalitySTT        = "stt"
@@ -21,13 +21,14 @@ const (
 func DefaultManifests() []ProviderOptionManifest {
 	return []ProviderOptionManifest{
 		deepgramSTTManifest(),
-		openAISTTManifest("openai", "OpenAI", []string{"stt.openai.gpt-4o-transcribe", "stt.openai.whisper-1"}, "https://platform.openai.com/docs/guides/speech-to-text"),
+		openAIDirectSTTManifest(),
 		openAISTTManifest("groq", "Groq", []string{"stt.groq.whisper-large-v3-turbo"}, "https://console.groq.com/docs/speech-to-text"),
 		openAISTTManifest("ollama", "Ollama", []string{"stt.ollama.gemma4-e4b-transcribe"}, "https://platform.openai.com/docs/guides/speech-to-text"),
 		// "vps" is the self-hosted whisper-server adapter's own identifier, which
 		// is what the resolver looks up; it has no catalog profile of its own.
 		openAISTTManifest("vps", "Self-hosted whisper-server", nil, "https://github.com/ggerganov/whisper.cpp"),
 		googleSTTManifest(),
+		geminiTranscribeSTTManifest(),
 		assemblyAISTTManifest(),
 		openRouterSTTManifest(),
 		huggingFaceSTTManifest(),
@@ -35,12 +36,14 @@ func DefaultManifests() []ProviderOptionManifest {
 		deepgramTTSManifest(),
 		openAITTSManifest(),
 		googleTTSManifest(),
+		geminiTTSManifest(),
 		huggingFaceTTSManifest(),
 		piperTTSManifest(),
 		deepgramVoiceAgentManifest(),
 		assemblyAIVoiceAgentManifest(),
 		geminiVoiceAgentManifest(),
 		openAIVoiceAgentManifest(),
+		openAILiveVoiceAgentManifest(),
 	}
 }
 
@@ -93,6 +96,21 @@ func deepgramSTTManifest() ProviderOptionManifest {
 // Every provider built on it — OpenAI, Groq, Ollama, the self-hosted
 // whisper-server — posts the same four fields (file, language, model, prompt)
 // and decodes only the text field back, so they share one capability statement.
+// openAIDirectSTTManifest is the OpenAI API's own transcription manifest:
+// gpt-transcribe adds native keywords and candidate languages on top of the
+// shared OpenAI-compatible request shape.
+func openAIDirectSTTManifest() ProviderOptionManifest {
+	const evidence = "https://developers.openai.com/api/docs/models/gpt-transcribe"
+	m := openAISTTManifest("openai", "OpenAI", []string{"stt.openai.gpt-transcribe"}, evidence)
+	for i, opt := range m.Options {
+		if opt.ID == OptionKeyterms {
+			m.Options[i] = native(OptionKeyterms, TypeStringList, "Native keywords", "keywords", evidence)
+		}
+	}
+	m.Options = append(m.Options, native(OptionLanguageHints, TypeStringList, "Candidate languages", "languages", evidence))
+	return m
+}
+
 func openAISTTManifest(provider, label string, profileIDs []string, evidence string) ProviderOptionManifest {
 	return manifest(provider, label, ModalitySTT, profileIDs, []OptionSupport{
 		languageOption("language", evidence,
@@ -109,8 +127,24 @@ func openAISTTManifest(provider, label string, profileIDs []string, evidence str
 	})
 }
 
+// geminiTranscribeSTTManifest describes the Gemini Transcribe adapter, which
+// resolves its options under its own provider name "gemini".
+func geminiTranscribeSTTManifest() ProviderOptionManifest {
+	const evidence = "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-transcribe"
+	return manifest("gemini", "Gemini Transcribe", ModalitySTT, []string{"stt.google.gemini-3.5-transcribe"}, []OptionSupport{
+		languageOption("transcription_config.language_codes", evidence,
+			"Multilanguage: OMIT the field. language_codes only steers recognition; left out, Gemini Transcribe detects the language itself, so an unpinned session sends none."),
+		derived(OptionDetectLanguage, TypeBool, "Detect language", "Omit language_codes so the model detects the language.", evidence),
+		native(OptionLanguageHints, TypeStringList, "Candidate languages", "transcription_config.language_codes", evidence),
+		native(OptionKeyterms, TypeStringList, "Custom vocabulary", "transcription_config.custom_vocabulary", evidence),
+		unsupported(OptionPromptHint, TypeString, "Prompt hint", "Gemini Transcribe takes custom vocabulary, not a free-text prompt."),
+		unsupported(OptionSpeakerDiarization, TypeBool, "Speaker diarization", "The adapter runs smart mode, which does not return speaker annotations."),
+		unsupported(OptionEndpointingMs, TypeInt, "Endpointing", "Batch transcription has no server endpointing control."),
+	})
+}
+
 func googleSTTManifest() ProviderOptionManifest {
-	return manifest("google", "Google Speech-to-Text", ModalitySTT, []string{"stt.google.latest-long", "stt.google.latest-long-diarization"}, []OptionSupport{
+	return manifest("google", "Google Speech-to-Text", ModalitySTT, []string{"stt.google.latest-long", "stt.google.latest-long-diarization", "stt.google.chirp-3"}, []OptionSupport{
 		languageOption("languageCode", "https://docs.cloud.google.com/speech-to-text/docs/multiple-languages",
 			"Multilanguage: NOT open-ended. Verified 2026-08-11: v2 takes a language_codes LIST and \"You can list up to three languages for automatic language recognition\"; there is no auto value, and v1 requires a languageCode. Google therefore cannot express unconstrained multilanguage and needs candidate languages. RESOLVED by candidate list rather than by exclusion (adapter googleLanguageCodes): English carries the request as the primary code and a language the user configured rides along in alternativeLanguageCodes, so mixed speech resolves to whichever fits. Omitting the field is not an option here -- it produced an invalid request, which is why the sentinel is translated per provider."),
 		unsupported(OptionDetectLanguage, TypeBool, "Detect language", "SpeechKit's v1 REST adapter uses one languageCode; multi-language alternatives are not wired yet."),
@@ -143,7 +177,7 @@ func assemblyAISTTManifest() ProviderOptionManifest {
 }
 
 func openRouterSTTManifest() ProviderOptionManifest {
-	return manifest("openrouter", "OpenRouter", ModalitySTT, []string{"stt.openrouter.whisper-1"}, []OptionSupport{
+	return manifest("openrouter", "OpenRouter", ModalitySTT, []string{"stt.openrouter.gpt-transcribe"}, []OptionSupport{
 		languageOption("language", "https://openrouter.ai/api/v1/models/openai/whisper-1/endpoints",
 			"Multilanguage: OMIT the field, inferred from OpenAI schema compatibility. STILL DERIVED, NOT VENDOR-VERIFIED. Re-checked 2026-08-12: OpenRouter still publishes no audio-transcription reference (the previously cited docs path now 404s, and the API overview documents only chat/completions and generation). What the API itself confirms: openai/whisper-1 exists with modality audio->transcription, input audio, output transcription, priced at 0.006, described as supporting \"transcription and translation across 50+ languages\". The live roundtrip is blocked, not skipped: the account's credits are exhausted (usage 5.19 of 5 total, so transcription requests return HTTP 402) and OpenRouter offers no free transcription model. Gated by TestOpenRouterLiveMultilanguageRoundtrip, which runs as soon as the balance allows."),
 		derived(OptionDetectLanguage, TypeBool, "Detect language", "Omit language to let the routed model detect when supported.", "https://openrouter.ai/api/v1/models/openai/whisper-1/endpoints"),
@@ -186,10 +220,20 @@ func deepgramTTSManifest() ProviderOptionManifest {
 }
 
 func openAITTSManifest() ProviderOptionManifest {
-	return manifest("openai", "OpenAI", ModalityTTS, []string{"tts.openai.tts-1-hd", "tts.openai.tts-1"}, []OptionSupport{
-		native(OptionVoice, TypeString, "Voice", "voice", "https://platform.openai.com/docs/guides/text-to-speech"),
-		native(OptionSpeed, TypeFloat, "Speed", "speed", "https://platform.openai.com/docs/guides/text-to-speech"),
-		native(OptionAudioFormat, TypeString, "Audio format", "response_format", "https://platform.openai.com/docs/guides/text-to-speech"),
+	return manifest("openai", "OpenAI", ModalityTTS, []string{"tts.openai.gpt-4o-mini-tts"}, []OptionSupport{
+		native(OptionVoice, TypeString, "Voice", "voice", "https://developers.openai.com/api/docs/guides/text-to-speech"),
+		native(OptionSpeed, TypeFloat, "Speed", "speed", "https://developers.openai.com/api/docs/guides/text-to-speech"),
+		native(OptionAudioFormat, TypeString, "Audio format", "response_format", "https://developers.openai.com/api/docs/guides/text-to-speech"),
+	})
+}
+
+func geminiTTSManifest() ProviderOptionManifest {
+	const evidence = "https://ai.google.dev/gemini-api/docs/speech-generation"
+	return manifest("gemini", "Gemini TTS", ModalityTTS, []string{"tts.google.gemini-3.8-tts"}, []OptionSupport{
+		native(OptionVoice, TypeString, "Voice", "generation_config.speech_config[].voice", evidence),
+		native(OptionLanguage, TypeString, "Language", "generation_config.speech_config[].language", evidence),
+		derived(OptionAudioFormat, TypeString, "Audio format", "The unary response is WAV; SpeechKit strips the header when PCM is asked for.", evidence),
+		unsupported(OptionSpeed, TypeFloat, "Speed", "Gemini TTS steers pacing through speech metadata, not a numeric rate."),
 	})
 }
 
@@ -277,6 +321,21 @@ func geminiVoiceAgentManifest() ProviderOptionManifest {
 		unsupported(OptionVoiceFocus, TypeBool, "Voice focus", "Gemini Live has no AssemblyAI-style voice_focus switch."),
 		unsupported(OptionMedicalDomain, TypeBool, "Medical domain", "Gemini Live medical-domain routing is not exposed through the current SpeechKit adapter."),
 		unsupported(OptionTranscriptionOnly, TypeBool, "Transcription only", "Gemini Live transcription-only sessions are not exposed through the current SpeechKit adapter."),
+	})
+}
+
+// openAILiveVoiceAgentManifest describes the GPT-Live adapter: the voice layer
+// takes a built-in voice and instructions, and the delegated backend model the
+// reasoning effort.
+func openAILiveVoiceAgentManifest() ProviderOptionManifest {
+	const evidence = "https://developers.openai.com/api/docs/models/gpt-live-1"
+	return manifest("gpt-live", "OpenAI GPT-Live", ModalityVoiceAgent, []string{"realtime.openai.gpt-live-1"}, []OptionSupport{
+		native(OptionVoice, TypeString, "Voice", "session.audio.output.voice", evidence),
+		native(OptionContextPrompt, TypeString, "Context prompt", "session.instructions", evidence),
+		native(OptionReasoningEffort, TypeString, "Reasoning effort", "session.delegation.responses.reasoning.effort", evidence),
+		unsupported(OptionTurnDetection, TypeBool, "Turn detection", "GPT-Live is full duplex; the session exposes no turn-detection control."),
+		unsupported(OptionLanguageHints, TypeStringList, "Language hints", "The GPT-Live session config has no language field."),
+		unsupported(OptionResume, TypeBool, "Session resume", "GPT-Live sessions are not resumable through this adapter."),
 	})
 }
 

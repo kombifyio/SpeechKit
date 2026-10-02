@@ -4,7 +4,8 @@ package local
 
 import (
 	"os"
-	"path/filepath"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/procguard"
 )
 
 // whisperBinaryNames returns the executable name searched on macOS. The
@@ -15,40 +16,19 @@ func whisperBinaryNames() []string {
 }
 
 // platformWhisperSearchDirs returns the trusted managed-install candidates on
-// macOS: the app bundle's Contents/Helpers directory (where
-// scripts/build-macos.sh places whisper-server, kombify-SpeechKit-mcos.11)
-// and the per-user Application Support directory the desktop uses for
-// downloaded runtimes. Homebrew and other PATH locations are deliberately
-// not probed: as on Windows, a binary from PATH is only used behind the
-// explicit SPEECHKIT_ALLOW_WHISPER_PATH=1 escape hatch.
+// macOS: only the app bundle's Contents/Helpers directory (where
+// scripts/build-macos.sh places whisper-server, kombify-SpeechKit-mcos.11).
+//
+// Nothing outside the signed bundle is probed. A child of SpeechKit.app runs
+// with SpeechKit's TCC grants (microphone, Accessibility) and is never
+// prompted, and ~/Library/Application Support is writable by any process of
+// the user, so a binary from there would inherit those grants. Homebrew and
+// other PATH locations stay behind the explicit
+// SPEECHKIT_ALLOW_WHISPER_PATH=1 developer escape hatch, as on Windows.
 func platformWhisperSearchDirs() []string {
-	var dirs []string
 	exe, _ := os.Executable()
-	if helpers := bundleHelpersDirFor(exe); helpers != "" {
-		dirs = append(dirs, helpers)
+	if helpers := procguard.BundleHelpersDir(exe); helpers != "" {
+		return []string{helpers}
 	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		base := filepath.Join(home, "Library", "Application Support", "SpeechKit")
-		dirs = append(dirs, base, filepath.Join(base, "bin"))
-	}
-	return dirs
-}
-
-// bundleHelpersDirFor maps an executable path inside a macOS app bundle
-// (…/SpeechKit.app/Contents/MacOS/SpeechKit) to the bundle's
-// Contents/Helpers directory. It returns "" for a binary that does not live
-// in a bundle, such as a `go build` output or the test binary.
-func bundleHelpersDirFor(exe string) string {
-	if exe == "" {
-		return ""
-	}
-	macOSDir := filepath.Dir(exe)
-	if filepath.Base(macOSDir) != "MacOS" {
-		return ""
-	}
-	contents := filepath.Dir(macOSDir)
-	if filepath.Base(contents) != "Contents" {
-		return ""
-	}
-	return filepath.Join(contents, "Helpers")
+	return nil
 }

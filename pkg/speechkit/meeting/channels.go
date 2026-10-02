@@ -36,6 +36,8 @@ func (r *Runtime) watchPipeline(ctx context.Context, capture *meetingCapture, pi
 				r.log(fmt.Sprintf("Meeting capture: %s channel error: %s", channel, message), "error")
 			case capturepkg.EventStarted:
 				r.markChannelIfRecording(capture, channel, ChannelStateRecording, "")
+			case capturepkg.EventStopped, capturepkg.EventWarning, capturepkg.EventOverrun:
+				// Not channel state transitions; nothing to record here.
 			}
 		}
 	}

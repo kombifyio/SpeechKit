@@ -45,26 +45,9 @@ func (p *Provider) StartSpeakerStream(ctx context.Context, opts speaker.Options,
 	if err != nil {
 		return nil, err
 	}
-	projectID, projectIDErr := creds.ProjectID(ctx)
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
-		projectID = stt.FirstNonEmptyTrimmed(os.Getenv("GOOGLE_CLOUD_PROJECT"), p.SecretResolver.Resolve("GOOGLE_CLOUD_PROJECT"))
-	}
-	if projectID == "" {
-		if projectIDErr != nil {
-			return nil, fmt.Errorf("google stt v2: project id unavailable from credentials: %w; set GOOGLE_CLOUD_PROJECT", projectIDErr)
-		}
-		return nil, fmt.Errorf("google stt v2: project id not found in credentials; set GOOGLE_CLOUD_PROJECT")
-	}
-
-	client, err := speech.NewClient(ctx, option.WithAuthCredentials(creds))
+	projectID, err := p.resolveProjectID(ctx, creds)
 	if err != nil {
-		return nil, fmt.Errorf("google stt v2 client: %w", err)
-	}
-	stream, err := client.StreamingRecognize(ctx)
-	if err != nil {
-		_ = client.Close()
-		return nil, fmt.Errorf("google stt v2 streaming open: %w", err)
+		return nil, err
 	}
 
 	model := strings.TrimSpace(opts.Model)
@@ -74,9 +57,35 @@ func (p *Provider) StartSpeakerStream(ctx context.Context, opts speaker.Options,
 	if model == "" {
 		model = "latest_long"
 	}
+	// Chirp 3 is served only from the regional v2 endpoints, never from the
+	// global location. Its streaming mode cannot diarize, which this adapter
+	// never requests anyway: a diarization request in opts is ignored and the
+	// session stays transcription-only.
+	location := "global"
+	clientOpts := []option.ClientOption{option.WithAuthCredentials(creds)}
+	if isChirp3(model) {
+		region, err := p.chirp3Region()
+		if err != nil {
+			return nil, err
+		}
+		location = region
+		model = ModelChirp3
+		clientOpts = append(clientOpts, option.WithEndpoint(chirp3Host(region)+":443"))
+	}
+
+	client, err := speech.NewClient(ctx, clientOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("google stt v2 client: %w", err)
+	}
+	stream, err := client.StreamingRecognize(ctx)
+	if err != nil {
+		_ = client.Close()
+		return nil, fmt.Errorf("google stt v2 streaming open: %w", err)
+	}
+
 	f := format.Normalized()
 	configReq := &speechpb.StreamingRecognizeRequest{
-		Recognizer: fmt.Sprintf("projects/%s/locations/global/recognizers/_", projectID),
+		Recognizer: fmt.Sprintf("projects/%s/locations/%s/recognizers/_", projectID, location),
 		StreamingRequest: &speechpb.StreamingRecognizeRequest_StreamingConfig{
 			StreamingConfig: &speechpb.StreamingRecognitionConfig{
 				Config: &speechpb.RecognitionConfig{
@@ -220,7 +229,7 @@ func (p *Provider) resolveGoogleStreamingCredentials() (*auth.Credentials, error
 		// DetectDefault validates the credential configuration (the gap that deprecated the older
 		// CredentialsFromJSON/WithCredentialsJSON path); the JSON itself is operator-controlled (Doppler/env).
 		creds, err := credentials.DetectDefault(&credentials.DetectOptions{
-			CredentialsJSON: []byte(raw),
+			CredentialsJSON: []byte(raw), //nolint:staticcheck // SA1019: credential type is not known up front, so typed NewCredentialsFromJSON cannot be used; DetectDefault validates it and the JSON is operator-controlled.
 			Scopes:          []string{googleSTTScope},
 		})
 		if err != nil {

@@ -7,26 +7,29 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
 
-// The Foundry assist profile moved from GPT-5.1 to the GPT-5.6 family; configs
-// written before that must keep resolving to the same profile.
+// The Foundry assist profile moved from GPT-5.1 to GPT-5.6 and then to the
+// GPT-6 family; configs written before either move must keep resolving to the
+// same profile.
 func TestFoundryAssistProfileAliasAndVariants(t *testing.T) {
-	if got := speechkit.NormalizeProviderProfileID("assist.foundry.gpt-5.1"); got != "assist.foundry.gpt-5.6" {
-		t.Fatalf("alias = %q", got)
+	for _, legacy := range []string{"assist.foundry.gpt-5.1", "assist.foundry.gpt-5.6"} {
+		if got := speechkit.NormalizeProviderProfileID(legacy); got != "assist.foundry.gpt-6" {
+			t.Fatalf("alias %s = %q", legacy, got)
+		}
 	}
-	profile, ok := DefaultCatalog().Profile("assist.foundry.gpt-5.1")
+	profile, ok := DefaultCatalog().Profile("assist.foundry.gpt-5.6")
 	if !ok {
 		t.Fatal("legacy id must resolve through the catalog")
 	}
-	if profile.ID != "assist.foundry.gpt-5.6" || profile.ModelID != "gpt-5.6-terra" {
+	if profile.ID != "assist.foundry.gpt-6" || profile.ModelID != "gpt-6.1-sol" {
 		t.Fatalf("profile = %s / %s", profile.ID, profile.ModelID)
 	}
-	want := map[string]bool{"gpt-5.6-terra": false, "gpt-5.6-sol": false, "gpt-5.6-luna": false, "MAI-Thinking-1": false}
+	want := map[string]bool{"gpt-6.1-sol": false, "gpt-6-sol": false, "gpt-6-luna": false, "gpt-6-astra": false, "MAI-Thinking-1": false}
 	for _, variant := range profile.Variants {
 		if _, listed := want[variant.ModelID]; listed {
 			want[variant.ModelID] = true
 		}
-		if variant.ModelID == "gpt-5.6-terra" && !variant.Recommended {
-			t.Fatal("Terra must be the recommended variant")
+		if variant.ModelID == "gpt-6.1-sol" && !variant.Recommended {
+			t.Fatal("GPT-6.1 Sol must be the recommended variant")
 		}
 	}
 	for id, seen := range want {

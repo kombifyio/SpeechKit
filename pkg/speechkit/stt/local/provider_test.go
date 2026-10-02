@@ -14,9 +14,11 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/testutil"
 )
 
 func TestLocalRuntimeReportsUnexpectedChildExit(t *testing.T) {
@@ -25,7 +27,11 @@ func TestLocalRuntimeReportsUnexpectedChildExit(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start helper child: %v", err)
 	}
-	provider := New(8080, filepath.Join(t.TempDir(), "ggml-test.bin"), "cpu")
+	provider := New(Options{
+		Port:      8080,
+		ModelPath: filepath.Join(t.TempDir(), "ggml-test.bin"),
+		GPU:       "cpu",
+	})
 	done := make(chan struct{})
 	provider.processMu.Lock()
 	provider.generation = 1
@@ -52,7 +58,7 @@ func TestLocalRuntimeReportsUnexpectedChildExit(t *testing.T) {
 
 func TestLocalRuntimeExitAndFinalReadinessAreSerialized(t *testing.T) {
 	t.Run("exit before final readiness", func(t *testing.T) {
-		provider := New(8080, "unused", "cpu")
+		provider := New(Options{Port: 8080, ModelPath: "unused", GPU: "cpu"})
 		cmd := &exec.Cmd{}
 		done := make(chan struct{})
 		provider.generation = 1
@@ -69,7 +75,7 @@ func TestLocalRuntimeExitAndFinalReadinessAreSerialized(t *testing.T) {
 	})
 
 	t.Run("exit after final readiness", func(t *testing.T) {
-		provider := New(8080, "unused", "cpu")
+		provider := New(Options{Port: 8080, ModelPath: "unused", GPU: "cpu"})
 		cmd := &exec.Cmd{}
 		done := make(chan struct{})
 		provider.generation = 1
@@ -89,7 +95,7 @@ func TestLocalRuntimeExitAndFinalReadinessAreSerialized(t *testing.T) {
 	})
 
 	t.Run("stop before final readiness", func(t *testing.T) {
-		provider := New(8080, "unused", "cpu")
+		provider := New(Options{Port: 8080, ModelPath: "unused", GPU: "cpu"})
 		done := make(chan struct{})
 		provider.generation = 1
 		provider.processDone = done
@@ -104,7 +110,7 @@ func TestLocalRuntimeExitAndFinalReadinessAreSerialized(t *testing.T) {
 	})
 
 	t.Run("stop after final readiness", func(t *testing.T) {
-		provider := New(8080, "unused", "cpu")
+		provider := New(Options{Port: 8080, ModelPath: "unused", GPU: "cpu"})
 		done := make(chan struct{})
 		provider.generation = 1
 		provider.processDone = done
@@ -120,7 +126,7 @@ func TestLocalRuntimeExitAndFinalReadinessAreSerialized(t *testing.T) {
 }
 
 func TestLocalRuntimeLifecycleRejectsConcurrentStartAndStopWindow(t *testing.T) {
-	provider := New(8080, "unused", "cpu")
+	provider := New(Options{Port: 8080, ModelPath: "unused", GPU: "cpu"})
 	generation, startDone, err := provider.beginProcessStart()
 	if err != nil {
 		t.Fatalf("beginProcessStart: %v", err)
@@ -134,20 +140,11 @@ func TestLocalRuntimeLifecycleRejectsConcurrentStartAndStopWindow(t *testing.T) 
 		provider.StopServer()
 		close(stopDone)
 	}()
-	deadline := time.Now().Add(2 * time.Second)
-	for {
+	testutil.Eventually(t, 2*time.Second, time.Millisecond, func() bool {
 		provider.processMu.Lock()
-		stopping := provider.stopping
-		stopRequested := provider.stopRequested
-		provider.processMu.Unlock()
-		if stopping && stopRequested {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("StopServer did not enter the startup stop window")
-		}
-		time.Sleep(time.Millisecond)
-	}
+		defer provider.processMu.Unlock()
+		return provider.stopping && provider.stopRequested
+	})
 	if err := provider.processStartCanceled(context.Background(), generation); err == nil {
 		t.Fatal("startup remained publishable after StopServer requested a stop")
 	}
@@ -200,7 +197,7 @@ func TestLocal_Transcribe_Success(t *testing.T) {
 }
 
 func TestLocal_Transcribe_NotReady(t *testing.T) {
-	p := New(8080, "/fake/model.bin", "cpu")
+	p := New(Options{Port: 8080, ModelPath: "/fake/model.bin", GPU: "cpu"})
 	_, err := p.Transcribe(context.Background(), []byte("wav"), stt.TranscribeOpts{})
 	if err == nil {
 		t.Fatal("expected error when not ready")
@@ -208,7 +205,7 @@ func TestLocal_Transcribe_NotReady(t *testing.T) {
 }
 
 func TestLocal_Health_NotRunning(t *testing.T) {
-	p := New(8080, "/fake/model.bin", "cpu")
+	p := New(Options{Port: 8080, ModelPath: "/fake/model.bin", GPU: "cpu"})
 	err := p.Health(context.Background())
 	if err == nil {
 		t.Error("expected error when not running")
@@ -311,14 +308,14 @@ func TestLocal_HealthClearsReadyOnNon200(t *testing.T) {
 }
 
 func TestLocal_IsReady(t *testing.T) {
-	p := New(8080, "/model.bin", "cpu")
+	p := New(Options{Port: 8080, ModelPath: "/model.bin", GPU: "cpu"})
 	if p.IsReady() {
 		t.Error("should not be ready before StartServer")
 	}
 }
 
 func TestLocal_Name(t *testing.T) {
-	p := New(8080, "/model.bin", "cpu")
+	p := New(Options{Port: 8080, ModelPath: "/model.bin", GPU: "cpu"})
 	if p.Name() != "local" {
 		t.Errorf("Name() = %q", p.Name())
 	}
@@ -386,109 +383,117 @@ func TestFindWhisperBinary_FindsManagedInstallRootBinary(t *testing.T) {
 // immediately instead of waiting, causing hotkey-triggered recordings to fail
 // during the first ~60 seconds after app launch.
 func TestLocal_Transcribe_WaitsForStartupThenSucceeds(t *testing.T) {
+	// The server lives outside the synctest bubble: real network I/O is not
+	// durably blocking and would stop synctest.Wait from ever returning.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"text": "waited"})
 	}))
 	defer server.Close()
 
-	p := &Provider{
-		BaseURL: server.URL,
-		client:  &http.Client{Timeout: 5 * time.Second},
-	}
-	// Simulate startup in progress: startDone is open (not yet closed).
-	done := make(chan struct{})
-	p.startDone = done
-
-	resultCh := make(chan *stt.Result, 1)
-	errCh := make(chan error, 1)
-	go func() {
-		r, e := p.Transcribe(context.Background(), []byte("wav"), stt.TranscribeOpts{})
-		resultCh <- r
-		errCh <- e
-	}()
-
-	// Allow the goroutine to reach the select block.
-	time.Sleep(50 * time.Millisecond)
-
-	// Simulate successful startup completing.
-	p.ready.Store(true)
-	close(done)
-
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("expected success after startup completed, got: %v", err)
+	synctest.Test(t, func(t *testing.T) {
+		p := &Provider{
+			BaseURL: server.URL,
+			client:  &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{DisableKeepAlives: true}},
 		}
-		result := <-resultCh
-		if result.Text != "waited" {
-			t.Errorf("text = %q, want %q", result.Text, "waited")
+		// Simulate startup in progress: startDone is open (not yet closed).
+		done := make(chan struct{})
+		p.startDone = done
+
+		resultCh := make(chan *stt.Result, 1)
+		errCh := make(chan error, 1)
+		go func() {
+			r, e := p.Transcribe(context.Background(), []byte("wav"), stt.TranscribeOpts{})
+			resultCh <- r
+			errCh <- e
+		}()
+
+		// Wait until the goroutine is parked on the startup channel.
+		synctest.Wait()
+
+		// Simulate successful startup completing.
+		p.ready.Store(true)
+		close(done)
+
+		select {
+		case err := <-errCh:
+			if err != nil {
+				t.Fatalf("expected success after startup completed, got: %v", err)
+			}
+			result := <-resultCh
+			if result.Text != "waited" {
+				t.Errorf("text = %q, want %q", result.Text, "waited")
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("Transcribe did not unblock after startup completed")
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("Transcribe did not unblock after startup completed")
-	}
+	})
 }
 
 // TestLocal_Transcribe_WaitsForStartupThenFails verifies that Transcribe
 // returns a "not ready" error when it waits for startup but the server
 // never becomes ready (startup failed).
 func TestLocal_Transcribe_WaitsForStartupThenFails(t *testing.T) {
-	p := &Provider{
-		BaseURL: "http://127.0.0.1:1", // unreachable
-		client:  &http.Client{Timeout: 5 * time.Second},
-	}
-	done := make(chan struct{})
-	p.startDone = done
-
-	errCh := make(chan error, 1)
-	go func() {
-		_, e := p.Transcribe(context.Background(), []byte("wav"), stt.TranscribeOpts{})
-		errCh <- e
-	}()
-
-	time.Sleep(50 * time.Millisecond)
-
-	// Startup failed: close the channel without setting ready.
-	close(done)
-
-	select {
-	case err := <-errCh:
-		if err == nil {
-			t.Fatal("expected error when startup failed but got nil")
+	synctest.Test(t, func(t *testing.T) {
+		p := &Provider{
+			BaseURL: "http://127.0.0.1:1", // unreachable
+			client:  &http.Client{Timeout: 5 * time.Second},
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("Transcribe did not unblock after failed startup")
-	}
+		done := make(chan struct{})
+		p.startDone = done
+
+		errCh := make(chan error, 1)
+		go func() {
+			_, e := p.Transcribe(context.Background(), []byte("wav"), stt.TranscribeOpts{})
+			errCh <- e
+		}()
+
+		synctest.Wait()
+
+		// Startup failed: close the channel without setting ready.
+		close(done)
+
+		select {
+		case err := <-errCh:
+			if err == nil {
+				t.Fatal("expected error when startup failed but got nil")
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("Transcribe did not unblock after failed startup")
+		}
+	})
 }
 
 // TestLocal_Transcribe_ContextCancelledDuringStartupWait verifies that
 // Transcribe respects context cancellation while waiting for startup.
 func TestLocal_Transcribe_ContextCancelledDuringStartupWait(t *testing.T) {
-	p := &Provider{
-		BaseURL: "http://127.0.0.1:1",
-		client:  &http.Client{Timeout: 5 * time.Second},
-	}
-	done := make(chan struct{}) // never closed — startup hangs indefinitely
-	p.startDone = done
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	errCh := make(chan error, 1)
-	go func() {
-		_, e := p.Transcribe(ctx, []byte("wav"), stt.TranscribeOpts{})
-		errCh <- e
-	}()
-
-	time.Sleep(50 * time.Millisecond)
-	cancel()
-
-	select {
-	case err := <-errCh:
-		if err == nil {
-			t.Fatal("expected error when context cancelled during startup wait")
+	synctest.Test(t, func(t *testing.T) {
+		p := &Provider{
+			BaseURL: "http://127.0.0.1:1",
+			client:  &http.Client{Timeout: 5 * time.Second},
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("Transcribe did not unblock after context cancellation")
-	}
+		done := make(chan struct{}) // never closed — startup hangs indefinitely
+		p.startDone = done
+
+		ctx, cancel := context.WithCancel(context.Background())
+
+		errCh := make(chan error, 1)
+		go func() {
+			_, e := p.Transcribe(ctx, []byte("wav"), stt.TranscribeOpts{})
+			errCh <- e
+		}()
+
+		synctest.Wait()
+		cancel()
+
+		select {
+		case err := <-errCh:
+			if err == nil {
+				t.Fatal("expected error when context cancelled during startup wait")
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("Transcribe did not unblock after context cancellation")
+		}
+	})
 }
 
 func TestLocal_WaitForInferenceReady_RetriesUntilInferenceSucceeds(t *testing.T) {

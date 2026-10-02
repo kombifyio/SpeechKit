@@ -22,7 +22,7 @@ func syncTestClip(t *testing.T, d time.Duration) []byte {
 }
 
 func newSyncTestProvider(syncURL, asyncURL string) *Provider {
-	p := New("assembly-test-key", "")
+	p := New(Options{APIKey: "assembly-test-key"})
 	p.SyncBaseURL = syncURL
 	p.BaseURL = asyncURL
 	p.Validation = testValidation

@@ -1,9 +1,9 @@
 package live
 
 import (
-	"log/slog"
 	"strings"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
@@ -97,7 +97,7 @@ func ResolveLiveOptions(provider, profileID string, cfg LiveConfig, providerDefa
 
 func logUnsupportedOptions(reports []provideropts.UnsupportedOptionReport) {
 	for _, report := range reports {
-		slog.Debug("speech option ignored by provider",
+		logutil.Resolve(nil).Debug("speech option ignored by provider",
 			"provider", report.Provider,
 			"modality", report.Modality,
 			"option", report.ID,

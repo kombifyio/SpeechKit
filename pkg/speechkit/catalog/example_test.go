@@ -38,3 +38,16 @@ func ExampleCatalog_With() {
 	// acme optional_api_key http
 	// acme 1
 }
+
+// ExampleFindProviderDefault reads a provider's default model id as data
+// rather than from a Go constant, and migrates a retired id that a persisted
+// config may still carry.
+func ExampleFindProviderDefault() {
+	def, ok := catalog.FindProviderDefault("openai", speechkit.ModeTTS)
+	fmt.Println(ok, def.ModelID)
+
+	fmt.Println(catalog.CurrentModelID("openai", "tts-1"))
+	// Output:
+	// true gpt-4o-mini-tts
+	// gpt-4o-mini-tts
+}

@@ -9,6 +9,14 @@ ONBOARDING_UI="true"
 START_STACK="true"
 STRICT_LOCAL_ONLY="false"
 
+# Every env var that would let the server reach a hosted provider. Mirrors
+# config.CloudCredentialEnvNames (the default names); a Go test runs this
+# script with each of those names set and expects --strict-local-only to
+# refuse. The install-E2E workflows clear exactly these: the Linux gate via
+# --print-cloud-credential-env, the Windows gate by reading this line, so keep
+# it a single double-quoted, space-separated line.
+CLOUD_CREDENTIAL_ENV="GOOGLE_AI_API_KEY SPEECHKIT_GOOGLE_STT_API_KEY GOOGLE_CLOUD_STT_API_KEY GOOGLE_STT_API_KEY SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON GOOGLE_APPLICATION_CREDENTIALS OPENAI_API_KEY GROQ_API_KEY DEEPGRAM_API_KEY ASSEMBLYAI_API_KEY HF_TOKEN OPENROUTER_API_KEY CLOUDFLARE_AI_GATEWAY_AUTH_TOKEN CLOUDFLARE_API_TOKEN AZURE_AI_API_KEY"
+
 usage() {
   cat <<'EOF'
 Usage: scripts/install-server.sh [options]
@@ -25,6 +33,9 @@ Options:
   --strict-local-only Refuse to run when any cloud-provider env key is set.
                       Used by install-e2e-linux.yml to enforce the local-
                       only guarantee at install time.
+  --print-cloud-credential-env
+                      Print the cloud-provider env names, one per line, and
+                      exit. The install-E2E gates clear exactly these.
   -h, --help          Show this help.
 
 Setup modes:
@@ -73,6 +84,12 @@ while [ "$#" -gt 0 ]; do
       STRICT_LOCAL_ONLY="true"
       shift
       ;;
+    --print-cloud-credential-env)
+      for key in $CLOUD_CREDENTIAL_ENV; do
+        echo "$key"
+      done
+      exit 0
+      ;;
     -h|--help)
       usage
       exit 0
@@ -104,7 +121,7 @@ fi
 
 if [ "$STRICT_LOCAL_ONLY" = "true" ]; then
   local_only_failed=0
-  for key in GOOGLE_AI_API_KEY OPENAI_API_KEY GROQ_API_KEY OPENROUTER_API_KEY HF_TOKEN GOOGLE_STT_API_KEY SPEECHKIT_GOOGLE_STT_API_KEY; do
+  for key in $CLOUD_CREDENTIAL_ENV; do
     val=$(printenv "$key" 2>/dev/null || true)
     if [ -n "$val" ]; then
       echo "strict-local-only: $key is set in env; install-server.sh refuses to write a non-local config" >&2
@@ -185,11 +202,9 @@ upsert_env "SPEECHKIT_SERVER_SETTINGS_WRITE" "$ONBOARDING_UI"
 
 ensure_blank_env "SPEECHKIT_SERVER_TOKEN"
 ensure_blank_env "EDGE_AUTH_SECRET"
-ensure_blank_env "HF_TOKEN"
-ensure_blank_env "GOOGLE_AI_API_KEY"
-ensure_blank_env "OPENAI_API_KEY"
-ensure_blank_env "GROQ_API_KEY"
-ensure_blank_env "OPENROUTER_API_KEY"
+for key in $CLOUD_CREDENTIAL_ENV; do
+  ensure_blank_env "$key"
+done
 
 echo "Wrote $COMPOSE_DST"
 echo "Wrote $ENV_DST"

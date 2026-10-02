@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"io"
-	"log/slog"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
@@ -110,7 +110,7 @@ func (p *Provider) speakerStreamLoop(ctx context.Context, stream speaker.Speaker
 			// Transient stream failure (e.g. a dropped WebSocket). A multi-hour
 			// session must not lose diarization for good over a single blip, so
 			// reconnect with capped backoff and resume on a fresh stream.
-			slog.Warn("cascaded: speaker stream receive failed; reconnecting", "err", err)
+			logutil.Resolve(p.logger).Warn("cascaded: speaker stream receive failed; reconnecting", "err", err)
 			next := p.reconnectSpeakerStream(ctx, stream)
 			if next == nil {
 				return
@@ -162,7 +162,7 @@ func (p *Provider) reconnectSpeakerStream(ctx context.Context, dead speaker.Spea
 		}
 		fresh, err := p.speakerStreamer.StartSpeakerStream(ctx, p.currentSpeakerOptions(), speakerStreamAudioFormat())
 		if err != nil {
-			slog.Warn("cascaded: speaker stream reconnect attempt failed", "attempt", attempt, "err", err)
+			logutil.Resolve(p.logger).Warn("cascaded: speaker stream reconnect attempt failed", "attempt", attempt, "err", err)
 			backoff = min(backoff*2, speakerReconnectMaxBackoff)
 			continue
 		}
@@ -174,10 +174,10 @@ func (p *Provider) reconnectSpeakerStream(ctx context.Context, dead speaker.Spea
 		}
 		p.speakerStream = fresh
 		p.speakerStreamMu.Unlock()
-		slog.Info("cascaded: speaker stream reconnected", "attempt", attempt)
+		logutil.Resolve(p.logger).Info("cascaded: speaker stream reconnected", "attempt", attempt)
 		return fresh
 	}
-	slog.Warn("cascaded: speaker stream reconnect exhausted; diarization stopped",
+	logutil.Resolve(p.logger).Warn("cascaded: speaker stream reconnect exhausted; diarization stopped",
 		"attempts", speakerReconnectMaxAttempts)
 	return nil
 }

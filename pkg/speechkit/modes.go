@@ -245,20 +245,46 @@ type ProviderProfile struct {
 func NormalizeProviderProfileID(profileID string) string {
 	profileID = strings.TrimSpace(profileID)
 	switch profileID {
-	case "stt.google.chirp-3":
-		return "stt.google.latest-long"
 	case "stt.google.chirp-3-diarization":
-		return "stt.google.latest-long-diarization"
-	case "assist.foundry.gpt-5.1":
-		// The Foundry assist profile moved to the GPT-5.6 family; configs
+		// Chirp 3 is a real profile again (Speech-to-Text v2, regional) and
+		// diarizes in batch recognition itself.
+		return "stt.google.chirp-3"
+	case "assist.foundry.gpt-5.1", "assist.foundry.gpt-5.6":
+		// The Foundry assist profile moved to the GPT-6 family; configs
 		// written before that keep resolving to the same profile.
-		return "assist.foundry.gpt-5.6"
+		return "assist.foundry.gpt-6"
 	case "stt.foundry.gpt-4o-mini-transcribe":
 		// The GPT-4o transcription profile was retired in favour of the
 		// Microsoft speech model the resource serves without a deployment.
 		return "stt.foundry.mai-transcribe-2"
 	case "tts.foundry.gpt-4o-mini-tts":
 		return "tts.foundry.mai-voice-2"
+	// Profiles retired on 2026-09-30 with their models (see
+	// catalog.RetiredModels); each resolves to the profile of its successor.
+	case "stt.openai.gpt-4o-transcribe", "stt.openai.whisper-1":
+		return "stt.openai.gpt-transcribe"
+	case "stt.openrouter.whisper-1":
+		return "stt.openrouter.gpt-transcribe"
+	case "assist.openai.gpt-5.4":
+		return "assist.openai.gpt-6"
+	case "utility.openai.gpt-5.4-mini":
+		return "utility.openai.gpt-6-luna"
+	case "utility.foundry.gpt-5-mini":
+		return "utility.foundry.gpt-6-luna"
+	case "assist.groq.llama-3.3-70b":
+		return "assist.groq.gpt-oss-120b"
+	case "assist.openrouter.gemini-2.5-flash":
+		return "assist.openrouter.gemini-3.5-flash"
+	case "realtime.openrouter.gemini-2.5-flash-pipeline":
+		return "realtime.openrouter.gemini-3.5-flash-pipeline"
+	case "utility.openrouter.llama-3.1-8b":
+		return "utility.openrouter.gemini-3.5-flash-lite"
+	case "assist.routed.qwen35-27b":
+		return "assist.routed.qwen38-27b"
+	case "realtime.hf.qwen35-27b":
+		return "realtime.hf.qwen38-27b"
+	case "tts.openai.tts-1", "tts.openai.tts-1-hd":
+		return "tts.openai.gpt-4o-mini-tts"
 	default:
 		return profileID
 	}

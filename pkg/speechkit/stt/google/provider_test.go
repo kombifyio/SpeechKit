@@ -13,10 +13,12 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
+
+	"cloud.google.com/go/auth"
 )
 
 func newTestGoogleProvider(serverURL string) *Provider {
-	p := New("test-api-key", "latest_long")
+	p := New(Options{APIKey: "test-api-key", Model: "latest_long"})
 	p.BaseURL = serverURL
 	p.Validation = testValidation
 	p.client.Timeout = 5 * time.Second
@@ -31,8 +33,10 @@ func TestGoogle_Transcribe_Success(t *testing.T) {
 		if !strings.Contains(r.URL.Path, "/v1/speech:recognize") {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
-		if r.URL.Query().Get("key") != "test-api-key" {
-			t.Errorf("expected key=test-api-key, got %q", r.URL.Query().Get("key"))
+		// The key travels in a header, never the URL, so transport errors
+		// and logs cannot leak it.
+		if r.URL.RawQuery != "" || r.Header.Get("x-goog-api-key") != "test-api-key" {
+			t.Errorf("api key: query %q / header %q, want header only", r.URL.RawQuery, r.Header.Get("x-goog-api-key"))
 		}
 		if r.Header.Get("Content-Type") != "application/json" {
 			t.Errorf("Content-Type = %q", r.Header.Get("Content-Type"))
@@ -218,6 +222,52 @@ func TestGoogle_Transcribe_ModelOverride(t *testing.T) {
 	}
 }
 
+// Chirp 3 runs only on the regional v2 API, so it must not reach v1 or the
+// global location, and v2 accepts OAuth tokens only, never the API key.
+
+type staticTokenProvider string
+
+func (s staticTokenProvider) Token(context.Context) (*auth.Token, error) {
+	return &auth.Token{Value: string(s), Type: "Bearer"}, nil
+}
+
+func TestGoogle_Transcribe_Chirp3UsesRegionalV2Recognizer(t *testing.T) {
+	var gotPath, gotModel string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		// Speech-to-Text v2 rejects API keys, so the call must carry a bearer
+		// token and no key.
+		if r.URL.Query().Has("key") || r.Header.Get("Authorization") != "Bearer v2-token" {
+			t.Errorf("auth = key %q / header %q, want only the bearer token", r.URL.Query().Get("key"), r.Header.Get("Authorization"))
+		}
+		var reqBody chirp3RecognizeRequest
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		gotModel = reqBody.Config.Model
+		w.Write([]byte(`{"results":[{"alternatives":[{"transcript":"Hallo Welt","confidence":0.9}],"languageCode":"de-DE"}]}`))
+	}))
+	defer server.Close()
+
+	p := newTestGoogleProvider(server.URL)
+	p.ProjectID = "demo-project"
+	p.Region = "eu"
+	p.v2Credentials = auth.NewCredentials(&auth.CredentialsOptions{TokenProvider: staticTokenProvider("v2-token")})
+	result, err := p.Transcribe(context.Background(), []byte("pcm"), stt.TranscribeOpts{Model: "Chirp_3", Language: "de"})
+	if err != nil {
+		t.Fatalf("Transcribe: %v", err)
+	}
+	if want := "/v2/projects/demo-project/locations/eu/recognizers/_:recognize"; gotPath != want {
+		t.Errorf("path = %q, want %q", gotPath, want)
+	}
+	if gotModel != ModelChirp3 {
+		t.Errorf("sent model = %q, want %q", gotModel, ModelChirp3)
+	}
+	if result.Text != "Hallo Welt" {
+		t.Errorf("text = %q, want %q", result.Text, "Hallo Welt")
+	}
+}
+
 func TestGoogle_LanguageMapping(t *testing.T) {
 	tests := []struct {
 		input string
@@ -398,8 +448,8 @@ func TestGoogle_Health_OK(t *testing.T) {
 		if !strings.Contains(r.URL.Path, "/v1/operations") {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
-		if r.URL.Query().Get("key") != "test-api-key" {
-			t.Errorf("key = %q", r.URL.Query().Get("key"))
+		if r.Header.Get("x-goog-api-key") != "test-api-key" {
+			t.Errorf("x-goog-api-key = %q", r.Header.Get("x-goog-api-key"))
 		}
 		w.WriteHeader(200)
 	}))
@@ -428,7 +478,7 @@ func TestGoogle_Health_Error(t *testing.T) {
 }
 
 func TestGoogle_Health_Unreachable(t *testing.T) {
-	p := New("key", "latest_long")
+	p := New(Options{APIKey: "key", Model: "latest_long"})
 	p.BaseURL = "http://127.0.0.1:1"
 	p.Validation = testValidation
 	p.client.Timeout = 100 * time.Millisecond
@@ -439,21 +489,21 @@ func TestGoogle_Health_Unreachable(t *testing.T) {
 }
 
 func TestGoogle_Name(t *testing.T) {
-	p := New("key", "")
+	p := New(Options{APIKey: "key"})
 	if p.Name() != "google" {
 		t.Errorf("Name() = %q", p.Name())
 	}
 }
 
 func TestGoogle_DefaultModel(t *testing.T) {
-	p := New("key", "")
+	p := New(Options{APIKey: "key"})
 	if p.Model != "latest_long" {
 		t.Errorf("Model = %q, want %q", p.Model, "latest_long")
 	}
 }
 
 func TestGoogle_CustomModel(t *testing.T) {
-	p := New("key", "chirp_2")
+	p := New(Options{APIKey: "key", Model: "chirp_2"})
 	if p.Model != "chirp_2" {
 		t.Errorf("Model = %q, want %q", p.Model, "chirp_2")
 	}
@@ -466,7 +516,7 @@ func TestGoogle_ImplementsSTTProvider(t *testing.T) {
 func TestGoogle_StartSpeakerStreamRequiresV2Credentials(t *testing.T) {
 	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "")
 	t.Setenv("SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON", "")
-	p := New("api-key", "latest_long")
+	p := New(Options{APIKey: "api-key", Model: "latest_long"})
 	_, err := p.StartSpeakerStream(context.Background(), speaker.Options{Diarization: true}, speaker.AudioFormat{})
 	if err == nil {
 		t.Fatal("expected credentials error")

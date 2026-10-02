@@ -165,6 +165,7 @@ func TestBuildGeminiLiveConnectConfigUsesCustomInstructionAndPolicies(t *testing
 func TestBuildGeminiLiveConnectConfigMapsProviderNeutralOptions(t *testing.T) {
 	t.Parallel()
 	connectCfg := buildGeminiLiveConnectConfig(live.LiveConfig{
+		Model:           "gemini-3.1-flash-live-preview",
 		FrameworkPrompt: "Base host prompt.",
 		ProviderOptions: provideropts.Values{
 			provideropts.OptionContextPrompt:   "Current tenant prefers short German answers.",
@@ -180,6 +181,32 @@ func TestBuildGeminiLiveConnectConfigMapsProviderNeutralOptions(t *testing.T) {
 	}
 	if got := connectCfg.ThinkingConfig.ThinkingLevel; got != genai.ThinkingLevelHigh {
 		t.Fatalf("thinking level = %q, want %q", got, genai.ThinkingLevelHigh)
+	}
+}
+
+// Gemini 3.8 Live rejects a setup that carries a thinking config, so a
+// requested reasoning effort must not reach the wire for it.
+func TestBuildGeminiLiveConnectConfigOmitsThinkingForGemini38Live(t *testing.T) {
+	t.Parallel()
+	connectCfg := buildGeminiLiveConnectConfig(live.LiveConfig{
+		Model:           "gemini-3.8-live",
+		ProviderOptions: provideropts.Values{provideropts.OptionReasoningEffort: "high"},
+	})
+	if connectCfg.ThinkingConfig != nil {
+		t.Fatalf("thinking config = %#v, want none for gemini-3.8-live", connectCfg.ThinkingConfig)
+	}
+}
+
+// Extended-thinking Live models reject blocking tools, so a tool without an
+// explicit behavior is declared non-blocking there.
+func TestBuildGeminiLiveConnectConfigDeclaresToolsNonBlockingForExtendedThinking(t *testing.T) {
+	t.Parallel()
+	connectCfg := buildGeminiLiveConnectConfig(live.LiveConfig{
+		Model: "gemini-3.8-live-extended-thinking",
+		Tools: []live.ToolDefinition{{Name: "lights_on", Description: "Turn the lights on."}},
+	})
+	if got := connectCfg.Tools[0].FunctionDeclarations[0].Behavior; got != genai.BehaviorNonBlocking {
+		t.Fatalf("tool behavior = %q, want %q", got, genai.BehaviorNonBlocking)
 	}
 }
 

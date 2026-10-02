@@ -48,8 +48,16 @@ const (
 	FluxSpeechInterrupt = "Interrupt"
 )
 
-// deepgramFluxTTSSpeeds are the discrete speeds Flux TTS accepts.
-var deepgramFluxTTSSpeeds = []float64{0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15}
+// Flux TTS accepts speeds from 0.5 to 1.5 in 0.05 increments (widened from
+// 0.85–1.15 in September 2026) and expressivity as an integer from -2 (calm)
+// to 2 (animated), 0 being the voice's tuned delivery.
+const (
+	deepgramFluxTTSMinSpeed        = 0.5
+	deepgramFluxTTSMaxSpeed        = 1.5
+	deepgramFluxTTSSpeedSteps      = 20 // 1 / 0.05
+	deepgramFluxTTSMinExpressivity = -2
+	deepgramFluxTTSMaxExpressivity = 2
+)
 
 // FluxSpeechOptions configures a Flux TTS stream.
 type FluxSpeechOptions struct {
@@ -59,9 +67,13 @@ type FluxSpeechOptions struct {
 	// SampleRateHz selects the linear16 output rate. Zero uses Deepgram's
 	// default of 24 kHz, which matches SpeechKit's playback contract.
 	SampleRateHz int
-	// Speed snaps to the nearest value Flux accepts (0.85–1.15 in 0.05 steps).
+	// Speed snaps to the nearest value Flux accepts (0.5–1.5 in 0.05 steps).
 	// Zero keeps the provider default.
 	Speed float64
+	// Expressivity sets the calm-to-animated range, -2 to 2; zero keeps the
+	// voice's tuned delivery. It is fixed for the connection and a beta
+	// control: non-zero values raise the risk of pronunciation errors.
+	Expressivity int
 }
 
 // FluxSpeechEvent is one decoded event from a Flux TTS stream. Exactly one of
@@ -131,7 +143,10 @@ func (d *DeepgramFluxTTS) Open(ctx context.Context, opts FluxSpeechOptions) (*Fl
 	if sampleRate <= 0 {
 		sampleRate = deepgramTTSSampleRate
 	}
-	endpoint, err := d.endpoint(voice, sampleRate, opts.Speed)
+	if opts.Expressivity < deepgramFluxTTSMinExpressivity || opts.Expressivity > deepgramFluxTTSMaxExpressivity {
+		return nil, fmt.Errorf("deepgram flux tts: expressivity %d outside %d..%d", opts.Expressivity, deepgramFluxTTSMinExpressivity, deepgramFluxTTSMaxExpressivity)
+	}
+	endpoint, err := d.endpointWithExpressivity(voice, sampleRate, opts.Speed, opts.Expressivity)
 	if err != nil {
 		return nil, err
 	}
@@ -152,6 +167,10 @@ func (d *DeepgramFluxTTS) Open(ctx context.Context, opts FluxSpeechOptions) (*Fl
 }
 
 func (d *DeepgramFluxTTS) endpoint(voice string, sampleRateHz int, speed float64) (string, error) {
+	return d.endpointWithExpressivity(voice, sampleRateHz, speed, 0)
+}
+
+func (d *DeepgramFluxTTS) endpointWithExpressivity(voice string, sampleRateHz int, speed float64, expressivity int) (string, error) {
 	base, err := netsec.BuildEndpoint(firstNonEmptyTTS(d.BaseURL, deepgramTTSBaseURL), deepgramFluxTTSPath, d.Validation)
 	if err != nil {
 		return "", fmt.Errorf("deepgram flux tts endpoint: %w", err)
@@ -176,6 +195,9 @@ func (d *DeepgramFluxTTS) endpoint(voice string, sampleRateHz int, speed float64
 	q.Set("sample_rate", strconv.Itoa(sampleRateHz))
 	if snapped := SnapDeepgramFluxSpeed(speed); snapped > 0 {
 		q.Set("speed", strconv.FormatFloat(snapped, 'f', -1, 64))
+	}
+	if expressivity != 0 {
+		q.Set("expressivity", strconv.Itoa(expressivity))
 	}
 	u.RawQuery = q.Encode()
 	return u.String(), nil
@@ -298,13 +320,8 @@ func SnapDeepgramFluxSpeed(speed float64) float64 {
 	if speed <= 0 {
 		return 0
 	}
-	best := deepgramFluxTTSSpeeds[0]
-	for _, step := range deepgramFluxTTSSpeeds {
-		if math.Abs(step-speed) < math.Abs(best-speed) {
-			best = step
-		}
-	}
-	return best
+	speed = math.Min(math.Max(speed, deepgramFluxTTSMinSpeed), deepgramFluxTTSMaxSpeed)
+	return math.Round(speed*deepgramFluxTTSSpeedSteps) / deepgramFluxTTSSpeedSteps
 }
 
 // IsDeepgramFluxVoice reports whether a voice id names a Flux TTS voice rather

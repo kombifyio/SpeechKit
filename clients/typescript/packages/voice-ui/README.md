@@ -17,6 +17,16 @@ Native surfaces (Compose) implement spec parity from the shipped
 | `<speechkit-voice-visualizer>` | Orb/pill/dot audio-state indicator (`state`, `level`), honoring `prefers-reduced-motion`. |
 | `<speechkit-voice-consent>` | Fail-closed voice consent gate (`one_shot` / `continuous` scopes). |
 | `<speechkit-voice-provider>` | Context provider distributing one controller to a subtree. |
+| `<speechkit-voice-dialog>` | Frameless, slightly translucent card that streams the voice-agent dialogue (newest turn at the bottom, top fade). `anchor="above\|below\|start\|end"` places it next to a launcher, `auto-open` shows it when a session starts; a slim bar holds the recording indicator, an end-session icon and a hide icon. |
+| `<speechkit-live-transcript>` | Bounded 1–2 line streaming transcript (`lines`, `source`, `placeholder`); only final segments reach the polite live region. |
+| `<speechkit-voice-notice>` | One-line error/status chip localized by reason code, with Retry, ✕ and an on-demand details disclosure. Never shows raw codes or URLs in the default view. |
+
+The split button carries the recording indicator: idle, requesting (microphone
+prompt / session setup), listening (red dot plus level-reactive bars),
+processing, speaking and error. Motion stays inside the control; under
+`prefers-reduced-motion` the bars rest at fixed heights and the visible state
+label keeps "being recorded" obvious. Any denial renders as a compact notice
+above the button (`no-notice` opts out, e.g. when a dialog shows it).
 
 ## Voice Assistant (`<speechkit-voice-assistant>`)
 
@@ -99,6 +109,36 @@ flushing, and input/output level metering, and emits the canonical event
 stream. `@kombifyio/speechkit-voiceagent-client` is an **optional peer
 dependency** required only for this subpath — the main entry stays
 dependency-free.
+
+## Microphone permission and consent
+
+Check the microphone before opening a server session, so a blocked or missing
+microphone never mints a ticket:
+
+```ts
+import { checkMicrophonePermission, requestMicrophone, releaseMediaStream } from "@kombifyio/speechkit-voice-ui";
+
+const permission = await checkMicrophonePermission(); // "granted" | "prompt" | "denied" | "unsupported"
+if (permission === "denied") showNotice("microphone_permission_denied");
+const mic = await requestMicrophone(); // { ok, stream } or { ok: false, reason: "microphone_*" }
+// ...later: releaseMediaStream(mic.stream)
+```
+
+Consent is confirmed once and remembered: `createVoiceConsentStore` persists the
+decision on the device (`localStorage`, key `speechkit.voice.consent.v1`) and
+reports every user decision through `onConsentChange`, so the host can store it
+in the user's account. On sign-in, seed it back with `setConsentRecord(record)`.
+Raising `consentVersion` asks everyone again; `revoke()` clears it.
+
+```ts
+const consent = createVoiceConsentStore({
+  surface: "web",
+  consentVersion: "2026-10",
+  onConsentChange: (record) => api.saveVoiceConsent(record)
+});
+consent.setConsentRecord(await api.loadVoiceConsent());
+overlay.consentAdapter = consent; // also accepted by <speechkit-voice-consent>
+```
 
 ## Theming
 

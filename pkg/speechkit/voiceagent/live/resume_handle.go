@@ -1,8 +1,10 @@
 package live
 
 import (
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -22,7 +24,15 @@ type ResumeHandle struct {
 	encrypted []byte
 	setAt     time.Time
 	now       func() time.Time // injectable for tests
+	logger    atomic.Pointer[slog.Logger]
 }
+
+// SetLogger routes this handle's diagnostics to l. Nil restores the
+// slog.Default() fallback.
+func (h *ResumeHandle) SetLogger(l *slog.Logger) { h.logger.Store(l) }
+
+// log returns the handle's logger, or the default logger when none is set.
+func (h *ResumeHandle) log() *slog.Logger { return logutil.Resolve(h.logger.Load()) }
 
 // NewResumeHandle returns an empty handle whose TTL is measured against the
 // wall clock.
@@ -44,7 +54,7 @@ func (h *ResumeHandle) Set(raw string) {
 		// Protection failure should not lose the reconnect capability; fall back
 		// to plain storage (TTL still applies). DPAPI failures on a healthy
 		// Windows user session are rare and usually indicate a profile issue.
-		slog.Warn("voiceagent: failed to protect resume handle; storing in plain memory", "err", err)
+		h.log().Warn("voiceagent: failed to protect resume handle; storing in plain memory", "err", err)
 		enc = append([]byte(nil), raw...)
 	}
 	h.encrypted = enc
@@ -66,7 +76,7 @@ func (h *ResumeHandle) Get() string {
 	}
 	plain, err := unprotectResumeHandle(h.encrypted)
 	if err != nil {
-		slog.Warn("voiceagent: failed to unprotect resume handle; discarding", "err", err)
+		h.log().Warn("voiceagent: failed to unprotect resume handle; discarding", "err", err)
 		h.encrypted = nil
 		h.setAt = time.Time{}
 		return ""

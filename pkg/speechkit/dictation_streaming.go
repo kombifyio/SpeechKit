@@ -45,6 +45,27 @@ type DictationStreamProvider interface {
 	StartDictationStream(ctx context.Context, opts DictationStreamOptions, format speaker.AudioFormat) (DictationStream, error)
 }
 
+// DictationStreamAvailability is implemented by a [DictationStreamProvider]
+// whose live dictation depends on how it is configured — one adapter type
+// that serves several vendors, only some of which stream. Providers without
+// it stream whenever they implement DictationStreamProvider.
+type DictationStreamAvailability interface {
+	SupportsDictationStream() bool
+}
+
+// AsDictationStreamProvider returns p as a [DictationStreamProvider] when it
+// can serve provider-native live dictation as configured.
+func AsDictationStreamProvider(p any) (DictationStreamProvider, bool) {
+	streamer, ok := p.(DictationStreamProvider)
+	if !ok {
+		return nil, false
+	}
+	if gate, gated := p.(DictationStreamAvailability); gated && !gate.SupportsDictationStream() {
+		return nil, false
+	}
+	return streamer, true
+}
+
 // DictationStreamSink consumes provider-native live dictation events. Drafts
 // are allowed to update UI state, but only final events may reach output or
 // persistence.

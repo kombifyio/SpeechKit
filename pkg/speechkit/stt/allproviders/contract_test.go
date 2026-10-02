@@ -76,7 +76,7 @@ func TestSTTProviderContract(t *testing.T) {
 			ExpectedName: "vps",
 			WantText:     "the quick brown fox",
 			NewProvider: func(baseURL string) stt.STTProvider {
-				return vps.New(baseURL, "contract-key")
+				return vps.New(vps.Options{BaseURL: baseURL, APIKey: "contract-key"})
 			},
 			Success: jsonTextSuccess("the quick brown fox"),
 		},
@@ -85,7 +85,7 @@ func TestSTTProviderContract(t *testing.T) {
 			ExpectedName: "huggingface",
 			WantText:     "hallo welt",
 			NewProvider: func(baseURL string) stt.STTProvider {
-				p := huggingface.New("test-model", "test-token")
+				p := huggingface.New(huggingface.Options{Model: "test-model", APIKey: "test-token"})
 				p.BaseURL = baseURL
 				p.Validation = loopbackValidation
 				return p
@@ -97,7 +97,7 @@ func TestSTTProviderContract(t *testing.T) {
 			ExpectedName: "openrouter",
 			WantText:     "transcribed via contract",
 			NewProvider: func(baseURL string) stt.STTProvider {
-				p := openrouter.New("contract-key", "openai/whisper-1")
+				p := openrouter.New(openrouter.Options{APIKey: "contract-key", Model: "openai/whisper-1"})
 				p.BaseURL = baseURL
 				p.Validation = loopbackValidation
 				return p
@@ -109,7 +109,7 @@ func TestSTTProviderContract(t *testing.T) {
 			ExpectedName: "deepgram",
 			WantText:     "guten morgen",
 			NewProvider: func(baseURL string) stt.STTProvider {
-				p := deepgram.New("contract-key", "nova-3")
+				p := deepgram.New(deepgram.Options{APIKey: "contract-key", Model: "nova-3"})
 				p.BaseURL = baseURL
 				p.Validation = loopbackValidation
 				return p
@@ -121,7 +121,7 @@ func TestSTTProviderContract(t *testing.T) {
 			ExpectedName: "assemblyai",
 			WantText:     "transkribiert per assemblyai",
 			NewProvider: func(baseURL string) stt.STTProvider {
-				p := assemblyai.New("contract-key", "")
+				p := assemblyai.New(assemblyai.Options{APIKey: "contract-key"})
 				p.BaseURL = baseURL
 				p.Validation = loopbackValidation
 				p.PollInterval = time.Millisecond // poll returns "completed" on first tick
@@ -134,7 +134,7 @@ func TestSTTProviderContract(t *testing.T) {
 			ExpectedName: "openai",
 			WantText:     "transcribed via openai",
 			NewProvider: func(baseURL string) stt.STTProvider {
-				p := openaicompat.NewOpenAI("contract-key")
+				p := openaicompat.NewOpenAI(openaicompat.Options{APIKey: "contract-key"})
 				p.BaseURL = baseURL
 				p.Validation = loopbackValidation
 				return p
@@ -146,7 +146,7 @@ func TestSTTProviderContract(t *testing.T) {
 			ExpectedName: "groq",
 			WantText:     "transcribed via groq",
 			NewProvider: func(baseURL string) stt.STTProvider {
-				p := openaicompat.NewGroq("contract-key")
+				p := openaicompat.NewGroq(openaicompat.Options{APIKey: "contract-key"})
 				p.BaseURL = baseURL
 				p.Validation = loopbackValidation
 				return p
@@ -158,7 +158,7 @@ func TestSTTProviderContract(t *testing.T) {
 			ExpectedName: "ollama",
 			WantText:     "transcribed via ollama",
 			NewProvider: func(baseURL string) stt.STTProvider {
-				p := openaicompat.NewOllama(baseURL, "contract-model")
+				p := openaicompat.NewOllama(openaicompat.Options{BaseURL: baseURL, Model: "contract-model"})
 				p.Validation = loopbackValidation
 				return p
 			},

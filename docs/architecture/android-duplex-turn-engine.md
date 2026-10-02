@@ -161,7 +161,7 @@ The rate is a required argument, and the one place this API asks the consumer
 for a number. It has to: the budget is a duration, and bytes only become a
 duration at a rate. Playback is the single leg of the pipeline where the rate
 varies — the Voice Agent downlink is 24 kHz S16 mono
-(`internal/audio/stream_player.go`, `cmd/speechkit/voice_agent_echo_guard.go`)
+(`app/internal/audio/stream_player.go`, `app/cmd/speechkit/voice_agent_echo_guard.go`)
 while capture is fixed at 16 kHz. Measuring downlink bytes at the capture rate
 overstates the agent's audible time by half, which arms the barge-in gate over
 ~2 s of silence after a 4 s answer: the original defect, smaller. So

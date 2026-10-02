@@ -3,6 +3,7 @@ package cascaded
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -29,6 +30,7 @@ type Provider struct {
 	tts             TTS
 	speakerStreamer speaker.StreamingProvider
 	cfg             Config
+	logger          *slog.Logger
 
 	// Per-session live config from Connect()
 	locale       string
@@ -79,6 +81,9 @@ type Deps struct {
 	TTS             TTS
 	SpeakerStreamer speaker.StreamingProvider
 	Config          Config
+	// Logger receives the provider's diagnostics. Nil falls back to
+	// slog.Default() at log time.
+	Logger *slog.Logger
 }
 
 // NewProvider constructs a provider without starting background work.
@@ -91,6 +96,7 @@ func NewProvider(deps Deps) *Provider {
 		tts:             deps.TTS,
 		speakerStreamer: deps.SpeakerStreamer,
 		cfg:             cfg,
+		logger:          deps.Logger,
 		messages:        make(chan *Message, 16),
 		triggers:        make(chan struct{}, 4),
 		closedCh:        make(chan struct{}),
@@ -99,4 +105,4 @@ func NewProvider(deps Deps) *Provider {
 
 // Bridging a host's LLM flow to Agent is the host's job so this public package
 // carries no AI-runtime dependency; SpeechKit's own server does it in
-// internal/ai/flows.NewCascadedAgent. Embedders supply their own Agent.
+// app/internal/ai/flows.NewCascadedAgent. Embedders supply their own Agent.

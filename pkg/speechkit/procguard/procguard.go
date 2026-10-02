@@ -4,7 +4,7 @@
 // SpeechKit's CPU-heavy children — the wake-word sidecars, whisper-server and
 // the local LLM server — are deliberately rooted in a background context so a
 // short-lived HTTP request context cannot kill them (see
-// cmd/speechkit/desktop_wakeword.go for that bug history). Their shutdown is
+// app/cmd/speechkit/desktop_wakeword.go for that bug history). Their shutdown is
 // owned by the host's own Close paths and the startup cleanup stack.
 //
 // That covers every ORDERLY exit. It does not cover a crash, a taskkill, or a
@@ -40,6 +40,8 @@
 // The call order is [Prepare] before cmd.Start, [Adopt] straight after it.
 // Both are robustness measures rather than preconditions: a child that could
 // not be adopted still works, so callers log and carry on.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package procguard
 
 import (

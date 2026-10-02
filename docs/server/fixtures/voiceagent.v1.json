@@ -1,6 +1,6 @@
 {
   "contract": "speechkit.voiceagent.v1",
-  "description": "Golden example frames for the realtime Voice Agent WebSocket (GET /v1/voiceagent/sessions/{id}/ws). Producer drift-check: internal/server/voiceagent/protocol_fixture_test.go marshals the Go protocol structs and asserts equality with these frames. Consumers (the TypeScript voiceagent-client and the Android/KMP client) replay the same frames against their codecs. Audio is binary in both directions and is not part of this fixture.",
+  "description": "Golden example frames for the realtime Voice Agent WebSocket (GET /v1/voiceagent/sessions/{id}/ws). Producer drift-check: app/internal/server/voiceagent/protocol_fixture_test.go marshals the Go protocol structs and asserts equality with these frames. Consumers (the TypeScript voiceagent-client and the Android/KMP client) replay the same frames against their codecs. Audio is binary in both directions and is not part of this fixture.",
   "frames": {
     "start": {
       "type": "start",
@@ -20,7 +20,7 @@
       "media_transport": "livekit",
       "voice": "marin",
       "locale": "de-DE",
-      "model": "gpt-realtime-2",
+      "model": "gpt-realtime-2.1",
       "thinking": "low",
       "activity_detection": {
         "automatic": true,

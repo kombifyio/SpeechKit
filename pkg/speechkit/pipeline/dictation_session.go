@@ -55,6 +55,7 @@ type DictationSegmenter struct {
 	overlap                time.Duration
 	maxUtterance           time.Duration
 	pending                []byte
+	samples                []int16 // reused per-frame VAD input
 	preRoll                []byte
 	active                 []byte
 	tailSilence            []byte
@@ -199,16 +200,20 @@ func (s *DictationSegmenter) FeedPCM(pcm []byte) error {
 	s.lastFrameAt = s.now()
 	s.ingestedBytes += len(pcm)
 	s.pending = append(s.pending, pcm...)
-	for len(s.pending) >= dictationFrameBytes {
-		frame := s.pending[:dictationFrameBytes]
-		s.pending = s.pending[dictationFrameBytes:]
+	off := 0
+	for len(s.pending)-off >= dictationFrameBytes {
+		frame := s.pending[off : off+dictationFrameBytes]
+		off += dictationFrameBytes
 
 		segments, err := s.feedFrame(frame)
 		if err != nil {
+			s.pending = s.pending[:copy(s.pending, s.pending[off:])]
 			return err
 		}
 		s.segments = append(s.segments, segments...)
 	}
+	// Compact the unconsumed remainder to the front so the buffer is reused.
+	s.pending = s.pending[:copy(s.pending, s.pending[off:])]
 	return nil
 }
 
@@ -324,7 +329,10 @@ func cloneAudioSegments(segments []speechkit.AudioSegment) []speechkit.AudioSegm
 }
 
 func (s *DictationSegmenter) feedFrame(frame []byte) ([]speechkit.AudioSegment, error) {
-	samples := make([]int16, dictationFrameSize)
+	if cap(s.samples) < dictationFrameSize {
+		s.samples = make([]int16, dictationFrameSize)
+	}
+	samples := s.samples[:dictationFrameSize]
 	for i := 0; i < dictationFrameSize; i++ {
 		offset := i * speechkit.AudioBytesPerSample
 		samples[i] = int16(binary.LittleEndian.Uint16(frame[offset : offset+speechkit.AudioBytesPerSample])) // #nosec G115 -- PCM S16LE decoding reinterprets identical-width sample bits.
@@ -352,12 +360,12 @@ func (s *DictationSegmenter) feedFrame(frame []byte) ([]speechkit.AudioSegment, 
 			s.idleSince = time.Time{}
 			if len(s.preRoll) > 0 {
 				s.active = append(s.active, s.preRoll...)
-				s.preRoll = nil
+				s.preRoll = s.preRoll[:0]
 			}
 		}
 		if len(s.tailSilence) > 0 {
 			s.active = append(s.active, s.tailSilence...)
-			s.tailSilence = nil
+			s.tailSilence = s.tailSilence[:0]
 		}
 		s.active = append(s.active, frame...)
 		s.silenceTime = 0
@@ -367,8 +375,8 @@ func (s *DictationSegmenter) feedFrame(frame []byte) ([]speechkit.AudioSegment, 
 			// listening. The speaker has not paused, so the segmenter stays in
 			// speech and the next frame starts the following segment.
 			segment := s.buildSegment(s.active, false)
-			s.active = nil
-			s.tailSilence = nil
+			s.active = s.active[:0]
+			s.tailSilence = s.tailSilence[:0]
 			if segment == nil {
 				return nil, nil
 			}
@@ -396,7 +404,7 @@ func (s *DictationSegmenter) feedFrame(frame []byte) ([]speechkit.AudioSegment, 
 
 	if !s.shouldEmitIntermediate(segmentPCM) {
 		s.active = segmentPCM
-		s.tailSilence = nil
+		s.tailSilence = s.tailSilence[:0]
 		s.inSpeech = false
 		s.idleSince = s.now()
 		s.setIdleSilence(s.silenceTime)
@@ -406,8 +414,8 @@ func (s *DictationSegmenter) feedFrame(frame []byte) ([]speechkit.AudioSegment, 
 
 	segment := s.buildSegment(segmentPCM, false)
 
-	s.active = nil
-	s.tailSilence = nil
+	s.active = segmentPCM[:0]
+	s.tailSilence = s.tailSilence[:0]
 	s.inSpeech = false
 	// User stopped speaking — anchor the idle clock to "now" so the
 	// post-utterance silence countdown starts here, not from session
@@ -470,8 +478,7 @@ func (s *DictationSegmenter) buildSegment(pcm []byte, final bool) *speechkit.Aud
 
 func (s *DictationSegmenter) appendPreRoll(frame []byte) {
 	if limit := maxDictationBytes(s.padding, s.overlap); limit > 0 {
-		s.preRoll = append(s.preRoll, frame...)
-		s.preRoll = trimLeftDictationBytes(s.preRoll, limit)
+		s.preRoll = appendTrimmedDictationBytes(s.preRoll, frame, limit)
 	}
 }
 
@@ -481,7 +488,10 @@ func (s *DictationSegmenter) appendOverlapTail(pcm []byte) {
 		s.preRoll = nil
 		return
 	}
-	s.preRoll = append(s.preRoll[:0], tailDictationBytes(pcm, limit)...)
+	if len(pcm) > limit {
+		pcm = pcm[len(pcm)-limit:]
+	}
+	s.preRoll = append(s.preRoll[:0], pcm...)
 }
 
 func (s *DictationSegmenter) appendTailSilence(frame []byte) {
@@ -490,8 +500,7 @@ func (s *DictationSegmenter) appendTailSilence(frame []byte) {
 		s.tailSilence = nil
 		return
 	}
-	s.tailSilence = append(s.tailSilence, frame...)
-	s.tailSilence = trimLeftDictationBytes(s.tailSilence, limit)
+	s.tailSilence = appendTrimmedDictationBytes(s.tailSilence, frame, limit)
 }
 
 func (s *DictationSegmenter) resetSession() {
@@ -535,16 +544,12 @@ func maxDictationBytes(a, b time.Duration) int {
 	return dictationBytesForDuration(b)
 }
 
-func trimLeftDictationBytes(buf []byte, limit int) []byte {
-	if limit <= 0 || len(buf) <= limit {
-		return append([]byte(nil), buf...)
+// appendTrimmedDictationBytes appends add to buf and keeps only the last limit
+// bytes, shifting in place so the backing array is reused.
+func appendTrimmedDictationBytes(buf, add []byte, limit int) []byte {
+	buf = append(buf, add...)
+	if limit > 0 && len(buf) > limit {
+		buf = buf[:copy(buf, buf[len(buf)-limit:])]
 	}
-	return append([]byte(nil), buf[len(buf)-limit:]...)
-}
-
-func tailDictationBytes(buf []byte, limit int) []byte {
-	if limit <= 0 || len(buf) <= limit {
-		return append([]byte(nil), buf...)
-	}
-	return append([]byte(nil), buf[len(buf)-limit:]...)
+	return buf
 }

@@ -47,6 +47,7 @@ func (c *RecordingController) Stop(opts speechkit.RecordingStopOptions) error {
 		close(c.idleWatcherCh)
 		c.idleWatcherCh = nil
 	}
+	c.stopMaxDurationTimerLocked()
 	c.mu.Unlock()
 	defer c.clearStopping()
 
@@ -257,6 +258,7 @@ func (c *RecordingController) Cancel(opts speechkit.RecordingCancelOptions) erro
 		close(c.idleWatcherCh)
 		c.idleWatcherCh = nil
 	}
+	c.stopMaxDurationTimerLocked()
 	c.mu.Unlock()
 	defer c.clearStopping()
 

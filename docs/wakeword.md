@@ -48,12 +48,12 @@ Hands-free targets:
 The desktop host imports only the engine-free `pkg/speechkit/wakeword` root
 (catalog, `AutoEndPolicy`, detection contracts) and never links Sherpa.
 Sherpa KWS support is isolated in `speechkit-wakeword.exe`, built from
-`cmd/speechkit-wakeword`: it is the only binary that imports the
+`app/cmd/speechkit-wakeword`: it is the only binary that imports the
 `pkg/speechkit/wakeword/sherpa` engine (a cgo build) and it is bundled next
 to its private Sherpa runtime DLLs.
 
 OpenWakeWord stays a separate sidecar, `speechkit-openwakeword.exe`, built from
-`cmd/speechkit-openwakeword` with `-tags openwakeword_sidecar`. Keep these
+`app/cmd/speechkit-openwakeword` with `-tags openwakeword_sidecar`. Keep these
 sidecars independent: the host starts them as subprocesses and communicates
 over the sidecar protocol instead of importing provider-specific runtime
 packages. Both sidecars record opt-in training clips through
@@ -69,7 +69,7 @@ For generated integrations, start with:
 
 ```bash
 go test ./pkg/speechkit/wakeword/... ./pkg/speechkit/voiceagent/...
-go run ./cmd/speechkit-mcp --mode=docs,test
+go run ./app/cmd/speechkit-mcp --mode=docs,test
 ```
 
 ## Privacy Contract

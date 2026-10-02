@@ -97,7 +97,7 @@ func (s *liveCommitSink) HandleDictationStreamEvent(ctx context.Context, event s
 		}
 		return s.inner.HandleDictationStreamEvent(ctx, out, outOpts)
 	}
-	s.armHoldLocked()
+	s.armHoldLocked(ctx)
 	s.mu.Unlock()
 	return nil
 }
@@ -123,7 +123,7 @@ func (s *liveCommitSink) readyLocked() bool {
 	return CountTerminalSentences(JoinTranscriptFragments(liveCommitTexts(s.parts)...)) >= minSentences
 }
 
-func (s *liveCommitSink) armHoldLocked() {
+func (s *liveCommitSink) armHoldLocked(ctx context.Context) {
 	if s.timer != nil {
 		s.timer.Stop()
 		s.timer = nil
@@ -131,8 +131,11 @@ func (s *liveCommitSink) armHoldLocked() {
 	if s.policy.Hold <= 0 {
 		return
 	}
+	// The hold timer outlives the triggering call, so it keeps ctx's values but
+	// must not be cancelled with it.
+	flushCtx := context.WithoutCancel(ctx)
 	s.timer = time.AfterFunc(s.policy.Hold, func() {
-		_ = s.FlushLiveCommit(context.Background())
+		_ = s.FlushLiveCommit(flushCtx)
 	})
 }
 

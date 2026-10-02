@@ -16,7 +16,7 @@ import (
 )
 
 func newTestDeepgramProvider(serverURL string) *Provider {
-	p := New("deepgram-test-key", "nova-3")
+	p := New(Options{APIKey: "deepgram-test-key", Model: "nova-3"})
 	p.BaseURL = serverURL
 	p.Validation = testValidation
 	p.client.Timeout = 5 * time.Second
@@ -175,7 +175,7 @@ func TestDeepgram_Transcribe_AppliesListenOptionsAndKeyterms(t *testing.T) {
 	defer server.Close()
 
 	p := newTestDeepgramProvider(server.URL)
-	p.ApplyOptions(Options{
+	p.ApplyTuning(Tuning{
 		Configured:            true,
 		SmartFormat:           true,
 		Dictation:             true,
@@ -229,7 +229,7 @@ func TestDeepgram_Transcribe_DetectLanguageIsIgnoredForCodeSwitching(t *testing.
 	defer server.Close()
 
 	p := newTestDeepgramProvider(server.URL)
-	p.ApplyOptions(Options{
+	p.ApplyTuning(Tuning{
 		Configured:            true,
 		SmartFormat:           true,
 		DetectLanguage:        true,
@@ -266,7 +266,7 @@ func TestDeepgram_Transcribe_HonoursProviderLanguageOverride(t *testing.T) {
 	defer server.Close()
 
 	p := newTestDeepgramProvider(server.URL)
-	p.ApplyOptions(Options{Configured: true, SmartFormat: true, LanguageOverride: "de"})
+	p.ApplyTuning(Tuning{Configured: true, SmartFormat: true, LanguageOverride: "de"})
 	if _, err := p.Transcribe(context.Background(), []byte("pcm"), stt.TranscribeOpts{}); err != nil {
 		t.Fatalf("Transcribe: %v", err)
 	}
@@ -291,7 +291,7 @@ func TestDeepgram_Transcribe_DefaultsToMultilingualCodeSwitching(t *testing.T) {
 	defer server.Close()
 
 	p := newTestDeepgramProvider(server.URL)
-	p.ApplyOptions(Options{
+	p.ApplyTuning(Tuning{
 		Configured:            true,
 		SmartFormat:           true,
 		LanguageOverride:      "multi",
@@ -324,7 +324,7 @@ func TestDeepgram_Transcribe_UsesLegacyKeywordsForNova2(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New("deepgram-test-key", "nova-2")
+	p := New(Options{APIKey: "deepgram-test-key", Model: "nova-2"})
 	p.BaseURL = server.URL
 	p.Validation = testValidation
 	p.client.Timeout = 5 * time.Second

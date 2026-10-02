@@ -3,7 +3,7 @@ package io.kombify.speechkit.vad
 /**
  * Level-based voice activity detection.
  *
- * Mirrors: internal/vad/level_vad.go LevelVAD.
+ * Mirrors: app/internal/vad/level_vad.go LevelVAD.
  *
  * Unlike [SileroVadDetector] this needs no model file, so it is the endpointer
  * that works on a fresh install. Model weights are never bundled into a

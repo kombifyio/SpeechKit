@@ -2,6 +2,8 @@
 // attribution contracts. It is intentionally provider-neutral so Dictation,
 // Assist, Voice Agent fallbacks, and HTTP clients can share the same result
 // shape without importing desktop internals.
+//
+// Stability: Stable — no breaking change without a minor version bump and a changelog callout.
 package speaker
 
 import (

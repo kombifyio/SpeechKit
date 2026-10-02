@@ -16,6 +16,8 @@
 // be shared across provider packages. Provider conformance tests must live
 // in an external test package (e.g. `package stt_test`) to avoid the import
 // cycle that would otherwise form (sttcontract imports stt).
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package sttcontract
 
 import (

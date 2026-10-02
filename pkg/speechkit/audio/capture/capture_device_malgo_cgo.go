@@ -6,7 +6,6 @@ package capture
 import "C"
 
 import (
-	"log/slog"
 	"time"
 	"unsafe"
 
@@ -87,7 +86,7 @@ func (s *MalgoSession) Start() error {
 		// re-enumerated it). Fall back to one fresh enumeration and retry
 		// before giving up — this is the slow path the cache normally skips.
 		s.invalidateResolvedCaptureDevice()
-		slog.Warn("capture start with cached device id failed; re-enumerating",
+		s.cfg.log().Warn("capture start with cached device id failed; re-enumerating",
 			"err", err)
 		deviceID, haveDeviceID, _, err = s.resolveInputDeviceID(deviceType)
 		if err == nil {
@@ -104,7 +103,7 @@ func (s *MalgoSession) Start() error {
 	if err := device.Start(); err != nil && reused {
 		// A device kept warm can go stale (endpoint removed, format changed):
 		// open a fresh one once before giving up.
-		slog.Warn("warm capture device failed to start; reopening", "err", err)
+		s.cfg.log().Warn("warm capture device failed to start; reopening", "err", err)
 		s.releaseDevice()
 		device, reused, err = s.acquireDevice(deviceType, deviceID, haveDeviceID, true)
 		if err == nil {
@@ -135,9 +134,9 @@ func (s *MalgoSession) Start() error {
 		"specific_device", haveDeviceID,
 	}
 	if totalDur > 250*time.Millisecond {
-		slog.Info("capture start timing (slow)", timingArgs...)
+		s.cfg.log().Info("capture start timing (slow)", timingArgs...)
 	} else {
-		slog.Debug("capture start timing", timingArgs...)
+		s.cfg.log().Debug("capture start timing", timingArgs...)
 	}
 
 	s.emit(Event{
@@ -194,7 +193,7 @@ func (s *MalgoSession) invalidateResolvedCaptureDevice() {
 func (s *MalgoSession) warmResolvedCaptureDevice() {
 	hexID, err := resolveCaptureDeviceHex(s.cfg)
 	if err != nil {
-		slog.Debug("capture device pre-resolve failed", "err", err)
+		s.cfg.log().Debug("capture device pre-resolve failed", "err", err)
 		return
 	}
 	s.resolveMu.Lock()

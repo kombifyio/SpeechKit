@@ -222,13 +222,13 @@ token_env = "HF_TOKEN"
 [providers.openai]
 enabled        = true
 api_key_env    = "OPENAI_API_KEY"
-stt_model      = "whisper-1"
-utility_model  = "gpt-4o-mini"
-assist_model   = "gpt-4o"
-agent_model    = "gpt-4o"
-tts_model      = "tts-1"
+stt_model      = "gpt-transcribe"
+utility_model  = "gpt-6-luna"
+assist_model   = "gpt-6.1-sol"
+agent_model    = "gpt-6.1-sol"
+tts_model      = "gpt-4o-mini-tts"
 tts_voice      = "nova"
-realtime_model = "gpt-realtime-2"  # Used when [voice_agent].provider = "openai".
+realtime_model = "gpt-realtime-2.1"  # Used when [voice_agent].provider = "openai".
 
 # Google Cloud STT / TTS and Gemini Live are opt-in bring-your-own-key
 # providers. They are never a default; uncomment to use your own credentials.
@@ -255,7 +255,7 @@ diarization_model = "latest"
 enabled    = false
 api_key_env = "ASSEMBLYAI_API_KEY"
 stt_models  = "universal-3-5-pro,universal-2"
-streaming_model = "universal-3-5-pro"
+streaming_model = "universal-3-6-pro"
 streaming_base_url = "wss://streaming.assemblyai.com"
 # Short clips (80ms–120s) use the synchronous Universal-3.5 Pro endpoint
 # (single request/response, ~134ms p50, prompt/keyterms/conversation-context
@@ -305,7 +305,7 @@ speed    = 1.0
 
 [tts.openai]
 enabled = true
-model   = "tts-1"
+model   = "gpt-4o-mini-tts"
 voice   = "nova"
 
 # Opt-in Google Cloud Text-to-Speech (needs [providers.google] above).
@@ -318,7 +318,7 @@ enabled = true
 # provider selects the backend:
 #   "gemini"   — opt-in Google Gemini Live with your own GOOGLE_AI_API_KEY
 #                (needs [providers.google] enabled; never a default)
-#   "openai"   — OpenAI Realtime API (gpt-realtime-2 default; requires
+#   "openai"   — OpenAI Realtime API (gpt-realtime-2.1 default; requires
 #                providers.openai.api_key_env populated). 16 kHz mic PCM is
 #                upsampled to 24 kHz inline by the kernel adapter.
 #   "cascaded" — self-hosted whisper.cpp → Genkit agent LLM → TTS pipeline
@@ -326,7 +326,7 @@ enabled = true
 #                 no Google API key needed)
 #   "moshi"    — self-hosted Kyutai Moshi realtime Rust server (M9b, pending)
 provider = "openai"
-model          = "gpt-realtime-2"
+model          = "gpt-realtime-2.1"
 fallback_model = ""
 voice          = "Kore"
 framework_prompt                = """

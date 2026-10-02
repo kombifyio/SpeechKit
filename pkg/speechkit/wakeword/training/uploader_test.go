@@ -335,3 +335,38 @@ func TestUploader_StopsOnCtxCancel(t *testing.T) {
 		t.Fatal("Run did not return after cancel")
 	}
 }
+
+func TestUploader_RefusesAudioPathOutsideCaptureDir(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "captures")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(root, "private.wav")
+	if err := os.WriteFile(outside, []byte("not a capture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	jsonPath, wavPath := writeFakeCapture(t, dir, "act-escape", "", time.Now())
+	_ = os.Remove(wavPath)
+	var rec Record
+	b, _ := os.ReadFile(jsonPath)
+	_ = json.Unmarshal(b, &rec)
+	rec.AudioPath = filepath.Join("..", "private.wav")
+	b, _ = json.Marshal(rec)
+	if err := os.WriteFile(jsonPath, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	handler := &collectingHandler{}
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+	up, err := NewUploader(UploaderConfig{Dir: dir, ServerURL: srv.URL, Interval: time.Hour, HTTPClient: srv.Client()})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	up.scanOnce(context.Background())
+
+	if handler.callCounter.Load() != 0 {
+		t.Fatal("a file outside the capture dir was uploaded")
+	}
+}

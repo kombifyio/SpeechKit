@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 	"log/slog"
 	"strings"
 	"sync"
@@ -38,7 +39,19 @@ type Session struct {
 	lastIdle      IdleConfig // Stored for reconnection
 	workflow      *workflowState
 	hostPromptSeq atomic.Uint64
+	logger        atomic.Pointer[slog.Logger]
+
+	loopDone chan struct{} // closed when the current receiveLoop exits
+	stopDone chan struct{} // non-nil while a Shutdown is in progress
+	stopErr  error         // result of the last completed Shutdown
 }
+
+// SetLogger routes this session's diagnostics to l. Nil restores the
+// slog.Default() fallback. Safe to call at any time.
+func (s *Session) SetLogger(l *slog.Logger) { s.logger.Store(l) }
+
+// log returns the session's logger, or the default logger when none is set.
+func (s *Session) log() *slog.Logger { return logutil.Resolve(s.logger.Load()) }
 
 // NewSession creates a Voice Agent session with the given provider.
 func NewSession(provider LiveProvider, callbacks Callbacks) *Session {
@@ -84,12 +97,19 @@ func (s *Session) Start(ctx context.Context, cfg LiveConfig, idleCfg IdleConfig)
 	s.mu.Unlock()
 
 	// Start receive loop in background.
-	go s.receiveLoop(sessionCtx)
+	loopDone := make(chan struct{})
+	s.mu.Lock()
+	s.loopDone = loopDone
+	s.mu.Unlock()
+	go func() {
+		defer close(loopDone)
+		s.receiveLoop(sessionCtx)
+	}()
 
 	s.setState(StateListening)
 	s.idleTimer.Reset()
 
-	slog.Info("voice agent session started",
+	s.log().Info("voice agent session started",
 		"provider", s.provider.Name(),
 		"model", cfg.Model,
 		"endpoint", providerEndpointForLog(s.provider),
@@ -229,20 +249,59 @@ func (s *Session) AdvanceWorkflowStep(ctx context.Context, reason string) error 
 }
 
 // Stop deactivates the Voice Agent session. It waits at most
-// DefaultStopCloseTimeout for provider.Close so a hung websocket handshake
-// cannot wedge the caller.
+// DefaultStopCloseTimeout for provider.Close and for the receive loop to
+// exit, so a hung websocket handshake cannot wedge the caller. Do not call
+// Stop from inside a Callbacks handler that runs on the receive loop unless
+// you accept the bounded wait; use a goroutine there instead.
 func (s *Session) Stop() {
 	s.StopWithTimeout(DefaultStopCloseTimeout)
 }
 
-// StopWithTimeout is Stop with an explicit Close bound. A zero or negative
-// timeout waits for Close without a deadline (tests and operators only).
+// StopWithTimeout is Stop with an explicit bound covering provider.Close and
+// the receive-loop exit. A zero or negative timeout waits without a deadline
+// (tests and operators only).
 func (s *Session) StopWithTimeout(timeout time.Duration) {
+	ctx := context.Background()
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	if err := s.Shutdown(ctx); err != nil {
+		s.log().Error("voice agent close error", "err", err)
+	}
+}
+
+// Shutdown deactivates the session and waits until the provider connection is
+// closed and the receive loop has exited, or ctx is done. It is idempotent and
+// safe for concurrent use: every caller waits for the same teardown. It
+// returns the provider close error, joined with ctx.Err() when ctx expired
+// first. A session that is not active returns nil immediately.
+func (s *Session) Shutdown(ctx context.Context) error {
 	s.mu.Lock()
-	switch s.currentState() {
-	case StateInactive, StateDeactivating:
+	if ch := s.stopDone; ch != nil {
 		s.mu.Unlock()
-		return
+		select {
+		case <-ch:
+			s.mu.Lock()
+			err := s.stopErr
+			s.mu.Unlock()
+			return err
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	switch s.currentState() {
+	case StateInactive:
+		s.mu.Unlock()
+		return nil
+	case StateDeactivating:
+		// Teardown started by the receive loop's error path; it owns close.
+		loopDone := s.loopDone
+		s.mu.Unlock()
+		return waitLoop(ctx, loopDone)
+	case StateConnecting, StateListening, StateProcessing, StateSpeaking, StateRecovering:
+		// Live states fall through to the shutdown below.
 	}
 	s.setState(StateDeactivating)
 	if s.idleTimer != nil {
@@ -252,27 +311,43 @@ func (s *Session) StopWithTimeout(timeout time.Duration) {
 		s.cancelFn()
 	}
 	provider := s.provider
+	loopDone := s.loopDone
 	s.workflow = nil
+	done := make(chan struct{})
+	s.stopDone = done
 	s.mu.Unlock()
 
+	var err error
 	if provider != nil {
-		if err := closeProviderBounded(provider, timeout); err != nil {
-			slog.Error("voice agent close error", "err", err)
-		}
+		err = closeProviderBounded(ctx, provider)
 	}
+	err = errors.Join(err, waitLoop(ctx, loopDone))
 
 	s.mu.Lock()
 	s.setState(StateInactive)
+	s.stopErr = err
+	s.stopDone = nil
 	s.mu.Unlock()
-	slog.Info("voice agent session stopped")
+	close(done)
+	s.log().Info("voice agent session stopped")
+	return err
 }
 
-func closeProviderBounded(provider LiveProvider, timeout time.Duration) error {
-	if provider == nil {
+func waitLoop(ctx context.Context, loopDone <-chan struct{}) error {
+	if loopDone == nil {
 		return nil
 	}
-	if timeout <= 0 {
-		return provider.Close()
+	select {
+	case <-loopDone:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func closeProviderBounded(ctx context.Context, provider LiveProvider) error {
+	if provider == nil {
+		return nil
 	}
 	done := make(chan error, 1)
 	go func() {
@@ -281,8 +356,8 @@ func closeProviderBounded(provider LiveProvider, timeout time.Duration) error {
 	select {
 	case err := <-done:
 		return err
-	case <-time.After(timeout):
-		return errStopCloseTimeout
+	case <-ctx.Done():
+		return errors.Join(errStopCloseTimeout, ctx.Err())
 	}
 }
 
@@ -361,7 +436,11 @@ func (s *Session) receiveLoop(ctx context.Context) {
 			if st := s.currentState(); st != StateSpeaking && st != StateProcessing {
 				return
 			}
-			slog.Warn("voice agent turn did not emit completion; returning to listening")
+			if duplex, ok := s.provider.(ContinuousDuplexProvider); ok && duplex.ContinuousDuplex() {
+				s.log().Debug("voice agent full-duplex turn settled; returning to listening")
+			} else {
+				s.log().Warn("voice agent turn did not emit completion; returning to listening")
+			}
 			if s.setListeningIfActive() {
 				s.resetIdleTimer()
 			}
@@ -381,12 +460,12 @@ func (s *Session) receiveLoop(ctx context.Context) {
 			if ctx.Err() != nil {
 				return // Context cancelled, normal shutdown.
 			}
-			slog.Error("voice agent receive error", "err", err)
+			s.log().Error("voice agent receive error", "err", err)
 			if s.callbacks.OnError != nil {
 				s.callbacks.OnError(err)
 			}
 			// Hard cleanup: move to inactive so the session can be restarted.
-			s.cleanupOnError()
+			s.cleanupOnError(ctx)
 			return
 		}
 
@@ -394,11 +473,11 @@ func (s *Session) receiveLoop(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			slog.Error("voice agent received nil message")
+			s.log().Error("voice agent received nil message")
 			if s.callbacks.OnError != nil {
 				s.callbacks.OnError(fmt.Errorf("voiceagent: received nil message"))
 			}
-			s.cleanupOnError()
+			s.cleanupOnError(ctx)
 			return
 		}
 
@@ -517,21 +596,21 @@ func (s *Session) handleToolEvents(msg *LiveMessage) {
 func (s *Session) handleGoAway(ctx context.Context) bool {
 	reconnector, ok := s.provider.(LiveReconnector)
 	if !ok {
-		slog.Warn("voice agent: GoAway received but provider does not support reconnect")
-		s.cleanupOnError()
+		s.log().Warn("voice agent: GoAway received but provider does not support reconnect")
+		s.cleanupOnError(ctx)
 		return false
 	}
-	slog.Info("voice agent: GoAway received, attempting reconnect")
+	s.log().Info("voice agent: GoAway received, attempting reconnect")
 	s.setState(StateRecovering)
 	if err := reconnector.Reconnect(ctx); err != nil {
-		slog.Error("voice agent reconnect failed", "err", err)
+		s.log().Error("voice agent reconnect failed", "err", err)
 		if s.callbacks.OnError != nil {
 			s.callbacks.OnError(fmt.Errorf("reconnect failed: %w", err))
 		}
-		s.cleanupOnError()
+		s.cleanupOnError(ctx)
 		return false
 	}
-	slog.Info("voice agent: reconnected successfully")
+	s.log().Info("voice agent: reconnected successfully")
 	s.setState(StateListening)
 	return true
 }
@@ -547,12 +626,14 @@ func (s *Session) resetIdleTimer() {
 
 // cleanupOnError transitions the session to inactive and notifies the caller.
 // Called when the receive loop encounters an unrecoverable error.
-func (s *Session) cleanupOnError() {
+func (s *Session) cleanupOnError(ctx context.Context) {
 	s.mu.Lock()
 	switch s.currentState() {
 	case StateInactive, StateDeactivating:
 		s.mu.Unlock()
 		return
+	case StateConnecting, StateListening, StateProcessing, StateSpeaking, StateRecovering:
+		// Live states fall through to the shutdown below.
 	}
 	s.setState(StateDeactivating)
 	if s.idleTimer != nil {
@@ -566,12 +647,14 @@ func (s *Session) cleanupOnError() {
 	s.mu.Unlock()
 
 	if provider != nil {
-		if err := closeProviderBounded(provider, DefaultStopCloseTimeout); err != nil {
+		closeCtx, cancelClose := context.WithTimeout(context.WithoutCancel(ctx), DefaultStopCloseTimeout)
+		defer cancelClose()
+		if err := closeProviderBounded(closeCtx, provider); err != nil {
 			// The session is already on an error path; we still want the
 			// provider close failure visible in logs for diagnosis (leaked
 			// WebSocket, stuck HTTP pool, etc.) instead of silently
 			// swallowed.
-			slog.Warn("voiceagent: provider close during cleanup returned error", "err", err)
+			s.log().Warn("voiceagent: provider close during cleanup returned error", "err", err)
 		}
 	}
 

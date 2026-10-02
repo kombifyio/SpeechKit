@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicLong
  * Sizing: [DEFAULT_INTERVAL_MS] is 30 s against a 120 s window — the tightest
  * deployed profile (`deploy/config/server.public-beta.toml`
  * `[server.dictation_stream] idle_timeout_sec`). The code default is 300 s
- * (`internal/config/defaults.go`), so 30 s clears both with room for a doze'd
+ * (`app/internal/config/defaults.go`), so 30 s clears both with room for a doze'd
  * or delayed coroutine to miss two ticks and still make the window.
  *
  * Debounced on activity: audio and control frames reset the server watchdog

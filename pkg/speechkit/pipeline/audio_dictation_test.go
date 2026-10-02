@@ -145,7 +145,7 @@ func TestDictationSegmenterEmitsLongIntermediateSegmentAndResetsOnStop(t *testin
 // segment for the whole stretch — 13 minutes on 2026-09-03. With a cap the
 // segmenter closes the utterance on time and keeps listening.
 func TestDictationSegmenterCapsContinuousSpeechAtMaxUtterance(t *testing.T) {
-	cap := 2 * time.Second
+	maxWait := 2 * time.Second
 	// 5.5 s: two capped segments and a 1.5 s tail above the minimum segment.
 	speechFrames := framesForDuration(5500 * time.Millisecond)
 	vad := &fakeVAD{probs: repeatProb(0.9, speechFrames)}
@@ -153,7 +153,7 @@ func TestDictationSegmenterCapsContinuousSpeechAtMaxUtterance(t *testing.T) {
 	if segmenter == nil {
 		t.Fatal("expected segmenter")
 	}
-	segmenter.SetMaxUtterance(cap)
+	segmenter.SetMaxUtterance(maxWait)
 
 	if err := segmenter.FeedPCM(repeatFrame(speechFrames)); err != nil {
 		t.Fatalf("FeedPCM: %v", err)
@@ -163,8 +163,8 @@ func TestDictationSegmenterCapsContinuousSpeechAtMaxUtterance(t *testing.T) {
 		t.Fatalf("segments = %d, want 2 capped segments from 5.5 s of continuous speech", len(segments))
 	}
 	for index, segment := range segments {
-		if segment.Duration < cap || segment.Duration > cap+dictationFrameDuration() {
-			t.Fatalf("segment %d duration = %s, want about %s", index, segment.Duration, cap)
+		if segment.Duration < maxWait || segment.Duration > maxWait+dictationFrameDuration() {
+			t.Fatalf("segment %d duration = %s, want about %s", index, segment.Duration, maxWait)
 		}
 		if segment.Final {
 			t.Fatalf("segment %d must not be final: the speaker is still talking", index)

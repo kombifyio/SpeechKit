@@ -11,6 +11,8 @@
 // packages. Conformance tests must live in an external test package
 // (e.g. `package tts_test`) to avoid the import cycle that would form
 // (ttscontract imports tts).
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package ttscontract
 
 import (

@@ -1,0 +1,195 @@
+package config
+
+import (
+	"testing"
+)
+
+func ptrBool(b bool) *bool { return &b }
+func ptrInt(i int) *int    { return &i }
+
+func TestApplyPolicyOverlayHKLMOverridesConfig(t *testing.T) {
+	cfg := &Config{}
+	cfg.Update.Enabled = true
+	cfg.Update.ManifestURL = "https://from-toml.example.com"
+	cfg.Audit.RetentionDays = 90
+
+	policy := PolicyValues{
+		UpdateEnabled:      ptrBool(false),
+		UpdateManifestURL:  "https://from-policy.example.com",
+		AuditRetentionDays: ptrInt(365),
+		Origin:             "hklm-policies",
+		KeysFound:          3,
+	}
+	applyPolicyOverlay(cfg, policy)
+
+	if cfg.Update.Enabled {
+		t.Errorf("Update.Enabled: policy should force false")
+	}
+	if cfg.Update.ManifestURL != "https://from-policy.example.com" {
+		t.Errorf("Update.ManifestURL: got %q, want %q", cfg.Update.ManifestURL, "https://from-policy.example.com")
+	}
+	if cfg.Audit.RetentionDays != 365 {
+		t.Errorf("Audit.RetentionDays: want 365, got %d", cfg.Audit.RetentionDays)
+	}
+}
+
+func TestApplyPolicyOverlayEmptyLeavesConfigAlone(t *testing.T) {
+	cfg := &Config{}
+	cfg.Update.Enabled = true
+	cfg.Audit.RetentionDays = 90
+
+	applyPolicyOverlay(cfg, PolicyValues{}) // empty policy — no fields set
+
+	if !cfg.Update.Enabled {
+		t.Errorf("Update.Enabled: empty policy should not change TOML value")
+	}
+	if cfg.Audit.RetentionDays != 90 {
+		t.Errorf("Audit.RetentionDays: want 90, got %d", cfg.Audit.RetentionDays)
+	}
+}
+
+func TestApplyPolicyOverlayProvidersEnforceLocalOnly(t *testing.T) {
+	cfg := &Config{}
+	cfg.Routing.Strategy = "dynamic"
+
+	applyPolicyOverlay(cfg, PolicyValues{ProvidersEnforceLocalOnly: ptrBool(true)})
+
+	if cfg.Routing.Strategy != "local-only" {
+		t.Errorf("Routing.Strategy: want %q, got %q", "local-only", cfg.Routing.Strategy)
+	}
+}
+
+func TestApplyPolicyOverlayProvidersEnforceLocalOnlyFalseNoOp(t *testing.T) {
+	cfg := &Config{}
+	cfg.Routing.Strategy = "dynamic"
+
+	// EnforceLocalOnly=false (DWORD=0) should NOT force local-only.
+	applyPolicyOverlay(cfg, PolicyValues{ProvidersEnforceLocalOnly: ptrBool(false)})
+
+	if cfg.Routing.Strategy != "dynamic" {
+		t.Errorf("Routing.Strategy: false enforce-local-only should not change strategy, got %q", cfg.Routing.Strategy)
+	}
+}
+
+func TestApplyPolicyOverlayVoiceAgentBlocksCloud(t *testing.T) {
+	cfg := &Config{}
+	cfg.VoiceAgent.Provider = "gemini"
+
+	applyPolicyOverlay(cfg, PolicyValues{VoiceAgentAllowCloud: ptrBool(false)})
+
+	if cfg.VoiceAgent.Provider != "local-cascaded" {
+		t.Errorf("VoiceAgent.Provider: want %q, got %q", "local-cascaded", cfg.VoiceAgent.Provider)
+	}
+}
+
+func TestApplyPolicyOverlayVoiceAgentAllowCloudTrueNoOp(t *testing.T) {
+	cfg := &Config{}
+	cfg.VoiceAgent.Provider = "gemini"
+
+	// AllowCloudProviders=true (DWORD=1) should NOT override the provider.
+	applyPolicyOverlay(cfg, PolicyValues{VoiceAgentAllowCloud: ptrBool(true)})
+
+	if cfg.VoiceAgent.Provider != "gemini" {
+		t.Errorf("VoiceAgent.Provider: AllowCloud=true should not change provider, got %q", cfg.VoiceAgent.Provider)
+	}
+}
+
+func TestApplyPolicyOverlayAuditFields(t *testing.T) {
+	cfg := &Config{}
+	cfg.Audit.RetentionDays = 30
+	cfg.Audit.EventLogEnabled = false
+	cfg.Audit.OTLPEndpoint = ""
+
+	applyPolicyOverlay(cfg, PolicyValues{
+		AuditRetentionDays:   ptrInt(180),
+		AuditEventLogEnabled: ptrBool(true),
+		AuditOTLPEndpoint:    "https://otel.internal.example.com:4317",
+	})
+
+	if cfg.Audit.RetentionDays != 180 {
+		t.Errorf("Audit.RetentionDays: want 180, got %d", cfg.Audit.RetentionDays)
+	}
+	if !cfg.Audit.EventLogEnabled {
+		t.Errorf("Audit.EventLogEnabled: want true")
+	}
+	if cfg.Audit.OTLPEndpoint != "https://otel.internal.example.com:4317" {
+		t.Errorf("Audit.OTLPEndpoint: got %q", cfg.Audit.OTLPEndpoint)
+	}
+}
+
+func TestApplyPolicyOverlayTelemetryUpdateCheck(t *testing.T) {
+	cfg := &Config{}
+	cfg.Telemetry.UpdateCheck = true
+
+	applyPolicyOverlay(cfg, PolicyValues{TelemetryUpdateCheck: ptrBool(false)})
+
+	if cfg.Telemetry.UpdateCheck {
+		t.Errorf("Telemetry.UpdateCheck: policy should force false")
+	}
+}
+
+func TestApplyPolicyOverlayFoundryEntraAppRegistration(t *testing.T) {
+	cfg := &Config{}
+	cfg.Providers.Foundry.EntraClientID = "from-config"
+	cfg.Providers.Foundry.EntraTenantID = "from-config-tenant"
+
+	applyPolicyOverlay(cfg, PolicyValues{
+		FoundryEntraClientID: "11111111-1111-1111-1111-111111111111",
+		FoundryEntraTenantID: "contoso.onmicrosoft.com",
+	})
+	if cfg.Providers.Foundry.EntraClientID != "11111111-1111-1111-1111-111111111111" {
+		t.Fatalf("policy client id not applied: %q", cfg.Providers.Foundry.EntraClientID)
+	}
+	if cfg.Providers.Foundry.EntraTenantID != "contoso.onmicrosoft.com" {
+		t.Fatalf("policy tenant id not applied: %q", cfg.Providers.Foundry.EntraTenantID)
+	}
+
+	// An empty policy value leaves the configured registration alone.
+	cfg.Providers.Foundry.EntraClientID = "from-config"
+	applyPolicyOverlay(cfg, PolicyValues{FoundryEntraTenantID: "only-tenant"})
+	if cfg.Providers.Foundry.EntraClientID != "from-config" {
+		t.Fatalf("empty policy client id overwrote config: %q", cfg.Providers.Foundry.EntraClientID)
+	}
+	if cfg.Providers.Foundry.EntraTenantID != "only-tenant" {
+		t.Fatalf("policy tenant id not applied on its own: %q", cfg.Providers.Foundry.EntraTenantID)
+	}
+}
+
+// HKCU is writable by the user, so a per-user registry value must never
+// loosen what the machine policy or the defaults decided; it may only
+// restrict further.
+func TestUserHiveCannotLoosenMachineOrDefaultSecurityValues(t *testing.T) {
+	machine := policyHive{providersEnforceLocal: ptrBool(true)}
+	user := policyHive{
+		providersEnforceLocal: ptrBool(false),                     // lift the machine enforcement
+		voiceAgentAllowCloud:  ptrBool(true),                      // re-allow cloud Voice Agent providers
+		updateManifestURL:     "https://updates.attacker.example", // redirect the update channel
+		auditOTLPEndpoint:     "https://sink.attacker.example:4317",
+		auditRetentionDays:    ptrInt(1),
+		foundryEntraClientID:  "00000000-0000-0000-0000-00000000beef",
+		updateEnabled:         ptrBool(false), // restricting: honoured
+	}
+	want := defaults()
+	cfg := defaults()
+
+	AttachPolicy(cfg, mergePolicyHives(machine, policyHive{}, user))
+
+	if !cfg.Policy().EnforcesLocalOnly() || cfg.Routing.Strategy != "local-only" {
+		t.Fatal("HKCU lifted the machine EnforceLocalOnly policy")
+	}
+	if cfg.VoiceAgent.Provider != want.VoiceAgent.Provider || cfg.Policy().VoiceAgentAllowCloud != nil {
+		t.Fatalf("HKCU changed the Voice Agent provider policy: %q", cfg.VoiceAgent.Provider)
+	}
+	if cfg.Update.ManifestURL != want.Update.ManifestURL {
+		t.Fatalf("HKCU redirected the update manifest to %q", cfg.Update.ManifestURL)
+	}
+	if cfg.Audit.OTLPEndpoint != want.Audit.OTLPEndpoint || cfg.Audit.RetentionDays != want.Audit.RetentionDays {
+		t.Fatalf("HKCU changed the audit sink/retention: %q, %d days", cfg.Audit.OTLPEndpoint, cfg.Audit.RetentionDays)
+	}
+	if cfg.Providers.Foundry.EntraClientID != want.Providers.Foundry.EntraClientID {
+		t.Fatalf("HKCU swapped the Entra app registration: %q", cfg.Providers.Foundry.EntraClientID)
+	}
+	if cfg.Update.Enabled {
+		t.Fatal("a restricting HKCU value (Update\\Enabled=0) was not honoured")
+	}
+}

@@ -3,6 +3,8 @@
 // WebSocket for live dictation and speaker streams, and Flux (/v2/listen) for
 // conversational turn detection. It needs a Deepgram API key and public https
 // egress; there is no local component.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package deepgram
 
 import (
@@ -11,6 +13,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"io"
 	"log/slog"
@@ -32,10 +35,10 @@ const (
 	deepgramMaxKeyterms      = 100
 )
 
-// Options holds provider-specific Deepgram STT controls. These map to
+// Tuning holds provider-specific Deepgram STT controls. These map to
 // Deepgram Listen query parameters while keeping SpeechKit's public STT router
-// interface provider-neutral.
-type Options struct {
+// interface provider-neutral. Apply them with [Provider.ApplyTuning].
+type Tuning struct {
 	Configured            bool
 	SmartFormat           bool
 	Dictation             bool
@@ -69,18 +72,32 @@ type Provider struct {
 	NoStore       bool
 	Keyterms      []string
 	EndpointingMs int
-	client        *http.Client
+	// Logger receives this provider's diagnostics. Nil falls back to
+	// slog.Default() at log time.
+	Logger *slog.Logger
+	client *http.Client
 }
 
-// New creates a Deepgram provider. Model defaults to the
-// provider default if empty.
-func New(apiKey, model string) *Provider {
-	model = strings.TrimSpace(model)
+// log returns the provider's logger, or the default logger when none is set.
+func (p *Provider) log() *slog.Logger { return logutil.Resolve(p.Logger) }
+
+// Options configures [New].
+type Options struct {
+	// APIKey is the Deepgram API key.
+	APIKey string
+	// Model is the Deepgram model. Empty selects "nova-3".
+	Model string
+}
+
+// New creates a Deepgram provider. Zero Options values select the provider
+// defaults.
+func New(opts Options) *Provider {
+	model := strings.TrimSpace(opts.Model)
 	if model == "" {
 		model = "nova-3"
 	}
 	p := &Provider{
-		APIKey:                apiKey,
+		APIKey:                opts.APIKey,
 		Model:                 model,
 		DiarizationModel:      "latest",
 		BaseURL:               deepgramBaseURL,
@@ -92,11 +109,11 @@ func New(apiKey, model string) *Provider {
 	return p
 }
 
-// ApplyOptions copies opts onto the provider, replacing the flags [New] set
+// ApplyTuning copies opts onto the provider, replacing the flags [New] set
 // (SmartFormat and Numerals default on) rather than merging with them.
 // Keyterms are trimmed, de-duplicated case-insensitively and capped at 100;
 // a negative EndpointingMs keeps the current value.
-func (p *Provider) ApplyOptions(opts Options) {
+func (p *Provider) ApplyTuning(opts Tuning) {
 	if p == nil {
 		return
 	}
@@ -162,11 +179,11 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace)) //nolint:contextcheck // trace context derives from req.Context(); httptrace requires re-wrapping the request's own context
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("deepgram request: %w", err)
+		return nil, fmt.Errorf("deepgram request: %w", stt.ClassifyTransportError("deepgram", err))
 	}
 	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 	duration := time.Since(start)
-	slog.Debug("deepgram.latency", // #nosec G706 -- slog writes provider telemetry as structured attributes, not interpolated log text.
+	p.log().Debug("deepgram.latency", // #nosec G706 -- slog writes provider telemetry as structured attributes, not interpolated log text.
 		"reused", reused,
 		"dns_ms", dnsDur.Milliseconds(),
 		"connect_ms", connDur.Milliseconds(),
@@ -186,7 +203,7 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, netsec.ProviderStatusError("deepgram", resp.StatusCode, body)
+		return nil, stt.HTTPError("deepgram", resp, body)
 	}
 
 	var parsed deepgramResponse
@@ -235,7 +252,7 @@ func (p *Provider) Health(ctx context.Context) error {
 	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, stt.MaxResponseBytes))
 	if resp.StatusCode != http.StatusOK {
-		return netsec.ProviderStatusError("deepgram health", resp.StatusCode, body)
+		return stt.HTTPError("deepgram health", resp, body)
 	}
 	return nil
 }

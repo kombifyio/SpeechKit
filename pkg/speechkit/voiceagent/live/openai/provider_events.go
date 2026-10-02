@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"strings"
 
 	"github.com/coder/websocket"
@@ -159,7 +158,7 @@ func (p *Provider) parseEvent(data []byte) (*live.LiveMessage, bool, error) {
 		args := map[string]any{}
 		if strings.TrimSpace(ev.Arguments) != "" {
 			if err := json.Unmarshal([]byte(ev.Arguments), &args); err != nil {
-				slog.Warn("openai realtime: function call arguments not valid JSON", "name", ev.Name, "raw", ev.Arguments)
+				p.log().Warn("openai realtime: function call arguments not valid JSON", "name", ev.Name, "raw_len", len(ev.Arguments))
 			}
 		}
 		return live.NormalizeMessageEvents(&live.LiveMessage{

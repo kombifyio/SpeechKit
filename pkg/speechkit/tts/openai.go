@@ -16,7 +16,7 @@ import (
 const (
 	openAITTSBaseURL     = "https://api.openai.com"
 	openAITTSPath        = "v1/audio/speech"
-	openAIDefaultModel   = "tts-1"
+	openAIDefaultModel   = "gpt-4o-mini-tts"
 	openAIDefaultVoice   = "nova"
 	openAIDefaultFormat  = "mp3"
 	openAISampleRateMP3  = 24000
@@ -39,8 +39,8 @@ type OpenAI struct {
 // OpenAIOpts configures the OpenAI TTS provider.
 type OpenAIOpts struct {
 	APIKey string
-	Model  string // "tts-1" or "tts-1-hd"
-	Voice  string // alloy, echo, fable, onyx, nova, shimmer
+	Model  string // "gpt-4o-mini-tts" (default); legacy "tts-1"/"tts-1-hd" still dial
+	Voice  string // alloy, ash, ballad, coral, echo, fable, onyx, nova, sage, shimmer, verse, marin, cedar
 }
 
 // NewOpenAI creates an OpenAI TTS provider.

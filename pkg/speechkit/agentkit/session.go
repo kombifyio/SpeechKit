@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -38,6 +39,10 @@ type AgentSession struct {
 	ctxMu  sync.RWMutex
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	toolMu     sync.Mutex
+	toolClosed bool
+	toolWG     sync.WaitGroup
 
 	bufMu     sync.Mutex
 	inputBuf  strings.Builder
@@ -89,6 +94,9 @@ func (a *AgentSession) Start(ctx context.Context, cfg LiveConfig, idleCfg IdleCo
 	a.ctx = sessionCtx
 	a.cancel = cancel
 	a.ctxMu.Unlock()
+	a.toolMu.Lock()
+	a.toolClosed = false
+	a.toolMu.Unlock()
 
 	cfg.Tools = append(cfg.Tools, a.registry.Definitions()...)
 
@@ -107,16 +115,72 @@ func (a *AgentSession) Start(ctx context.Context, cfg LiveConfig, idleCfg IdleCo
 	return nil
 }
 
-// Stop deactivates the underlying session. Any pending tool dispatches
-// receive their context cancellation through the session ctx.
+// DefaultStopTimeout bounds how long Stop waits for in-flight tool calls and
+// session teardown.
+const DefaultStopTimeout = 5 * time.Second
+
+// Stop deactivates the underlying session. Pending tool dispatches receive
+// their context cancellation through the session ctx. Stop waits at most
+// DefaultStopTimeout for in-flight tool calls to return; use Shutdown for a
+// caller-controlled bound and the resulting error.
 func (a *AgentSession) Stop() {
-	a.session.Stop()
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultStopTimeout)
+	defer cancel()
+	_ = a.Shutdown(ctx)
+}
+
+// Shutdown cancels the session context, waits for in-flight tool calls to
+// return, then shuts down the underlying live session. It is idempotent and
+// safe for concurrent use. Tool results produced after shutdown began are
+// discarded rather than sent. If ctx expires first, teardown is still
+// initiated and the error includes ctx.Err().
+func (a *AgentSession) Shutdown(ctx context.Context) error {
+	a.toolMu.Lock()
+	a.toolClosed = true
+	a.toolMu.Unlock()
+
 	a.ctxMu.Lock()
 	if a.cancel != nil {
 		a.cancel()
 	}
 	a.cancel = nil
 	a.ctxMu.Unlock()
+
+	var waitErr error
+	idle := make(chan struct{})
+	go func() {
+		a.toolWG.Wait()
+		close(idle)
+	}()
+	select {
+	case <-idle:
+	case <-ctx.Done():
+		waitErr = fmt.Errorf("agentkit: tool calls still running: %w", ctx.Err())
+	}
+	return errors.Join(waitErr, a.session.Shutdown(ctx))
+}
+
+// spawn runs fn in a tracked goroutine. It does not run fn
+// once shutdown has begun.
+func (a *AgentSession) spawn(fn func()) {
+	a.toolMu.Lock()
+	defer a.toolMu.Unlock()
+	if a.toolClosed {
+		return
+	}
+	a.toolWG.Add(1)
+	go func() {
+		defer a.toolWG.Done()
+		fn()
+	}()
+}
+
+// sendToolResponse forwards a tool result unless the session ctx has ended.
+func (a *AgentSession) sendToolResponse(ctx context.Context, r ToolResponse) {
+	if ctx.Err() != nil {
+		return
+	}
+	_ = a.session.SendToolResponse(r)
 }
 
 // SendAudio forwards a PCM audio chunk to the realtime model.
@@ -172,16 +236,16 @@ func (a *AgentSession) prepareToolDispatch(call ToolCall) func() {
 	tool, ok := a.registry.Lookup(call.Name)
 	if !ok {
 		return func() {
-			go func() {
+			a.spawn(func() {
 				if a.hooks.OnToolCall != nil {
 					a.hooks.OnToolCall(ctx, sc, call)
 				}
-				_ = a.session.SendToolResponse(ToolResponse{
+				a.sendToolResponse(ctx, ToolResponse{
 					ID:       call.ID,
 					Name:     call.Name,
 					Response: map[string]any{"error": fmt.Sprintf("unknown tool: %q", call.Name)},
 				})
-			}()
+			})
 		}
 	}
 
@@ -193,20 +257,20 @@ func (a *AgentSession) prepareToolDispatch(call ToolCall) func() {
 		args, err := a.hooks.AuthorizeToolCall(ctx, sc, call)
 		if err != nil {
 			return func() {
-				go func() {
-					_ = a.session.SendToolResponse(ToolResponse{
+				a.spawn(func() {
+					a.sendToolResponse(ctx, ToolResponse{
 						ID:       call.ID,
 						Name:     call.Name,
 						Response: map[string]any{"error": "tool call denied by host policy"},
 					})
-				}()
+				})
 			}
 		}
 		call.Args = cloneToolArgs(args)
 	}
 
 	return func() {
-		go func() {
+		a.spawn(func() {
 			if a.hooks.OnToolCall != nil {
 				observed := call
 				observed.Args = cloneToolArgs(call.Args)
@@ -228,8 +292,8 @@ func (a *AgentSession) prepareToolDispatch(call ToolCall) func() {
 			if a.hooks.OnToolResult != nil {
 				a.hooks.OnToolResult(ctx, sc, call, response)
 			}
-			_ = a.session.SendToolResponse(response)
-		}()
+			a.sendToolResponse(ctx, response)
+		})
 	}
 }
 

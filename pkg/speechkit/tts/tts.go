@@ -1,4 +1,6 @@
 // Package tts exposes the embeddable SpeechKit text-to-speech surface.
+//
+// Stability: Stable — no breaking change without a minor version bump and a changelog callout.
 package tts
 
 import (
@@ -10,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/ttsroute"
 	"go.opentelemetry.io/otel"
@@ -123,7 +126,14 @@ type Router struct {
 	mu        sync.RWMutex
 	providers []Provider
 	strategy  Strategy
+
+	// Logger receives this router's diagnostics. Nil falls back to
+	// slog.Default() at log time.
+	Logger *slog.Logger
 }
+
+// log returns the router's logger, or the default logger when none is set.
+func (r *Router) log() *slog.Logger { return logutil.Resolve(r.Logger) }
 
 // NewRouter creates a TTS router with the given strategy and providers.
 func NewRouter(strategy Strategy, providers ...Provider) *Router {
@@ -176,7 +186,7 @@ func (r *Router) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 		result, synthErr := p.Synthesize(ctx, text, opts.ForProvider(p.Name()))
 		if synthErr != nil {
 			lastErr = synthErr
-			slog.Warn("TTS router: provider failed", "provider", p.Name(), "err", synthErr)
+			r.log().Warn("TTS router: provider failed", "provider", p.Name(), "err", synthErr)
 			continue
 		}
 		return result, nil

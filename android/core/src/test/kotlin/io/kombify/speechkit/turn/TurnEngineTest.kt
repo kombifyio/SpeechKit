@@ -509,10 +509,10 @@ class TurnEngineTest {
 
         /**
          * The Voice Agent downlink, which is not the capture rate. Verified in
-         * this repository at `internal/audio/stream_player.go`
-         * (`voiceAgentOutputSampleRate`), `cmd/speechkit/voice_agent_echo_guard.go`
+         * this repository at `app/internal/audio/stream_player.go`
+         * (`voiceAgentOutputSampleRate`), `app/cmd/speechkit/voice_agent_echo_guard.go`
          * (`voiceAgentOutputBytesPerSecond`), and
-         * `internal/server/voiceagent/livekit_bridge.go`
+         * `app/internal/server/voiceagent/livekit_bridge.go`
          * (`liveKitProviderOutputSampleRate`).
          */
         const val DOWNLINK_SAMPLE_RATE = 24_000

@@ -16,23 +16,25 @@ import (
 // the path — an umlaut in the Windows user name under %LOCALAPPDATA% is enough
 // — therefore makes the child fail fast with STATUS_STACK_BUFFER_OVERRUN
 // (0xc0000409) before the HTTP server is up, and local STT silently drops to
-// cloud fallback. Passing an ASCII-only relative file name and running the
-// child inside the model directory side-steps the argv encoding entirely; the
-// working directory itself is handed to CreateProcessW as UTF-16 and is safe.
+// cloud fallback.
 //
-// When the file name itself is non-ASCII the platform short (8.3) name is used
-// where the file system provides one. The returned dir is empty when the
-// caller should not change the working directory.
+// The platform short (8.3) name of the whole path is preferred, so the child
+// keeps running from its own directory: ggml loads backend DLLs from the
+// working directory too, and a model directory may be one other accounts can
+// write to. Only where the volume has no short names does the child run inside
+// the model directory with an ASCII-only relative file name; the working
+// directory itself is handed to CreateProcessW as UTF-16 and is safe. The
+// returned dir is empty when the caller should not use the model directory.
 func whisperModelArgument(modelPath string) (arg, dir string) {
 	if isASCII(modelPath) {
 		return modelPath, ""
 	}
+	if short := asciiShortPath(modelPath); short != "" {
+		return short, ""
+	}
 	base := filepath.Base(modelPath)
 	if isASCII(base) {
 		return base, filepath.Dir(modelPath)
-	}
-	if short := asciiShortPath(modelPath); short != "" {
-		return short, ""
 	}
 	return modelPath, ""
 }

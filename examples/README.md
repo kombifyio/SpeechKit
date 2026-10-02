@@ -10,10 +10,10 @@ not the entire desktop application.
 - `embed-companion/`: composes wake detections, explicit Hands-Free target routing, Assist requests, optional TTS, and runtime events through the public SDK surface.
 - `embed-tts/`: demonstrates `pkg/speechkit/tts` Provider, Router, Service, and provider-kind routing.
 - `embed-event-bus/`: publishes and consumes the additive wake, skill, companion, Voice-Agent, and TTS events.
-- `assist/in-process/`: fully in-process Assist — wires a real Gemini Generator into `pkg/speechkit/assist.Service` with optional OpenAI TTS output, no SpeechKit server.
+- `assist/in-process/`: fully in-process Assist — wires any OpenAI-compatible chat endpoint (local llama.cpp via `SPEECHKIT_LLM_BASE_URL`, or OpenAI) into `pkg/speechkit/assist.Service` with optional OpenAI TTS output, no SpeechKit server.
 - `meeting/synthetic-host/`: embeds the public `pkg/speechkit/meeting` runtime with an in-memory synthetic transcript adapter; no mic, STT provider, or cloud call.
 - `voice-agent/game-instructor/`: end-to-end 15-minute Voice Agent embedded in a Go program (persona/role/sequence TOML + WebSocket client). Reference for the single-prompt "build a voice agent into my app" use case.
-- `voice-agent/in-process/`: fully in-process Voice Agent — constructs a `live.LiveProvider` (Gemini Live) and drives a text dialogue with no SpeechKit server in the path.
+- `voice-agent/in-process/`: fully in-process Voice Agent — constructs a `live.LiveProvider` (OpenAI Realtime) and drives a text dialogue with no SpeechKit server in the path.
 - `voice-agent/provider-switching/`: credential-free provider/profile/model selection using the public `pkg/speechkit/voiceagent/live` descriptors, `ProviderIntent`, and config helpers.
 - `agentbridge-codex/`: External Coding Agent Bridge in exec mode — one prompt in, normalized events out, against the real codex CLI or the fakecodex fixture.
 - `kombify-box-satellite/`: Go host for the kombify box following the SpeechKit Hands-Free contract (USB mic -> sherpa-KWS wakeword -> optional Hands-Free/Assist flow -> box speaker).
@@ -24,7 +24,7 @@ not the entire desktop application.
 Assist Voice Companion:
 
 ```text
-Add a SpeechKit Assist Voice Companion to this Go app. Use examples/embed-companion as the reference, import only pkg/speechkit/{companion,wakeword,assist,tts} plus pkg/speechkit for events, and wire companion.NewHandsFree with TargetMode: companion.TargetAssist. The host owns mic capture and playback. Do not import internal/*.
+Add a SpeechKit Assist Voice Companion to this Go app. Use examples/embed-companion as the reference, import only pkg/speechkit/{companion,wakeword,assist,tts} plus pkg/speechkit for events, and wire companion.NewHandsFree with TargetMode: companion.TargetAssist. The host owns mic capture and playback. Do not import app/internal/*.
 ```
 
 Voice Agent companion:
@@ -44,6 +44,7 @@ Run an example from the repository root:
 ```bash
 go run ./examples/provider-catalog
 go run ./examples/embed-companion
+SPEECHKIT_LLM_BASE_URL=http://127.0.0.1:8080/v1 go run ./examples/assist/in-process
 go run ./examples/embed-tts
 go run ./examples/embed-event-bus
 go run ./examples/meeting/synthetic-host

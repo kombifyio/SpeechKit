@@ -71,18 +71,18 @@ distinct overlay reasons so a device test can tell them apart.
 
 | Kotlin | Go Source |
 |---|---|
-| `core/audio/AudioSession.kt` :: `AudioSession` | `internal/audio/capturer.go` :: `Session` |
-| `core/audio/AudioSession.kt` :: `AudioFormat` | Audio constants in `internal/audio/` (`STREAM_CHUNK_BYTES` is Android-only: 100 ms at the pipeline rate) |
+| `core/audio/AudioSession.kt` :: `AudioSession` | `app/internal/audio/capturer.go` :: `Session` |
+| `core/audio/AudioSession.kt` :: `AudioFormat` | Audio constants in `app/internal/audio/` (`STREAM_CHUNK_BYTES` is Android-only: 100 ms at the pipeline rate) |
 | `core/audio/AudioCapture.kt` / `MicAudioCapture.kt` / `PcmStreamPlayer.kt` | Android-only streaming adapters. Cold `frames()` vs `AudioSession` start/stop buffer; hosts must not each own an `AudioRecord` / `AudioTrack` |
 
 ### Voice Activity Detection
 
 | Kotlin | Go Source |
 |---|---|
-| `core/vad/VadDetector.kt` :: `VadDetector` | `internal/vad/silero.go` :: `Detector` |
-| `core/vad/VadDetector.kt` :: `VadConfig` | Threshold constants in `internal/vad/silero.go` |
-| `core/vad/SileroVadDetector.kt` | `internal/vad/silero.go` |
-| `core/vad/LevelVadDetector.kt` | `internal/vad/level_vad.go` :: `LevelVAD` |
+| `core/vad/VadDetector.kt` :: `VadDetector` | `app/internal/vad/silero.go` :: `Detector` |
+| `core/vad/VadDetector.kt` :: `VadConfig` | Threshold constants in `app/internal/vad/silero.go` |
+| `core/vad/SileroVadDetector.kt` | `app/internal/vad/silero.go` |
+| `core/vad/LevelVadDetector.kt` | `app/internal/vad/level_vad.go` :: `LevelVAD` |
 
 `LevelVadDetector` is the **default endpointer on Android**, not a fallback.
 Model weights are never bundled into a release, so `SileroVadDetector` throws
@@ -132,7 +132,7 @@ the STT provider and needs device evidence on transcription accuracy.
 |---|---|
 | `core/stt/SttProvider.kt` :: `SttProvider` | `internal/stt/provider.go:10-19` :: `STTProvider` |
 | `core/stt/SttProvider.kt` :: `TranscribeOpts` | `internal/stt/provider.go:22-25` :: `TranscribeOpts` |
-| `core/stt/SttProvider.kt` :: `LANGUAGE_MULTI` / `isMultilanguage` | `internal/config/defaults.go` `STTLanguage: "multi"`; `internal/server/assist/handler.go` `case "multi", "auto"` |
+| `core/stt/SttProvider.kt` :: `LANGUAGE_MULTI` / `isMultilanguage` | `app/internal/config/defaults.go` `STTLanguage: "multi"`; `app/internal/server/assist/handler.go` `case "multi", "auto"` |
 
 `TranscribeOpts.language` **must not default to a locale.** It defaulted to
 `"de"`, so every call site that omitted the argument silently pinned German —
@@ -152,11 +152,11 @@ multilanguage by passing no language tag at all
 
 | Kotlin | Go Source |
 |---|---|
-| `core/store/Store.kt` :: `Store` | `internal/store/types.go:22-42` :: `Store` |
-| `core/store/Store.kt` :: `Transcription` | `internal/store/types.go:75-86` :: `Transcription` |
-| `core/store/Store.kt` :: `QuickNote` | `internal/store/types.go:89-101` :: `QuickNote` |
-| `core/store/Store.kt` :: `Stats` | `internal/store/types.go:103-110` :: `Stats` |
-| `core/store/Store.kt` :: `ListOpts` | `internal/store/types.go:53-58` :: `ListOpts` |
+| `core/store/Store.kt` :: `Store` | `app/internal/store/types.go:22-42` :: `Store` |
+| `core/store/Store.kt` :: `Transcription` | `app/internal/store/types.go:75-86` :: `Transcription` |
+| `core/store/Store.kt` :: `QuickNote` | `app/internal/store/types.go:89-101` :: `QuickNote` |
+| `core/store/Store.kt` :: `Stats` | `app/internal/store/types.go:103-110` :: `Stats` |
+| `core/store/Store.kt` :: `ListOpts` | `app/internal/store/types.go:53-58` :: `ListOpts` |
 
 ### Dictation
 
@@ -194,7 +194,7 @@ inheriting the default.
 
 | Kotlin | Go Source |
 |---|---|
-| `core/config/SpeechKitConfig.kt` :: `SpeechKitConfig` | `internal/config/config.go` :: `Config` |
+| `core/config/SpeechKitConfig.kt` :: `SpeechKitConfig` | `app/internal/config/config.go` :: `Config` |
 
 ## Android-Only Extensions
 

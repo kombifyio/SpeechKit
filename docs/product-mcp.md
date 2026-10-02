@@ -81,5 +81,5 @@ Bounded validation target:
 
 ```powershell
 $env:GOWORK='off'
-go test ./pkg/speechkit/deviceagent ./cmd/speechkit-device-agent ./internal/server/deviceagent/... -count=1
+go test ./pkg/speechkit/deviceagent ./app/cmd/speechkit-device-agent ./app/internal/server/deviceagent/... -count=1
 ```

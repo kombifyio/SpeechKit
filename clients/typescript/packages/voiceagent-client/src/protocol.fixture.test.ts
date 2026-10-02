@@ -21,7 +21,7 @@ import type {
 /**
  * Consumer drift-check: replays the golden frames from
  * docs/server/fixtures/voiceagent.v1.json (the interchange artifact produced
- * by internal/server/voiceagent/protocol.go and pinned by its
+ * by app/internal/server/voiceagent/protocol.go and pinned by its
  * protocol_fixture_test.go) against the protocol.ts frame types.
  */
 

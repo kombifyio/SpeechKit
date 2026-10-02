@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"time"
@@ -31,7 +30,7 @@ func (p *Provider) Transcribe(ctx context.Context, audioData []byte, opts stt.Tr
 		done := p.startDone
 		p.processMu.Unlock()
 		if done != nil {
-			slog.Info("whisper-server: waiting for startup to complete...")
+			p.log().Info("whisper-server: waiting for startup to complete...")
 			select {
 			case <-done:
 				// startup finished — check ready below
@@ -44,7 +43,7 @@ func (p *Provider) Transcribe(ctx context.Context, audioData []byte, opts stt.Tr
 		}
 	}
 
-	endpoint := fmt.Sprintf("%s/v1/audio/transcriptions", p.BaseURL)
+	endpoint := fmt.Sprintf("%s/v1/audio/transcriptions", p.serverURL())
 	resolved := stt.ResolveTranscribeOptions("local", "stt.local.whispercpp", opts, nil, nil)
 
 	body := &bytes.Buffer{}
@@ -96,7 +95,7 @@ func (p *Provider) Transcribe(ctx context.Context, audioData []byte, opts stt.Tr
 	start := time.Now()
 	resp, err := transcribeHTTPClient(p.client, requestTimeout, &p.Validation).Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("local transcribe: %w", err)
+		return nil, fmt.Errorf("local transcribe: %w", stt.ClassifyTransportError("local", err))
 	}
 	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 	duration := time.Since(start)
@@ -107,7 +106,7 @@ func (p *Provider) Transcribe(ctx context.Context, audioData []byte, opts stt.Tr
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, netsec.ProviderStatusError("local", resp.StatusCode, respBody)
+		return nil, stt.HTTPError("local", resp, respBody)
 	}
 
 	var result struct {

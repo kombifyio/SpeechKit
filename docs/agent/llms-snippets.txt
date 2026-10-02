@@ -49,7 +49,7 @@ import (
 Use `wakeword` for activation only, `tts` for spoken output only, `assist` for
 one-shot utilities/LLM, `companion` for Hands-Free composition, and
 `pkg/speechkit/client` for a running SpeechKit Server. Do not import
-`internal/*`. For a new Go companion, start with `speechkit-cli init --template
+`app/internal/*`. For a new Go companion, start with `speechkit-cli init --template
 go-assist-voice-companion`, `go-voice-agent-companion`, or
 `go-dictation-handsfree-ui`.
 
@@ -74,7 +74,7 @@ covers Deepgram, AssemblyAI, and OpenAI; missing secrets must report
 ## Assist Voice Companion prompt
 
 ```text
-Add a SpeechKit Assist Voice Companion to this Go app. Use docs/voice-companion.md and examples/embed-companion. Import only pkg/speechkit/{companion,wakeword,assist,tts} plus pkg/speechkit for events, wire companion.NewHandsFree with TargetMode: companion.TargetAssist, keep mic capture and playback host-owned, and do not import internal/* or the Windows client.
+Add a SpeechKit Assist Voice Companion to this Go app. Use docs/voice-companion.md and examples/embed-companion. Import only pkg/speechkit/{companion,wakeword,assist,tts} plus pkg/speechkit for events, wire companion.NewHandsFree with TargetMode: companion.TargetAssist, keep mic capture and playback host-owned, and do not import app/internal/* or the Windows client.
 ```
 
 ## Dictation - POST /v1/dictation/transcribe

@@ -2,9 +2,11 @@
 // profile ID to the provider name the TTS routers use internally.
 //
 // It is a zero-dependency leaf package so that the public embeddable surface
-// (pkg/speechkit/tts) and the host wiring (internal/ttswiring) share one
+// (pkg/speechkit/tts) and the host wiring (app/internal/ttswiring) share one
 // mapping without violating the OSS boundary (pkg/** must not import
-// internal/*). Keep the prefixes in sync with the TTS catalog entries.
+// app/internal/*). Keep the prefixes in sync with the TTS catalog entries.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package ttsroute
 
 import "strings"
@@ -16,6 +18,7 @@ import "strings"
 // Mapping:
 //
 //	tts.openai.*                        → "openai"
+//	tts.google.gemini-*                 → "gemini"            (Gemini API speech)
 //	tts.google.*                        → "google"
 //	tts.deepgram.*                      → "deepgram"
 //	tts.huggingface.*                   → "huggingface"
@@ -33,6 +36,8 @@ func PreferredProvider(profileID string) string {
 	switch {
 	case strings.HasPrefix(id, "tts.openai."):
 		return "openai"
+	case strings.HasPrefix(id, "tts.google.gemini-"):
+		return "gemini"
 	case strings.HasPrefix(id, "tts.google."):
 		return "google"
 	case strings.HasPrefix(id, "tts.deepgram."):

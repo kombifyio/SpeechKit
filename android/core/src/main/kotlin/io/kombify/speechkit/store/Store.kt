@@ -5,7 +5,7 @@ import java.time.Instant
 /**
  * Central storage interface.
  *
- * Mirrors: internal/store/types.go Store interface.
+ * Mirrors: app/internal/store/types.go Store interface.
  * Each backend (Room/SQLite, PostgreSQL, kombify Cloud) implements this.
  */
 interface Store {
@@ -48,7 +48,7 @@ interface Store {
     fun close()
 }
 
-/** Mirrors: internal/store/types.go ListOpts. */
+/** Mirrors: app/internal/store/types.go ListOpts. */
 data class ListOpts(
     val limit: Int = 50,
     val offset: Int = 0,
@@ -56,7 +56,7 @@ data class ListOpts(
     val after: Instant? = null,
 )
 
-/** Mirrors: internal/store/types.go Transcription. */
+/** Mirrors: app/internal/store/types.go Transcription. */
 data class Transcription(
     val id: Long,
     val text: String,
@@ -69,7 +69,7 @@ data class Transcription(
     val createdAt: Instant,
 )
 
-/** Mirrors: internal/store/types.go QuickNote. */
+/** Mirrors: app/internal/store/types.go QuickNote. */
 data class QuickNote(
     val id: Long,
     val text: String,
@@ -83,7 +83,7 @@ data class QuickNote(
     val updatedAt: Instant,
 )
 
-/** Mirrors: internal/store/types.go Stats. */
+/** Mirrors: app/internal/store/types.go Stats. */
 data class Stats(
     val transcriptions: Int = 0,
     val quickNotes: Int = 0,

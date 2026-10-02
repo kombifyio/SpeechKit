@@ -9,16 +9,20 @@ on:
   push:
     branches: [main]
     paths:
-      - "cmd/speechkit-server/**"
-      - "internal/server/**"
-      - "internal/config/**"
-      - "internal/store/**"
+      - "app/cmd/speechkit-server/**"
+      - "app/internal/server/**"
+      - "app/internal/config/**"
+      - "app/internal/store/**"
       - "pkg/speechkit/**"
       - "deploy/docker/**"
       - "deploy/config/**"
       - "docs/server/openapi.v1.yaml"
       - "go.mod"
       - "go.sum"
+      - "app/go.mod"
+      - "app/go.sum"
+      - "go.work"
+      - "go.work.sum"
       - ".github/workflows/server-preview-docker.yml"
   workflow_dispatch: {}
 

@@ -113,12 +113,12 @@ Component rule: import only the public package you need from
 activation, `tts` for spoken output, `assist` for one-shot utilities,
 `companion` for Hands-Free composition, `agentkit`/`voiceagent/live` for
 embedded realtime hosts, and `client` for a running SpeechKit Server. Do not
-import `internal/*` or the Windows client for a library integration.
+import `app/internal/*` or the Windows client for a library integration.
 
 Voice Companion prompt:
 
 ```text
-Add a SpeechKit Assist Voice Companion to this Go app. Import only pkg/speechkit/{companion,wakeword,assist,tts} plus pkg/speechkit for events, wire companion.NewHandsFree with TargetMode: companion.TargetAssist, keep mic capture/playback host-owned, and do not import internal/*.
+Add a SpeechKit Assist Voice Companion to this Go app. Import only pkg/speechkit/{companion,wakeword,assist,tts} plus pkg/speechkit for events, wire companion.NewHandsFree with TargetMode: companion.TargetAssist, keep mic capture/playback host-owned, and do not import app/internal/*.
 ```
 
 Canonical prompt:

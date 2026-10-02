@@ -9,6 +9,60 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.74.0](https://github.com/kombifyio/SpeechKit/compare/bb3e4fef280e89618e9ddf56d83ea8c659628609...9edcd395c43244db6a3a09762d462e5c21cf5c29) (2026-10-02)
+
+### Highlights
+
+* **Speak to any app that talks OpenAI audio:** SpeechKit now serves OpenAI-compatible transcription and speech endpoints and can run as a fully local stack, so existing tools work without cloud keys.
+* **Newer, faster voices and live dictation:** the model catalog was refreshed, adding GPT-Live on Microsoft Foundry and Gemini Transcribe Live, while retired models were removed cleanly.
+* **Compact voice on the web:** the voice UI kit gains a clear recording indicator, a live transcript, a frameless dialog card and one-line error notices, and it checks the microphone before a session starts, with consent asked only once.
+* **Six languages and a calmer settings page:** the desktop app, tray, Android app and website speak six languages, and settings are organized into tabs. Go SDK users should read the migration notes for the renamed STT, catalog and telemetry APIs.
+
+
+
+### ⚠ BREAKING CHANGES
+
+* **stt,live,agentkit:** STT provider constructors take Options; see docs/migration-stt-provider-options.md.
+* **client:** client.Transcript.AudioPath is removed; read Transcript.Audio.Path instead (nil when no audio was retained).
+* **catalog:** the exported Model<Vendor>... constants in pkg/speechkit/catalog are removed. See docs/migration-catalog-model-ids.md.
+* speechkit.RecordOutcome, Attr, StringAttr, Int64Attr, Float64Attr, BoolAttr and the Outcome* constants moved to pkg/speechkit/telemetry; see docs/migration-otel-outcome-telemetry.md.
+
+### Features
+
+* **api:** annotate the server contract for the agent-native surface and guard MCP drift ([#650](https://github.com/kombifyio/SpeechKit/issues/650)) ([c4f2d68](https://github.com/kombifyio/SpeechKit/commit/c4f2d68008b92441b4f41f8de9d2bfa488da25b8))
+* **catalog:** model IDs become data; add a gorelease report ([#681](https://github.com/kombifyio/SpeechKit/issues/681)) ([daec51a](https://github.com/kombifyio/SpeechKit/commit/daec51addced26fbeb5b3fefd11274df9d88a8d1))
+* **client:** drop the legacy Transcript.AudioPath field ([#682](https://github.com/kombifyio/SpeechKit/issues/682)) ([0b8dea8](https://github.com/kombifyio/SpeechKit/commit/0b8dea846f045ac30e39f550ac62e87a1093e914))
+* **i18n:** six-locale SpeechKit Android and website ([#642](https://github.com/kombifyio/SpeechKit/issues/642)) ([30dcb87](https://github.com/kombifyio/SpeechKit/commit/30dcb877644960eeea9ba713612472ce5eb87c98))
+* **i18n:** six-locale SpeechKit desktop app and tray ([#646](https://github.com/kombifyio/SpeechKit/issues/646)) ([86eea85](https://github.com/kombifyio/SpeechKit/commit/86eea8581d39698158b2ca2145bffbf1ac99a305))
+* **models:** 2026-09-30 model refresh, retirements and new adapters ([#674](https://github.com/kombifyio/SpeechKit/issues/674)) ([d4c32e7](https://github.com/kombifyio/SpeechKit/commit/d4c32e7447f315fff54115216571747d4cd8ce8f))
+* **models:** GPT-Live on Microsoft Foundry and Gemini Transcribe Live dictation ([#676](https://github.com/kombifyio/SpeechKit/issues/676)) ([fe3921c](https://github.com/kombifyio/SpeechKit/commit/fe3921cf0a2a6a7f1fc2edce401467f037bcbfef))
+* **server:** OpenAI-compatible audio endpoints and local-only stack ([#638](https://github.com/kombifyio/SpeechKit/issues/638)) ([d7b3e29](https://github.com/kombifyio/SpeechKit/commit/d7b3e2935ee51f2cc12f85c4bfe03fd7d9e41656))
+* **settings:** tabbed settings with one place per setting and per-page folders ([#666](https://github.com/kombifyio/SpeechKit/issues/666)) ([7063525](https://github.com/kombifyio/SpeechKit/commit/70635252ae25797db6f433a87c70ccacbf82126d))
+* **stt,live,agentkit:** typed STT errors, deterministic shutdown, one provider constructor shape ([#684](https://github.com/kombifyio/SpeechKit/issues/684)) ([0caf7ad](https://github.com/kombifyio/SpeechKit/commit/0caf7ad663416fc7577a6d8c29db26fa5f2429d8))
+* **voice-ui:** compact recording indicator, voice dialog, live transcript and notice ([#702](https://github.com/kombifyio/SpeechKit/issues/702)) ([b25c740](https://github.com/kombifyio/SpeechKit/commit/b25c740a863d0a09c9a30d727af613afb78cb5d4))
+
+
+### Bug Fixes
+
+* **android:** string format mismatches, explicit export, documented hardware id ([#688](https://github.com/kombifyio/SpeechKit/issues/688)) ([5ef802d](https://github.com/kombifyio/SpeechKit/commit/5ef802ddc8ef9d9621923595e77dc59c4c9c23fb))
+* **api,app:** documented dictionary JSON keys, remaining OpenAPI drift, zero lint findings in apps ([#673](https://github.com/kombifyio/SpeechKit/issues/673)) ([03f7675](https://github.com/kombifyio/SpeechKit/commit/03f7675d13a0f1866a33e0937158722428ecbd9c))
+* **build:** repair macOS signing, OSS export, lint and govulncheck after [#697](https://github.com/kombifyio/SpeechKit/issues/697) ([#701](https://github.com/kombifyio/SpeechKit/issues/701)) ([360f35c](https://github.com/kombifyio/SpeechKit/commit/360f35c2a6ce3b3a7d2a4caffac5a6a73d06303a))
+* **build:** resolve the sherpa-onnx native lib dir from go.mod ([#652](https://github.com/kombifyio/SpeechKit/issues/652)) ([b8eed62](https://github.com/kombifyio/SpeechKit/commit/b8eed6251b795db6b37f3b9400554c72199bfd60))
+* **deps:** update module github.com/wailsapp/wails/v3 to v3.0.0-beta.25 ([#606](https://github.com/kombifyio/SpeechKit/issues/606)) ([3888530](https://github.com/kombifyio/SpeechKit/commit/3888530d942f29bd2496e27575bfc625d635dd81))
+* **foundry:** guard shared config against sign-in races; Android lint baseline for the new PR gate ([#687](https://github.com/kombifyio/SpeechKit/issues/687)) ([110e994](https://github.com/kombifyio/SpeechKit/commit/110e994bed553bdd60314ce3e12d560ec7c0c9fe))
+* **overlay:** drop the white frame behind transparent overlay windows ([#654](https://github.com/kombifyio/SpeechKit/issues/654)) ([b07231c](https://github.com/kombifyio/SpeechKit/commit/b07231c640d29834d72e1f7982a169674b7761cb))
+* **release:** gate the real release path on the local-only install E2E ([#683](https://github.com/kombifyio/SpeechKit/issues/683)) ([16c6999](https://github.com/kombifyio/SpeechKit/commit/16c6999c783ac56a715e3e511dea8089d54f9bdd))
+* **security:** desktop client security review remediation (Windows + macOS) ([#697](https://github.com/kombifyio/SpeechKit/issues/697)) ([e852bbc](https://github.com/kombifyio/SpeechKit/commit/e852bbcc6fadf54f8c2ef7f403e079f62d7b4a94))
+* **wakeword:** replace physical-room publication gate with simulated-room evidence ([#680](https://github.com/kombifyio/SpeechKit/issues/680)) ([0482808](https://github.com/kombifyio/SpeechKit/commit/048280806042ead2d08af23326324d4360f6ec6c))
+* **website:** verify the localized release heading and version separately ([#648](https://github.com/kombifyio/SpeechKit/issues/648)) ([a23b97f](https://github.com/kombifyio/SpeechKit/commit/a23b97fdacf49f27faa58e9987f564834712f144))
+
+
+### Code Refactoring
+
+* nested app module (ADR 0004), OTel out of the root kernel, PR quality gates, store leak fix, vulnerable deps ([#667](https://github.com/kombifyio/SpeechKit/issues/667)) ([70f8782](https://github.com/kombifyio/SpeechKit/commit/70f8782280aef09056bb757adb0b4f0744743fb3))
+
+Notes cover changes after VERSION 0.73.0 (bb3e4fef280e89618e9ddf56d83ea8c659628609), the earliest available contiguous 0.73.x VERSION anchor, through selected source 9edcd395c43244db6a3a09762d462e5c21cf5c29.
+
 ## [0.73.4](https://github.com/kombifyio/SpeechKit/compare/v0.73.3...v0.73.4) (2026-09-29)
 
 

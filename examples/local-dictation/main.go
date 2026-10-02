@@ -70,15 +70,21 @@ func run(ctx context.Context, args []string, output, progress io.Writer) error {
 	}
 
 	// Select a separate loopback port; never attach to or stop an existing server.
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	var listenConfig net.ListenConfig
+	listener, err := listenConfig.Listen(ctx, "tcp4", "127.0.0.1:0")
 	if err != nil {
 		return fmt.Errorf("select a local whisper port: %w", err)
 	}
-	port := listener.Addr().(*net.TCPAddr).Port
+	addr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		_ = listener.Close()
+		return errors.New("select a local whisper port: listener is not TCP")
+	}
+	port := addr.Port
 	if err := listener.Close(); err != nil {
 		return fmt.Errorf("release the local whisper port: %w", err)
 	}
-	provider := local.New(port, opts.model, opts.gpu)
+	provider := local.New(local.Options{Port: port, ModelPath: opts.model, GPU: opts.gpu})
 	installation := provider.VerifyInstallation()
 	if !installation.BinaryFound || !installation.ModelFound {
 		return fmt.Errorf("local whisper is not installed: %s; see examples/local-dictation/README.md",
@@ -140,7 +146,7 @@ func parseOptions(args []string, output io.Writer) (options, error) {
 }
 
 func readWAV(path string) ([]byte, error) {
-	file, err := os.Open(path)
+	file, err := os.Open(filepath.Clean(path))
 	if err != nil {
 		return nil, fmt.Errorf("open WAV input: %w", err)
 	}
@@ -164,7 +170,7 @@ func readWAV(path string) ([]byte, error) {
 
 func dictate(ctx context.Context, opts options, provider managedProvider, open func() (recorder, error), progress io.Writer) (result speechkit.DictationRun, err error) {
 	defer provider.StopServer()
-	fmt.Fprintln(progress, "Starting local whisper; loading and warming the model can take several minutes.")
+	_, _ = fmt.Fprintln(progress, "Starting local whisper; loading and warming the model can take several minutes.")
 	// The process uses the host lifetime, not the shorter transcription deadline.
 	if err := provider.StartServer(ctx); err != nil {
 		return result, fmt.Errorf("start local whisper: %w", err)
@@ -194,7 +200,7 @@ func dictate(ctx context.Context, opts options, provider managedProvider, open f
 		return result, fmt.Errorf("start recording input: %w", err)
 	}
 	if opts.recordFor > 0 {
-		fmt.Fprintf(progress, "Microphone active for %s; speak now. Ctrl+C discards the recording.\n", opts.recordFor)
+		_, _ = fmt.Fprintf(progress, "Microphone active for %s; speak now. Ctrl+C discards the recording.\n", opts.recordFor)
 		timer := time.NewTimer(opts.recordFor)
 		defer timer.Stop()
 		select {
@@ -203,7 +209,7 @@ func dictate(ctx context.Context, opts options, provider managedProvider, open f
 		case <-timer.C:
 		}
 	}
-	fmt.Fprintln(progress, "Transcribing locally; no cloud provider or history storage is configured.")
+	_, _ = fmt.Fprintln(progress, "Transcribing locally; no cloud provider or history storage is configured.")
 	transcribeCtx, cancel := context.WithTimeout(ctx, opts.timeout)
 	defer cancel()
 	return service.Stop(transcribeCtx)

@@ -130,6 +130,17 @@ type RecordingStartOptions struct {
 	// the dictate session ends after a silence window. The watcher
 	// guarantees at-most-one invocation per Start() call.
 	OnIdleTimeoutCallback func()
+	// MaxDuration, when greater than zero, is a hard cap on how long this
+	// recording may run, independent of speech: OnMaxDurationCallback fires
+	// once when it elapses and the session is still recording. Silence
+	// detection alone cannot end a capture during continuous speech (a
+	// meeting room, a TV) with a lost KeyUp, which would keep the
+	// microphone open and the audio buffer growing indefinitely. Zero
+	// disables the cap; long-form hosts (meetings) leave it unset.
+	MaxDuration time.Duration
+	// OnMaxDurationCallback is wired by the host to dispatch a Stop, like
+	// OnIdleTimeoutCallback. At most one invocation per Start() call.
+	OnMaxDurationCallback func()
 }
 
 // RecordingStopOptions configures a stop request. Label prefixes the capture

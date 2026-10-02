@@ -1,5 +1,12 @@
 import { SpeechKitElement } from "../core/element.js";
-import { isVoiceSessionActive } from "../core/controller.js";
+import { isVoiceSessionActive, type VoiceUiController } from "../core/controller.js";
+import {
+  INDICATOR_CSS,
+  RecordingIndicator,
+  sessionStatusToIndicatorState,
+  type RecordingIndicatorState
+} from "../core/indicator.js";
+import { SpeechKitVoiceNoticeElement } from "./voice-notice.js";
 import type {
   SpeechKitVoiceDenial,
   SpeechKitVoiceEvent,
@@ -7,6 +14,8 @@ import type {
 } from "../core/voice-surface.js";
 
 const LONG_PRESS_MS = 500;
+/** Safety bound for the kit-local `requesting` state when no event arrives. */
+const REQUESTING_TIMEOUT_MS = 20_000;
 
 const CSS = `
 :host {
@@ -48,26 +57,37 @@ button:focus-visible {
 :host(:not([agent])) .primary {
   border-radius: var(--sk-radius, 14px);
 }
-.primary[data-status="capturing"] {
+.primary {
+  transition: color var(--sk-motion-base, 180ms) ease, background-color var(--sk-motion-base, 180ms) ease;
+}
+.primary[data-indicator="listening"] {
+  color: var(--sk-live, #dc2626);
+  background: color-mix(in srgb, var(--sk-live, #dc2626) 9%, transparent);
+}
+.primary:is([data-indicator="processing"], [data-indicator="speaking"]) {
   color: var(--sk-accent, oklch(0.65 0.13 210));
 }
-.primary[data-status="capturing"] .mic-dot {
-  background: var(--sk-live, #dc2626);
-  animation: sk-btn-breathe 1.2s ease-in-out infinite;
+.state-label {
+  font-weight: 600;
+  white-space: nowrap;
 }
-.mic-dot {
-  width: 8px;
-  height: 8px;
-  flex: 0 0 auto;
-  border-radius: var(--sk-radius-pill, 999px);
-  background: var(--sk-accent, oklch(0.65 0.13 210));
-}
-@keyframes sk-btn-breathe {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.45; }
+.state-label[hidden], .label[hidden] { display: none; }
+:host([compact]) .state-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
 }
 @media (prefers-reduced-motion: reduce) {
-  .primary[data-status="capturing"] .mic-dot { animation: none; }
+  /* Without motion the visible label carries "you are being recorded". */
+  :host([compact]) .state-label {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip: auto;
+  }
 }
 .agent {
   border-inline-start: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
@@ -93,28 +113,12 @@ button:focus-visible {
 .denial {
   position: absolute;
   inset-inline-end: 0;
-  bottom: calc(100% + 8px);
+  bottom: calc(100% + 6px);
   z-index: 1;
-  display: grid;
-  gap: 4px;
-  min-width: 220px;
-  max-width: 300px;
-  border: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
-  border-radius: var(--sk-radius, 14px);
-  background: var(--sk-surface-strong, color-mix(in srgb, #ffffff 92%, transparent));
-  backdrop-filter: blur(var(--sk-blur, 16px));
-  -webkit-backdrop-filter: blur(var(--sk-blur, 16px));
-  box-shadow: var(--sk-shadow, 0 12px 40px -12px rgba(16, 20, 24, 0.25));
-  padding: 10px 12px;
-  text-align: start;
+  width: max-content;
+  max-width: min(92vw, 360px);
 }
-.denial strong {
-  font-size: var(--sk-font-size, 13px);
-}
-.denial span {
-  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
-  font-size: var(--sk-font-size-small, 11px);
-}
+.denial[hidden] { display: none; }
 .sr-only {
   position: absolute;
   width: 1px;
@@ -123,6 +127,7 @@ button:focus-visible {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
 }
+${INDICATOR_CSS}
 `;
 
 /**
@@ -133,17 +138,31 @@ button:focus-visible {
  * without the `voice_agent` capability it renders locked and activation
  * surfaces the denial guidance instead of disappearing (fail-closed,
  * FEATURE-ENTITLEMENT-UX-STANDARD).
+ *
+ * The primary segment carries the recording indicator (idle, requesting,
+ * listening with live level bars, processing, speaking, error) and, while a
+ * session is active, a short state label instead of the slotted text
+ * (`compact` keeps the label for assistive tech only, except under reduced
+ * motion). Any denial renders as a compact `speechkit-voice-notice` above the
+ * control (`no-notice` opts out).
  */
 export class SpeechKitVoiceButtonElement extends SpeechKitElement {
   static readonly tagName = "speechkit-voice-button";
 
   static override get observedAttributes(): string[] {
-    return [...super.observedAttributes, "agent", "disabled", "for"];
+    return [...super.observedAttributes, "agent", "disabled", "for", "compact", "no-notice"];
   }
 
   #primary: HTMLButtonElement;
   #agentButton: HTMLButtonElement;
   #denialPopover: HTMLDivElement;
+  #notice: SpeechKitVoiceNoticeElement;
+  #indicator = new RecordingIndicator();
+  #label: HTMLSpanElement;
+  #stateLabel: HTMLSpanElement;
+  #requesting = false;
+  #requestingTimer: ReturnType<typeof setTimeout> | undefined;
+  #unsubscribeLevel: (() => void) | undefined;
   #seenEvents = 0;
   #longPressTimer: ReturnType<typeof setTimeout> | undefined;
   #longPressFired = false;
@@ -173,11 +192,25 @@ export class SpeechKitVoiceButtonElement extends SpeechKitElement {
     this.#agentButton.setAttribute("part", "agent");
     this.#agentButton.addEventListener("click", () => this.#onAgent());
 
+    this.#label = document.createElement("span");
+    this.#label.className = "label";
+    this.#label.append(document.createElement("slot"));
+    this.#stateLabel = document.createElement("span");
+    this.#stateLabel.className = "state-label";
+    this.#stateLabel.setAttribute("part", "state-label");
+    this.#stateLabel.hidden = true;
+    this.#primary.append(this.#indicator.element, this.#label, this.#stateLabel);
+
     this.#denialPopover = document.createElement("div");
     this.#denialPopover.className = "denial";
     this.#denialPopover.setAttribute("part", "denial");
-    this.#denialPopover.setAttribute("role", "alert");
     this.#denialPopover.hidden = true;
+    this.#notice = document.createElement(
+      SpeechKitVoiceNoticeElement.tagName
+    ) as SpeechKitVoiceNoticeElement;
+    this.#notice.addEventListener("speechkit-dismiss", () => this.#hideDenial());
+    this.#notice.addEventListener("speechkit-retry", () => this.#hideDenial());
+    this.#denialPopover.append(this.#notice);
 
     wrap.append(this.#primary, this.#agentButton, this.#denialPopover);
     this.root.append(wrap);
@@ -205,8 +238,32 @@ export class SpeechKitVoiceButtonElement extends SpeechKitElement {
     } else if (status === "processing") {
       controller.cancel();
     } else if (!isVoiceSessionActive(status)) {
-      void controller.start("dictation");
+      this.#beginRequesting(controller.start("dictation"));
     }
+  }
+
+  /** Kit-local `requesting` state until the controller reports progress. */
+  #beginRequesting(result: void | Promise<void>): void {
+    this.#setRequesting(true);
+    if (result && typeof (result as Promise<void>).catch === "function") {
+      (result as Promise<void>).catch(() => this.#setRequesting(false));
+    }
+  }
+
+  #setRequesting(value: boolean): void {
+    if (this.#requestingTimer !== undefined) clearTimeout(this.#requestingTimer);
+    this.#requestingTimer = undefined;
+    if (value) {
+      this.#requestingTimer = setTimeout(() => this.#setRequesting(false), REQUESTING_TIMEOUT_MS);
+    }
+    if (this.#requesting === value) return;
+    this.#requesting = value;
+    this.requestUpdate();
+  }
+
+  /** Current recording indicator state (read-only mirror of the control). */
+  get indicatorState(): RecordingIndicatorState {
+    return this.#indicator.state;
   }
 
   #onPointerDown(event: PointerEvent): void {
@@ -246,7 +303,7 @@ export class SpeechKitVoiceButtonElement extends SpeechKitElement {
     // first, then start); only without one does the button start directly —
     // the controller's own consent precondition still applies there.
     if (this.#openTargetOverlay()) return;
-    if (controller) void controller.start("voice_agent");
+    if (controller) this.#beginRequesting(controller.start("voice_agent"));
   }
 
   #openTargetOverlay(): boolean {
@@ -268,12 +325,39 @@ export class SpeechKitVoiceButtonElement extends SpeechKitElement {
 
   #hideDenial(): void {
     this.#localDenial = undefined;
+    this.#dismissedAt = this.state?.events.length ?? 0;
     if (!this.#denialPopover.hidden) {
       this.#denialPopover.hidden = true;
     }
   }
 
+  #dismissedAt = -1;
+
+  protected override onControllerChanged(controller: VoiceUiController | null): void {
+    this.#unsubscribeLevel?.();
+    this.#unsubscribeLevel = undefined;
+    this.#notice.controller = controller;
+    this.#indicator.setLevelFeed(Boolean(controller?.subscribeLevel));
+    if (controller?.subscribeLevel) {
+      this.#unsubscribeLevel = controller.subscribeLevel((level, source) =>
+        this.#indicator.setLevel(level, source)
+      );
+    }
+  }
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    this.#indicator.resume();
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.#indicator.stop();
+    this.#setRequesting(false);
+  }
+
   protected override onSessionState(state: SpeechKitVoiceSessionState): void {
+    if (state.events.length > this.#seenEvents) this.#setRequesting(false);
     for (let i = this.#seenEvents; i < state.events.length; i += 1) {
       const event = state.events[i];
       if (event === undefined) continue;
@@ -298,15 +382,27 @@ export class SpeechKitVoiceButtonElement extends SpeechKitElement {
 
     this.#primary.disabled = disabled;
     this.#primary.dataset.status = status;
-    this.#primary.replaceChildren();
-    const dot = document.createElement("span");
-    dot.className = "mic-dot";
-    dot.setAttribute("aria-hidden", "true");
-    this.#primary.append(dot, document.createElement("slot"));
+    const indicator = sessionStatusToIndicatorState(status, this.#requesting);
+    this.#indicator.setState(indicator);
+    this.#primary.dataset.indicator = indicator;
+    this.#primary.toggleAttribute("aria-busy", indicator === "requesting" || indicator === "processing");
+    const stateText =
+      indicator === "requesting"
+        ? messages["sk.voice.state.requesting"]
+        : indicator === "listening"
+          ? messages["sk.voice.state.capturing"]
+          : indicator === "processing"
+            ? messages["sk.voice.state.processing"]
+            : indicator === "speaking"
+              ? messages["sk.voice.state.speaking"]
+              : "";
+    this.#stateLabel.textContent = stateText;
+    this.#stateLabel.hidden = stateText === "";
+    this.#label.hidden = stateText !== "";
     const primaryLabel = capturing
       ? messages["sk.voice.button.dictation.stop"]
       : messages["sk.voice.button.dictation.start"];
-    this.#primary.setAttribute("aria-label", primaryLabel);
+    this.#primary.setAttribute("aria-label", stateText ? `${primaryLabel} (${stateText})` : primaryLabel);
     this.#primary.title = primaryLabel;
 
     const wantsAgent = this.hasAttribute("agent");
@@ -338,20 +434,13 @@ export class SpeechKitVoiceButtonElement extends SpeechKitElement {
     }
 
     const denial = this.#localDenial ?? (status === "denied" ? this.state?.denial : undefined);
-    if (denial && wantsAgent && !capability) {
-      this.#denialPopover.replaceChildren();
-      const title = document.createElement("strong");
-      title.textContent = denial.user_guidance.title;
-      const body = document.createElement("span");
-      body.textContent = denial.user_guidance.body;
-      this.#denialPopover.append(title, body);
-      for (const step of denial.user_guidance.next_steps) {
-        const line = document.createElement("span");
-        line.textContent = `• ${step}`;
-        this.#denialPopover.append(line);
-      }
+    const dismissed = !this.#localDenial && this.#dismissedAt === (this.state?.events.length ?? 0);
+    if (denial && !dismissed && !this.hasAttribute("no-notice")) {
+      this.#notice.denial = denial;
+      const locale = this.getAttribute("locale");
+      if (locale) this.#notice.setAttribute("locale", locale);
       this.#denialPopover.hidden = false;
-    } else if (status !== "denied" && !this.#localDenial) {
+    } else {
       this.#denialPopover.hidden = true;
     }
   }

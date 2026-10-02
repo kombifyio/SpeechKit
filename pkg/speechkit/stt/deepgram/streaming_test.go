@@ -93,7 +93,7 @@ func TestDeepgram_StartSpeakerStream_AppliesStreamingOptions(t *testing.T) {
 	defer server.Close()
 
 	p := newTestDeepgramProvider(server.URL)
-	p.ApplyOptions(Options{
+	p.ApplyTuning(Tuning{
 		Configured:            true,
 		SmartFormat:           true,
 		FillerWords:           true,
@@ -217,7 +217,7 @@ func TestDeepgram_StartDictationStream_UsesRealtimeDictationQuery(t *testing.T) 
 	defer server.Close()
 
 	p := newTestDeepgramProvider(server.URL)
-	p.ApplyOptions(Options{
+	p.ApplyTuning(Tuning{
 		Configured:            true,
 		SmartFormat:           true,
 		LanguageOverride:      "multi",
@@ -397,7 +397,7 @@ func TestNormalizedDeepgramLanguagePreservesRegionAndFixesSeparator(t *testing.T
 // configured language stopped being coerced to "multi".
 func TestDeepgram_DictationStreamRequestLanguageOutranksProviderOverride(t *testing.T) {
 	provider := &Provider{}
-	provider.ApplyOptions(Options{Configured: true, LanguageOverride: "de"})
+	provider.ApplyTuning(Tuning{Configured: true, LanguageOverride: "de"})
 
 	endpoint, err := provider.deepgramDictationStreamingEndpoint(
 		"nova-3",
@@ -418,7 +418,7 @@ func TestDeepgram_DictationStreamRequestLanguageOutranksProviderOverride(t *test
 // fallback.
 func TestDeepgram_DictationStreamFallsBackToProviderThenMultilingual(t *testing.T) {
 	provider := &Provider{}
-	provider.ApplyOptions(Options{Configured: true, LanguageOverride: "de"})
+	provider.ApplyTuning(Tuning{Configured: true, LanguageOverride: "de"})
 	format := speaker.AudioFormat{Encoding: speaker.AudioEncodingLinear16, SampleRateHz: 16000, Channels: 1}
 
 	endpoint, err := provider.deepgramDictationStreamingEndpoint(
@@ -435,7 +435,7 @@ func TestDeepgram_DictationStreamFallsBackToProviderThenMultilingual(t *testing.
 	}
 
 	bare := &Provider{}
-	bare.ApplyOptions(Options{Configured: true})
+	bare.ApplyTuning(Tuning{Configured: true})
 	endpoint, err = bare.deepgramDictationStreamingEndpoint(
 		"nova-3",
 		stt.FirstNonEmptyTrimmed("", bare.LanguageOverride, deepgramCodeSwitchingLanguage()),

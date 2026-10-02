@@ -56,6 +56,41 @@ export { SpeechKitElement } from "./core/element.js";
 export { SmoothedLevel } from "./core/level.js";
 
 export {
+  RecordingIndicator,
+  indicatorBarHeights,
+  sessionStatusToIndicatorState,
+  type RecordingIndicatorState
+} from "./core/indicator.js";
+
+export {
+  checkMicrophonePermission,
+  requestMicrophone,
+  releaseMediaStream,
+  microphoneReasonFromError,
+  type CheckMicrophonePermissionOptions,
+  type MicrophonePermissionState,
+  type MicrophoneReasonCode,
+  type MicrophoneRequestResult
+} from "./core/permission.js";
+
+export {
+  createVoiceConsentStore,
+  VOICE_CONSENT_DEFAULT_VERSION,
+  type VoiceConsentRecord,
+  type VoiceConsentStore,
+  type VoiceConsentStoreOptions
+} from "./core/consent.js";
+
+export {
+  voiceNoticeKind,
+  voiceNoticeKindForDenial,
+  voiceNoticeMessage,
+  voiceNoticeHint,
+  isRetryableNoticeKind,
+  type VoiceNoticeKind
+} from "./core/notice.js";
+
+export {
   VOICE_UI_CATALOGS,
   VOICE_UI_LOCALES,
   resolveVoiceUiLocale,
@@ -78,6 +113,15 @@ export {
   type VoiceConsentScope
 } from "./elements/voice-consent.js";
 export { SpeechKitVoiceOverlayElement } from "./elements/voice-overlay.js";
+export {
+  SpeechKitVoiceNoticeElement,
+  type VoiceNoticeTone
+} from "./elements/voice-notice.js";
+export { SpeechKitLiveTranscriptElement } from "./elements/live-transcript.js";
+export {
+  SpeechKitVoiceDialogElement,
+  type VoiceDialogAnchor
+} from "./elements/voice-dialog.js";
 export {
   SpeechKitVoiceVisualizerElement,
   sessionStatusToVisualizerState,
@@ -108,15 +152,21 @@ import { SpeechKitVoiceConsentElement } from "./elements/voice-consent.js";
 import { SpeechKitVoiceOverlayElement } from "./elements/voice-overlay.js";
 import { SpeechKitVoiceVisualizerElement } from "./elements/voice-visualizer.js";
 import { SpeechKitVoiceAssistantElement } from "./elements/voice-assistant.js";
+import { SpeechKitVoiceNoticeElement } from "./elements/voice-notice.js";
+import { SpeechKitLiveTranscriptElement } from "./elements/live-transcript.js";
+import { SpeechKitVoiceDialogElement } from "./elements/voice-dialog.js";
 
 /** Registers all kit elements (idempotent). */
 export function registerSpeechKitElements(): void {
   const definitions: Array<[string, CustomElementConstructor]> = [
     [SpeechKitVoiceProviderElement.tagName, SpeechKitVoiceProviderElement],
+    [SpeechKitVoiceNoticeElement.tagName, SpeechKitVoiceNoticeElement],
+    [SpeechKitLiveTranscriptElement.tagName, SpeechKitLiveTranscriptElement],
     [SpeechKitVoiceVisualizerElement.tagName, SpeechKitVoiceVisualizerElement],
     [SpeechKitVoiceConsentElement.tagName, SpeechKitVoiceConsentElement],
     [SpeechKitVoiceButtonElement.tagName, SpeechKitVoiceButtonElement],
     [SpeechKitVoiceOverlayElement.tagName, SpeechKitVoiceOverlayElement],
+    [SpeechKitVoiceDialogElement.tagName, SpeechKitVoiceDialogElement],
     [SpeechKitVoiceAssistantElement.tagName, SpeechKitVoiceAssistantElement]
   ];
   for (const [tag, ctor] of definitions) {

@@ -30,7 +30,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
           cache: true
 
       - name: Setup Node
@@ -50,10 +50,10 @@ jobs:
 
       - name: Test public Go packages
         run: |
-          go test ./pkg/... ./cmd/speechkit-cli/... ./cmd/speechkit-mcp/... ./examples/...
-          GOOS=linux CGO_ENABLED=0 go test ./cmd/speechkit-server/...
-          GOOS=linux CGO_ENABLED=0 go build ./cmd/speechkit-server ./cmd/speechkit-mcp ./cmd/speechkit-cli
-          go vet ./pkg/... ./cmd/speechkit-cli/... ./cmd/speechkit-mcp/... ./examples/...
+          go test ./pkg/... ./app/cmd/speechkit-cli/... ./app/cmd/speechkit-mcp/... ./examples/...
+          GOOS=linux CGO_ENABLED=0 go test ./app/cmd/speechkit-server/...
+          GOOS=linux CGO_ENABLED=0 go build ./app/cmd/speechkit-server ./app/cmd/speechkit-mcp ./app/cmd/speechkit-cli
+          go vet ./pkg/... ./app/cmd/speechkit-cli/... ./app/cmd/speechkit-mcp/... ./examples/...
           go run ./examples/provider-catalog
           go run ./examples/embed-companion
           go run ./examples/embed-tts
@@ -83,14 +83,14 @@ jobs:
               exit 1
             fi
           done
-          for path in cmd/speechkit cmd/sk-e2e cmd/sk-localprobe cmd/sk-browser-smoke cmd/speechkit-wakeword cmd/speechkit-openwakeword; do
+          for path in app/cmd/speechkit app/cmd/sk-e2e app/cmd/sk-localprobe app/cmd/sk-browser-smoke app/cmd/speechkit-wakeword app/cmd/speechkit-openwakeword; do
             if [ -e "$path" ]; then
               echo "::error title=Desktop or release-only command exported::$path is not part of the public framework source surface"
               exit 1
             fi
           done
-          # internal/voiceeval is public-test support for internal/server/voiceagent.
-          for path in internal/desktop internal/frontendassets internal/hotkey internal/output internal/tray internal/winapi internal/testutil; do
+          # app/internal/voiceeval is public-test support for app/internal/server/voiceagent.
+          for path in app/internal/desktop app/internal/frontendassets app/internal/hotkey app/internal/output app/internal/tray app/internal/winapi app/internal/testutil; do
             if [ -e "$path" ]; then
               echo "::error title=Private implementation package exported::$path is not needed for the public server, SDK, CLI, or MCP tools"
               exit 1

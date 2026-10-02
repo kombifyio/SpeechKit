@@ -2,7 +2,6 @@ package live
 
 import (
 	"context"
-	"log/slog"
 	"strings"
 )
 
@@ -46,7 +45,7 @@ func (s *Session) recordWorkflowUserTurn(ctx context.Context) {
 		return
 	}
 	if err := s.AdvanceWorkflowStep(ctx, "max_turns"); err != nil {
-		slog.Warn("voiceagent: workflow advance failed", "err", err)
+		s.log().Warn("voiceagent: workflow advance failed", "err", err)
 		if s.callbacks.OnError != nil {
 			s.callbacks.OnError(err)
 		}

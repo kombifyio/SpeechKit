@@ -2,6 +2,8 @@
 // (wss://agents.assemblyai.com/v1/ws) to [live.LiveProvider]. It needs an
 // AssemblyAI API key in the [live.LiveConfig]; the LLM behind the agent is
 // chosen server-side, so cfg.Model is not sent.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package assemblyai
 
 import (

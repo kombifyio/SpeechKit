@@ -11,6 +11,7 @@ package stt
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -21,6 +22,8 @@ import (
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -38,13 +41,6 @@ var sttTracer = otel.Tracer("github.com/kombifyio/SpeechKit/pkg/speechkit/stt")
 // host logging dependencies. Observer failures must never abort a
 // user-facing transcription, so the callback has no error return.
 type ProviderSelectedObserver func(ctx context.Context, providerName string, strategy Strategy)
-
-// emitProviderSelected notifies the router's per-instance observer.
-func (r *Router) emitProviderSelected(ctx context.Context, providerName string, strategy Strategy) {
-	if r.OnProviderSelected != nil {
-		r.OnProviderSelected(ctx, providerName, strategy)
-	}
-}
 
 // Strategy defines the routing strategy.
 type Strategy string
@@ -75,6 +71,10 @@ type Router struct {
 	PreferLocalUnderSecs float64
 	ParallelCloud        bool
 	ReplaceOnBetter      bool
+	// ParallelTimeout bounds how long a parallel local+cloud race waits for a
+	// result. Zero means 15 seconds. The wait never outlives the caller's
+	// context deadline.
+	ParallelTimeout time.Duration
 	// ConnectivityProbe is the TCP address used to test internet connectivity.
 	// Defaults to "1.1.1.1:443" when empty.
 	ConnectivityProbe string
@@ -83,8 +83,22 @@ type Router struct {
 	// transcription. It scopes audit reporting to this router instance.
 	OnProviderSelected ProviderSelectedObserver
 
+	// Logger receives this router's diagnostics. Nil falls back to
+	// slog.Default() at log time.
+	Logger *slog.Logger
+
 	internetOnline atomic.Bool
 	internetAt     atomic.Int64 // UnixNano of last check
+}
+
+// log returns the router's logger, or the default logger when none is set.
+func (r *Router) log() *slog.Logger { return logutil.Resolve(r.Logger) }
+
+// emitProviderSelected notifies the router's per-instance observer.
+func (r *Router) emitProviderSelected(ctx context.Context, providerName string, strategy Strategy) {
+	if r.OnProviderSelected != nil {
+		r.OnProviderSelected(ctx, providerName, strategy)
+	}
 }
 
 // SetLocal sets the local provider (thread-safe).
@@ -260,7 +274,7 @@ func (r *Router) Route(ctx context.Context, audio []byte, audioDurationSecs floa
 // the normal STT routing decision for Dictation/Assist.
 func (r *Router) StartSpeakerStream(ctx context.Context, opts speaker.Options, format speaker.AudioFormat) (speaker.SpeakerStream, error) {
 	candidates := r.streamingCandidates(opts)
-	var lastErr error
+	var errs []error
 	for _, p := range candidates {
 		streamer, ok := p.(speaker.StreamingProvider)
 		if !ok {
@@ -270,11 +284,12 @@ func (r *Router) StartSpeakerStream(ctx context.Context, opts speaker.Options, f
 		if err == nil {
 			return stream, nil
 		}
-		lastErr = err
-		slog.Warn("speaker streaming provider failed", "provider", p.Name(), "err", err)
+		err = netsec.RedactURLError(err)
+		errs = append(errs, fmt.Errorf("%s: %w", p.Name(), err))
+		r.log().Warn("speaker streaming provider failed", "provider", p.Name(), "err", err)
 	}
-	if lastErr != nil {
-		return nil, fmt.Errorf("no speaker streaming provider available: %w", lastErr)
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("no speaker streaming provider available: %w", errors.Join(errs...))
 	}
 	return nil, fmt.Errorf("no speaker streaming provider available")
 }
@@ -284,9 +299,9 @@ func (r *Router) StartSpeakerStream(ctx context.Context, opts speaker.Options, f
 // choose this path explicitly per recording session.
 func (r *Router) StartDictationStream(ctx context.Context, opts speechkit.DictationStreamOptions, format speaker.AudioFormat) (speechkit.DictationStream, error) {
 	candidates := PrioritizeProviderProfile(r.dictationStreamingCandidates(), opts.ProviderProfileID)
-	var lastErr error
+	var errs []error
 	for _, p := range candidates {
-		streamer, ok := p.(speechkit.DictationStreamProvider)
+		streamer, ok := speechkit.AsDictationStreamProvider(p)
 		if !ok {
 			continue
 		}
@@ -294,11 +309,12 @@ func (r *Router) StartDictationStream(ctx context.Context, opts speechkit.Dictat
 		if err == nil {
 			return stream, nil
 		}
-		lastErr = err
-		slog.Warn("dictation streaming provider failed", "provider", p.Name(), "err", err)
+		err = netsec.RedactURLError(err)
+		errs = append(errs, fmt.Errorf("%s: %w", p.Name(), err))
+		r.log().Warn("dictation streaming provider failed", "provider", p.Name(), "err", err)
 	}
-	if lastErr != nil {
-		return nil, fmt.Errorf("no dictation streaming provider available: %w", lastErr)
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("no dictation streaming provider available: %w", errors.Join(errs...))
 	}
 	return nil, fmt.Errorf("no dictation streaming provider available")
 }
@@ -307,26 +323,30 @@ func (r *Router) transcribeDynamic(ctx context.Context, audio []byte, durationSe
 	local, cloud := r.snapshot()
 	online := r.checkInternet(ctx)
 	cloudAvailable := len(cloud) > 0
+	var errs []error
 
 	// Case 1: Internet probe failed. Try local first, but still allow cloud as fallback
 	// because strict egress policies can block the probe target while provider APIs are reachable.
 	if !online {
-		slog.Info("internet probe unavailable; trying providers with local preference")
+		r.log().Info("internet probe unavailable; trying providers with local preference")
 		if local != nil {
 			result, err := local.Transcribe(ctx, audio, opts.ForProvider(local.Name()))
 			if err == nil {
 				return result, nil
 			}
-			slog.Warn("local transcribe failed", "err", err)
+			err = netsec.RedactURLError(err)
+			r.log().Warn("local transcribe failed", "err", err)
+			errs = append(errs, fmt.Errorf("local: %w", err))
 		}
 		if cloudAvailable {
 			result, err := r.transcribeCloud(ctx, audio, opts)
 			if err == nil {
 				return result, nil
 			}
-			slog.Warn("cloud transcribe failed after offline probe", "err", err)
+			r.log().Warn("cloud transcribe failed after offline probe", "err", err)
+			errs = append(errs, err)
 		}
-		return nil, fmt.Errorf("no STT provider available")
+		return nil, noProviderError(errs)
 	}
 
 	// Case 2: Local ready and short audio -- use local, optionally parallel cloud
@@ -338,7 +358,9 @@ func (r *Router) transcribeDynamic(ctx context.Context, audio []byte, durationSe
 		if err == nil {
 			return result, nil
 		}
-		slog.Warn("local transcribe failed", "err", err)
+		err = netsec.RedactURLError(err)
+		r.log().Warn("local transcribe failed", "err", err)
+		errs = append(errs, fmt.Errorf("local: %w", err))
 	}
 
 	// Case 3: No local or long audio -- prefer cloud
@@ -347,17 +369,31 @@ func (r *Router) transcribeDynamic(ctx context.Context, audio []byte, durationSe
 		if err == nil {
 			return result, nil
 		}
-		slog.Warn("cloud transcribe failed", "err", err)
+		r.log().Warn("cloud transcribe failed", "err", err)
+		errs = append(errs, err)
 	}
 
 	// Case 4: Fallback to local via transcribeLocal so the provider-selected
 	// observer fires.
 	if local != nil {
-		slog.Warn("cloud providers unavailable; falling back to local STT")
-		return r.transcribeLocal(ctx, audio, opts)
+		r.log().Warn("cloud providers unavailable; falling back to local STT")
+		result, err := r.transcribeLocal(ctx, audio, opts)
+		if err != nil && len(errs) > 0 {
+			return nil, errors.Join(append(errs, fmt.Errorf("local: %w", err))...)
+		}
+		return result, err
 	}
 
-	return nil, fmt.Errorf("no STT provider available")
+	return nil, noProviderError(errs)
+}
+
+// noProviderError reports that no provider produced a result, keeping every
+// underlying failure reachable through errors.Is and errors.As.
+func noProviderError(errs []error) error {
+	if len(errs) == 0 {
+		return fmt.Errorf("no STT provider available")
+	}
+	return fmt.Errorf("no STT provider available: %w", errors.Join(errs...))
 }
 
 func (r *Router) streamingCandidates(opts speaker.Options) []STTProvider {
@@ -385,7 +421,7 @@ func (r *Router) streamingCandidates(opts speaker.Options) []STTProvider {
 // fall back to batch transcription without a doomed stream attempt.
 func (r *Router) HasDictationStreaming() bool {
 	for _, p := range r.dictationStreamingCandidates() {
-		if _, ok := p.(speechkit.DictationStreamProvider); ok {
+		if _, ok := speechkit.AsDictationStreamProvider(p); ok {
 			return true
 		}
 	}
@@ -503,15 +539,25 @@ func (r *Router) transcribeCloud(ctx context.Context, audio []byte, opts Transcr
 	_, cloud := r.snapshot()
 	cloud = PrioritizeProviderProfile(cloud, opts.ProviderProfileID)
 
+	var errs []error
 	for _, p := range cloud {
+		if ctx.Err() != nil {
+			errs = append(errs, ctx.Err())
+			break
+		}
 		result, err := p.Transcribe(ctx, audio, opts.ForProvider(p.Name()))
 		if err == nil {
 			r.emitProviderSelected(ctx, p.Name(), r.Strategy)
 			return result, nil
 		}
-		slog.Warn("provider transcribe failed", "provider", p.Name(), "err", err)
+		err = netsec.RedactURLError(err)
+		r.log().Warn("provider transcribe failed", "provider", p.Name(), "err", err)
+		errs = append(errs, fmt.Errorf("%s: %w", p.Name(), err))
 	}
 
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("no cloud provider available: %w", errors.Join(errs...))
+	}
 	return nil, fmt.Errorf("no cloud provider available")
 }
 
@@ -527,23 +573,49 @@ func (r *Router) transcribeLocal(ctx context.Context, audio []byte, opts Transcr
 	return result, err
 }
 
+// defaultParallelTimeout is the parallel race budget when ParallelTimeout is zero.
+const defaultParallelTimeout = 15 * time.Second
+
 // transcribeParallel sends to local and cloud simultaneously, returns first result.
-// If ReplaceOnBetter is enabled, waits briefly for a second result.
+// The losing call is cancelled once a winner is returned. If ReplaceOnBetter
+// is enabled, it waits for the second result before returning. When every
+// provider fails, the returned error joins each provider's failure.
 func (r *Router) transcribeParallel(ctx context.Context, audio []byte, opts TranscribeOpts) (*Result, error) {
 	type resultOrError struct {
 		result *Result
 		err    error
 	}
 
+	// Cancelling on return stops whichever call lost the race.
+	callCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	timeout := r.ParallelTimeout
+	if timeout <= 0 {
+		timeout = defaultParallelTimeout
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining < timeout {
+			timeout = remaining
+		}
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
 	local := r.Local()
-	results := make(chan resultOrError, 3)
+	// Buffered for every sender so a late loser never blocks or leaks.
+	results := make(chan resultOrError, 2)
+	expectedResults := 1
 
 	// Local
 	if local != nil {
+		expectedResults = 2
 		go func() {
-			result, err := local.Transcribe(ctx, audio, opts.ForProvider(local.Name()))
+			result, err := local.Transcribe(callCtx, audio, opts.ForProvider(local.Name()))
 			if err == nil {
 				r.emitProviderSelected(ctx, local.Name(), r.Strategy)
+			} else {
+				err = fmt.Errorf("local: %w", err)
 			}
 			results <- resultOrError{result, err}
 		}()
@@ -551,38 +623,40 @@ func (r *Router) transcribeParallel(ctx context.Context, audio []byte, opts Tran
 
 	// Cloud (ordered fallback)
 	go func() {
-		result, err := r.transcribeCloud(ctx, audio, opts)
+		result, err := r.transcribeCloud(callCtx, audio, opts)
 		results <- resultOrError{result, err}
 	}()
 
-	// Wait for first successful result
-	expectedResults := 2
-	if local == nil {
-		expectedResults = 1
-	}
-
 	var firstResult *Result
+	var errs []error
 	for i := 0; i < expectedResults; i++ {
 		select {
 		case res := <-results:
-			if res.err == nil && firstResult == nil {
+			if res.err != nil {
+				errs = append(errs, res.err)
+				continue
+			}
+			if firstResult == nil {
 				firstResult = res.result
 				if !r.ReplaceOnBetter {
 					return firstResult, nil
 				}
 			}
-		case <-time.After(15 * time.Second):
+		case <-timer.C:
 			if firstResult != nil {
 				return firstResult, nil
 			}
-			return nil, fmt.Errorf("all providers timed out")
+			return nil, errors.Join(append(errs, fmt.Errorf("all providers timed out: %w", context.DeadlineExceeded))...)
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			if firstResult != nil {
+				return firstResult, nil
+			}
+			return nil, errors.Join(append(errs, ctx.Err())...)
 		}
 	}
 
 	if firstResult == nil {
-		return nil, fmt.Errorf("all providers failed")
+		return nil, fmt.Errorf("all providers failed: %w", errors.Join(errs...))
 	}
 	return firstResult, nil
 }

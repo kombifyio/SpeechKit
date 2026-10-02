@@ -6,7 +6,7 @@ import io.kombify.speechkit.domain.ConnectionProfile
 /**
  * A SpeechKit server found on the LAN via DNS-SD `_speechkit._tcp`.
  *
- * The TXT record is the public contract from `internal/server/discovery`:
+ * The TXT record is the public contract from `app/internal/server/discovery`:
  * `url`, `modes`, `version`. Credentials never belong here; auth happens
  * after the user picks a URL.
  */

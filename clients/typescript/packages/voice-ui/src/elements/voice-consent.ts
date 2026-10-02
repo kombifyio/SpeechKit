@@ -1,92 +1,30 @@
 import { SpeechKitElement } from "../core/element.js";
+import {
+  createVoiceConsentStore,
+  VOICE_CONSENT_STORAGE_KEY,
+  type VoiceConsentAdapter,
+  type VoiceConsentDecision,
+  type VoiceConsentScope
+} from "../core/consent.js";
 
-export type VoiceConsentScope = "one_shot" | "continuous";
-export type VoiceConsentDecision = "granted" | "declined" | "unset";
+export {
+  VOICE_CONSENT_STORAGE_KEY,
+  type VoiceConsentAdapter,
+  type VoiceConsentDecision,
+  type VoiceConsentScope
+};
 
 /**
- * Consent persistence boundary. The default adapter stores per-surface records
- * under `speechkit.voice.consent.v1` in localStorage with the fail-closed
- * scope semantics of the Floating Panel reference (`kombify.voice.consent.v1`):
- * granting "continuous" implies "one_shot"; a plain one-shot grant never
- * implies "continuous"; declining revokes every scope.
+ * Device-only consent adapter (per-surface records under
+ * `speechkit.voice.consent.v1`). Kept for compatibility; hosts that also
+ * persist consent in the user's account use `createVoiceConsentStore` with
+ * `onConsentChange` / `setConsentRecord` instead.
  */
-export interface VoiceConsentAdapter {
-  read(scope: VoiceConsentScope): VoiceConsentDecision;
-  write(decision: Exclude<VoiceConsentDecision, "unset">, scope: VoiceConsentScope): void;
-}
-
-export const VOICE_CONSENT_STORAGE_KEY = "speechkit.voice.consent.v1";
-
-interface ConsentRecord {
-  decision?: unknown;
-  scopes?: unknown;
-}
-
 export function createLocalStorageConsentAdapter(
   surface = "default",
   storageKey = VOICE_CONSENT_STORAGE_KEY
 ): VoiceConsentAdapter {
-  function storage(): Storage | undefined {
-    try {
-      return globalThis.localStorage;
-    } catch {
-      // Sandboxed iframes without allow-same-origin throw on access.
-      return undefined;
-    }
-  }
-  return {
-    read(scope) {
-      const store = storage();
-      if (!store) return "unset";
-      try {
-        const raw = store.getItem(storageKey);
-        if (!raw) return "unset";
-        const parsed = JSON.parse(raw) as Record<string, ConsentRecord | undefined>;
-        const record = parsed?.[surface];
-        const decision = record?.decision;
-        if (decision !== "granted" && decision !== "declined") return "unset";
-        if (decision === "declined") return "declined";
-        if (scope === "one_shot") return "granted";
-        const scopes = Array.isArray(record?.scopes) ? record.scopes : [];
-        return scopes.includes("continuous") ? "granted" : "unset";
-      } catch {
-        return "unset";
-      }
-    },
-    write(decision, scope) {
-      const store = storage();
-      if (!store) return;
-      let record: Record<string, unknown> = {};
-      try {
-        const parsed: unknown = JSON.parse(store.getItem(storageKey) ?? "{}");
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          record = parsed as Record<string, unknown>;
-        }
-      } catch {
-        // Corrupted records are replaced.
-      }
-      const previous = record[surface] as ConsentRecord | undefined;
-      const previousScopes = Array.isArray(previous?.scopes)
-        ? previous.scopes.filter((entry): entry is string => typeof entry === "string")
-        : [];
-      const scopes =
-        decision === "declined"
-          ? []
-          : [
-              ...new Set([
-                ...previousScopes,
-                "one_shot",
-                ...(scope === "continuous" ? ["continuous"] : [])
-              ])
-            ];
-      record[surface] = { decision, decided_at: new Date().toISOString(), scopes };
-      try {
-        store.setItem(storageKey, JSON.stringify(record));
-      } catch {
-        // Quota/security errors: the in-memory decision still applies this session.
-      }
-    }
-  };
+  return createVoiceConsentStore({ surface, storageKey });
 }
 
 const CSS = `

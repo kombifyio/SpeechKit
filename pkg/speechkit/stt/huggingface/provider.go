@@ -3,6 +3,8 @@
 // such as Whisper. It needs a Hugging Face access token and public https
 // egress; the model is addressed by its hub id and may answer 503 while it
 // loads.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package huggingface
 
 import (
@@ -42,11 +44,19 @@ type Provider struct {
 	client     *http.Client
 }
 
+// Options configures [New].
+type Options struct {
+	// APIKey is the HuggingFace access token (an "hf_..." user token).
+	APIKey string
+	// Model is the HuggingFace model id, for example "openai/whisper-large-v3".
+	Model string
+}
+
 // New creates a provider for a HuggingFace-hosted model.
-func New(model, token string) *Provider {
+func New(opts Options) *Provider {
 	p := &Provider{
-		Model:   model,
-		Token:   token,
+		Model:   opts.Model,
+		Token:   opts.APIKey,
 		BaseURL: hfBaseURL,
 		// Validation zero-value = strict: public https only.
 	}
@@ -92,7 +102,7 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 	start := time.Now()
 	resp, err := p.client.Do(req) //nolint:gosec // G704: SSRF by design, endpoint configured by user
 	if err != nil {
-		return nil, fmt.Errorf("hf request: %w", err)
+		return nil, fmt.Errorf("hf request: %w", stt.ClassifyTransportError("hf", err))
 	}
 	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 	duration := time.Since(start)
@@ -104,11 +114,11 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 
 	switch {
 	case resp.StatusCode == 503:
-		return nil, netsec.ProviderStatusError("hf", resp.StatusCode, respBody)
+		return nil, stt.HTTPError("hf", resp, respBody)
 	case resp.StatusCode == 429:
-		return nil, netsec.ProviderStatusError("hf", resp.StatusCode, respBody)
+		return nil, stt.HTTPError("hf", resp, respBody)
 	case resp.StatusCode != http.StatusOK:
-		return nil, netsec.ProviderStatusError("hf", resp.StatusCode, respBody)
+		return nil, stt.HTTPError("hf", resp, respBody)
 	}
 
 	var hfResp struct {
@@ -164,7 +174,7 @@ func (p *Provider) Health(ctx context.Context) error {
 		return fmt.Errorf("hf model loading")
 	}
 	if resp.StatusCode != http.StatusOK {
-		return netsec.ProviderStatusError("hf health", resp.StatusCode, body)
+		return stt.HTTPError("hf health", resp, body)
 	}
 	return nil
 }

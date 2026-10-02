@@ -59,5 +59,7 @@
 // the same semver discipline as the rest of pkg/speechkit. Before v1.0
 // the API may still evolve — see [CHANGELOG.md] for breaking-change calls.
 //
+// Stability: Stable — no breaking change without a minor version bump and a changelog callout.
+//
 // [CHANGELOG.md]: https://github.com/kombifyio/SpeechKit/blob/main/CHANGELOG.md
 package lifecycle

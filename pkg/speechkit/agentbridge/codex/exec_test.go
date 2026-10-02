@@ -2,10 +2,13 @@ package codex
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -145,5 +148,120 @@ func TestBridgeStatusNotSignedIn(t *testing.T) {
 		Project: agentbridge.Project{Alias: "tmp", Path: t.TempDir()}, Prompt: "x",
 	}); err != agentbridge.ErrNotSignedIn {
 		t.Fatalf("err = %v, want ErrNotSignedIn", err)
+	}
+}
+
+// TestExecTurnPassesPromptOnStdinNotArgv pins the H4 fix: the model-authored
+// prompt reaches codex on stdin and never as a command-line argument, so
+// neither cmd.exe quoting (codex.cmd shims) nor codex's own option parser
+// can interpret it.
+func TestExecTurnPassesPromptOnStdinNotArgv(t *testing.T) {
+	binary := buildFakeCodex(t)
+	script, err := filepath.Abs(filepath.Join("testdata", "simple-turn.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FAKECODEX_SCRIPT", script)
+	home := t.TempDir()
+	writeAuthFile(t, home, `{"OPENAI_API_KEY":"sk-fake"}`)
+
+	for _, prompt := range []string{
+		`fix it" & calc & rem`,
+		`--dangerously-bypass-approvals-and-sandbox`,
+	} {
+		record := filepath.Join(t.TempDir(), "record.json")
+		t.Setenv("FAKECODEX_RECORD", record)
+		bridge := New(Config{BinaryPath: binary, CodexHome: home, Mode: "exec"})
+		if _, err := bridge.StartTurn(context.Background(), agentbridge.TurnRequest{
+			Project: agentbridge.Project{Alias: "tmp", Path: t.TempDir()},
+			Prompt:  prompt,
+		}); err != nil {
+			t.Fatalf("start turn: %v", err)
+		}
+		drainUntilTurnEnd(t, bridge)
+		_ = bridge.Close()
+
+		raw, err := os.ReadFile(record)
+		if err != nil {
+			t.Fatalf("fake codex did not record its invocation: %v", err)
+		}
+		var got struct {
+			Args  []string `json:"args"`
+			Stdin string   `json:"stdin"`
+		}
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Stdin != prompt {
+			t.Fatalf("stdin = %q, want the prompt %q", got.Stdin, prompt)
+		}
+		for _, arg := range got.Args {
+			if strings.Contains(arg, prompt) {
+				t.Fatalf("prompt leaked into argv: %q", got.Args)
+			}
+		}
+	}
+}
+
+// TestExecModeRefusesWorkspaceWrite: exec mode has no approval round-trip,
+// so a side-effectful sandbox must never run there.
+func TestExecModeRefusesWorkspaceWrite(t *testing.T) {
+	binary := buildFakeCodex(t)
+	record := filepath.Join(t.TempDir(), "record.json")
+	t.Setenv("FAKECODEX_RECORD", record)
+	home := t.TempDir()
+	writeAuthFile(t, home, `{"OPENAI_API_KEY":"sk-fake"}`)
+	bridge := New(Config{BinaryPath: binary, CodexHome: home, Mode: "exec"})
+	defer bridge.Close()
+
+	_, err := bridge.StartTurn(context.Background(), agentbridge.TurnRequest{
+		Project: agentbridge.Project{Alias: "tmp", Path: t.TempDir(), Sandbox: agentbridge.SandboxWorkspaceWrite},
+		Prompt:  "edit files",
+		Sandbox: agentbridge.SandboxWorkspaceWrite,
+	})
+	if !errors.Is(err, agentbridge.ErrUnsupported) {
+		t.Fatalf("err = %v, want ErrUnsupported", err)
+	}
+	if _, statErr := os.Stat(record); statErr == nil {
+		t.Fatal("codex exec was launched for a workspace-write turn")
+	}
+}
+
+// TestWindowsLaunchesOnlyNativeExe pins the H4 binary rule: on Windows a
+// script shim (npm's codex.cmd and friends) is never launched, because
+// CreateProcess would route it through cmd.exe or another script host.
+func TestWindowsLaunchesOnlyNativeExe(t *testing.T) {
+	for _, path := range []string{
+		`C:\Users\u\AppData\Roaming\npm\codex.cmd`,
+		`C:\Users\u\AppData\Roaming\npm\codex.CMD`,
+		`C:\tools\codex.bat`,
+		`C:\Users\u\AppData\Roaming\npm\codex.ps1`,
+		`C:\tools\codex.vbs`,
+		`C:\tools\codex.js`,
+		`C:\Users\u\AppData\Roaming\npm\codex`,
+	} {
+		if err := windowsNativeBinary(path); !errors.Is(err, errBinaryNotNative) {
+			t.Fatalf("%s: err = %v, want refusal", path, err)
+		}
+	}
+	for _, path := range []string{`C:\tools\codex.exe`, `C:\tools\CODEX.EXE`} {
+		if err := windowsNativeBinary(path); err != nil {
+			t.Fatalf("%s: native exe refused: %v", path, err)
+		}
+	}
+}
+
+func drainUntilTurnEnd(t *testing.T, bridge *Bridge) {
+	t.Helper()
+	deadline := time.After(15 * time.Second)
+	for {
+		select {
+		case ev := <-bridge.Events():
+			if ev.Type == agentbridge.EventTurnCompleted || ev.Type == agentbridge.EventError {
+				return
+			}
+		case <-deadline:
+			t.Fatal("no turn completion within deadline")
+		}
 	}
 }

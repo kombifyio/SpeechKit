@@ -5,7 +5,7 @@
  * esbuild bundles src/main.ts (voice-ui kit + voiceagent browser client) into
  * one IIFE, which is inlined together with the kit's tokens.css and the page
  * CSS into src/template.html. The result is written to
- * internal/server/assistantui/assets/assistant.html, which the server embeds
+ * app/internal/server/assistantui/assets/assistant.html, which the server embeds
  * via go:embed and serves with hash-pinned CSP (the template deliberately
  * uses plain <style>/<script> blocks — the server's CSP hasher matches those
  * literal tags).
@@ -19,7 +19,7 @@ import { buildSync } from "esbuild";
 
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(appRoot, "..", "..", "..", "..");
-const outPath = join(repoRoot, "internal", "server", "assistantui", "assets", "assistant.html");
+const outPath = join(repoRoot, "app", "internal", "server", "assistantui", "assets", "assistant.html");
 
 const result = buildSync({
   entryPoints: [join(appRoot, "src", "main.ts")],

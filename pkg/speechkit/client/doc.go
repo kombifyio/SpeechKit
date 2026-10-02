@@ -1,5 +1,5 @@
 // Package client provides a typed HTTP client for talking to a remote
-// SpeechKit Server (the `cmd/speechkit-server` Linux container or any
+// SpeechKit Server (the `app/cmd/speechkit-server` Linux container or any
 // compatible deployment).
 //
 // Use it from any Go program — desktop, server, or test harness — that
@@ -19,4 +19,6 @@
 // does not retry by default — host apps own the retry policy because the
 // right behavior differs between idempotent reads (safe to retry) and
 // non-idempotent writes (which may need a higher-level dedupe key).
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package client

@@ -4,6 +4,8 @@
 // <deployment>), so this package wraps live/openai and only changes identity,
 // endpoint enforcement, and the default deployment name. Auth is the shared
 // Foundry API key sent as a Bearer token, which the v1 surface accepts.
+//
+// Stability: Experimental — may change in any release.
 package foundry
 
 import (

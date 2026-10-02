@@ -34,24 +34,29 @@ func buildSTT(cfg *Config) (stt.STTProvider, error) {
 		if modelPath == "" {
 			return nil, fmt.Errorf("stt local: kein Whisper-Modell gefunden; erwartet %s oder setze [local].model_path", whisperModelHint(cfg))
 		}
-		return local.New(cfg.Local.Port, modelPath, cfg.Local.GPU), nil
+		return local.New(local.Options{Port: cfg.Local.Port, ModelPath: modelPath, GPU: cfg.Local.GPU}), nil
 	case "openai":
-		return openaicompat.NewOpenAI(key), nil
+		return openaicompat.NewOpenAI(openaicompat.Options{APIKey: key}), nil
 	case "groq":
-		return openaicompat.NewGroq(key), nil
+		return openaicompat.NewGroq(openaicompat.Options{APIKey: key}), nil
 	case "deepgram":
 		if !realSecret(key) {
 			return missingSTTKeyProvider{provider: "deepgram", envName: cfg.STT.APIKeyEnv}, nil
 		}
-		return deepgram.New(key, cfg.STT.Model), nil
+		return deepgram.New(deepgram.Options{APIKey: key, Model: cfg.STT.Model}), nil
 	case "assemblyai":
-		return assemblyai.New(key, cfg.STT.Model), nil
+		return assemblyai.New(assemblyai.Options{APIKey: key, Models: cfg.STT.Model}), nil
 	case "ollama":
-		return openaicompat.NewOllama(cfg.STT.BaseURL, cfg.STT.Model), nil
+		return openaicompat.NewOllama(openaicompat.Options{BaseURL: cfg.STT.BaseURL, Model: cfg.STT.Model}), nil
 	case "vps", "selfhosted", "self-hosted":
-		return vps.NewWithModel(cfg.STT.BaseURL, key, cfg.STT.Model), nil
+		return vps.New(vps.Options{BaseURL: cfg.STT.BaseURL, APIKey: key, Model: cfg.STT.Model}), nil
 	case "openai_compatible", "gateway", "":
-		return openaicompat.New("kombify-gateway", cfg.STT.BaseURL, key, cfg.STT.Model), nil
+		return openaicompat.New(openaicompat.Options{
+			Name:    "kombify-gateway",
+			BaseURL: cfg.STT.BaseURL,
+			APIKey:  key,
+			Model:   cfg.STT.Model,
+		}), nil
 	default:
 		return nil, fmt.Errorf("stt: unknown provider %q", cfg.STT.Provider)
 	}

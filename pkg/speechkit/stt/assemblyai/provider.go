@@ -4,6 +4,8 @@
 // for everything else (diarization, speaker identification, redaction), and
 // the v3 realtime WebSocket for live dictation and speaker streams. It needs
 // an AssemblyAI API key and public https egress; there is no local component.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package assemblyai
 
 import (
@@ -11,11 +13,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
@@ -25,10 +29,12 @@ const (
 	assemblyAIBaseURL          = "https://api.assemblyai.com"
 	assemblyAISyncBaseURL      = "https://sync.assemblyai.com"
 	assemblyAIStreamingBaseURL = "wss://streaming.assemblyai.com"
-	// assemblyAIFlagshipModel is Universal-3.5 Pro — AssemblyAI's flagship
-	// speech model, shared by the async, sync, and realtime products.
-	assemblyAIFlagshipModel    = "universal-3-5-pro"
-	assemblyAIStreamingModel   = assemblyAIFlagshipModel
+	// assemblyAIFlagshipModel is Universal-3.5 Pro — AssemblyAI's
+	// pre-recorded flagship, shared by the async and sync products.
+	assemblyAIFlagshipModel = "universal-3-5-pro"
+	// assemblyAIStreamingModel is Universal-3.6 Pro Realtime (2026-09-29):
+	// streaming-only, 32 languages, the realtime default.
+	assemblyAIStreamingModel   = "universal-3-6-pro"
 	assemblyAIMaxResponseBytes = 16 << 20
 	// Patient dictation turn detection (AssemblyAI "entity dictation /
 	// complex instructions"): tolerate mid-sentence pauses instead of
@@ -63,8 +69,14 @@ type Provider struct {
 	Validation   netsec.ValidationOptions
 	PollInterval time.Duration
 	PollTimeout  time.Duration
-	client       *http.Client
+	// Logger receives this provider's diagnostics. Nil falls back to
+	// slog.Default() at log time.
+	Logger *slog.Logger
+	client *http.Client
 }
+
+// log returns the provider's logger, or the default logger when none is set.
+func (p *Provider) log() *slog.Logger { return logutil.Resolve(p.Logger) }
 
 // StreamingLLM is the LLM Gateway payload attached to a realtime
 // dictation WebSocket. Model IDs are LLM Gateway catalog names, not STT names.
@@ -97,12 +109,21 @@ func (p *Provider) EnableStreamingLLM(model, prompt string, maxTokens int) {
 	p.StreamingLLM = &StreamingLLM{Model: model, Prompt: prompt, MaxTokens: maxTokens}
 }
 
-// New creates an AssemblyAI provider. models is the
-// comma-separated model list; empty uses the provider default.
-func New(apiKey, models string) *Provider {
+// Options configures [New].
+type Options struct {
+	// APIKey is the AssemblyAI API key.
+	APIKey string
+	// Models is the comma-separated model fallback list. Empty selects the
+	// provider default.
+	Models string
+}
+
+// New creates an AssemblyAI provider. Zero Options values select the provider
+// defaults.
+func New(opts Options) *Provider {
 	p := &Provider{
-		APIKey:           apiKey,
-		Models:           parseAssemblyAIModels(models),
+		APIKey:           opts.APIKey,
+		Models:           parseAssemblyAIModels(opts.Models),
 		StreamingModel:   assemblyAIStreamingModel,
 		BaseURL:          assemblyAIBaseURL,
 		SyncBaseURL:      assemblyAISyncBaseURL,
@@ -207,7 +228,7 @@ func (p *Provider) Health(ctx context.Context) error {
 	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, stt.MaxResponseBytes))
 	if resp.StatusCode != http.StatusOK {
-		return netsec.ProviderStatusError("assemblyai health", resp.StatusCode, body)
+		return stt.HTTPError("assemblyai health", resp, body)
 	}
 	return nil
 }
@@ -215,7 +236,7 @@ func (p *Provider) Health(ctx context.Context) error {
 func (p *Provider) doJSON(req *http.Request, target any) error {
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return err
+		return stt.ClassifyTransportError("assemblyai", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 	body, err := io.ReadAll(io.LimitReader(resp.Body, assemblyAIMaxResponseBytes))
@@ -223,7 +244,7 @@ func (p *Provider) doJSON(req *http.Request, target any) error {
 		return fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return netsec.ProviderStatusError("assemblyai", resp.StatusCode, body)
+		return stt.HTTPError("assemblyai", resp, body)
 	}
 	if target == nil {
 		return nil

@@ -1,4 +1,6 @@
 // Package customize defines SpeechKit's public Words/Replacements contract.
+//
+// Stability: Stable — no breaking change without a minor version bump and a changelog callout.
 package customize
 
 import (

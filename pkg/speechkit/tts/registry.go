@@ -7,8 +7,11 @@ import "strings"
 // skipped. It lets the Device- and Server-Targets share one router-assembly
 // path (BuildRouter) while each keeps its own config-resolution specifics.
 type EnabledProviders struct {
-	OpenAI      *OpenAIOpts
-	Google      *GoogleOpts
+	OpenAI *OpenAIOpts
+	Google *GoogleOpts
+	// Gemini registers Gemini API speech (Gemini 3.8 TTS) as the "gemini"
+	// provider; hosts enable it instead of Google on the same Gemini key.
+	Gemini      *GeminiOpts
 	Deepgram    *DeepgramOpts
 	HuggingFace *HuggingFaceOpts
 	Foundry     *FoundryOpts
@@ -40,6 +43,10 @@ func BuildRouter(strategy Strategy, enabled EnabledProviders) (router *Router, o
 	if enabled.Google != nil {
 		providers = append(providers, NewGoogle(*enabled.Google))
 		notes = append(notes, "TTS: Google registered (voice="+enabled.Google.Voice+")")
+	}
+	if enabled.Gemini != nil {
+		providers = append(providers, NewGemini(*enabled.Gemini))
+		notes = append(notes, "TTS: Gemini registered (model="+enabled.Gemini.Model+")")
 	}
 	if enabled.Deepgram != nil {
 		providers = append(providers, NewDeepgram(*enabled.Deepgram))

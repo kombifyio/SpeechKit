@@ -1,6 +1,8 @@
 // Package provideropts defines SpeechKit's provider-neutral voice option
 // vocabulary and the manifest/resolve types used by concrete provider
 // adapters.
+//
+// Stability: Stable — no breaking change without a minor version bump and a changelog callout.
 package provideropts
 
 import (

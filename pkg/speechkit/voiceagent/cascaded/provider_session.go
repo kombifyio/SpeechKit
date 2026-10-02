@@ -3,7 +3,7 @@ package cascaded
 import (
 	"context"
 	"fmt"
-	"log/slog"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -23,7 +23,7 @@ func (p *Provider) Connect(ctx context.Context, cfg SessionConfig) error {
 		// TTS is optional - without it we still return OutputTranscript
 		// text frames so the client can render subtitles or speak via
 		// its own TTS stack.
-		slog.Info("cascaded: TTS not configured; sessions will be text-only")
+		logutil.Resolve(p.logger).Info("cascaded: TTS not configured; sessions will be text-only")
 	}
 
 	p.mu.Lock()
@@ -35,7 +35,7 @@ func (p *Provider) Connect(ctx context.Context, cfg SessionConfig) error {
 	p.mu.Unlock()
 
 	if err := p.ensureSpeakerStream(ctx); err != nil {
-		slog.Warn("cascaded: speaker stream unavailable", "err", err)
+		logutil.Resolve(p.logger).Warn("cascaded: speaker stream unavailable", "err", err)
 	}
 
 	go func() {
@@ -54,7 +54,7 @@ func (p *Provider) recoverGoroutine(name string) {
 	if rec == nil {
 		return
 	}
-	slog.Error("cascaded: goroutine panic recovered",
+	logutil.Resolve(p.logger).Error("cascaded: goroutine panic recovered",
 		"goroutine", name,
 		"err", rec,
 		"stack", string(debug.Stack()),
@@ -85,7 +85,7 @@ func (p *Provider) UpdateInstructions(ctx context.Context, cfg SessionConfig) er
 
 	speakerErr := p.ensureSpeakerStream(ctx)
 	if speakerErr != nil {
-		slog.Warn("cascaded: speaker stream unavailable after config update", "err", speakerErr)
+		logutil.Resolve(p.logger).Warn("cascaded: speaker stream unavailable after config update", "err", speakerErr)
 	}
 	return nil
 }
@@ -106,7 +106,7 @@ func (p *Provider) SendAudio(chunk []byte) error {
 
 	if stream := p.currentSpeakerStream(); stream != nil {
 		if err := stream.SendAudio(context.Background(), chunk); err != nil {
-			slog.Warn("cascaded: speaker stream audio send failed", "err", err)
+			logutil.Resolve(p.logger).Warn("cascaded: speaker stream audio send failed", "err", err)
 		}
 	}
 	return nil
@@ -124,7 +124,7 @@ func (p *Provider) SendAudioStreamEnd() error {
 	p.mu.Unlock()
 	if stream := p.currentSpeakerStream(); stream != nil {
 		if err := stream.EndAudio(context.Background()); err != nil {
-			slog.Warn("cascaded: speaker stream end failed", "err", err)
+			logutil.Resolve(p.logger).Warn("cascaded: speaker stream end failed", "err", err)
 		}
 	}
 	return nil

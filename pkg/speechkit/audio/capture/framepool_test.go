@@ -116,14 +116,21 @@ func TestFramePoolHitRatioImprovesOnReuse(t *testing.T) {
 		pool.Put(buf)
 	}
 
+	// Under -race sync.Pool drops ~25% of Puts on purpose, so only a
+	// clear majority of hits is guaranteed there.
+	maxMisses, minRatio := uint64(5), 0.90
+	if raceEnabled {
+		maxMisses, minRatio = 50, 0.50
+	}
+
 	stats := pool.Stats()
-	if stats.Misses > 5 {
-		t.Errorf("stats.Misses = %d after 100 paired Get/Put; expected single-digit (most should hit cache). Stats: %+v", stats.Misses, stats)
+	if stats.Misses > maxMisses {
+		t.Errorf("stats.Misses = %d after 100 paired Get/Put; want <= %d. Stats: %+v", stats.Misses, maxMisses, stats)
 	}
 
 	ratio := pool.HitRatio()
-	if ratio < 0.90 {
-		t.Errorf("HitRatio = %.3f; want >= 0.90 after paired Get/Put cycle", ratio)
+	if ratio < minRatio {
+		t.Errorf("HitRatio = %.3f; want >= %.2f after paired Get/Put cycle", ratio, minRatio)
 	}
 }
 

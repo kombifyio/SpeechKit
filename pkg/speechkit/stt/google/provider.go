@@ -1,9 +1,12 @@
 // Package google adapts Google Cloud Speech-to-Text to [stt.STTProvider]:
-// v1 batch recognition with optional word-level speaker diarization and v2
+// v1 batch recognition with optional word-level speaker diarization, v2
+// regional batch recognition for Chirp 3 ([ModelChirp3]) and v2
 // StreamingRecognize for realtime transcription. It is an opt-in
 // bring-your-own-key provider — never a SpeechKit default — and needs the
 // user's own dedicated Speech-to-Text API key for batch requests and a
 // service-account or Application Default Credentials for streaming.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package google
 
 import (
@@ -15,7 +18,6 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"io"
 	"net/http"
-	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,6 +27,8 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
+
+	"cloud.google.com/go/auth"
 )
 
 const (
@@ -43,23 +47,43 @@ type Provider struct {
 	STTCredentialsJSONEnv     string
 	ApplicationCredentialsEnv string
 	BaseURL                   string // Override for testing; defaults to googleSTTBaseURL
-	Validation                netsec.ValidationOptions
+	// Region is the v2 multi-region for models that only run regionally
+	// (ModelChirp3): "us" (default when empty) or "eu".
+	Region string
+	// ProjectID names the Google Cloud project for v2 requests. Empty falls
+	// back to the project in the service-account credentials, then
+	// GOOGLE_CLOUD_PROJECT.
+	ProjectID  string
+	Validation netsec.ValidationOptions
 	// SecretResolver resolves the streaming credential env names
 	// (STTCredentialsJSONEnv, ApplicationCredentialsEnv, GOOGLE_CLOUD_PROJECT)
 	// when they are not present in the process environment. Nil falls back to
 	// the process environment.
 	SecretResolver stt.SecretResolver
-	client         *http.Client
+
+	// v2Credentials replaces the resolved service-account credentials for
+	// v2 requests; tests set it to avoid a real token exchange.
+	v2Credentials *auth.Credentials
+	client        *http.Client
 }
 
-// New creates a provider for Google Cloud Speech-to-Text.
-// Model defaults to "latest_long" if empty.
-func New(apiKey, model string) *Provider {
+// Options configures [New].
+type Options struct {
+	// APIKey is the Google API key.
+	APIKey string
+	// Model is the Speech-to-Text model. Empty selects "latest_long".
+	Model string
+}
+
+// New creates a provider for Google Cloud Speech-to-Text. Zero Options values
+// select the provider defaults.
+func New(opts Options) *Provider {
+	model := opts.Model
 	if model == "" {
 		model = "latest_long"
 	}
 	p := &Provider{
-		APIKey:                    apiKey,
+		APIKey:                    opts.APIKey,
 		Model:                     model,
 		STTCredentialsJSONEnv:     "SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON",
 		ApplicationCredentialsEnv: "GOOGLE_APPLICATION_CREDENTIALS",
@@ -210,7 +234,9 @@ func googleProfileID(model string) string {
 	return "stt.google.latest-long"
 }
 
-// googleEndpoint builds a validated Google STT URL with an api-key query param.
+// googleEndpoint builds a validated Google STT URL. The API key is never put
+// in the URL: it travels in the x-goog-api-key header (see setAPIKey), so a
+// transport *url.Error, a log line or a proxy access log cannot leak it.
 func (p *Provider) googleEndpoint(path string) (string, error) {
 	base := p.BaseURL
 	if base == "" {
@@ -220,21 +246,31 @@ func (p *Provider) googleEndpoint(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("google endpoint: %w", err)
 	}
-	q := url.Values{}
-	q.Set("key", p.APIKey)
-	return validated + "?" + q.Encode(), nil
+	return validated, nil
 }
 
-// Transcribe sends audio to Google Cloud Speech-to-Text v1 REST API.
-func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.TranscribeOpts) (*stt.Result, error) {
-	endpoint, err := p.googleEndpoint("v1/speech:recognize")
-	if err != nil {
-		return nil, err
+// setAPIKey attaches the Google API key as the x-goog-api-key header, which
+// speech.googleapis.com accepts in place of the ?key= query parameter.
+func (p *Provider) setAPIKey(req *http.Request) {
+	if p.APIKey != "" {
+		req.Header.Set("x-goog-api-key", p.APIKey)
 	}
+}
 
+// Transcribe sends audio to Google Cloud Speech-to-Text: the v1 REST API for
+// every model except ModelChirp3, which only runs on the regional v2 API.
+func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.TranscribeOpts) (*stt.Result, error) {
 	model := p.Model
 	if opts.Model != "" {
 		model = opts.Model
+	}
+	if isChirp3(model) {
+		return p.transcribeChirp3(ctx, audio, model, opts)
+	}
+
+	endpoint, err := p.googleEndpoint("v1/speech:recognize")
+	if err != nil {
+		return nil, err
 	}
 
 	resolved := stt.ResolveTranscribeOptions("google", googleProfileID(model), opts, provideropts.Values{
@@ -294,11 +330,12 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	p.setAPIKey(req)
 
 	start := time.Now()
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("google request: %w", err)
+		return nil, fmt.Errorf("google request: %w", stt.ClassifyTransportError("google", err))
 	}
 	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 	duration := time.Since(start)
@@ -309,7 +346,7 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, netsec.ProviderStatusError("google", resp.StatusCode, respBody)
+		return nil, stt.HTTPError("google", resp, respBody)
 	}
 
 	var gResp googleRecognizeResponse
@@ -447,15 +484,16 @@ func (p *Provider) Health(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	p.setAPIKey(req)
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("google health: %w", err)
+		return fmt.Errorf("google health: %w", stt.ClassifyTransportError("google", err))
 	}
 	_ = resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("google health: status %d", resp.StatusCode)
+		return stt.HTTPError("google health", resp, nil)
 	}
 	return nil
 }

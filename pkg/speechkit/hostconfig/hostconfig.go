@@ -25,7 +25,9 @@
 // [Normalize]. The reference desktop app's internal config loader delegates to
 // the same functions for those fields, so [Load] and the desktop app agree by
 // construction rather than by a parallel reimplementation. The package imports
-// no internal/* code.
+// no app/internal/* code.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package hostconfig
 
 import (

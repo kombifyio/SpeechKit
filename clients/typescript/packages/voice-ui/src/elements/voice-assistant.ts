@@ -7,6 +7,7 @@ import type {
   SpeechKitVoiceSessionStatus
 } from "../core/voice-surface.js";
 import type { VoiceUiMessageCatalog } from "../i18n/index.js";
+import { voiceNoticeKind, voiceNoticeKindForDenial, voiceNoticeMessage } from "../core/notice.js";
 import { AssistantWaveformVisual, type WaveformLayout } from "./assistant-visuals/waveform.js";
 
 export type VoiceAssistantSize = "orb" | "compact" | "expanded";
@@ -590,6 +591,13 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
 
   #statusLabel(status: VoiceAssistantStatus, messages: VoiceUiMessageCatalog): string {
     if (status === "connecting") return messages["sk.voice.agent.connecting"];
+    if (status === "denied" && this.state?.status === "denied") {
+      // One localized line for the reason; never the raw code or guidance text.
+      const kind = this.state.denial
+        ? voiceNoticeKindForDenial(this.state.denial)
+        : voiceNoticeKind(this.state.reason_code);
+      return voiceNoticeMessage(kind, messages);
+    }
     return messages[`sk.voice.state.${status}`];
   }
 

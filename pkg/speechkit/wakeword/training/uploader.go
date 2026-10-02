@@ -17,6 +17,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
 
 // Uploader scans a local capture directory for activation recordings
@@ -73,8 +76,18 @@ type UploaderConfig struct {
 	OnlyLabeled bool
 
 	// HTTPClient overrides the default *http.Client (optional; tests use a
-	// custom transport). When nil a 30 s-timeout client is used.
+	// custom transport). When nil a 30 s-timeout netsec client is used that
+	// validates every dial target against the URL policy (see Validation)
+	// and follows no redirects. A caller-supplied client is used as is.
 	HTTPClient *http.Client
+
+	// Validation optionally replaces the default URL policy for ServerURL
+	// (also applied to every dial by the default client). The default
+	// accepts https to any host and plain http only to loopback or
+	// private-network addresses, because the clips are raw microphone audio
+	// and the request carries a bearer token. Hosts pass their network-scope
+	// policy here (e.g. local-network-only).
+	Validation *netsec.ValidationOptions
 
 	// Logger is optional; defaults to slog.Default.
 	Logger *slog.Logger
@@ -88,25 +101,54 @@ func NewUploader(cfg UploaderConfig) (*Uploader, error) {
 	if strings.TrimSpace(cfg.ServerURL) == "" {
 		return nil, errors.New("training: uploader ServerURL must be set")
 	}
-	if _, err := url.Parse(cfg.ServerURL); err != nil {
-		return nil, fmt.Errorf("training: uploader invalid ServerURL: %w", err)
+	validation, err := uploadURLPolicy(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := netsec.ValidateProviderURL(strings.TrimSpace(cfg.ServerURL), validation); err != nil {
+		return nil, fmt.Errorf("training: uploader ServerURL rejected: %w", err)
 	}
 	if cfg.Interval <= 0 {
 		return nil, errors.New("training: uploader Interval must be > 0")
 	}
 	client := cfg.HTTPClient
 	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
+		client = netsec.NewSafeHTTPClient(netsec.ClientOptions{
+			Timeout:        30 * time.Second,
+			DialValidation: &validation,
+		})
+		// Never follow a redirect: it would re-send the clip and the bearer
+		// token to a host nobody configured.
+		client.CheckRedirect = func(*http.Request, []*http.Request) error {
+			return errors.New("training: uploader does not follow redirects")
+		}
 	}
 	logger := cfg.Logger
 	if logger == nil {
-		logger = slog.Default()
+		logger = logutil.Resolve(nil)
 	}
 	return &Uploader{
 		cfg:    cfg,
 		client: client,
 		logger: logger,
 	}, nil
+}
+
+// uploadURLPolicy returns the URL / dial policy for cfg.ServerURL: the
+// caller's Validation, or the default (https anywhere, plain http only to
+// loopback and private addresses).
+func uploadURLPolicy(cfg UploaderConfig) (netsec.ValidationOptions, error) {
+	if cfg.Validation != nil {
+		return *cfg.Validation, nil
+	}
+	u, err := url.Parse(strings.TrimSpace(cfg.ServerURL))
+	if err != nil {
+		return netsec.ValidationOptions{}, fmt.Errorf("training: uploader invalid ServerURL: %w", err)
+	}
+	if strings.EqualFold(u.Scheme, "http") {
+		return netsec.ValidationOptions{AllowLoopback: true, AllowPrivate: true, AllowHTTP: true, RequireLocal: true}, nil
+	}
+	return netsec.ValidationOptions{AllowLoopback: true, AllowPrivate: true}, nil
 }
 
 // Run scans once immediately and then on every tick until ctx is cancelled
@@ -190,10 +232,17 @@ func (u *Uploader) scanOnce(ctx context.Context) {
 			continue
 		}
 		wavPath := strings.TrimSuffix(jsonPath, ".json") + ".wav"
-		// Tolerate the audio_path field pointing somewhere else (e.g. a
-		// relative override).
+		// Tolerate the audio_path field naming another file in the capture
+		// directory, but never one outside it: the sidecar JSON is plain
+		// data on disk and must not be able to select any readable file
+		// for upload.
 		if rec.AudioPath != "" {
 			candidate := filepath.Join(u.cfg.Dir, rec.AudioPath)
+			if filepath.IsAbs(rec.AudioPath) || !pathWithin(u.cfg.Dir, candidate) {
+				u.logger.Warn("training_uploader: audio_path outside the capture dir — record skipped",
+					"id", rec.ID)
+				continue
+			}
 			if _, err := os.Stat(candidate); err == nil {
 				wavPath = candidate
 			}
@@ -201,6 +250,11 @@ func (u *Uploader) scanOnce(ctx context.Context) {
 		if _, err := os.Stat(wavPath); err != nil {
 			u.logger.Warn("training_uploader: audio file missing",
 				"path", wavPath, "err", err)
+			continue
+		}
+		if !resolvedWithin(u.cfg.Dir, wavPath) {
+			u.logger.Warn("training_uploader: audio file resolves outside the capture dir — record skipped",
+				"id", rec.ID)
 			continue
 		}
 
@@ -283,6 +337,29 @@ func (u *Uploader) uploadRecord(ctx context.Context, rec Record, wavPath string)
 		respBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return false, fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBytes)))
 	}
+}
+
+// pathWithin reports whether path, cleaned, is dir or below it.
+func pathWithin(dir, path string) bool {
+	rel, err := filepath.Rel(filepath.Clean(dir), filepath.Clean(path))
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel))
+}
+
+// resolvedWithin is pathWithin after resolving symlinks on both sides, so a
+// link planted in the capture dir cannot point the upload elsewhere.
+func resolvedWithin(dir, path string) bool {
+	realDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return false
+	}
+	realPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return false
+	}
+	return pathWithin(realDir, realPath)
 }
 
 func readRecord(path string) (Record, error) {

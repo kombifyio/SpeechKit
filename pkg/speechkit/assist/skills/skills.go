@@ -31,6 +31,8 @@
 // utterance is always claimed by the catalog and terminates locally with a
 // localized result when no bridge is configured, when Home Assistant reports
 // no match, or when the bridge fails. It is never offered to the Generator.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package skills
 
 import (

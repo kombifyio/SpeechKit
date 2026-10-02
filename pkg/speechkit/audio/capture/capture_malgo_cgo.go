@@ -15,6 +15,7 @@ import (
 	"github.com/gen2brain/malgo"
 
 	audiopkg "github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 )
 
 const (
@@ -176,14 +177,14 @@ func (s *MalgoSession) warmUp() {
 	}
 	deviceID, haveDeviceID, _, err := s.resolveInputDeviceID(malgo.Capture)
 	if err != nil {
-		slog.Debug("capture device pre-open skipped: resolve failed", "err", err)
+		s.cfg.log().Debug("capture device pre-open skipped: resolve failed", "err", err)
 		return
 	}
 	openStart := time.Now()
 	if _, reused, err := s.acquireDevice(malgo.Capture, deviceID, haveDeviceID, false); err != nil {
-		slog.Debug("capture device pre-open failed", "err", err)
+		s.cfg.log().Debug("capture device pre-open failed", "err", err)
 	} else if !reused {
-		slog.Debug("capture device pre-opened", "open_ms", time.Since(openStart).Milliseconds())
+		s.cfg.log().Debug("capture device pre-opened", "open_ms", time.Since(openStart).Milliseconds())
 	}
 }
 
@@ -253,3 +254,6 @@ func (s *MalgoSession) emit(event Event) {
 	}
 	s.eventsMu.RUnlock()
 }
+
+// log returns the configured logger, or the default logger when none is set.
+func (c Config) log() *slog.Logger { return logutil.Resolve(c.Logger) }

@@ -12,7 +12,7 @@ import (
 )
 
 func TestNewOpenRouterSTTProviderDefaults(t *testing.T) {
-	p := New("or-key", "")
+	p := New(Options{APIKey: "or-key"})
 
 	if p.Name() != "openrouter" {
 		t.Fatalf("Name() = %q, want %q", p.Name(), "openrouter")
@@ -20,8 +20,8 @@ func TestNewOpenRouterSTTProviderDefaults(t *testing.T) {
 	if p.BaseURL != "https://openrouter.ai/api/v1" {
 		t.Fatalf("BaseURL = %q, want OpenRouter API v1", p.BaseURL)
 	}
-	if p.Model != "openai/whisper-1" {
-		t.Fatalf("Model = %q, want %q", p.Model, "openai/whisper-1")
+	if p.Model != "openai/gpt-transcribe" {
+		t.Fatalf("Model = %q, want %q", p.Model, "openai/gpt-transcribe")
 	}
 	if p.APIKey != "or-key" {
 		t.Fatalf("APIKey = %q, want %q", p.APIKey, "or-key")
@@ -71,7 +71,7 @@ func TestOpenRouterSTTTranscribeUsesJSONAudioEndpoint(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New("test-key", "openai/whisper-1")
+	p := New(Options{APIKey: "test-key", Model: "openai/whisper-1"})
 	p.BaseURL = server.URL + "/api/v1"
 	p.Validation = testValidation
 

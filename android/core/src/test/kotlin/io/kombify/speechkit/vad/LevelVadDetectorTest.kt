@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test
 import kotlin.math.abs
 
 /**
- * Mirrors: internal/vad/level_vad_test.go.
+ * Mirrors: app/internal/vad/level_vad_test.go.
  *
  * The Kotlin detector must behave identically to the Go one — the Device
  * target and the Android targets share the same endpointing contract, so a

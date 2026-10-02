@@ -63,7 +63,7 @@ func TestRuntimeRunsDictationOnlyWithFixedProfile(t *testing.T) {
 		Policy: speechkit.RuntimePolicy{
 			EnabledModes: []speechkit.Mode{speechkit.ModeDictation},
 			FixedProfiles: map[speechkit.Mode]string{
-				speechkit.ModeDictation: "stt.openai.whisper-1",
+				speechkit.ModeDictation: "stt.openai.gpt-transcribe",
 			},
 		},
 	})
@@ -82,7 +82,7 @@ func TestRuntimeRunsDictationOnlyWithFixedProfile(t *testing.T) {
 	if got, want := run.Transcript.Text, "hello framework"; got != want {
 		t.Fatalf("run transcript = %q, want %q", got, want)
 	}
-	if got, want := run.ProviderProfile, "stt.openai.whisper-1"; got != want {
+	if got, want := run.ProviderProfile, "stt.openai.gpt-transcribe"; got != want {
 		t.Fatalf("provider profile = %q, want %q", got, want)
 	}
 	if !output.called {

@@ -12,6 +12,8 @@
 // side-effectful sandbox levels require explicit per-project configuration;
 // and approval decisions are host-UI actions, deliberately not part of any
 // model-invocable tool surface.
+//
+// Stability: Experimental — may change in any release.
 package agentbridge
 
 import (

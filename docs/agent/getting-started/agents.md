@@ -18,13 +18,13 @@ Hi Codex, add SpeechKit as a Go framework dependency and use the documented Dict
 For an Assist Voice Companion:
 
 ```text
-Hi Codex, read https://speechkit.cc/llms.txt and add a SpeechKit Assist Voice Companion to this Go app. Use only public component packages from github.com/kombifyio/SpeechKit/pkg/speechkit/...: companion, wakeword, assist, tts, and speechkit for events. Wire companion.NewHandsFree with TargetMode: companion.TargetAssist. The host owns microphone capture and playback; SpeechKit owns wake activation contracts, transcript request, Assist routing, optional TTS, and EventBus publication. Do not import internal/* or the Windows client.
+Hi Codex, read https://speechkit.cc/llms.txt and add a SpeechKit Assist Voice Companion to this Go app. Use only public component packages from github.com/kombifyio/SpeechKit/pkg/speechkit/...: companion, wakeword, assist, tts, and speechkit for events. Wire companion.NewHandsFree with TargetMode: companion.TargetAssist. The host owns microphone capture and playback; SpeechKit owns wake activation contracts, transcript request, Assist routing, optional TTS, and EventBus publication. Do not import app/internal/* or the Windows client.
 ```
 
 For a hands-free Voice Agent companion:
 
 ```text
-Hi Codex, read https://speechkit.cc/llms.txt and build a hands-free SpeechKit Voice Agent companion into this app. Use companion.TargetVoiceAgent for wake activation. Use pkg/speechkit/client when talking to a running speechkit-server, or pkg/speechkit/agentkit when embedding a Go Voice Agent harness. Keep persona/role/sequence config in the host, stream PCM 16 kHz S16LE mono into the session, and do not import internal/*.
+Hi Codex, read https://speechkit.cc/llms.txt and build a hands-free SpeechKit Voice Agent companion into this app. Use companion.TargetVoiceAgent for wake activation. Use pkg/speechkit/client when talking to a running speechkit-server, or pkg/speechkit/agentkit when embedding a Go Voice Agent harness. Keep persona/role/sequence config in the host, stream PCM 16 kHz S16LE mono into the session, and do not import app/internal/*.
 ```
 
 For a live-validatable native Android memo app:

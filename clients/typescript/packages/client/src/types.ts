@@ -1,8 +1,11 @@
-// Manual type definitions mirroring the OpenAPI schemas in
-// docs/server/openapi.v1.yaml and the AsyncAPI WS frame schemas in
-// docs/server/asyncapi.v1.yaml. Until openapi-typescript codegen is wired
-// up (separate PR), these are hand-maintained — additive across minor
-// versions, never rename or remove without a major bump.
+// Wire types for the SpeechKit Server v1 API. The generated types live in
+// ./generated/openapi.ts (`pnpm run gen:types`, from docs/server/openapi.v1.yaml;
+// CI fails on drift) and are re-exported from the package root as `components`,
+// `paths` and `operations`. The interfaces below are hand-written, stricter
+// views kept for API stability, additive
+// across minor versions, never rename or remove without a major bump.
+// ./spec-drift.ts fails the build if they stop matching the generated schemas.
+// AsyncAPI WS frames (docs/server/asyncapi.v1.yaml) are still hand-maintained.
 
 export interface Status {
   status: string;
@@ -20,11 +23,12 @@ export interface TranscribeOptions {
 export interface TranscribeResponse {
   text: string;
   language?: string;
-  duration_ms?: number;
-  latency_ms?: number;
+  duration_ms: number;
+  latency_ms: number;
   provider?: string;
   model?: string;
   confidence?: number;
+  speakers?: DiarizationResult;
 }
 
 export interface DictionaryEntry {
@@ -40,7 +44,8 @@ export interface DictionaryEntry {
 }
 
 export interface AudioAsset {
-  storageKind: string;
+  storageKind: "local-file";
+  /** @deprecated The server never sends the file path (json:"-"); always undefined. */
   path?: string;
   mimeType: string;
   sizeBytes: number;
@@ -61,6 +66,56 @@ export interface Transcript {
   ownerUserId?: string;
   ownerOrgId?: string;
   ownerSource?: string;
+  /** Speaker diarization result; omitted when the transcript has none. */
+  speakers?: DiarizationResult;
+  /** Always emitted by the server (no omitempty). */
+  pinned: boolean;
+}
+
+export interface Speaker {
+  label: string;
+  personId?: string;
+  displayName?: string;
+  role?: string;
+  confidence?: number;
+  attributionConfidence?: number;
+}
+
+export interface SpeakerWord {
+  text: string;
+  startMs?: number;
+  endMs?: number;
+  confidence?: number;
+  speakerLabel?: string;
+  speakerConfidence?: number;
+  personId?: string;
+  displayName?: string;
+  role?: string;
+  attributionConfidence?: number;
+}
+
+export interface SpeakerSegment {
+  text: string;
+  startMs?: number;
+  endMs?: number;
+  speakerLabel?: string;
+  speakerConfidence?: number;
+  personId?: string;
+  displayName?: string;
+  role?: string;
+  attributionConfidence?: number;
+  words?: SpeakerWord[];
+}
+
+export interface DiarizationResult {
+  provider?: string;
+  model?: string;
+  level?: "none" | "diarization" | "attribution" | "provider_identification" | "biometric";
+  text?: string;
+  language?: string;
+  speakers?: Speaker[];
+  segments?: SpeakerSegment[];
+  words?: SpeakerWord[];
 }
 
 export interface TTSSynthesizeRequest {
@@ -85,7 +140,7 @@ export interface Voice {
   id: string;
   locale: string;
   default: boolean;
-  discovery?: string;
+  discovery: "configured";
 }
 
 export interface CatalogReadiness {
@@ -103,7 +158,42 @@ export interface CatalogReadiness {
   runtimeReady: boolean;
   capabilityReady: boolean;
   ready: boolean;
-  missing?: string[];
+  missing?: Array<"mode_disabled" | "provider_disabled" | "credentials" | "runtime">;
+  /** The active network scope forbids this profile; `ready` is then false. */
+  blockedByScope?: boolean;
+  disabledReasonId?: string;
+  requirements?: ReadinessRequirement[];
+  actions?: ReadinessAction[];
+  artifacts?: ReadinessArtifact[];
+}
+
+export interface ReadinessRequirement {
+  id: string;
+  label: string;
+  category: string;
+  required: boolean;
+  ready: boolean;
+  missing?: string;
+}
+
+export interface ReadinessAction {
+  id: string;
+  label: string;
+  kind: string;
+  target?: string;
+}
+
+export interface ReadinessArtifact {
+  id: string;
+  name: string;
+  kind: string;
+  sizeLabel?: string;
+  sizeBytes?: number;
+  available: boolean;
+  selected: boolean;
+  runtimeReady?: boolean;
+  runtimeProblem?: string;
+  recommended?: boolean;
 }
 
 export interface ProviderProfile {
@@ -116,6 +206,21 @@ export interface ProviderProfile {
   source?: string;
   description?: string;
   capabilities?: string[];
+  modality?: string;
+  supportedLocales?: string[];
+  nativeOptions?: string[];
+  authRequirement?: string;
+  transport?: string;
+  evidenceUrl?: string;
+  variants?: ModelVariant[];
+}
+
+export interface ModelVariant {
+  id: string;
+  name: string;
+  modelId: string;
+  description?: string;
+  recommended?: boolean;
 }
 
 export interface ModeContract {
@@ -136,21 +241,37 @@ export interface VoiceAgentSessionTicket {
    * WebSocket subprotocol value to pass during upgrade, e.g.
    * `ticket.<value>`. Prefer this over placing the ticket in URLs.
    */
-  ws_subprotocol?: string;
-  expires_at?: string;
+  ws_subprotocol: string;
+  expires_at: string;
 }
 
 export interface VoiceAgentTranscript {
   id: number;
   transcript: string;
-  turns?: Array<Record<string, unknown>>;
+  turns?: VoiceAgentTurn[];
   language: string;
   created_at: string;
 }
 
+export interface VoiceAgentTurn {
+  role: string;
+  text: string;
+  createdAt?: string;
+}
+
+export interface VoiceAgentSessionSummary {
+  title?: string;
+  summary: string;
+  ideas?: string[];
+  decisions?: string[];
+  openQuestions?: string[];
+  nextSteps?: string[];
+  rawText?: string;
+}
+
 export interface VoiceAgentSummary {
   id: number;
-  summary: Record<string, unknown>;
+  summary: VoiceAgentSessionSummary;
   language: string;
   created_at: string;
 }

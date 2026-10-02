@@ -69,10 +69,21 @@ func (p *Provider) SendAudio(chunk []byte) error {
 	return conn.Write(context.Background(), websocket.MessageBinary, chunk)
 }
 
-// SendAudioStreamEnd is a no-op for Deepgram: the Voice Agent performs its own
-// endpointing/turn-detection server-side and responds when the user stops
-// speaking. There is no client-side commit in the protocol.
-func (p *Provider) SendAudioStreamEnd() error { return nil }
+// SendAudioStreamEnd ends the user's turn when the microphone stream ends
+// (push-to-talk release). A Flux listen leg accepts ForceEndTurn (Agent API,
+// September 2026), so the agent answers at once instead of waiting for its own
+// end-of-turn detection; the Nova listen leg has no client-side commit, so it
+// stays a no-op there and Deepgram's server-side endpointing decides.
+func (p *Provider) SendAudioStreamEnd() error {
+	if !deepgramModelUsesFlux(dgFirst(p.ListenModel, deepgramListenModelDefault)) {
+		return nil
+	}
+	conn := p.snapshotConn()
+	if conn == nil {
+		return nil
+	}
+	return p.sendJSON(conn, map[string]any{"type": "ForceEndTurn"})
+}
 
 // SendText injects a text user turn (e.g. an idle reminder) and lets the agent
 // respond. Empty text is a no-op.

@@ -23,7 +23,7 @@ func (p echoProvider) Transcribe(_ context.Context, _ []byte, opts stt.Transcrib
 // speechkit.Transcriber so it can be handed straight to dictation.NewRuntime
 // or a TranscriptionWorker. The per-call language wins over the base options.
 func ExampleAsTranscriber() {
-	var transcriber speechkit.Transcriber = stt.AsTranscriber(
+	transcriber := stt.AsTranscriber(
 		echoProvider{name: "echo"},
 		stt.WithTranscribeOpts(stt.TranscribeOpts{Language: "de"}),
 	)

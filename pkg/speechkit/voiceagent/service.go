@@ -12,6 +12,8 @@
 //
 // Construct an instance with [NewService], passing a provider and the strict-
 // mode policy fields from the host config.
+//
+// Stability: Stable — no breaking change without a minor version bump and a changelog callout.
 package voiceagent
 
 import (

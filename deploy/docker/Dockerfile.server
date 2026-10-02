@@ -37,7 +37,10 @@ RUN apt-get update \
 WORKDIR /src
 
 # Pre-cache modules for faster iterative builds.
-COPY go.mod go.sum ./
+# The reference apps are the nested module app/ (docs/ADR/0004); go.work joins
+# it with the root SDK module, so copy every module manifest before downloading.
+COPY go.mod go.sum go.work go.work.sum ./
+COPY app/go.mod app/go.sum ./app/
 RUN go mod download
 
 # Pull in the full source tree — we rely on the `//go:build linux` tag on the
@@ -55,7 +58,7 @@ RUN go build \
         -tags=server \
         -ldflags="-s -w -X main.version=${VERSION}" \
         -o /out/speechkit-server \
-        ./cmd/speechkit-server
+        ./app/cmd/speechkit-server
 
 # ── Stage 2: Shared runtime base ─────────────────────────────────────────────
 # Keeping this as a separate stage keeps apt + ONNX install layers stable

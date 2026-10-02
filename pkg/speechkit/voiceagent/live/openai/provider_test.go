@@ -425,8 +425,8 @@ func TestFirstNonEmptyOpenAIVoice(t *testing.T) {
 
 func TestOpenAIRealtimeGAConnectionDefaults(t *testing.T) {
 	t.Parallel()
-	if got := resolveOpenAIRealtimeModel(""); got != "gpt-realtime-2" {
-		t.Fatalf("default realtime model = %q, want gpt-realtime-2", got)
+	if got := resolveOpenAIRealtimeModel(""); got != "gpt-realtime-2.1" {
+		t.Fatalf("default realtime model = %q, want gpt-realtime-2.1", got)
 	}
 	header := openAIRealtimeHeaders("test-key")
 	if got := header.Get("Authorization"); got != "Bearer test-key" {

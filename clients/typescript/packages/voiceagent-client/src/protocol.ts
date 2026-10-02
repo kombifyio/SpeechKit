@@ -1,6 +1,6 @@
 // Frame types for the SpeechKit Voice Agent WebSocket.
 //
-// Source of truth: the Go structs in internal/server/voiceagent/protocol.go
+// Source of truth: the Go structs in app/internal/server/voiceagent/protocol.go
 // (the producer). docs/server/fixtures/voiceagent.v1.json is the interchange
 // artifact all consumers verify against (here: protocol.fixture.test.ts);
 // docs/server/asyncapi.v1.yaml documents the channel.

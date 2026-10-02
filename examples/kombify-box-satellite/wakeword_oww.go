@@ -29,7 +29,7 @@ type owwProcess struct {
 }
 
 // owwEvent ist die Teilmenge des Sidecar-IPC-Schemas, die der Companion
-// konsumiert (cmd/speechkit-openwakeword/ipc.go bleibt der Vertrag).
+// konsumiert (app/cmd/speechkit-openwakeword/ipc.go bleibt der Vertrag).
 type owwEvent struct {
 	Type        string  `json:"type"`
 	Keyword     string  `json:"keyword,omitempty"`
@@ -52,7 +52,7 @@ func startOpenWakeWord(cfg *Config, defaultMode string, sink func(wakeword.Detec
 	}
 	sidecar := filepath.Join(exeDir, "speechkit-openwakeword.exe")
 	if _, err := os.Stat(sidecar); err != nil {
-		return nil, fmt.Errorf("openwakeword sidecar fehlt neben der Companion-exe: %s (go build ./cmd/speechkit-openwakeword)", sidecar)
+		return nil, fmt.Errorf("openwakeword sidecar fehlt neben der Companion-exe: %s (go build ./app/cmd/speechkit-openwakeword)", sidecar)
 	}
 
 	modelDir := cfg.owwModelDir()

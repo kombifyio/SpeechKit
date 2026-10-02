@@ -29,9 +29,16 @@ android {
         applicationId = "io.kombify.speechkit"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7304
-        versionName = "0.73.4"
+        versionCode = 7400
+        versionName = "0.74.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // Lint findings that predate the android-pr gate live in the baseline;
+    // anything new fails the build. Fixing a baselined finding and running
+    // `./gradlew :app:updateLintBaseline` shrinks it.
+    lint {
+        baseline = file("lint-baseline.xml")
     }
 
     // Release signing identity.

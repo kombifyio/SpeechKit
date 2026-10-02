@@ -3,6 +3,8 @@
 // is where Microsoft's own MAI-Transcribe models live: they are not
 // deployments, never show up on the OpenAI-compatible /openai/v1 route, and
 // are addressed on the resource's custom domain instead.
+//
+// Stability: Experimental — may change in any release.
 package azurespeech
 
 import (
@@ -253,7 +255,7 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 	start := time.Now()
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%s request: %w", providerName, err)
+		return nil, fmt.Errorf("%s request: %w", providerName, stt.ClassifyTransportError(providerName, err))
 	}
 	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 	duration := time.Since(start)
@@ -263,7 +265,7 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, statusError(providerName, resp.StatusCode, respBody)
+		return nil, statusError(providerName, resp, respBody)
 	}
 
 	var parsed transcribeResponse
@@ -322,7 +324,7 @@ func (p *Provider) Health(ctx context.Context) error {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return authFailure(providerName+" health", resp.StatusCode, usedBearer)
 	default:
-		return fmt.Errorf("%s health: status %d", providerName, resp.StatusCode)
+		return stt.HTTPError(providerName+" health", resp, nil)
 	}
 }
 
@@ -529,8 +531,9 @@ func (r transcribeResponse) diarization(model, text, language string) *speaker.D
 // never reach logs or UI, and appends Azure's structured message for request
 // problems: "model 'x' is not supported" or a region gap is exactly what the
 // user has to act on. Auth failures stay opaque.
-func statusError(scope string, status int, body []byte) error {
-	base := netsec.ProviderStatusError(scope, status, body)
+func statusError(scope string, resp *http.Response, body []byte) error {
+	status := resp.StatusCode
+	base := stt.HTTPError(scope, resp, body)
 	if status == http.StatusUnauthorized || status == http.StatusForbidden {
 		return base
 	}
@@ -574,8 +577,9 @@ func azureErrorDetail(body []byte) string {
 // authFailure explains a 401/403 in terms of what the user can change: the
 // roles on the resource for a signed-in account, the key otherwise.
 func authFailure(scope string, status int, usedBearer bool) error {
+	msg := "invalid key for this resource (or keys are disabled by policy; sign in with Microsoft instead)"
 	if usedBearer {
-		return fmt.Errorf("%s: status %d: the signed-in account cannot use this resource; it needs the Cognitive Services User / Foundry User roles and must belong to the resource's tenant", scope, status)
+		msg = "the signed-in account cannot use this resource; it needs the Cognitive Services User / Foundry User roles and must belong to the resource's tenant"
 	}
-	return fmt.Errorf("%s: status %d: invalid key for this resource (or keys are disabled by policy; sign in with Microsoft instead)", scope, status)
+	return &stt.ProviderError{Provider: scope, StatusCode: status, Kind: stt.ErrorKindAuth, Message: msg}
 }

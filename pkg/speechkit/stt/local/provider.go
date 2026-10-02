@@ -6,11 +6,14 @@
 // SPEECHKIT_ALLOW_WHISPER_PATH=1) and a ggml-*.bin model file. The host owns
 // the process lifecycle through [Provider.StartServer] and
 // [Provider.StopServer].
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package local
 
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +22,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 )
@@ -62,28 +66,50 @@ type Provider struct {
 	// SetSubprocessPriorityLowered for this provider only. nil keeps the
 	// default (true on Windows). Ignored outside Windows.
 	LowerSubprocessPriority *bool
-	cmd                     *exec.Cmd
-	ready                   atomic.Bool
-	startDone               chan struct{} // closed when the current StartServer call completes (nil = never started)
-	stopMu                  sync.Mutex
-	processMu               sync.Mutex
-	processDone             chan struct{}
-	processErr              error
-	starting                bool
-	stopping                bool
-	stopRequested           bool
-	generation              uint64
-	client                  *http.Client
+	// Logger receives this provider's diagnostics. Nil falls back to
+	// slog.Default() at log time.
+	Logger        *slog.Logger
+	cmd           *exec.Cmd
+	ready         atomic.Bool
+	startDone     chan struct{} // closed when the current StartServer call completes (nil = never started)
+	stopMu        sync.Mutex
+	processMu     sync.Mutex
+	processDone   chan struct{}
+	processErr    error
+	starting      bool
+	stopping      bool
+	stopRequested bool
+	generation    uint64
+	client        *http.Client
+	// activeBaseURL is where the current child listens when Port is 0 and a
+	// port was chosen at start; empty means BaseURL.
+	activeBaseURL string
+	// identity is the current child's proof of identity (nil when the
+	// platform could not set one up).
+	identity *serverIdentity
+}
+
+// Options configures [New].
+type Options struct {
+	// Port is the loopback port the whisper.cpp server listens on. 0 picks a
+	// free ephemeral loopback port at every start, which another local
+	// process cannot predict and bind first. A fixed port that is already in
+	// use fails the start instead of trusting whatever listens there.
+	Port int
+	// ModelPath is the path to the whisper.cpp model file.
+	ModelPath string
+	// GPU selects the GPU backend passed to the server. Empty leaves it unset.
+	GPU string
 }
 
 // New creates the built-in whisper.cpp provider. The process is
 // not started; lifecycle stays with the host.
-func New(port int, modelPath, gpu string) *Provider {
+func New(opts Options) *Provider {
 	p := &Provider{
-		BaseURL:   fmt.Sprintf("http://127.0.0.1:%d", port),
-		Port:      port,
-		ModelPath: modelPath,
-		GPU:       gpu,
+		BaseURL:   fmt.Sprintf("http://127.0.0.1:%d", opts.Port),
+		Port:      opts.Port,
+		ModelPath: opts.ModelPath,
+		GPU:       opts.GPU,
 		Validation: netsec.ValidationOptions{
 			AllowLoopback: true,
 			AllowHTTP:     true,
@@ -130,7 +156,7 @@ func (p *Provider) Health(ctx context.Context) error {
 		return fmt.Errorf("whisper-server not running")
 	}
 
-	healthURL := fmt.Sprintf("%s/health", p.BaseURL)
+	healthURL := fmt.Sprintf("%s/health", p.serverURL())
 	req, err := http.NewRequestWithContext(ctx, "GET", healthURL, http.NoBody)
 	if err != nil {
 		return fmt.Errorf("build whisper-server health request: %w", err)
@@ -147,12 +173,22 @@ func (p *Provider) Health(ctx context.Context) error {
 		// A server answering 503 is not serving either. Leaving ready set here
 		// advertised a provider that would fail every transcription.
 		p.ready.Store(false)
-		return fmt.Errorf("local health: status %d", resp.StatusCode)
+		return stt.HTTPError("local health", resp, nil)
 	}
 	// The probe succeeded against a live child, so the provider is usable
 	// again. This is the recovery edge that was missing.
 	p.ready.Store(true)
 	return nil
+}
+
+// serverURL is the base URL of the current child.
+func (p *Provider) serverURL() string {
+	p.processMu.Lock()
+	defer p.processMu.Unlock()
+	if p.activeBaseURL != "" {
+		return p.activeBaseURL
+	}
+	return p.BaseURL
 }
 
 // IsReady returns true if the whisper-server subprocess is running and responding.
@@ -162,3 +198,6 @@ func (p *Provider) IsReady() bool {
 
 // Capabilities reports the speech-to-text baseline every provider satisfies.
 func (*Provider) Capabilities() []speechkit.Capability { return stt.BaseCapabilities() }
+
+// log returns the provider's logger, or the default logger when none is set.
+func (p *Provider) log() *slog.Logger { return logutil.Resolve(p.Logger) }

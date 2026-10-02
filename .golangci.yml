@@ -39,6 +39,8 @@ linters:
     - makezero
     - contextcheck
     - exhaustive
+    # Library code under pkg/ logs through injected per-instance loggers.
+    - forbidigo
 
   settings:
     errcheck:
@@ -118,6 +120,16 @@ linters:
       comparison: true
     exhaustive:
       default-signifies-exhaustive: true
+    forbidigo:
+      # pkg/ is embeddable: it must not log through the process-global slog.
+      # Use an instance Logger resolved via internal/logutil.Resolve. The
+      # exclusion rules below scope this to non-test files under pkg/.
+      forbid:
+        - pattern: '^slog\.(Debug|Info|Warn|Error|Log|LogAttrs)(Context)?$'
+          msg: 'use the instance logger (logutil.Resolve(x.Logger)), not the global slog'
+        - pattern: '^slog\.Default$'
+          msg: 'resolve fallbacks through logutil.Resolve'
+      analyze-types: false
 
   exclusions:
     paths:
@@ -125,7 +137,7 @@ linters:
       - Website
       - marketing-site-svelte
       - android
-      - internal/frontendassets
+      - app/internal/frontendassets
       - scripts
       - installer
       - docker
@@ -136,6 +148,13 @@ linters:
         linters:
           - revive
         text: '^(exported|package-comments):'
+      # Global slog is forbidden in library code only: pkg/ non-test files.
+      - path-except: '^pkg/'
+        linters:
+          - forbidigo
+      - path: _test\.go
+        linters:
+          - forbidigo
       - path: _test\.go
         linters:
           - errcheck
@@ -153,11 +172,11 @@ linters:
         text: context-as-argument
         linters:
           - revive
-      - path: internal/winapi/
+      - path: app/internal/winapi/
         linters:
           - revive
           - gocritic
-      - path: internal/audio/.*_windows_cgo\.go
+      - path: app/internal/audio/.*_windows_cgo\.go
         linters:
           - gocritic
           - unconvert
@@ -165,7 +184,7 @@ linters:
         linters:
           - gocritic
           - unconvert
-      - path: internal/vad/
+      - path: app/internal/vad/
         linters:
           - revive
 

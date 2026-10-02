@@ -1,4 +1,6 @@
 // Package companion provides small composers for hands-free SpeechKit hosts.
+//
+// Stability: Stable — no breaking change without a minor version bump and a changelog callout.
 package companion
 
 import (

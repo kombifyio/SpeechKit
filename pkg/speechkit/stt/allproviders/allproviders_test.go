@@ -178,7 +178,7 @@ func TestBuildDeepgramOptions(t *testing.T) {
 		ExecutionMode: speechkit.ExecutionModeDeepgram,
 		ModelID:       "nova-3",
 		APIKey:        "key",
-		Deepgram: deepgram.Options{
+		Deepgram: deepgram.Tuning{
 			Configured:            true,
 			SmartFormat:           false,
 			UseVocabularyKeyterms: false,

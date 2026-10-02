@@ -107,14 +107,23 @@ func ProviderProfileRequiresCredential(profile speechkit.ProviderProfile) bool {
 // Every profile of a provider shares the target, so a key entered once
 // serves all of its modes. The one exception is Google dictation: Cloud
 // Speech-to-Text needs its own key ("google_stt"), separate from the Gemini
-// API key that serves Gemini Live and Cloud Text-to-Speech.
+// API key that serves Gemini Live, Gemini Transcribe and Cloud Text-to-Speech.
 func ProviderCredentialTarget(profile speechkit.ProviderProfile) string {
 	if !ProviderProfileRequiresCredential(profile) {
 		return ""
 	}
 	provider := ProviderIDForProfile(profile)
-	if provider == "google" && speechkit.NormalizeMode(profile.Mode) == speechkit.ModeDictation {
+	if provider == "google" && speechkit.NormalizeMode(profile.Mode) == speechkit.ModeDictation && profile.AdapterKind != "gemini_transcribe" {
 		return "google_stt"
+	}
+	if provider == "gpt-live" {
+		// GPT-Live authenticates with the same OpenAI API key.
+		return "openai"
+	}
+	if provider == "foundry-gpt-live" {
+		// GPT-Live on Foundry uses the shared Foundry resource key or
+		// Microsoft sign-in.
+		return "foundry"
 	}
 	return provider
 }

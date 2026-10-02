@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
+
+	"github.com/coder/websocket"
 )
 
 var deepgramTestValidation = netsec.ValidationOptions{AllowLoopback: true, AllowHTTP: true}
@@ -233,5 +235,67 @@ func TestSplitForDeepgramTTS(t *testing.T) {
 		if len(c) > 20 {
 			t.Errorf("chunk %q exceeds max length 20", c)
 		}
+	}
+}
+
+// A Flux voice cannot go to the Aura REST leg: the one-shot provider must
+// speak it over the v2 streaming leg and hand back the turn's audio as WAV.
+func TestDeepgramSynthesizeFluxVoiceUsesStreamingLeg(t *testing.T) {
+	pcm := []byte{1, 0, 2, 0, 3, 0, 4, 0}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/speak" || r.URL.Query().Get("model") != "flux-kit-en" {
+			t.Errorf("request = %s, want /v2/speak with model flux-kit-en", r.URL)
+		}
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Errorf("accept: %v", err)
+			return
+		}
+		defer conn.CloseNow() //nolint:errcheck // test server teardown
+		ctx := r.Context()
+		for {
+			_, payload, err := conn.Read(ctx)
+			if err != nil {
+				return
+			}
+			var msg struct{ Type string }
+			_ = json.Unmarshal(payload, &msg)
+			if msg.Type == "Flush" {
+				break
+			}
+		}
+		_ = conn.Write(ctx, websocket.MessageBinary, pcm)
+		_ = conn.Write(ctx, websocket.MessageText, []byte(`{"type":"SpeechMetadata","audio_duration_ms":1}`))
+		_ = conn.Close(websocket.StatusNormalClosure, "done")
+	}))
+	defer srv.Close()
+
+	d := newTestDeepgramTTS(srv.URL, "flux-kit-en")
+	result, err := d.Synthesize(context.Background(), "Hello there", SynthesizeOpts{Locale: "en-US"})
+	if err != nil {
+		t.Fatalf("synthesize: %v", err)
+	}
+	if result.Format != "wav" || !bytes.Equal(result.Audio, encodeAuraWAV(pcm)) {
+		t.Fatalf("result = %s with %d bytes, want the turn's PCM wrapped as WAV", result.Format, len(result.Audio))
+	}
+}
+
+// Flux voices are English-only, so a German request keeps its Aura-2 voice.
+func TestDeepgramSynthesizeFluxVoiceFallsBackToAuraForGerman(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/speak" || r.URL.Query().Get("model") != "aura-2-viktoria-de" {
+			t.Errorf("request = %s, want /v1/speak with the German Aura-2 voice", r.URL)
+		}
+		_, _ = w.Write([]byte("aura-mp3"))
+	}))
+	defer srv.Close()
+
+	d := newTestDeepgramTTS(srv.URL, "flux-kit-en")
+	result, err := d.Synthesize(context.Background(), "Hallo zusammen", SynthesizeOpts{Locale: "de-DE", Format: "mp3"})
+	if err != nil {
+		t.Fatalf("synthesize: %v", err)
+	}
+	if result.Voice != "aura-2-viktoria-de" {
+		t.Fatalf("voice = %q, want aura-2-viktoria-de", result.Voice)
 	}
 }

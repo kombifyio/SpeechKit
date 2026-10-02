@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/procguard"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
@@ -111,6 +112,7 @@ func (p *Piper) Health(ctx context.Context) error {
 		return errors.New("piper: nil provider")
 	}
 	cmd := exec.CommandContext(ctx, p.binary, "--version") // #nosec G204 -- operator-supplied Piper binary path, executed only as configured local TTS provider.
+	cmd.Env = procguard.HostSidecarEnv()
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("piper: probing binary %q: %w", p.binary, err)
 	}
@@ -146,6 +148,8 @@ func (p *Piper) Synthesize(ctx context.Context, text string, opts SynthesizeOpts
 		"--model", model,
 		"--output_file", "-",
 	)
+	// Piper needs no credential from the host's environment.
+	cmd.Env = procguard.HostSidecarEnv()
 	cmd.Stdin = strings.NewReader(text)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

@@ -3,7 +3,7 @@
 // CreateVoiceAgentSession + DialVoiceAgent let an embedder open a duplex
 // realtime session against a running speechkit-server without writing the
 // WebSocket plumbing or frame definitions by hand. The shapes mirror the
-// server's wire protocol under internal/server/voiceagent/protocol.go.
+// server's wire protocol under app/internal/server/voiceagent/protocol.go.
 
 package client
 

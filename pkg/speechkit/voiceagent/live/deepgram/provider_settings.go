@@ -1,7 +1,6 @@
 package deepgram
 
 import (
-	"log/slog"
 	"math"
 	"strings"
 
@@ -121,6 +120,9 @@ func (p *Provider) buildSpeak(locale, voice string, hints []string) any {
 	if speed := deepgramFluxSpeakSpeed(p.SpeakSpeed); speed > 0 {
 		flux["speed"] = speed
 	}
+	if expressivity := deepgramFluxSpeakExpressivity(p.SpeakExpressivity); expressivity != 0 {
+		flux["expressivity"] = expressivity
+	}
 	return []any{map[string]any{"provider": flux}, aura}
 }
 
@@ -145,7 +147,7 @@ func (p *Provider) resolveSpeakModel(locale, voice string, hints []string) strin
 	}
 	if deepgramModelUsesFlux(selected) && !deepgramSessionIsEnglishPinned(locale, hints) {
 		fallback := deepgramAuraModelForLocale(locale)
-		slog.Warn("deepgram agent: Flux TTS is English-only; using Aura-2 for this session",
+		p.log().Warn("deepgram agent: Flux TTS is English-only; using Aura-2 for this session",
 			"requested_voice", selected, "locale", locale, "language_hints", hints, "speak_model", fallback)
 		return fallback
 	}
@@ -194,21 +196,22 @@ func deepgramSessionIsEnglishPinned(locale string, hints []string) bool {
 	return true
 }
 
-// deepgramFluxSpeakSpeed snaps a configured speed onto the discrete steps Flux
-// TTS accepts (0.85–1.15 in 0.05 increments). Out-of-range values clamp to the
-// nearest bound; 0 means "unset" and returns 0 so the field is omitted.
+// deepgramFluxSpeakSpeed snaps a configured speed onto the steps Flux TTS
+// accepts (0.5–1.5 in 0.05 increments since September 2026). Out-of-range
+// values clamp to the nearest bound; 0 means "unset" and returns 0 so the
+// field is omitted.
 func deepgramFluxSpeakSpeed(speed float64) float64 {
 	if speed <= 0 {
 		return 0
 	}
-	steps := []float64{0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15}
-	best := steps[0]
-	for _, step := range steps {
-		if math.Abs(step-speed) < math.Abs(best-speed) {
-			best = step
-		}
-	}
-	return best
+	speed = math.Min(math.Max(speed, 0.5), 1.5)
+	return math.Round(speed*20) / 20
+}
+
+// deepgramFluxSpeakExpressivity clamps expressivity into the -2..2 range Flux
+// TTS accepts; Deepgram fails the connection on any other value.
+func deepgramFluxSpeakExpressivity(expressivity int) int {
+	return min(max(expressivity, -2), 2)
 }
 
 // dgClamp reports whether an optional numeric tuning value was set (> 0) and

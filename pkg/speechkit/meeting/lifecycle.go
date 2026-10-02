@@ -62,8 +62,9 @@ func (r *Runtime) Start(ctx context.Context, opts StartOptions) (Snapshot, error
 
 	r.mu.Lock()
 	capture.pipelines = opened
-	watchCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	capture.watchStop = cancel
+	// closeCapture calls watchStop, which ends every watchPipeline goroutine.
+	var watchCtx context.Context
+	watchCtx, capture.watchStop = context.WithCancel(context.WithoutCancel(ctx)) //nolint:gosec // G118: the cancel func is kept in capture.watchStop and called by closeCapture.
 	r.mu.Unlock()
 
 	for _, pipeline := range opened {

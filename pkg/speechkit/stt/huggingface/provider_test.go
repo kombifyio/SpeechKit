@@ -13,7 +13,7 @@ import (
 )
 
 func newTestHFProvider(serverURL string) *Provider {
-	p := New("test-model", "test-token")
+	p := New(Options{Model: "test-model", APIKey: "test-token"})
 	p.BaseURL = serverURL
 	p.Validation = testValidation
 	p.client.Timeout = 5 * time.Second
@@ -183,7 +183,7 @@ func TestHF_Health_404(t *testing.T) {
 }
 
 func TestHF_Name(t *testing.T) {
-	p := New("model", "token")
+	p := New(Options{Model: "model", APIKey: "token"})
 	if p.Name() != "huggingface" {
 		t.Errorf("Name() = %q", p.Name())
 	}

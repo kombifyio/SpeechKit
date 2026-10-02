@@ -1,6 +1,8 @@
 // Package a2a adapts a registered A2A agent to SpeechKit's cascaded voice
 // pipeline. SpeechKit retains STT/TTS custody; the remote endpoint owns agent
 // semantics, memory, tools and authorization.
+//
+// Stability: Experimental — may change in any release.
 package a2a
 
 import (
@@ -149,7 +151,7 @@ func (a *Agent) Run(ctx context.Context, input cascaded.AgentInput) (cascaded.Ag
 	if err != nil {
 		return cascaded.AgentOutput{}, fmt.Errorf("speechkit a2a: send turn: %w", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		detail, _ := io.ReadAll(io.LimitReader(response.Body, maxErrorBody))
 		return cascaded.AgentOutput{}, fmt.Errorf("speechkit a2a: turn denied with HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(detail)))
@@ -169,7 +171,7 @@ func validateEndpoint(raw string) (string, error) {
 	}
 	host := strings.ToLower(parsed.Hostname())
 	local := host == "localhost" || host == "127.0.0.1" || host == "::1"
-	if parsed.Scheme != "https" && !(parsed.Scheme == "http" && local) {
+	if parsed.Scheme != "https" && (parsed.Scheme != "http" || !local) {
 		return "", errors.New("speechkit a2a: endpoint must use HTTPS (HTTP is allowed only on loopback)")
 	}
 	return parsed.String(), nil

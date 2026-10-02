@@ -9,6 +9,12 @@ import (
 )
 
 func buildGeminiLiveConnectConfig(cfg live.LiveConfig) *genai.LiveConnectConfig {
+	return buildGeminiLiveConnectConfigForModel(cfg, resolvedGeminiLiveModel(cfg))
+}
+
+// buildGeminiLiveConnectConfigForModel shapes the setup for one model: the
+// primary and the fallback of a session may need different setups.
+func buildGeminiLiveConnectConfigForModel(cfg live.LiveConfig, model string) *genai.LiveConnectConfig {
 	resolved := live.ResolveLiveOptions("google", "realtime.google.gemini-native-audio", cfg, nil, nil)
 	policies := normalizeLivePolicies(cfg.Policies)
 	if resolved.HasTurnDetectionOverride() && !resolved.TurnDetection {
@@ -47,7 +53,7 @@ func buildGeminiLiveConnectConfig(cfg live.LiveConfig) *genai.LiveConnectConfig 
 			ActivityHandling: mapActivityHandling(policies.ActivityDetection.ActivityHandling),
 			TurnCoverage:     mapTurnCoverage(policies.ActivityDetection.TurnCoverage),
 		},
-		Tools: toolDefinitionsToGenAI(cfg.Tools),
+		Tools: toolDefinitionsToGenAI(cfg.Tools, model),
 	}
 
 	if policies.EnableInputAudioTranscription {
@@ -60,7 +66,8 @@ func buildGeminiLiveConnectConfig(cfg live.LiveConfig) *genai.LiveConnectConfig 
 		enable := true
 		connectCfg.EnableAffectiveDialog = &enable
 	}
-	if policies.Thinking.Enabled {
+	// Gemini 3.8 Live reasons on its own and rejects a thinking config.
+	if policies.Thinking.Enabled && geminiLiveAcceptsThinkingConfig(model) {
 		connectCfg.ThinkingConfig = &genai.ThinkingConfig{
 			IncludeThoughts: policies.Thinking.IncludeThoughts,
 			ThinkingLevel:   mapThinkingLevel(policies.Thinking.ThinkingLevel),
@@ -219,7 +226,10 @@ func defaultLivePolicies() live.LivePolicies {
 	}
 }
 
-func toolDefinitionsToGenAI(defs []live.ToolDefinition) []*genai.Tool {
+// toolDefinitionsToGenAI declares defs for model. Extended-thinking
+// Live models run tools in the background and reject blocking declarations,
+// so tools without an explicit behavior are declared non-blocking there.
+func toolDefinitionsToGenAI(defs []live.ToolDefinition, model string) []*genai.Tool {
 	if len(defs) == 0 {
 		return nil
 	}
@@ -233,7 +243,7 @@ func toolDefinitionsToGenAI(defs []live.ToolDefinition) []*genai.Tool {
 			Description:          def.Description,
 			ParametersJsonSchema: def.ParametersJSONSchema,
 			ResponseJsonSchema:   def.ResponseJSONSchema,
-			Behavior:             mapToolBehavior(def.Behavior),
+			Behavior:             mapToolBehaviorForModel(def.Behavior, model),
 		})
 	}
 	if len(functions) == 0 {
@@ -271,6 +281,13 @@ func validateGeminiLiveConfig(cfg live.LiveConfig) error {
 	if policies.EnableAffectiveDialog && isGemini31FlashLiveModel(model) {
 		return fmt.Errorf("gemini live: affective dialog is not supported by %s", resolvedGeminiLiveModel(cfg))
 	}
+	if isGeminiLiveExtendedThinkingModel(model) {
+		for _, tool := range cfg.Tools {
+			if tool.Behavior == live.ToolBehaviorBlocking {
+				return fmt.Errorf("gemini live: blocking tool behavior is not supported by %s", resolvedGeminiLiveModel(cfg))
+			}
+		}
+	}
 	if isGemini31FlashLiveModel(model) {
 		for _, tool := range cfg.Tools {
 			if tool.Behavior == live.ToolBehaviorNonBlocking {
@@ -283,6 +300,22 @@ func validateGeminiLiveConfig(cfg live.LiveConfig) error {
 
 func isGemini31FlashLiveModel(model string) bool {
 	return strings.Contains(model, "3.1-flash-live")
+}
+
+// isGemini38LiveModel matches gemini-3.8-live and its extended-thinking
+// variant.
+func isGemini38LiveModel(model string) bool {
+	return strings.Contains(strings.ToLower(model), "3.8-live")
+}
+
+func isGeminiLiveExtendedThinkingModel(model string) bool {
+	return strings.Contains(strings.ToLower(model), "live-extended-thinking")
+}
+
+// geminiLiveAcceptsThinkingConfig reports whether a setup for model may
+// carry a thinking config; the Gemini 3.8 Live family rejects one.
+func geminiLiveAcceptsThinkingConfig(model string) bool {
+	return !isGemini38LiveModel(model)
 }
 
 func mapThinkingLevel(level live.ThinkingLevel) genai.ThinkingLevel {
@@ -311,6 +344,13 @@ func thinkingLevelFromReasoningEffort(effort string) live.ThinkingLevel {
 	default:
 		return ""
 	}
+}
+
+func mapToolBehaviorForModel(behavior live.ToolBehavior, model string) genai.Behavior {
+	if behavior == live.ToolBehaviorUnspecified && isGeminiLiveExtendedThinkingModel(model) {
+		return genai.BehaviorNonBlocking
+	}
+	return mapToolBehavior(behavior)
 }
 
 func mapToolBehavior(behavior live.ToolBehavior) genai.Behavior {

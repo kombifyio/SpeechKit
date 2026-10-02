@@ -9,6 +9,9 @@
   --sk-font-size-small: 11px;
   --sk-motion-fast: 80ms;
   --sk-motion-slow: 1600ms;
+  --sk-motion-base: 180ms;
+  --sk-motion-level: 90ms;
+  --sk-motion-ease: cubic-bezier(0.2, 0, 0, 1);
   --sk-orb-size: 56px;
   --sk-orb-core-size: 22px;
   --sk-assistant-orb: 30px;
@@ -37,6 +40,16 @@
   --sk-aura-settling-b: 129, 140, 248;
   --sk-aura-error-a: 248, 113, 113;
   --sk-aura-error-b: 251, 113, 133;
+  --sk-dialog-blur: 22px;
+  --sk-dialog-radius: 18px;
+  --sk-dialog-width: 340px;
+  --sk-dialog-max-height: 260px;
+  --sk-dialog-fade: 28px;
+  --sk-chip-radius: 999px;
+  --sk-chip-height: 30px;
+  --sk-indicator-bar-width: 3px;
+  --sk-indicator-bar-gap: 2px;
+  --sk-indicator-height: 14px;
   --sk-accent: oklch(0.65 0.13 210);
   --sk-accent-contrast: #ffffff;
   --sk-surface: color-mix(in srgb, #ffffff 72%, transparent);
@@ -46,6 +59,11 @@
   --sk-border: color-mix(in srgb, #101418 12%, transparent);
   --sk-shadow: 0 12px 40px -12px rgba(16, 20, 24, 0.25);
   --sk-live: #dc2626;
+  --sk-danger: #dc2626;
+  --sk-pending: #d97706;
+  --sk-dialog-surface: color-mix(in srgb, #ffffff 58%, transparent);
+  --sk-dialog-shadow: 0 18px 48px -20px rgba(16, 20, 24, 0.35);
+  --sk-chip-surface: color-mix(in srgb, #ffffff 84%, transparent);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -59,6 +77,11 @@
     --sk-border: color-mix(in srgb, #f2f5f7 14%, transparent);
     --sk-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.6);
     --sk-live: #f87171;
+    --sk-danger: #f87171;
+    --sk-pending: #fbbf24;
+    --sk-dialog-surface: color-mix(in srgb, #0b0e12 56%, transparent);
+    --sk-dialog-shadow: 0 18px 48px -20px rgba(0, 0, 0, 0.7);
+    --sk-chip-surface: color-mix(in srgb, #14181d 86%, transparent);
   }
 }
 
@@ -72,6 +95,11 @@
   --sk-border: color-mix(in srgb, #f2f5f7 14%, transparent);
   --sk-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.6);
   --sk-live: #f87171;
+  --sk-danger: #f87171;
+  --sk-pending: #fbbf24;
+  --sk-dialog-surface: color-mix(in srgb, #0b0e12 56%, transparent);
+  --sk-dialog-shadow: 0 18px 48px -20px rgba(0, 0, 0, 0.7);
+  --sk-chip-surface: color-mix(in srgb, #14181d 86%, transparent);
 }
 
 [data-sk-theme="light"] {
@@ -84,4 +112,18 @@
   --sk-border: color-mix(in srgb, #101418 12%, transparent);
   --sk-shadow: 0 12px 40px -12px rgba(16, 20, 24, 0.25);
   --sk-live: #dc2626;
+  --sk-danger: #dc2626;
+  --sk-pending: #d97706;
+  --sk-dialog-surface: color-mix(in srgb, #ffffff 58%, transparent);
+  --sk-dialog-shadow: 0 18px 48px -20px rgba(16, 20, 24, 0.35);
+  --sk-chip-surface: color-mix(in srgb, #ffffff 84%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --sk-motion-fast: 0ms;
+    --sk-motion-slow: 0ms;
+    --sk-motion-base: 0ms;
+    --sk-motion-level: 0ms;
+  }
 }

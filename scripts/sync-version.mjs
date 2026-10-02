@@ -151,7 +151,7 @@ export function syncVersion(argv = process.argv.slice(2)) {
 
   if (targets.has("windows")) {
     // Known gap: this stamp does not reach the artifact. Go links the
-    // committed cmd/speechkit/rsrc_windows_*.syso, and nothing regenerates
+    // committed app/cmd/speechkit/rsrc_windows_*.syso, and nothing regenerates
     // those from winres.json, so the shipped manifest identity has said
     // 0.18.x since 2026-04-14 while this file has been bumped every release
     // since. winres.json also declares no RT_VERSION block at all, which is
@@ -159,11 +159,11 @@ export function syncVersion(argv = process.argv.slice(2)) {
     // the Windows bundle build is the fix and needs a Windows build to
     // verify. Until then, do not read this line as evidence that a release
     // artifact carries the version it stamps.
-    updateJson("cmd/speechkit/winres.json", (data) => {
+    updateJson("app/cmd/speechkit/winres.json", (data) => {
       data.RT_MANIFEST["#1"]["0409"].identity.version = metadata.windowsManifestVersion;
     });
 
-    // internal/buildinfo.Version is injected via -ldflags in build.ps1 from
+    // app/internal/buildinfo.Version is injected via -ldflags in build.ps1 from
     // package.json.
     // No source file edit needed.
 
@@ -175,7 +175,7 @@ export function syncVersion(argv = process.argv.slice(2)) {
 
   if (targets.has("macos")) {
     // scripts/macos/Info.plist.template is the committed identity of
-    // SpeechKit.app, the way cmd/speechkit/winres.json is on Windows. Unlike
+    // SpeechKit.app, the way app/cmd/speechkit/winres.json is on Windows. Unlike
     // winres.json this stamp does reach the artifact: scripts/build-macos.sh
     // copies the template into the bundle. It then overwrites these same two
     // keys with the version Delivery resolves for that build. This keeps

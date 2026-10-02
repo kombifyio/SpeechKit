@@ -48,12 +48,21 @@ func TestNormalizeLiveConfigFillsProviderProfileAndModel(t *testing.T) {
 		t.Fatalf("normalized deepgram config = %+v", cfg)
 	}
 
-	cfg, err = NormalizeLiveConfig(live.LiveConfig{Model: "gemini-3.1-flash-live-preview"})
+	cfg, err = NormalizeLiveConfig(live.LiveConfig{Model: "gemini-3.8-live"})
 	if err != nil {
 		t.Fatalf("NormalizeLiveConfig by model: %v", err)
 	}
-	if cfg.Provider != "google" || cfg.ProfileID != "realtime.google.gemini-native-audio" || cfg.Model != "gemini-3.1-flash-live-preview" {
+	if cfg.Provider != "google" || cfg.ProfileID != "realtime.google.gemini-native-audio" || cfg.Model != "gemini-3.8-live" {
 		t.Fatalf("normalized gemini config = %+v", cfg)
+	}
+
+	// A retired model id still resolves its provider and dials the successor.
+	cfg, err = NormalizeLiveConfig(live.LiveConfig{Model: "gemini-3.1-flash-live-preview"})
+	if err != nil {
+		t.Fatalf("NormalizeLiveConfig by retired model: %v", err)
+	}
+	if cfg.Provider != "google" || cfg.Model != "gemini-3.8-live" {
+		t.Fatalf("normalized retired gemini config = %+v", cfg)
 	}
 
 	cfg, err = NormalizeLiveConfig(live.LiveConfig{ProfileID: "realtime.google.gemini-live-translate"})
@@ -123,7 +132,7 @@ func TestNewProviderForConfigNormalizesConfig(t *testing.T) {
 	if provider.Name() != "openai-realtime" {
 		t.Fatalf("provider = %q", provider.Name())
 	}
-	if cfg.Provider != "openai" || cfg.ProfileID != "realtime.openai.gpt-realtime-2" || cfg.Model != "gpt-realtime-2" {
+	if cfg.Provider != "openai" || cfg.ProfileID != "realtime.openai.gpt-realtime-2" || cfg.Model != "gpt-realtime-2.1" {
 		t.Fatalf("normalized config = %+v", cfg)
 	}
 }

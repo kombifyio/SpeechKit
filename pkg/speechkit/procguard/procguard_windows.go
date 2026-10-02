@@ -41,7 +41,7 @@ func ensureJob() (windows.Handle, error) {
 		if _, err := windows.SetInformationJobObject(
 			handle,
 			windows.JobObjectExtendedLimitInformation,
-			uintptr(unsafe.Pointer(&info)),
+			uintptr(unsafe.Pointer(&info)), //nolint:gosec // G103: Win32 API requires a raw pointer to the info struct.
 			uint32(unsafe.Sizeof(info)),
 		); err != nil {
 			_ = windows.CloseHandle(handle)

@@ -77,7 +77,7 @@ func TestAssemblyAI_StartDictationStream_QueryAndTurnMapping(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New("assembly-test-key", "")
+	p := New(Options{APIKey: "assembly-test-key"})
 	p.StreamingBaseURL = server.URL
 	p.Validation = testValidation
 
@@ -93,7 +93,7 @@ func TestAssemblyAI_StartDictationStream_QueryAndTurnMapping(t *testing.T) {
 	}
 	defer stream.Close() //nolint:errcheck // test cleanup
 
-	if got := gotQuery.Get("speech_model"); got != "universal-3-5-pro" {
+	if got := gotQuery.Get("speech_model"); got != "universal-3-6-pro" {
 		t.Fatalf("speech_model = %q", got)
 	}
 	if got := gotQuery.Get("agent_context"); got != "Homelab context; non-technical speaker." {
@@ -149,7 +149,7 @@ func TestAssemblyAI_StartDictationStream_QueryAndTurnMapping(t *testing.T) {
 	if final.Confidence < 0.9 || final.Confidence > 0.94 {
 		t.Fatalf("final confidence = %v, want mean of word confidences", final.Confidence)
 	}
-	if final.Provider != "assemblyai" || final.Model != "universal-3-5-pro" || final.Language != "de" {
+	if final.Provider != "assemblyai" || final.Model != "universal-3-6-pro" || final.Language != "de" {
 		t.Fatalf("final metadata = %+v", final)
 	}
 	if final.Speakers != nil {
@@ -176,7 +176,7 @@ func TestAssemblyAI_StartDictationStream_SanitizesCatalogModelList(t *testing.T)
 	}))
 	defer server.Close()
 
-	p := New("assembly-test-key", "")
+	p := New(Options{APIKey: "assembly-test-key"})
 	p.StreamingBaseURL = server.URL
 	p.Validation = testValidation
 
@@ -188,8 +188,8 @@ func TestAssemblyAI_StartDictationStream_SanitizesCatalogModelList(t *testing.T)
 	}
 	defer stream.Close() //nolint:errcheck // test cleanup
 
-	if got := gotQuery.Get("speech_model"); got != "universal-3-5-pro" {
-		t.Fatalf("speech_model = %q, want the first streaming id from the catalog list", got)
+	if got := gotQuery.Get("speech_model"); got != "universal-3-6-pro" {
+		t.Fatalf("speech_model = %q, want the realtime default rather than the batch chain's lead", got)
 	}
 	if got := gotQuery.Get("max_turn_silence"); got != "2000" {
 		t.Fatalf("max_turn_silence = %q, want patient dictation default", got)
@@ -231,7 +231,7 @@ func TestAssemblyAI_StartDictationStream_AppliesLLMGatewayCleanup(t *testing.T) 
 	}))
 	defer server.Close()
 
-	p := New("assembly-test-key", "")
+	p := New(Options{APIKey: "assembly-test-key"})
 	p.StreamingBaseURL = server.URL
 	p.Validation = testValidation
 	p.EnableStreamingLLM("qwen3.5-4b-32k-fast", "", 128)
@@ -298,7 +298,7 @@ func TestAssemblyAI_StartDictationStream_WiresDiarization(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New("assembly-test-key", "")
+	p := New(Options{APIKey: "assembly-test-key"})
 	p.StreamingBaseURL = server.URL
 	p.Validation = testValidation
 
@@ -344,7 +344,7 @@ func TestAssemblyAI_StartDictationStream_RejectsMultiChannel(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New("assembly-test-key", "")
+	p := New(Options{APIKey: "assembly-test-key"})
 	p.StreamingBaseURL = server.URL
 	p.Validation = testValidation
 
@@ -375,7 +375,7 @@ func TestAssemblyAI_StartDictationStream_SkipsDraftsWithoutInterim(t *testing.T)
 	}))
 	defer server.Close()
 
-	p := New("assembly-test-key", "")
+	p := New(Options{APIKey: "assembly-test-key"})
 	p.StreamingBaseURL = server.URL
 	p.Validation = testValidation
 

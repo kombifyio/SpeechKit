@@ -82,7 +82,7 @@ func run(opts runOptions) int {
 	}
 	if opts.token == "" {
 		// The session-create call is Bearer-authenticated. Without a token the
-		// run cannot start, so report blocked_by_auth like provider-live-gate.
+		// run cannot start, so report blocked_by_auth like the provider-live job in live-gates.yml.
 		fmt.Println("RESULT: blocked_by_auth (no SPEECHKIT_TOKEN / SPEECHKIT_SERVER_TOKEN provided)")
 		return exitBlockedByAuth
 	}

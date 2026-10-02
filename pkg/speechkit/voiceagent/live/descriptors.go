@@ -184,7 +184,26 @@ func DefaultProviderDescriptors() []ProviderDescriptor {
 			NativeOptions:    nativeLiveOptions("openai"),
 			AuthRequirement:  "api_key",
 			Transport:        "websocket",
-			EvidenceURL:      "https://platform.openai.com/docs/guides/realtime",
+			EvidenceURL:      "https://developers.openai.com/api/docs/models/gpt-realtime-2.1",
+		},
+		{
+			// GPT-Live is a full-duplex voice layer on its own protocol
+			// (/v1/live/sessions) that delegates reasoning and tools to a
+			// backend model, so it is a descriptor apart from OpenAI Realtime.
+			Provider:    "gpt-live",
+			DisplayName: "OpenAI GPT-Live",
+			ProfileID:   "realtime.openai.gpt-live-1",
+			Capabilities: []LiveCapabilityFlag{
+				LiveCapabilityRealtimeAudio,
+				LiveCapabilityToolCalling,
+				LiveCapabilityTranscript,
+			},
+			Models:           liveModelsForProvider("gpt-live"),
+			SupportedLocales: []string{"*"},
+			NativeOptions:    nativeLiveOptions("gpt-live"),
+			AuthRequirement:  "api_key",
+			Transport:        "websocket",
+			EvidenceURL:      "https://developers.openai.com/api/docs/models/gpt-live-1",
 		},
 		{
 			Provider:    "foundry",
@@ -231,6 +250,27 @@ func DefaultProviderDescriptors() []ProviderDescriptor {
 			AuthRequirement: "api_key",
 			Transport:       "websocket",
 			EvidenceURL:     "https://learn.microsoft.com/azure/ai-services/speech-service/voice-live",
+		},
+		{
+			// GPT-Live on Foundry is the GPT-Live protocol served from the
+			// resource host (/openai/v1/live/sessions); the model id is the
+			// deployment name and tools run in a Foundry Responses deployment.
+			Provider:    "foundry-gpt-live",
+			DisplayName: "Microsoft Foundry GPT-Live",
+			ProfileID:   "realtime.foundry.gpt-live-1",
+			Capabilities: []LiveCapabilityFlag{
+				LiveCapabilityRealtimeAudio,
+				LiveCapabilityToolCalling,
+				LiveCapabilityTranscript,
+			},
+			Models:           liveModelsForProvider("foundry-gpt-live"),
+			SupportedLocales: []string{"*"},
+			// Same session vocabulary as OpenAI GPT-Live, so it shares the
+			// gpt-live native-option manifest.
+			NativeOptions:   nativeLiveOptions("gpt-live"),
+			AuthRequirement: "api_key",
+			Transport:       "websocket",
+			EvidenceURL:     "https://learn.microsoft.com/azure/foundry/openai/how-to/gpt-live",
 		},
 		{
 			// Google is an opt-in BYOK provider: listed last and never picked
@@ -327,10 +367,14 @@ func NormalizeProviderID(providerOrProfile string) string {
 		return "deepgram"
 	case "assemblyai", "assembly-ai", "assemblyai-agent", "assemblyai-live", "realtime.assemblyai.voice-agent":
 		return "assemblyai"
+	case "gpt-live", "openai-gpt-live", "realtime.openai.gpt-live-1":
+		return "gpt-live"
 	case "openai", "openai-realtime", "openai-live", "realtime.openai.gpt-realtime-2":
 		return "openai"
 	case "foundry-voicelive", "foundry-voice-live", "voicelive", "voice-live", "realtime.foundry.voice-live":
 		return "foundry-voicelive"
+	case "foundry-gpt-live", "realtime.foundry.gpt-live-1":
+		return "foundry-gpt-live"
 	case "foundry", "foundry-realtime", "foundry-live", "foundry-api", "microsoft-foundry", "realtime.foundry.gpt-realtime-2":
 		return "foundry"
 	case "cascaded", "local-cascaded", "pipeline", "pipeline-fallback", "voice-agent-cascaded", "voice_agent.cascaded.pipeline":

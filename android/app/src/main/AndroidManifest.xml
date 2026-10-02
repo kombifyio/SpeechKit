@@ -58,6 +58,7 @@
              settings key. -->
         <activity
             android:name="helium314.keyboard.settings.SettingsActivity"
+            android:exported="true"
             tools:node="merge">
             <intent-filter tools:node="removeAll" />
         </activity>

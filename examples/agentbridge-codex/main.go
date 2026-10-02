@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/agentbridge"
@@ -31,6 +32,15 @@ func run() int {
 	timeout := flag.Duration("timeout", 60*time.Second, "max wait for the turn")
 	flag.Parse()
 
+	// The bridge only accepts an absolute binary_path.
+	if *binary != "" {
+		abs, err := filepath.Abs(*binary)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "binary path:", err)
+			return 2
+		}
+		*binary = abs
+	}
 	bridge := codex.New(codex.Config{BinaryPath: *binary})
 	defer func() { _ = bridge.Close() }()
 

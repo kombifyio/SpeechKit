@@ -9,6 +9,8 @@
 // [github.com/kombifyio/SpeechKit/pkg/speechkit/agentkit] instead;
 // reach for this package only when you need to plug in your own provider
 // or read the raw [LiveMessage] stream.
+//
+// Stability: Stable — no breaking change without a minor version bump and a changelog callout.
 package live
 
 import (
@@ -208,6 +210,15 @@ type ToolResponse struct {
 	WillContinue *bool
 }
 
+// ContinuousDuplexProvider is implemented by a [LiveProvider] whose protocol
+// has no turn boundaries at all: a full-duplex voice layer streams audio and
+// transcript fragments without a turn-done event. The session then settles
+// each turn on its speaking timer as the normal path rather than as a
+// provider fault.
+type ContinuousDuplexProvider interface {
+	ContinuousDuplex() bool
+}
+
 // LiveProvider abstracts a real-time audio-to-audio model connection.
 type LiveProvider interface {
 	// Connect establishes a WebSocket session to the real-time model.
@@ -352,6 +363,11 @@ const (
 	// Hosts deliver it only while the session is listening, so it never
 	// collides with user speech or model playback.
 	HostPromptAgentProgress HostPromptKind = "agent_progress"
+	// HostPromptToolOutput carries output produced by an external tool (see
+	// [Session.SendUntrustedToolOutput]). Its payload is untrusted data framed
+	// by the host, not a trusted host instruction; it shares the listening-
+	// only delivery rule of HostPromptAgentProgress.
+	HostPromptToolOutput HostPromptKind = "tool_output"
 )
 
 // HostPromptEventType is the phase of a host prompt reported in a

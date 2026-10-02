@@ -11,7 +11,7 @@ regexes = ['''e2e-dev-token''']
 [[allowlists]]
 description = "Redaction fixtures that intentionally use fake OpenAI-looking keys"
 paths = [
-  '''(^|.*/)cmd/speechkit/diagnostics_test\.go$''',
+  '''(^|.*/)app/cmd/speechkit/diagnostics_test\.go$''',
 ]
 regexes = ['''sk-1234567890''']
 

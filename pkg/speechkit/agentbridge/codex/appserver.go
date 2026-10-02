@@ -44,6 +44,11 @@ const (
 	// FileChange approval decision enums, codex-cli 0.147.0).
 	wireDecisionAccept  = "accept"
 	wireDecisionDecline = "decline"
+
+	// approvalPolicyUntrusted is the AskForApproval wire value ("untrusted" |
+	// "on-failure" | "on-request" | "never") that asks before anything but
+	// known-safe read-only commands.
+	approvalPolicyUntrusted = "untrusted"
 )
 
 // appServerSession owns one `codex app-server` child process and its JSON-RPC
@@ -67,6 +72,7 @@ func startAppServer(ctx context.Context, binary, clientVersion string, logger *s
 	// The app-server outlives individual turn contexts by design; its
 	// lifecycle is owned by session.Close/kill, not ctx cancellation.
 	cmd := exec.Command(binary, "app-server") //nolint:noctx // detached long-lived child, closed via session lifecycle
+	cmd.Env = codexEnv(binary)
 	configureSysProcAttr(cmd)
 	// Must run before Start; see procguard.Prepare.
 	procguard.Prepare(cmd)
@@ -85,6 +91,7 @@ func startAppServer(ctx context.Context, binary, clientVersion string, logger *s
 	// Hand the child to the OS so it cannot outlive this process when the
 	// host dies without running its cleanup path (crash, taskkill, dev-loop
 	// rebuild). Assignment failing does not make the child unusable.
+	//nolint:staticcheck // SA4023: build-tag artifact; the !windows && !darwin stub always returns ErrUnsupportedPlatform, other platforms may return nil.
 	if err := procguard.Adopt(cmd); err != nil {
 		logger.Warn("codex app-server not adopted into the kill-on-exit job", "error", err, "pid", cmd.Process.Pid)
 	}
@@ -147,7 +154,10 @@ func (s *appServerSession) Close() {
 // StartThread starts (or resumes) a thread in cwd and returns its id.
 func (s *appServerSession) StartThread(ctx context.Context, threadID, cwd string, sandbox agentbridge.SandboxMode) (string, error) {
 	method := methodThreadStart
-	params := map[string]any{"cwd": cwd, "sandbox": string(sandbox)}
+	// The approval policy is pinned instead of inherited from the user's
+	// ~/.codex/config.toml: every command outside Codex's trusted read-only
+	// set goes through an approval request that only the host UI answers.
+	params := map[string]any{"cwd": cwd, "sandbox": string(sandbox), "approvalPolicy": approvalPolicyUntrusted}
 	if strings.TrimSpace(threadID) != "" {
 		method = methodThreadResume
 		params["threadId"] = threadID

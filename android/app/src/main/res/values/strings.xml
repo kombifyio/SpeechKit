@@ -155,8 +155,8 @@
     <string name="dev_status_label">Status: %1$s</string>
     <string name="dev_dictation_title">Streaming dictation (Dev)</string>
     <string name="dev_session_open">Session open (%1$s)</string>
-    <string name="dev_segment_ready">Segment %1$s ready</string>
-    <string name="dev_segment_done">Segment %1$s done</string>
+    <string name="dev_segment_ready">Segment %1$d ready</string>
+    <string name="dev_segment_done">Segment %1$d done</string>
     <string name="dev_disconnected_reason">Disconnected (%1$s)</string>
     <string name="dev_connect_failed">Connection failed: %1$s</string>
     <string name="dev_capture_failed">Capture error: %1$s</string>

@@ -3,7 +3,7 @@ package io.kombify.speechkit.config
 /**
  * SpeechKit configuration model.
  *
- * Mirrors: internal/config/config.go Config struct.
+ * Mirrors: app/internal/config/config.go Config struct.
  * Android uses DataStore instead of TOML files.
  */
 data class SpeechKitConfig(

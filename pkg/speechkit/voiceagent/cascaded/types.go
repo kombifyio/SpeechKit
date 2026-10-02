@@ -11,6 +11,8 @@
 // PCM stream). Callers that want tighter control can send an audio_end
 // frame which triggers immediate processing regardless of the silence
 // heuristic.
+//
+// Stability: Stable — no breaking change without a minor version bump and a changelog callout.
 package cascaded
 
 import "github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"

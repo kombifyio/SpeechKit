@@ -279,6 +279,19 @@ func TestBuildSessionVoiceDefaultsAndOptions(t *testing.T) {
 	}
 }
 
+// The azure-realtime brain only speaks its native voices and rejects the MAI
+// or Azure short names every other brain uses, so the session must carry a
+// native voice picked for the locale.
+func TestBuildSessionAzureRealtimeUsesNativeVoice(t *testing.T) {
+	t.Parallel()
+	p := voicelive.New()
+	cfg := live.LiveConfig{Voice: "de-DE-Mia:MAI-Voice-2", Locale: "de-DE"}
+	voice := object(t, roundTrip(t, p.BuildSession(cfg, voicelive.AzureRealtimeModel, "")), "voice")
+	if voice["type"] != voicelive.AzureRealtimeVoiceType || voice["name"] != "florian" {
+		t.Fatalf("azure-realtime voice = %v, want the German native voice", voice)
+	}
+}
+
 // End to end against a fake Voice Live host: the dial carries api-version,
 // model and the resource key, the session.update is the flat Voice Live
 // shape, and the OpenAI event parser turns audio and response.done into

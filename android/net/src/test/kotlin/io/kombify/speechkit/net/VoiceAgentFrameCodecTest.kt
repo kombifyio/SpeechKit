@@ -12,7 +12,7 @@ import java.io.File
 /**
  * Consumer drift-check for the Voice Agent wire contract: replays the golden
  * frames from docs/server/fixtures/voiceagent.v1.json (the same fixture the Go
- * producer test in internal/server/voiceagent/protocol_fixture_test.go
+ * producer test in app/internal/server/voiceagent/protocol_fixture_test.go
  * marshals against) through the Kotlin codec. A rename on either side must
  * fail here rather than silently produce a session that connects and then
  * says nothing.
@@ -86,9 +86,9 @@ class VoiceAgentFrameCodecTest {
                     sequenceId = "seq-1",
                     provider = "openai",
                     mediaTransport = "livekit",
-                    voice = "Aoede",
+                    voice = "marin",
                     locale = "de-DE",
-                    model = "gpt-realtime-2",
+                    model = "gpt-realtime-2.1",
                     thinking = "low",
                     activityDetection = VoiceAgentActivityDetection(
                         automatic = true,

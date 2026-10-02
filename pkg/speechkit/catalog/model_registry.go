@@ -9,54 +9,119 @@ import (
 
 // Model ids known to the catalog: the strings vendors accept on the wire (for
 // Foundry, the default deployment names), kept as constants so registry rows,
-// provider profiles and hosts share one spelling.
+// profiles and retirements share one spelling. They are unexported on purpose:
+// vendors retire models, and an exported constant would turn every retirement
+// into a breaking API change. Hosts read model ids as data through
+// [DefaultModelRegistry], [FindModelDescriptor], [FindProviderDefault] and
+// [CurrentModelID] (ADR 0005, decision 2).
 const (
-	ModelAssemblyAIUniversal35ProRealtime = "universal-3-5-pro"
-	// ModelAssemblyAIU3RTPro is the legacy Universal-3 Pro streaming id.
-	ModelAssemblyAIU3RTPro = "u3-rt-pro"
-	// ModelAssemblyAIVoiceAgent is SpeechKit's own id for the AssemblyAI Voice
+	// modelAssemblyAIUniversal35ProRealtime is Universal-3.5 Pro, the
+	// AssemblyAI pre-recorded flagship (GA 2026-09-02) that also streams.
+	modelAssemblyAIUniversal35ProRealtime = "universal-3-5-pro"
+	// modelAssemblyAIUniversal36ProRealtime is Universal-3.6 Pro Realtime
+	// (2026-09-29): streaming-only, 32 languages, the streaming default.
+	modelAssemblyAIUniversal36ProRealtime = "universal-3-6-pro"
+	// modelAssemblyAIU3RTPro is the Universal-3 Pro streaming id AssemblyAI
+	// stopped accepting around 2026-09-25. Retired: configs carrying it are
+	// upgraded to modelAssemblyAIUniversal36ProRealtime on load.
+	modelAssemblyAIU3RTPro = "u3-rt-pro"
+	// modelAssemblyAIVoiceAgent is SpeechKit's own id for the AssemblyAI Voice
 	// Agent API, which has no vendor model name.
-	ModelAssemblyAIVoiceAgent = "assemblyai-voice-agent"
-	// ModelDeepgramFluxGeneralEN and ModelDeepgramFluxGeneralMulti are the
+	modelAssemblyAIVoiceAgent = "assemblyai-voice-agent"
+	// modelAssemblyAIGatewayGemini37Flash is the newest Gemini the AssemblyAI
+	// LLM Gateway lists; it powers the gateway's agent tier.
+	modelAssemblyAIGatewayGemini37Flash = "gemini-3.7-flash"
+	// modelDeepgramFluxGeneralEN and modelDeepgramFluxGeneralMulti are the
 	// English-only and multilingual (code-switching) Flux conversational STT
 	// models.
-	ModelDeepgramFluxGeneralEN    = "flux-general-en"
-	ModelDeepgramFluxGeneralMulti = "flux-general-multi"
-	// ModelDeepgramFluxTTSDefaultEN is Deepgram's default Flux TTS voice. Flux
-	// TTS is English-only; Aura-2 remains the multilingual speak leg.
-	ModelDeepgramFluxTTSDefaultEN = "flux-kit-en"
-	ModelDeepgramNova3            = "nova-3"
-	// ModelGroqWhisperLargeV3 and ModelGroqWhisperLargeV3Turbo are the
+	modelDeepgramFluxGeneralEN    = "flux-general-en"
+	modelDeepgramFluxGeneralMulti = "flux-general-multi"
+	// modelDeepgramFluxTTSDefaultEN is Deepgram's default Flux TTS voice. Flux
+	// TTS (GA 2026-08-12) is English-only; Aura-2 remains the multilingual
+	// speak leg.
+	modelDeepgramFluxTTSDefaultEN = "flux-kit-en"
+	modelDeepgramNova3            = "nova-3"
+	// modelGroqWhisperLargeV3 and modelGroqWhisperLargeV3Turbo are the
 	// Groq-hosted Whisper variants; Turbo is the Groq dictation default.
-	ModelGroqWhisperLargeV3      = "whisper-large-v3"
-	ModelGroqWhisperLargeV3Turbo = "whisper-large-v3-turbo"
-	// ModelGemini35LiveTranslatePreview, ModelGemini31FlashLivePreview and
-	// ModelGemini25FlashNativeAudioPreview are Google Gemini Live API preview
-	// models for realtime voice.
-	ModelGemini35LiveTranslatePreview    = "gemini-3.5-live-translate-preview"
-	ModelGemini31FlashLivePreview        = "gemini-3.1-flash-live-preview"
-	ModelGemini25FlashNativeAudioPreview = "gemini-2.5-flash-native-audio-preview-12-2025"
-	// ModelOpenAIGPT4OTranscribe and its mini and diarize siblings are OpenAI's
-	// transcription models; Diarize is catalog-only until SpeechKit maps its
-	// diarized speaker segments.
-	ModelOpenAIGPT4OTranscribe        = "gpt-4o-transcribe"
-	ModelOpenAIGPT4OMiniTranscribe    = "gpt-4o-mini-transcribe"
-	ModelOpenAIGPT4OTranscribeDiarize = "gpt-4o-transcribe-diarize"
-	// ModelOpenAIRealtime2 is the promoted OpenAI Realtime model; 2.1 and its
-	// mini are selectable but not default (see the registry rows).
-	ModelOpenAIRealtime2      = "gpt-realtime-2"
-	ModelOpenAIRealtime21     = "gpt-realtime-2.1"
-	ModelOpenAIRealtime21Mini = "gpt-realtime-2.1-mini"
-	// ModelFoundryMAITranscribe2, ModelFoundryMAIVoice2 and
-	// ModelFoundryMAIVoice2Flash are Microsoft MAI speech models served by
-	// Azure Speech on a Foundry resource; the ModelFoundryVoiceLive ids are the
-	// brains Voice Live hosts without a deployment.
-	ModelFoundryMAITranscribe2        = "MAI-Transcribe-2"
-	ModelFoundryMAIVoice2             = "MAI-Voice-2"
-	ModelFoundryMAIVoice2Flash        = "MAI-Voice-2-Flash"
-	ModelFoundryVoiceLiveRealtimeMini = "gpt-realtime-mini"
-	ModelFoundryVoiceLiveGPT54        = "gpt-5.4"
-	ModelFoundryVoiceLivePhi4MM       = "phi4-mm-realtime"
+	modelGroqWhisperLargeV3      = "whisper-large-v3"
+	modelGroqWhisperLargeV3Turbo = "whisper-large-v3-turbo"
+	// modelGroqGPTOSS20B and modelGroqGPTOSS120B are the text models Groq
+	// names as replacements for its retired Llama 3.x models; modelGroqQwen38
+	// is Groq's preview Qwen3.8 27B.
+	modelGroqGPTOSS20B  = "openai/gpt-oss-20b"
+	modelGroqGPTOSS120B = "openai/gpt-oss-120b"
+	modelGroqQwen38     = "qwen/qwen3.8-27b"
+	// modelGemini38Live is the GA Gemini Live model (2026-09); it rejects a
+	// thinking config. modelGemini38LiveExtendedThinking adds background
+	// reasoning and requires non-blocking tools.
+	modelGemini38Live                 = "gemini-3.8-live"
+	modelGemini38LiveExtendedThinking = "gemini-3.8-live-extended-thinking"
+	// modelGemini35LiveTranslatePreview is the Gemini Live speech translation
+	// preview.
+	modelGemini35LiveTranslatePreview = "gemini-3.5-live-translate-preview"
+	// modelGemini31FlashLivePreview and modelGemini25FlashNativeAudioPreview
+	// are the Gemini Live previews gemini-3.8-live replaced. Retired: configs
+	// carrying them migrate to modelGemini38Live.
+	modelGemini31FlashLivePreview        = "gemini-3.1-flash-live-preview"
+	modelGemini25FlashNativeAudioPreview = "gemini-2.5-flash-native-audio-preview-12-2025"
+	// modelGemini38Flash and modelGemini35FlashLite are the Gemini API text
+	// models Google recommends for new projects (2026-09).
+	modelGemini38Flash     = "gemini-3.8-flash"
+	modelGemini35FlashLite = "gemini-3.5-flash-lite"
+	// modelGemini35Transcribe is Google's Gemini Transcribe model on the
+	// Gemini API Interactions endpoint.
+	modelGemini35Transcribe = "gemini-3.5-transcribe"
+	// modelGemini38FlashTTS and modelGemini38FlashLiteTTS are the Gemini 3.8
+	// speech models (GA 2026-09-22) on the Interactions endpoint.
+	modelGemini38FlashTTS     = "gemini-3.8-flash-tts"
+	modelGemini38FlashLiteTTS = "gemini-3.8-flash-lite-tts"
+	// modelOpenAIGPTTranscribe is OpenAI's file transcription model (GA
+	// 2026-07-28), the successor of the gpt-4o transcribe family and whisper-1.
+	modelOpenAIGPTTranscribe = "gpt-transcribe"
+	// modelOpenAIGPTLiveTranscribe is OpenAI's streaming transcription model
+	// (2026-07-28), used for live dictation on the gpt-transcribe profile.
+	modelOpenAIGPTLiveTranscribe = "gpt-live-transcribe"
+	// modelOpenAIGPT61Sol, modelOpenAIGPT6Sol, modelOpenAIGPT6Luna and
+	// modelOpenAIGPT6Astra are the GPT-6 text models (2026-09). Luna is the
+	// efficient high-volume tier, Sol the everyday frontier tier, Astra the
+	// flagship.
+	modelOpenAIGPT61Sol  = "gpt-6.1-sol"
+	modelOpenAIGPT6Sol   = "gpt-6-sol"
+	modelOpenAIGPT6Luna  = "gpt-6-luna"
+	modelOpenAIGPT6Astra = "gpt-6-astra"
+	// modelOpenAIGPT4OMiniTTS is OpenAI's current text-to-speech model.
+	modelOpenAIGPT4OMiniTTS = "gpt-4o-mini-tts"
+	// modelOpenAIRealtime21 is the default OpenAI Realtime model; the mini is
+	// the low-cost variant.
+	modelOpenAIRealtime21     = "gpt-realtime-2.1"
+	modelOpenAIRealtime21Mini = "gpt-realtime-2.1-mini"
+	// modelOpenAIRealtime2 is the Realtime model 2.1 replaced. Retired: configs
+	// carrying it migrate to modelOpenAIRealtime21.
+	modelOpenAIRealtime2 = "gpt-realtime-2"
+	// modelOpenAIGPTLive1 is OpenAI's full-duplex GPT-Live voice model (API
+	// launch 2026-09-10), served by the "gpt-live" adapter.
+	modelOpenAIGPTLive1 = "gpt-live-1"
+	// modelOpenRouterGPTTranscribe, modelOpenRouterGemini35Flash and
+	// modelOpenRouterGemini35FlashLite are OpenRouter slugs for the current
+	// vendor models.
+	modelOpenRouterGPTTranscribe     = "openai/gpt-transcribe"
+	modelOpenRouterGemini35Flash     = "google/gemini-3.5-flash"
+	modelOpenRouterGemini35FlashLite = "google/gemini-3.5-flash-lite"
+	// modelHFQwen38 is Qwen3.8 27B (Apache-2.0, 2026-08-14) on the Hugging
+	// Face Inference Router.
+	modelHFQwen38 = "Qwen/Qwen3.8-27B"
+	// modelFoundryMAITranscribe2, modelFoundryMAIVoice2 and
+	// modelFoundryMAIVoice2Flash are Microsoft MAI speech models served by
+	// Azure Speech on a Foundry resource.
+	modelFoundryMAITranscribe2 = "MAI-Transcribe-2"
+	modelFoundryMAIVoice2      = "MAI-Voice-2"
+	modelFoundryMAIVoice2Flash = "MAI-Voice-2-Flash"
+	// The modelFoundryVoiceLive ids are brains Voice Live hosts without a
+	// deployment (native list as of 2026-09-29).
+	modelFoundryVoiceLiveGPT56Terra    = "gpt-5.6-terra"
+	modelFoundryVoiceLiveGPT56Luna     = "gpt-5.6-luna"
+	modelFoundryVoiceLiveAzureRealtime = "azure-realtime"
+	modelFoundryVoiceLivePhi4MM        = "phi4-mm-realtime"
 )
 
 // ProviderModelDescriptor is the public source-of-truth row for model IDs that
@@ -92,19 +157,23 @@ const ModelFreshnessSLA = 7 * 24 * time.Hour
 // modelRegistryVerifiedAt is the calendar day the registry rows were last
 // checked against vendor documentation. Bump this after a vendor-doc pass.
 //
-// 2026-09-02 pass: all default/recommended rows still listed by their vendors,
-// none deprecated. OpenAI now steers new file transcription to gpt-transcribe
-// and voice agents to gpt-realtime-2.1; both remain unpromoted here pending
-// the documented evaluation (see the gpt-realtime-2.1 note below).
-const modelRegistryVerifiedAt = "2026-09-02"
+// 2026-09-30 pass: model ids checked against the vendors' own SDK sources
+// (openai-python, python-genai and the Gemini cookbook, assemblyai-python-sdk,
+// deepgram-python-sdk, groq-python) and their docs. gpt-transcribe replaces the
+// deprecated gpt-4o transcribe family, gpt-realtime-2.1 replaces
+// gpt-realtime-2, gemini-3.8-live (GA) replaces the 3.1 Live preview and
+// Universal-3.6 Pro Realtime becomes the AssemblyAI streaming default. The
+// retired ids and their successors are listed in RetiredModels.
+const modelRegistryVerifiedAt = "2026-09-30"
 
 // foundryRegistryVerifiedAt is the day the Microsoft Foundry rows were checked
 // against MS Learn model-availability docs (separate vendor-doc pass).
 //
-// 2026-09-04 pass: the OpenAI realtime rows are unchanged; the MAI rows were
-// verified live against a Foundry resource (Speech voices list, fast
-// transcription enhancedMode, Voice Live session.update allow-lists).
-const foundryRegistryVerifiedAt = "2026-09-05"
+// 2026-09-30 pass against the MicrosoftDocs/azure-ai-docs source: the
+// gpt-realtime-2.1 family is GA on Foundry and gpt-realtime-2 is a preview
+// that auto-upgrades to it; Voice Live dropped gpt-realtime-2 from its native
+// brains and added gpt-5.6-terra, gpt-5.6-luna and azure-realtime.
+const foundryRegistryVerifiedAt = "2026-09-30"
 
 // MissingFreshnessReports lists default/recommended registry rows that still
 // lack LastVerifiedAt.
@@ -160,33 +229,37 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 	return []ProviderModelDescriptor{
 		{
 			Provider:             "assemblyai",
-			ModelID:              ModelAssemblyAIUniversal35ProRealtime,
+			ModelID:              modelAssemblyAIUniversal35ProRealtime,
 			ProfileID:            "stt.assemblyai.universal",
 			Mode:                 speechkit.ModeDictation,
-			Name:                 "Universal-3.5 Pro Realtime",
-			Lifecycle:            speechkit.ModelLifecyclePreview,
+			Name:                 "Universal-3.5 Pro",
+			Lifecycle:            speechkit.ModelLifecycleGA,
 			Default:              true,
 			Recommended:          true,
-			SourceURL:            "https://www.assemblyai.com/docs/streaming/select-the-speech-model",
+			SourceURL:            "https://www.assemblyai.com/docs/getting-started/models",
 			ReleasedAt:           "2026-03-03",
 			LastVerifiedAt:       modelRegistryVerifiedAt,
 			MultilanguageCapable: true,
 		},
 		{
+			// Streaming-only: the pre-recorded API does not accept it, so it
+			// is the realtime dictation default while Universal-3.5 Pro stays
+			// the batch model.
 			Provider:             "assemblyai",
-			ModelID:              ModelAssemblyAIU3RTPro,
+			ModelID:              modelAssemblyAIUniversal36ProRealtime,
 			ProfileID:            "stt.assemblyai.universal",
 			Mode:                 speechkit.ModeDictation,
-			Name:                 "Universal-3 Pro Streaming",
-			Lifecycle:            speechkit.ModelLifecycleLegacy,
-			SourceURL:            "https://www.assemblyai.com/docs/streaming/select-the-speech-model",
-			ReleasedAt:           "2026-03-03",
+			Name:                 "Universal-3.6 Pro Realtime",
+			Lifecycle:            speechkit.ModelLifecycleGA,
+			Recommended:          true,
+			SourceURL:            "https://www.assemblyai.com/blog/universal-3-6-pro-realtime",
+			ReleasedAt:           "2026-09-29",
 			LastVerifiedAt:       modelRegistryVerifiedAt,
 			MultilanguageCapable: true,
 		},
 		{
 			Provider:             "assemblyai",
-			ModelID:              ModelAssemblyAIVoiceAgent,
+			ModelID:              modelAssemblyAIVoiceAgent,
 			ProfileID:            "realtime.assemblyai.voice-agent",
 			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "AssemblyAI Voice Agent API",
@@ -200,7 +273,7 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 		},
 		{
 			Provider:             "deepgram",
-			ModelID:              ModelDeepgramFluxGeneralMulti,
+			ModelID:              modelDeepgramFluxGeneralMulti,
 			ProfileID:            "realtime.deepgram.voice-agent",
 			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "Flux General Multilingual",
@@ -214,7 +287,7 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 		},
 		{
 			Provider:             "deepgram",
-			ModelID:              ModelDeepgramFluxGeneralEN,
+			ModelID:              modelDeepgramFluxGeneralEN,
 			ProfileID:            "realtime.deepgram.voice-agent",
 			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "Flux General English",
@@ -227,7 +300,7 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 		},
 		{
 			Provider:             "deepgram",
-			ModelID:              ModelDeepgramNova3,
+			ModelID:              modelDeepgramNova3,
 			ProfileID:            "stt.deepgram.nova-3",
 			Mode:                 speechkit.ModeDictation,
 			Name:                 "Nova-3",
@@ -241,7 +314,7 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 		},
 		{
 			Provider:             "google",
-			ModelID:              ModelGemini35LiveTranslatePreview,
+			ModelID:              modelGemini35LiveTranslatePreview,
 			ProfileID:            "realtime.google.gemini-live-translate",
 			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "Gemini 3.5 Live Translate Preview",
@@ -254,91 +327,92 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 		},
 		{
 			Provider:             "google",
-			ModelID:              ModelGemini31FlashLivePreview,
+			ModelID:              modelGemini38Live,
 			ProfileID:            "realtime.google.gemini-native-audio",
 			Mode:                 speechkit.ModeVoiceAgent,
-			Name:                 "Gemini 3.1 Flash Live Preview",
-			Lifecycle:            speechkit.ModelLifecyclePreview,
+			Name:                 "Gemini 3.8 Live",
+			Lifecycle:            speechkit.ModelLifecycleGA,
 			Default:              true,
 			Recommended:          true,
-			SourceURL:            "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-live-preview",
-			ReleasedAt:           "2026-03-26",
+			SourceURL:            "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-live",
+			ReleasedAt:           "2026-09-15",
 			LastVerifiedAt:       modelRegistryVerifiedAt,
 			MultilanguageCapable: true,
 		},
 		{
 			Provider:             "google",
-			ModelID:              ModelGemini25FlashNativeAudioPreview,
+			ModelID:              modelGemini38LiveExtendedThinking,
 			ProfileID:            "realtime.google.gemini-native-audio",
 			Mode:                 speechkit.ModeVoiceAgent,
-			Name:                 "Gemini 2.5 Flash Native Audio Preview",
-			Lifecycle:            speechkit.ModelLifecycleLegacy,
-			SourceURL:            "https://ai.google.dev/gemini-api/docs/live-api/capabilities",
-			ReleasedAt:           "2025-12-12",
+			Name:                 "Gemini 3.8 Live Extended Thinking",
+			Lifecycle:            speechkit.ModelLifecyclePreview,
+			SourceURL:            "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-live-extended-thinking",
+			ReleasedAt:           "2026-09-15",
 			LastVerifiedAt:       modelRegistryVerifiedAt,
 			MultilanguageCapable: true,
 		},
 		{
 			Provider:             "openai",
-			ModelID:              ModelOpenAIGPT4OTranscribe,
-			ProfileID:            "stt.openai.gpt-4o-transcribe",
+			ModelID:              modelOpenAIGPTTranscribe,
+			ProfileID:            "stt.openai.gpt-transcribe",
 			Mode:                 speechkit.ModeDictation,
-			Name:                 "GPT-4o Transcribe",
+			Name:                 "GPT Transcribe",
 			Lifecycle:            speechkit.ModelLifecycleGA,
 			Default:              true,
 			Recommended:          true,
-			SourceURL:            "https://platform.openai.com/docs/guides/speech-to-text",
-			ReleasedAt:           "2025-03-20",
+			SourceURL:            "https://developers.openai.com/api/docs/models/gpt-transcribe",
+			ReleasedAt:           "2026-07-28",
 			LastVerifiedAt:       modelRegistryVerifiedAt,
 			MultilanguageCapable: true,
 		},
 		{
 			Provider:             "openai",
-			ModelID:              ModelOpenAIRealtime2,
-			ProfileID:            "realtime.openai.gpt-realtime-2",
-			Mode:                 speechkit.ModeVoiceAgent,
-			Name:                 "GPT Realtime 2",
+			ModelID:              modelOpenAIGPTLiveTranscribe,
+			ProfileID:            "stt.openai.gpt-transcribe",
+			Mode:                 speechkit.ModeDictation,
+			Name:                 "GPT Live Transcribe",
 			Lifecycle:            speechkit.ModelLifecycleGA,
-			Default:              true,
-			Recommended:          true,
-			SourceURL:            "https://platform.openai.com/docs/guides/realtime",
-			ReleasedAt:           "2026-05-07",
+			SourceURL:            "https://developers.openai.com/api/docs/models/gpt-live-transcribe",
+			ReleasedAt:           "2026-07-28",
 			LastVerifiedAt:       modelRegistryVerifiedAt,
 			MultilanguageCapable: true,
 		},
-		// 2.1 and its mini are selectable but neither is Default or
-		// Recommended yet. AI-VOICE-SPEECHKIT-TARGET.md names gpt-realtime-2.1
-		// "the standing OpenAI promotion candidate" and holds the default until
-		// a documented quality/latency/cost evaluation passes; moving Default
-		// here without that evidence is exactly what the rule forbids. Listing
-		// them is not promotion - it is what lets the evaluation address them
-		// by name and what stops a caller from having to guess a model string
-		// the registry never heard of.
 		{
 			Provider:             "openai",
-			ModelID:              ModelOpenAIRealtime21,
+			ModelID:              modelOpenAIRealtime21,
 			ProfileID:            "realtime.openai.gpt-realtime-2",
 			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "GPT Realtime 2.1",
 			Lifecycle:            speechkit.ModelLifecycleGA,
-			Default:              false,
-			Recommended:          false,
-			SourceURL:            "https://platform.openai.com/docs/guides/realtime",
+			Default:              true,
+			Recommended:          true,
+			SourceURL:            "https://developers.openai.com/api/docs/models/gpt-realtime-2.1",
 			ReleasedAt:           "2026-07-06",
 			LastVerifiedAt:       modelRegistryVerifiedAt,
 			MultilanguageCapable: true,
 		},
 		{
 			Provider:             "openai",
-			ModelID:              ModelOpenAIRealtime21Mini,
+			ModelID:              modelOpenAIRealtime21Mini,
 			ProfileID:            "realtime.openai.gpt-realtime-2",
 			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "GPT Realtime 2.1 mini",
 			Lifecycle:            speechkit.ModelLifecycleGA,
-			Default:              false,
-			Recommended:          false,
-			SourceURL:            "https://platform.openai.com/docs/guides/realtime",
+			SourceURL:            "https://developers.openai.com/api/docs/models/gpt-realtime-2.1",
 			ReleasedAt:           "2026-07-06",
+			LastVerifiedAt:       modelRegistryVerifiedAt,
+			MultilanguageCapable: true,
+		},
+		{
+			Provider:             "gpt-live",
+			ModelID:              modelOpenAIGPTLive1,
+			ProfileID:            "realtime.openai.gpt-live-1",
+			Mode:                 speechkit.ModeVoiceAgent,
+			Name:                 "GPT-Live 1",
+			Lifecycle:            speechkit.ModelLifecyclePreview,
+			Default:              true,
+			SourceURL:            "https://developers.openai.com/api/docs/models/gpt-live-1",
+			ReleasedAt:           "2026-09-10",
 			LastVerifiedAt:       modelRegistryVerifiedAt,
 			MultilanguageCapable: true,
 		},
@@ -347,39 +421,45 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 		// name; users may override it per Foundry deployment.
 		{
 			Provider:             "foundry",
-			ModelID:              ModelOpenAIRealtime2,
-			ProfileID:            "realtime.foundry.gpt-realtime-2",
-			Mode:                 speechkit.ModeVoiceAgent,
-			Name:                 "GPT Realtime 2 (Foundry)",
-			Lifecycle:            speechkit.ModelLifecycleGA,
-			Default:              true,
-			Recommended:          true,
-			SourceURL:            "https://learn.microsoft.com/azure/ai-foundry/openai/concepts/models",
-			ReleasedAt:           "2026-05-07",
-			LastVerifiedAt:       foundryRegistryVerifiedAt,
-			MultilanguageCapable: true,
-		},
-		{
-			Provider:             "foundry",
-			ModelID:              ModelOpenAIRealtime21,
+			ModelID:              modelOpenAIRealtime21,
 			ProfileID:            "realtime.foundry.gpt-realtime-2",
 			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "GPT Realtime 2.1 (Foundry)",
-			Lifecycle:            speechkit.ModelLifecyclePreview,
-			SourceURL:            "https://learn.microsoft.com/azure/ai-foundry/openai/concepts/models",
-			ReleasedAt:           "2026-07-06",
+			Lifecycle:            speechkit.ModelLifecycleGA,
+			Default:              true,
+			Recommended:          true,
+			SourceURL:            "https://learn.microsoft.com/azure/foundry/openai/concepts/realtime-2",
+			ReleasedAt:           "2026-07-07",
+			SunsetAt:             "2027-06-25",
 			LastVerifiedAt:       foundryRegistryVerifiedAt,
 			MultilanguageCapable: true,
 		},
 		{
 			Provider:             "foundry",
-			ModelID:              ModelOpenAIRealtime21Mini,
+			ModelID:              modelOpenAIRealtime21Mini,
 			ProfileID:            "realtime.foundry.gpt-realtime-2",
 			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "GPT Realtime 2.1 mini (Foundry)",
+			Lifecycle:            speechkit.ModelLifecycleGA,
+			SourceURL:            "https://learn.microsoft.com/azure/foundry/openai/concepts/realtime-2",
+			ReleasedAt:           "2026-07-07",
+			SunsetAt:             "2027-06-25",
+			LastVerifiedAt:       foundryRegistryVerifiedAt,
+			MultilanguageCapable: true,
+		},
+		// GPT-Live on Foundry speaks the OpenAI GPT-Live protocol from
+		// /openai/v1/live/sessions; ModelID doubles as the default deployment
+		// name, as for the realtime rows above.
+		{
+			Provider:             "foundry-gpt-live",
+			ModelID:              modelOpenAIGPTLive1,
+			ProfileID:            "realtime.foundry.gpt-live-1",
+			Mode:                 speechkit.ModeVoiceAgent,
+			Name:                 "GPT-Live 1 (Foundry)",
 			Lifecycle:            speechkit.ModelLifecyclePreview,
-			SourceURL:            "https://learn.microsoft.com/azure/ai-foundry/openai/concepts/models",
-			ReleasedAt:           "2026-07-06",
+			Default:              true,
+			SourceURL:            "https://learn.microsoft.com/azure/foundry/openai/how-to/gpt-live",
+			ReleasedAt:           "2026-09-10",
 			LastVerifiedAt:       foundryRegistryVerifiedAt,
 			MultilanguageCapable: true,
 		},
@@ -387,7 +467,7 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 		// Foundry resource; the model id is sent verbatim (no deployment).
 		{
 			Provider:             "foundry",
-			ModelID:              ModelFoundryMAITranscribe2,
+			ModelID:              modelFoundryMAITranscribe2,
 			ProfileID:            "stt.foundry.mai-transcribe-2",
 			Mode:                 speechkit.ModeDictation,
 			Name:                 "MAI-Transcribe-2 (Foundry)",
@@ -403,49 +483,73 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 		// the models their wire protocol can actually dial.
 		{
 			Provider:             "foundry-voicelive",
-			ModelID:              ModelOpenAIRealtime2,
+			ModelID:              modelOpenAIRealtime21,
 			ProfileID:            "realtime.foundry.voice-live",
 			Mode:                 speechkit.ModeVoiceAgent,
-			Name:                 "GPT Realtime 2 (Voice Live)",
+			Name:                 "GPT Realtime 2.1 (Voice Live)",
 			Lifecycle:            speechkit.ModelLifecycleGA,
 			Default:              true,
 			Recommended:          true,
 			SourceURL:            "https://learn.microsoft.com/azure/ai-services/speech-service/voice-live",
-			ReleasedAt:           "2026-05-07",
+			ReleasedAt:           "2026-07-07",
 			LastVerifiedAt:       foundryRegistryVerifiedAt,
 			MultilanguageCapable: true,
 		},
 		{
 			Provider:             "foundry-voicelive",
-			ModelID:              ModelFoundryVoiceLiveRealtimeMini,
+			ModelID:              modelOpenAIRealtime21Mini,
 			ProfileID:            "realtime.foundry.voice-live",
 			Mode:                 speechkit.ModeVoiceAgent,
-			Name:                 "GPT Realtime mini (Voice Live)",
+			Name:                 "GPT Realtime 2.1 mini (Voice Live)",
 			Lifecycle:            speechkit.ModelLifecycleGA,
 			SourceURL:            "https://learn.microsoft.com/azure/ai-services/speech-service/voice-live",
-			ReleasedAt:           "2025-11-18",
+			ReleasedAt:           "2026-07-07",
 			LastVerifiedAt:       foundryRegistryVerifiedAt,
 			MultilanguageCapable: true,
 		},
 		{
 			Provider:             "foundry-voicelive",
-			ModelID:              ModelFoundryVoiceLiveGPT54,
+			ModelID:              modelFoundryVoiceLiveGPT56Terra,
 			ProfileID:            "realtime.foundry.voice-live",
 			Mode:                 speechkit.ModeVoiceAgent,
-			Name:                 "GPT-5.4 (Voice Live)",
+			Name:                 "GPT-5.6 Terra (Voice Live)",
 			Lifecycle:            speechkit.ModelLifecycleGA,
 			SourceURL:            "https://learn.microsoft.com/azure/ai-services/speech-service/voice-live",
-			ReleasedAt:           "2026-03-05",
+			ReleasedAt:           "2026-07-09",
 			LastVerifiedAt:       foundryRegistryVerifiedAt,
 			MultilanguageCapable: true,
 		},
 		{
 			Provider:             "foundry-voicelive",
-			ModelID:              ModelFoundryVoiceLivePhi4MM,
+			ModelID:              modelFoundryVoiceLiveGPT56Luna,
+			ProfileID:            "realtime.foundry.voice-live",
+			Mode:                 speechkit.ModeVoiceAgent,
+			Name:                 "GPT-5.6 Luna (Voice Live)",
+			Lifecycle:            speechkit.ModelLifecycleGA,
+			SourceURL:            "https://learn.microsoft.com/azure/ai-services/speech-service/voice-live",
+			ReleasedAt:           "2026-07-09",
+			LastVerifiedAt:       foundryRegistryVerifiedAt,
+			MultilanguageCapable: true,
+		},
+		{
+			Provider:             "foundry-voicelive",
+			ModelID:              modelFoundryVoiceLiveAzureRealtime,
+			ProfileID:            "realtime.foundry.voice-live",
+			Mode:                 speechkit.ModeVoiceAgent,
+			Name:                 "Azure Realtime (Voice Live)",
+			Lifecycle:            speechkit.ModelLifecycleGA,
+			SourceURL:            "https://learn.microsoft.com/azure/ai-services/speech-service/voice-live",
+			ReleasedAt:           "2026-07-25",
+			LastVerifiedAt:       foundryRegistryVerifiedAt,
+			MultilanguageCapable: true,
+		},
+		{
+			Provider:             "foundry-voicelive",
+			ModelID:              modelFoundryVoiceLivePhi4MM,
 			ProfileID:            "realtime.foundry.voice-live",
 			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "Phi-4 multimodal realtime (Voice Live)",
-			Lifecycle:            speechkit.ModelLifecycleGA,
+			Lifecycle:            speechkit.ModelLifecyclePreview,
 			SourceURL:            "https://learn.microsoft.com/azure/ai-services/speech-service/voice-live",
 			ReleasedAt:           "2025-11-18",
 			LastVerifiedAt:       foundryRegistryVerifiedAt,

@@ -11,6 +11,8 @@
 // Auth is either the resource key in the api-key header (cfg.APIKey) or a
 // short-lived Entra token from cfg.BearerToken sent as
 // "Authorization: Bearer"; the token source wins when both are set.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package voicelive
 
 import (
@@ -19,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"golang.org/x/text/language"
@@ -29,12 +32,20 @@ import (
 
 const (
 	// DefaultModel is the default brain model. Voice Live addresses models
-	// by name in the query string, not by deployment.
-	DefaultModel = "gpt-realtime-2"
-	// DefaultAPIVersion is the Voice Live API version the how-to guide
-	// documents (2026-04-10); the handshake was verified live against it and
-	// against the previous 2025-10-01 on 2026-09-05. APIVersion overrides it.
-	DefaultAPIVersion = "2026-04-10"
+	// by name in the query string, not by deployment; gpt-realtime-2 left the
+	// native brain list in September 2026.
+	DefaultModel = "gpt-realtime-2.1"
+	// DefaultAPIVersion is the GA Voice Live API version 2026-07-15, the first
+	// GA version that accepts the azure-realtime brain's native voices. The
+	// session vocabulary SpeechKit sends is unchanged from 2026-04-10, which
+	// was verified live on 2026-09-05; APIVersion overrides it.
+	DefaultAPIVersion = "2026-07-15"
+	// AzureRealtimeModel is Microsoft's own speech-to-speech brain. It speaks
+	// only with its native voices (AzureRealtimeVoiceType).
+	AzureRealtimeModel = "azure-realtime"
+	// AzureRealtimeVoiceType is the voice type the azure-realtime brain
+	// requires; other brains reject it.
+	AzureRealtimeVoiceType = "azure-realtime-native"
 	// DefaultTranscriptionModel transcribes user speech for the kernel's
 	// input transcripts.
 	DefaultTranscriptionModel = "mai-transcribe-2"
@@ -94,9 +105,9 @@ func New() *Provider {
 		NoiseSuppression:   true,
 		EchoCancellation:   true,
 	}
-	p.Provider.DialURL = p.dialURL
-	p.Provider.DialHeaders = dialHeaders
-	p.Provider.BuildSession = p.buildSession
+	p.DialURL = p.dialURL
+	p.DialHeaders = dialHeaders
+	p.BuildSession = p.buildSession
 	return p
 }
 
@@ -164,12 +175,16 @@ func dialHeaders(ctx context.Context, cfg live.LiveConfig) (http.Header, error) 
 
 // buildSession builds the flat Voice Live session object. The brain model is
 // server-owned (it comes from the dial query), so it is not repeated here.
-func (p *Provider) buildSession(cfg live.LiveConfig, _ string, instructions string) map[string]any {
+func (p *Provider) buildSession(cfg live.LiveConfig, model, instructions string) map[string]any {
 	resolved := live.ResolveLiveOptions("openai", ProfileID, cfg, nil, nil)
+	voice := p.voice(firstNonEmpty(resolved.Voice, cfg.Voice, DefaultVoice))
+	if strings.EqualFold(strings.TrimSpace(firstNonEmpty(model, cfg.Model)), AzureRealtimeModel) {
+		voice = azureRealtimeVoice(firstNonEmpty(resolved.Voice, cfg.Voice), firstNonEmpty(resolved.Locale, cfg.Locale))
+	}
 	session := map[string]any{
 		"modalities":          []string{"text", "audio"},
 		"instructions":        instructions,
-		"voice":               p.voice(firstNonEmpty(resolved.Voice, cfg.Voice, DefaultVoice)),
+		"voice":               voice,
 		"input_audio_format":  audioFormatPCM16,
 		"output_audio_format": audioFormatPCM16,
 		// Voice Live defaults to server_vad, so push-to-talk has to disable
@@ -204,6 +219,42 @@ func (p *Provider) voice(name string) map[string]any {
 		voice["rate"] = rate
 	}
 	return voice
+}
+
+// azureRealtimeNativeVoices are the documented native voices of the
+// azure-realtime brain (Voice Live API 2026-07-15).
+var azureRealtimeNativeVoices = []string{"aarti", "andrew", "ava", "denise", "diya", "elsa", "florian", "francisca", "meera", "ximena", "xiaoxiao", "yunxi"}
+
+// azureRealtimeVoice builds the native voice object the azure-realtime brain
+// requires. A configured native voice name wins; any other configured voice
+// (an Azure or MAI short name) cannot be spoken by this brain, so the locale
+// picks a native voice instead.
+func azureRealtimeVoice(configured, locale string) map[string]any {
+	name := strings.ToLower(strings.TrimSpace(configured))
+	if !slices.Contains(azureRealtimeNativeVoices, name) {
+		name = azureRealtimeVoiceForLocale(locale)
+	}
+	return map[string]any{"type": AzureRealtimeVoiceType, "name": name}
+}
+
+func azureRealtimeVoiceForLocale(locale string) string {
+	base, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(locale)), "-")
+	switch base {
+	case "de":
+		return "florian"
+	case "fr":
+		return "denise"
+	case "es":
+		return "ximena"
+	case "pt":
+		return "francisca"
+	case "zh":
+		return "xiaoxiao"
+	case "hi":
+		return "aarti"
+	default:
+		return "ava"
+	}
 }
 
 // turnDetection maps the kernel's activity policy (after option overrides)

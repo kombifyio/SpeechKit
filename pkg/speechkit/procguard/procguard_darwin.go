@@ -60,7 +60,7 @@ var (
 	// process table; the real one needs processes that only a Mac has.
 	listProcesses = listOwnProcesses
 	// signalProcess and signalGroup are variables for the same reason.
-	signalProcess = func(pid int, sig syscall.Signal) error { return syscall.Kill(pid, sig) }
+	signalProcess = syscall.Kill
 	signalGroup   = func(pgid int, sig syscall.Signal) error { return syscall.Kill(-pgid, sig) }
 )
 

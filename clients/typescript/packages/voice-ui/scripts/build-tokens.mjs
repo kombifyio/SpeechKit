@@ -25,6 +25,19 @@ function renderTokensCss(doc) {
   const shared = { ...doc.shared };
   const light = doc.themes.light;
   const dark = doc.themes.dark;
+  const reducedMotion = Object.fromEntries(
+    Object.entries(doc["reduced-motion-overrides"] ?? {}).filter(([name]) => !name.startsWith("_"))
+  );
+  const reducedMotionBlock =
+    Object.keys(reducedMotion).length > 0
+      ? `
+@media (prefers-reduced-motion: reduce) {
+  :root {
+${block(reducedMotion, "    ")}
+  }
+}
+`
+      : "";
   return `/* GENERATED FILE — do not edit. Source: tokens.json (scripts/build-tokens.mjs). */
 
 :root {
@@ -45,7 +58,7 @@ ${block(dark, "  ")}
 [data-sk-theme="light"] {
 ${block(light, "  ")}
 }
-`;
+${reducedMotionBlock}`;
 }
 
 const rendered = renderTokensCss(tokens);

@@ -5,6 +5,8 @@
 // key or a bearer-token source; the default network validation accepts
 // public https only, so loopback and private endpoints must relax
 // Provider.Validation (see [NewOllama] and the vps package).
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package openaicompat
 
 import (
@@ -62,15 +64,27 @@ func (p *Provider) authorize(ctx context.Context, req *http.Request) error {
 	return nil
 }
 
+// Options configures [New] and the vendor constructors.
+type Options struct {
+	// Name is the provider name reported by Name(), for example "groq".
+	Name string
+	// BaseURL is the endpoint root, without the /v1/audio/transcriptions path.
+	BaseURL string
+	// APIKey is sent as a bearer token.
+	APIKey string
+	// Model is the transcription model id.
+	Model string
+}
+
 // New creates a provider for any OpenAI-compatible STT
 // endpoint. Default Validation is strict (public https only). Callers with a
 // non-public endpoint (loopback, RFC1918) must set Validation explicitly.
-func New(name, baseURL, apiKey, model string) *Provider {
+func New(opts Options) *Provider {
 	p := &Provider{
-		name:    name,
-		BaseURL: baseURL,
-		APIKey:  apiKey,
-		Model:   model,
+		name:    opts.Name,
+		BaseURL: opts.BaseURL,
+		APIKey:  opts.APIKey,
+		Model:   opts.Model,
 		// Validation zero-value = strict: public https only, no loopback, no private IPs.
 	}
 	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second, DialValidation: &p.Validation})
@@ -80,16 +94,19 @@ func New(name, baseURL, apiKey, model string) *Provider {
 // NewOllama creates a provider for Ollama-compatible local
 // transcription endpoints. Ollama runs on loopback by default and can be
 // pointed at a user-managed self-hosted URL.
-func NewOllama(baseURL, model string) *Provider {
-	baseURL = strings.TrimSpace(baseURL)
+//
+// Only BaseURL and Model are read; empty values select
+// "http://localhost:11434" and "gemma4:e4b".
+func NewOllama(opts Options) *Provider {
+	baseURL := strings.TrimSpace(opts.BaseURL)
 	if baseURL == "" {
 		baseURL = "http://localhost:11434"
 	}
-	model = strings.TrimSpace(model)
+	model := strings.TrimSpace(opts.Model)
 	if model == "" {
 		model = "gemma4:e4b"
 	}
-	p := New("ollama", baseURL, "", model)
+	p := New(Options{Name: "ollama", BaseURL: baseURL, Model: model})
 	p.Validation = netsec.ValidationOptions{
 		AllowLoopback: true,
 		AllowPrivate:  true,
@@ -99,14 +116,35 @@ func NewOllama(baseURL, model string) *Provider {
 	return p
 }
 
-// NewOpenAI creates a provider for the OpenAI Whisper API.
-func NewOpenAI(apiKey string) *Provider {
-	return New("openai", "https://api.openai.com", apiKey, "whisper-1")
+// NewOpenAI creates a provider for the OpenAI transcription API on its
+// current file transcription model, gpt-transcribe. Empty BaseURL and Model
+// select "https://api.openai.com" and [OpenAIDefaultModel]; Name is fixed.
+func NewOpenAI(opts Options) *Provider {
+	return New(withDefaults(opts, "openai", "https://api.openai.com", OpenAIDefaultModel))
 }
 
-// NewGroq creates a provider for the Groq Whisper API.
-func NewGroq(apiKey string) *Provider {
-	return New("groq", "https://api.groq.com/openai", apiKey, "whisper-large-v3-turbo")
+// withDefaults fixes the vendor name and fills an empty BaseURL and Model.
+func withDefaults(opts Options, name, baseURL, model string) Options {
+	opts.Name = name
+	if strings.TrimSpace(opts.BaseURL) == "" {
+		opts.BaseURL = baseURL
+	}
+	if strings.TrimSpace(opts.Model) == "" {
+		opts.Model = model
+	}
+	return opts
+}
+
+// OpenAIDefaultModel is the OpenAI transcription model used when none is
+// configured. It replaced the deprecated whisper-1 and gpt-4o transcribe
+// family (shutdown 2027-02-26).
+const OpenAIDefaultModel = "gpt-transcribe"
+
+// NewGroq creates a provider for the Groq Whisper API. Empty BaseURL and Model
+// select "https://api.groq.com/openai" and "whisper-large-v3-turbo"; Name is
+// fixed.
+func NewGroq(opts Options) *Provider {
+	return New(withDefaults(opts, "groq", "https://api.groq.com/openai", "whisper-large-v3-turbo"))
 }
 
 // Transcribe sends audio to the OpenAI-compatible /v1/audio/transcriptions endpoint.
@@ -148,6 +186,14 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 			return nil, fmt.Errorf("write prompt field: %w", err)
 		}
 	}
+	if p.name == "openai" && acceptsGPTTranscribeFields(model) {
+		if err := writeListField(writer, "keywords[]", resolved.Keyterms); err != nil {
+			return nil, err
+		}
+		if err := writeListField(writer, "languages[]", resolved.LanguageHints); err != nil {
+			return nil, err
+		}
+	}
 	if err := writer.Close(); err != nil {
 		return nil, fmt.Errorf("close multipart writer: %w", err)
 	}
@@ -164,7 +210,7 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 	start := time.Now()
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%s request: %w", p.name, err)
+		return nil, fmt.Errorf("%s request: %w", p.name, stt.ClassifyTransportError(p.name, err))
 	}
 	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 	duration := time.Since(start)
@@ -175,7 +221,7 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, netsec.ProviderStatusError(p.name, resp.StatusCode, respBody)
+		return nil, stt.HTTPError(p.name, resp, respBody)
 	}
 
 	var result struct {
@@ -194,6 +240,24 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 		Provider: p.Name(),
 		Model:    model,
 	}, nil
+}
+
+// acceptsGPTTranscribeFields reports whether an OpenAI model takes the
+// keywords and languages fields; only the gpt-transcribe family does.
+func acceptsGPTTranscribeFields(model string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "gpt-transcribe")
+}
+
+func writeListField(writer *multipart.Writer, field string, values []string) error {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value == "" {
+			continue
+		}
+		if err := writer.WriteField(field, value); err != nil {
+			return fmt.Errorf("write %s field: %w", field, err)
+		}
+	}
+	return nil
 }
 
 // Name returns the provider identifier.
@@ -248,7 +312,7 @@ func (p *Provider) Health(ctx context.Context) error {
 	_ = resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("%s health: status %d", p.name, resp.StatusCode)
+		return stt.HTTPError(p.name+" health", resp, nil)
 	}
 	return nil
 }
@@ -263,4 +327,9 @@ func (p *Provider) SetHTTPClient(client *http.Client) {
 }
 
 // Capabilities reports the speech-to-text baseline every provider satisfies.
-func (*Provider) Capabilities() []speechkit.Capability { return stt.BaseCapabilities() }
+func (p *Provider) Capabilities() []speechkit.Capability {
+	if p.SupportsDictationStream() {
+		return append(stt.BaseCapabilities(), speechkit.CapabilityNativeDictationStream)
+	}
+	return stt.BaseCapabilities()
+}

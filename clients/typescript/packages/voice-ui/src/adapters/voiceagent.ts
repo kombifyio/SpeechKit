@@ -17,6 +17,11 @@ import {
 import { accumulateTranscript, type StartFrame } from "@kombifyio/speechkit-voiceagent-client/protocol";
 import type { VoiceUiController } from "../core/controller.js";
 import {
+  checkMicrophonePermission,
+  microphoneReasonFromError,
+  releaseMediaStream
+} from "../core/permission.js";
+import {
   createSpeechKitVoiceSessionState,
   reduceSpeechKitVoiceEvent,
   type SpeechKitVoiceDenial,
@@ -77,7 +82,13 @@ function contractFor(options: VoiceAgentUiControllerOptions): SpeechKitVoiceSurf
   };
 }
 
-function denialFromError(code: string, message: string, retryable: boolean): SpeechKitVoiceDenial {
+/**
+ * Denial envelope with a canonical reason code. Guidance stays generic: raw
+ * error messages (which can carry server URLs) go to `onDiagnostic` only;
+ * the kit localizes the user-facing line from `reason_code`.
+ */
+function denialFromError(code: string, retryable: boolean): SpeechKitVoiceDenial {
+  const microphone = code.startsWith("microphone_");
   return {
     error_code: code,
     reason_code: code,
@@ -86,11 +97,15 @@ function denialFromError(code: string, message: string, retryable: boolean): Spe
     missing_features: [],
     retryable,
     user_guidance: {
-      title: "Live voice session failed",
-      body: message,
-      next_steps: retryable
-        ? ["Check the server and try again."]
-        : ["Check the voice-agent configuration."]
+      title: microphone ? "Microphone is not available" : "Live voice session failed",
+      body: microphone
+        ? "The microphone could not be opened, so no voice session was started."
+        : "The voice session could not be started or was interrupted.",
+      next_steps: microphone
+        ? ["Allow or connect a microphone, then try again."]
+        : retryable
+          ? ["Check the connection and try again."]
+          : ["Check the voice-agent configuration."]
     }
   };
 }
@@ -185,14 +200,27 @@ export function createVoiceAgentUiController(
     state = createSpeechKitVoiceSessionState(contract);
     userBuffer = "";
     agentBuffer = "";
+    // Robustness: never mint a server session (ticket, provider cost) for a
+    // microphone the browser already blocks or cannot provide.
+    if (!options.getAudioStream) {
+      const permission = await checkMicrophonePermission();
+      if (permission === "denied" || permission === "unsupported") {
+        const code =
+          permission === "denied" ? "microphone_permission_denied" : "microphone_unsupported";
+        diag(`microphone ${permission}`);
+        emit({ type: "voice.denied", error: denialFromError(code, permission === "denied") });
+        return;
+      }
+    }
     diag("requesting microphone…");
     let stream: MediaStream;
     try {
       stream = await (options.getAudioStream ?? defaultAudioStream)();
     } catch (err) {
+      diag(`microphone failed: ${(err as Error)?.message ?? String(err)}`);
       emit({
         type: "voice.denied",
-        error: denialFromError("mic_permission_denied", (err as Error).message, true)
+        error: denialFromError(microphoneReasonFromError(err), true)
       });
       return;
     }
@@ -229,7 +257,8 @@ export function createVoiceAgentUiController(
           onError: (err) => {
             const message = err instanceof Error ? err.message : `${err.code}: ${err.message}`;
             diag(`error: ${message}`);
-            emit({ type: "voice.denied", error: denialFromError("session_error", message, true) });
+            cleanup();
+            emit({ type: "voice.denied", error: denialFromError("session_error", true) });
           },
           onClose: (reason) => {
             diag(`session closed: ${reason}`);
@@ -241,11 +270,11 @@ export function createVoiceAgentUiController(
         }
       });
     } catch (err) {
-      stream.getTracks().forEach((track) => track.stop());
+      releaseMediaStream(stream);
       diag(`connect failed: ${(err as Error).message}`);
       emit({
         type: "voice.denied",
-        error: denialFromError("session_connect_failed", (err as Error).message, true)
+        error: denialFromError("session_connect_failed", true)
       });
       return;
     }

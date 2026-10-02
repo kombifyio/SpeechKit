@@ -223,7 +223,7 @@ func (p *Provider) Warm(ctx context.Context) error {
 	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<10))
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("assemblyai warm: unexpected status %d", resp.StatusCode)
+		return stt.HTTPError("assemblyai warm", resp, nil)
 	}
 	return nil
 }

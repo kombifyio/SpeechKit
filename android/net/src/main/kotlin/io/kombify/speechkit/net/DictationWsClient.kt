@@ -21,7 +21,7 @@ import okio.ByteString.Companion.toByteString
  * the speechkit-server dictation stream endpoint, many sequential segments.
  *
  * The ticket rides in the `Sec-WebSocket-Protocol` header ("ticket.<value>"),
- * mirroring internal/server/wssession — never in the URL, so it stays out of
+ * mirroring app/internal/server/wssession — never in the URL, so it stays out of
  * proxy access logs.
  */
 class DictationWsClient(

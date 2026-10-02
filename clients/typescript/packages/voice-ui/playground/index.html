@@ -29,6 +29,9 @@
         align-items: center;
         gap: 16px;
       }
+      .launcher { position: relative; display: inline-flex; }
+      .stack { display: grid; gap: 8px; justify-items: center; width: 340px; }
+      .demo-btn { font: inherit; font-size: 12px; border: 0; border-radius: 999px; padding: 6px 12px; background: #ffffffb0; cursor: pointer; }
       h1 { font-size: 16px; color: #101418; margin: 0; }
       p  { font-size: 12px; color: #52606d; margin: 0; max-width: 420px; text-align: center; }
     </style>
@@ -40,7 +43,9 @@
         Playground with a scripted fake controller: the split button starts a
         fake dictation; the chevron (or a long press) opens the voice-agent
         overlay and plays a scripted dialogue with drafts, barge-in, and
-        session end.
+        session end. The second launcher anchors the frameless
+        <code>speechkit-voice-dialog</code> above itself; "Simulate blocked
+        microphone" shows the compact <code>speechkit-voice-notice</code>.
       </p>
       <speechkit-voice-provider id="provider">
         <div class="row">
@@ -50,6 +55,19 @@
         </div>
         <speechkit-voice-overlay id="overlay"></speechkit-voice-overlay>
       </speechkit-voice-provider>
+
+      <div class="stack" style="margin-top: 220px; width: 440px">
+        <div class="launcher">
+          <speechkit-voice-dialog id="dialog" auto-open anchor="above"></speechkit-voice-dialog>
+          <speechkit-voice-button id="btn-dialog" agent compact no-notice>Talk</speechkit-voice-button>
+        </div>
+        <speechkit-live-transcript id="transcript" lines="2" placeholder></speechkit-live-transcript>
+        <speechkit-voice-notice reason="session_connect_failed" request-id="req_demo_7"></speechkit-voice-notice>
+        <div class="row">
+          <button class="demo-btn" id="deny">Simulate blocked microphone</button>
+          <button class="demo-btn" id="theme">Toggle dark</button>
+        </div>
+      </div>
     </main>
 
     <script src="../dist/cdn/speechkit-voice-ui.iife.min.js"></script>
@@ -78,7 +96,7 @@
         const levelListeners = new Set();
         let timers = [];
         function emit(type, payload = {}) {
-          const event = { type, surface: contract.surface, mode: contract.mode, ...payload };
+          const event = { type, surface: contract.surface, mode: activeMode, ...payload };
           state = reduceSpeechKitVoiceEvent(state, event);
           listeners.forEach((l) => l(state));
         }
@@ -90,7 +108,7 @@
             t += 0.16;
             const level = state.status === "speaking" || state.status === "capturing"
               ? Math.abs(Math.sin(t)) * 0.9 : 0;
-            levelListeners.forEach((l) => l(level, "output"));
+            levelListeners.forEach((l) => l(level, state.status === "speaking" ? "output" : "input"));
           }, 80);
           timers.push(id);
         }
@@ -146,6 +164,25 @@
             emit("voice.tts_finished"); // settle to idle like the real controller
           },
           cancel() { clearTimers(); emit("voice.cancelled", { reason_code: "user_cancelled" }); },
+          denyMic() {
+            clearTimers();
+            emit("voice.denied", {
+              error: {
+                error_code: "microphone_permission_denied",
+                reason_code: "microphone_permission_denied",
+                capability: "speechkit.voiceagent.live",
+                required_features: [],
+                missing_features: [],
+                retryable: true,
+                request_id: "req_demo_42",
+                user_guidance: {
+                  title: "Microphone access is not available",
+                  body: "microphone_permission_denied · api.example.com/v1/speechkit/voiceagent/sessions",
+                  next_steps: []
+                }
+              }
+            });
+          },
           interrupt() { emit("voice.barge_in", { reason_code: "user_spoke_during_tts" }); },
           subscribe(l) { listeners.add(l); l(state); return () => listeners.delete(l); },
           getState() { return state; },
@@ -159,6 +196,17 @@
       document.getElementById("viz").controller = controller;
       document.getElementById("btn-locked").controller = makeController(false);
       document.getElementById("overlay").controller = controller;
+
+      const dialogController = makeController(true);
+      for (const id of ["btn-dialog", "dialog", "transcript"]) {
+        document.getElementById(id).controller = dialogController;
+      }
+      document.getElementById("deny").addEventListener("click", () => dialogController.denyMic());
+      document.getElementById("theme").addEventListener("click", () => {
+        const root = document.documentElement;
+        root.dataset.skTheme = root.dataset.skTheme === "dark" ? "light" : "dark";
+        document.body.style.background = root.dataset.skTheme === "dark" ? "#0d1117" : "";
+      });
     </script>
   </body>
 </html>

@@ -15,7 +15,7 @@ import (
 // the PID array that follows is variable length.
 type jobObjectBasicProcessIDList struct {
 	NumberOfAssignedProcesses uint32
-	NumberOfProcessIdsInList  uint32
+	NumberOfProcessIDsInList  uint32
 	firstProcessID            uintptr
 }
 
@@ -36,10 +36,10 @@ func assignedPIDs(t *testing.T, job windows.Handle) []uintptr {
 		t.Fatalf("QueryInformationJobObject: %v", err)
 	}
 	list := (*jobObjectBasicProcessIDList)(unsafe.Pointer(&buf[0]))
-	if list.NumberOfProcessIdsInList == 0 {
+	if list.NumberOfProcessIDsInList == 0 {
 		return nil
 	}
-	return unsafe.Slice(&list.firstProcessID, int(list.NumberOfProcessIdsInList))
+	return unsafe.Slice(&list.firstProcessID, int(list.NumberOfProcessIDsInList))
 }
 
 func TestAdoptRejectsProcessesThatAreNotRunning(t *testing.T) {

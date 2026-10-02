@@ -8,6 +8,8 @@
 // KeywordSpotter; with CGO_ENABLED=0 nothing is registered and NewDetector
 // returns ErrCgoRequired, so hosts compile everywhere and discover the
 // missing native engine at runtime.
+//
+// Stability: Stable — no breaking change without a minor version bump and a changelog callout.
 package sherpa
 
 import "github.com/kombifyio/SpeechKit/pkg/speechkit/wakeword"

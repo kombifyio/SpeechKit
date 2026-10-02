@@ -1,5 +1,6 @@
 package io.kombify.speechkit.app.companion
 
+import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -123,6 +124,9 @@ private fun companionInstalled(context: Context): Boolean =
         context.packageManager.getPackageInfo(CoinstallContract.COMPANION_PACKAGE, 0)
     }.isSuccess
 
+// ANDROID_ID is the contract v1 ProvisionRequest.deviceId: Companion keys
+// idempotent provisioning on it (docs/architecture/android-coinstall-contract.md).
+@SuppressLint("HardwareIds")
 private fun bindCompanion(context: Context): CompanionProvision {
     val ready = CountDownLatch(1)
     val outcome = AtomicReference<CompanionProvision>(CompanionProvision.Unavailable)

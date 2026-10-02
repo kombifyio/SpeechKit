@@ -21,7 +21,7 @@ func buildOpenAISession(cfg live.LiveConfig) map[string]any {
 	}
 	if cfg.Policies.EnableInputAudioTranscription {
 		inputAudio["transcription"] = map[string]any{
-			"model": "whisper-1",
+			"model": defaultInputTranscriptionModel,
 		}
 	}
 	session := map[string]any{

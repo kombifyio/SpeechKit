@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
@@ -150,9 +149,9 @@ func (g *Google) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 	if err != nil {
 		return nil, fmt.Errorf("google tts: endpoint: %w", err)
 	}
-	q := url.Values{}
-	q.Set("key", g.apiKey)
-	endpoint := validated + "?" + q.Encode()
+	// The key travels in the x-goog-api-key header, never the URL, so a
+	// transport *url.Error or a log line cannot leak it.
+	endpoint := validated
 
 	resolved := ResolveSynthesizeOptions("google", "", opts, provideropts.Values{
 		provideropts.OptionLanguage:    googleDefaultLanguage,
@@ -207,10 +206,13 @@ func (g *Google) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 		return nil, fmt.Errorf("google tts: create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if g.apiKey != "" {
+		req.Header.Set("x-goog-api-key", g.apiKey)
+	}
 
 	resp, err := g.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("google tts: request failed: %w", err)
+		return nil, fmt.Errorf("google tts: request failed: %w", netsec.RedactURLError(err))
 	}
 	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
 

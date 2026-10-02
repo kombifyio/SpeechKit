@@ -16,6 +16,9 @@ type AudioSegment struct {
 // VoiceActivityDetector is the public VAD contract consumed by
 // DictationSegmenter. It intentionally matches SpeechKit's internal Silero
 // detector shape without exposing internal packages.
+//
+// ProcessFrame must not retain the frame slice after it returns: the
+// segmenter reuses the buffer for the next frame.
 type VoiceActivityDetector interface {
 	ProcessFrame([]int16) (float32, error)
 	Reset()

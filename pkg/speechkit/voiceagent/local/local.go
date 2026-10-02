@@ -13,6 +13,8 @@
 // Hosts that own audio I/O (the kombify box companion, future satellites)
 // feed microphone PCM through [Provider.SendAudio] and play back agent
 // audio via Options.Callbacks.OnAudio.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package local
 
 import (
@@ -165,7 +167,7 @@ func (p *Provider) StartVoiceAgent(ctx context.Context, cfg voiceagent.Config, c
 }
 
 // StopVoiceAgent ends the session and returns the accumulated record.
-func (p *Provider) StopVoiceAgent(context.Context) (speechkit.VoiceAgentSession, error) {
+func (p *Provider) StopVoiceAgent(ctx context.Context) (speechkit.VoiceAgentSession, error) {
 	if p == nil {
 		return speechkit.VoiceAgentSession{}, ErrNoActiveSession
 	}
@@ -178,7 +180,9 @@ func (p *Provider) StopVoiceAgent(context.Context) (speechkit.VoiceAgentSession,
 
 	// Stop outside the lock: live.Session.Stop synchronizes with its
 	// receive loop, whose callbacks re-enter p.mu via markEnded/appendTurn.
-	session.Stop()
+	stopCtx, cancelStop := context.WithTimeout(context.WithoutCancel(ctx), live.DefaultStopCloseTimeout)
+	_ = session.Shutdown(stopCtx) // teardown proceeds even if close times out
+	cancelStop()
 
 	p.mu.Lock()
 	defer p.mu.Unlock()

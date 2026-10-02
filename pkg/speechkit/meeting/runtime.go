@@ -10,6 +10,8 @@
 // The runtime owns the lifecycle of those pipelines and is the single source of
 // truth for what capture is doing right now. Hosts subscribe to snapshots
 // rather than inferring state from the outcome of the last command.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package meeting
 
 import (
@@ -140,7 +142,7 @@ func (r *Runtime) SnapshotFor(sessionID int64) (Snapshot, bool) {
 // — so a screen capture taken now lands next to the words spoken now. Pauses
 // do not stop this clock, because they do not stop the segment clock either.
 // ok is false when nothing is being captured.
-func (r *Runtime) ElapsedMs() (sessionID int64, elapsedMs int64, ok bool) {
+func (r *Runtime) ElapsedMs() (sessionID, elapsedMs int64, ok bool) {
 	if r == nil {
 		return 0, 0, false
 	}

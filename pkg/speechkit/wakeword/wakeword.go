@@ -3,6 +3,8 @@
 // the engine-neutral Detector and Pipeline. The package links no
 // keyword-spotting engine; import pkg/speechkit/wakeword/sherpa (or register
 // another Engine) to run detection.
+//
+// Stability: Stable — no breaking change without a minor version bump and a changelog callout.
 package wakeword
 
 import (
@@ -11,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 )
 
 // Audio contract of the wake-word pipeline: 16 kHz mono S16 PCM delivered in
@@ -105,7 +109,7 @@ type DispatcherOptions struct {
 // NewDispatcher constructs a Dispatcher with the given sink and options.
 func NewDispatcher(sink HotkeySink, opts DispatcherOptions) *Dispatcher {
 	if opts.Logger == nil {
-		opts.Logger = slog.Default()
+		opts.Logger = logutil.Resolve(nil)
 	}
 	if opts.ReleaseAfter <= 0 {
 		opts.ReleaseAfter = 150 * time.Millisecond
@@ -212,7 +216,7 @@ type AutoEndPolicy struct {
 // NewAutoEndPolicy constructs a policy from config.
 func NewAutoEndPolicy(cfg AutoEndConfig, logger *slog.Logger) *AutoEndPolicy {
 	if logger == nil {
-		logger = slog.Default()
+		logger = logutil.Resolve(nil)
 	}
 	if cfg.SilenceCutoff <= 0 && len(cfg.ExitPhrases) == 0 {
 		cfg = DefaultAutoEndConfig()

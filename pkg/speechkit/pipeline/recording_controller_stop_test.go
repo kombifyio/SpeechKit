@@ -3,6 +3,7 @@ package pipeline
 import (
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
@@ -116,53 +117,56 @@ func TestRecordingControllerTranscribesFullCaptureByDefault(t *testing.T) {
 }
 
 func TestRecordingControllerStopTailDelayKeepsCaptureOpen(t *testing.T) {
-	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
-	submitter := &fakeSubmitter{}
-	collector := &fakeCollector{}
-	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, func() speechkit.SegmentCollector {
-		return collector
-	})
-
-	if err := controller.Start(speechkit.RecordingStartOptions{Language: "de"}); err != nil {
-		t.Fatalf("Start() error = %v", err)
-	}
-	handler := recorder.pcmHandler
-	if handler == nil {
-		t.Fatal("recorder PCM handler was not installed")
-	}
-
-	done := make(chan error, 1)
-	go func() {
-		done <- controller.Stop(speechkit.RecordingStopOptions{
-			Label:     "Captured",
-			TailDelay: 40 * time.Millisecond,
+	synctest.Test(t, func(t *testing.T) {
+		recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("a", 6400))}
+		submitter := &fakeSubmitter{}
+		collector := &fakeCollector{}
+		controller := NewRecordingController(recorder, submitter, &fakeObserver{}, func() speechkit.SegmentCollector {
+			return collector
 		})
-	}()
 
-	time.Sleep(10 * time.Millisecond)
-	if !controller.IsRecording() {
-		t.Fatal("controller should still report recording during stop tail delay")
-	}
-	handler([]byte("tail"))
-
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Stop() error = %v", err)
+		if err := controller.Start(speechkit.RecordingStartOptions{Language: "de"}); err != nil {
+			t.Fatalf("Start() error = %v", err)
 		}
-	case <-time.After(time.Second):
-		t.Fatal("Stop() timed out")
-	}
+		handler := recorder.pcmHandler
+		if handler == nil {
+			t.Fatal("recorder PCM handler was not installed")
+		}
 
-	if len(collector.fedPCM) != 1 {
-		t.Fatalf("collector FeedPCM calls = %d, want 1", len(collector.fedPCM))
-	}
-	if got, want := string(collector.fedPCM[0]), "tail"; got != want {
-		t.Fatalf("collector FeedPCM = %q, want %q", got, want)
-	}
-	if controller.IsRecording() {
-		t.Fatal("controller should not report recording after stop completes")
-	}
+		done := make(chan error, 1)
+		go func() {
+			done <- controller.Stop(speechkit.RecordingStopOptions{
+				Label:     "Captured",
+				TailDelay: 40 * time.Millisecond,
+			})
+		}()
+
+		time.Sleep(10 * time.Millisecond)
+		synctest.Wait()
+		if !controller.IsRecording() {
+			t.Fatal("controller should still report recording during stop tail delay")
+		}
+		handler([]byte("tail"))
+
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("Stop() error = %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("Stop() timed out")
+		}
+
+		if len(collector.fedPCM) != 1 {
+			t.Fatalf("collector FeedPCM calls = %d, want 1", len(collector.fedPCM))
+		}
+		if got, want := string(collector.fedPCM[0]), "tail"; got != want {
+			t.Fatalf("collector FeedPCM = %q, want %q", got, want)
+		}
+		if controller.IsRecording() {
+			t.Fatal("controller should not report recording after stop completes")
+		}
+	})
 }
 
 func TestRecordingControllerCancelStopsRecorderWithoutSubmitting(t *testing.T) {

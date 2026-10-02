@@ -3,9 +3,9 @@ package local
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -42,14 +42,26 @@ func (p *Provider) StartServer(ctx context.Context) error {
 		return err
 	}
 
+	port, err := chooseServerPort(ctx, p.Port)
+	if err != nil {
+		return err
+	}
+	identity, err := newServerIdentity()
+	if err != nil {
+		p.log().Warn("whisper-server identity check unavailable", "error", err)
+	}
+
 	threads := defaultWhisperThreads()
 	modelArg, workDir := whisperModelArgument(p.ModelPath)
 	args := []string{
 		"--model", modelArg,
 		"--host", "127.0.0.1",
-		"--port", fmt.Sprintf("%d", p.Port),
+		"--port", strconv.Itoa(port),
 		"--threads", strconv.Itoa(threads),
 		"--inference-path", "/v1/audio/transcriptions",
+	}
+	if identity != nil {
+		args = append(args, "--public", identity.publicArg)
 	}
 	// whisper.cpp uses GPU by default; only pass --no-gpu when explicitly disabled.
 	// "auto" and "" mean let whisper.cpp decide (default behavior).
@@ -58,13 +70,22 @@ func (p *Provider) StartServer(ctx context.Context) error {
 	}
 
 	cmd := exec.CommandContext(ctx, binaryPath, args...) // #nosec G204 -- binaryPath is resolved by findWhisperBinary from bundle/managed locations or explicit dev opt-in.
+	// The child runs from its own directory unless the model argument needs
+	// the model directory (see whisperModelArgument): ggml and the Windows
+	// loader also search the working directory for DLLs.
+	if workDir == "" {
+		workDir = filepath.Dir(binaryPath)
+	}
 	cmd.Dir = workDir
-	configureHiddenProcess(cmd, subprocessPriorityLowered(p.LowerSubprocessPriority))
+	cmd.Env = procguard.HostSidecarEnv()
+	procguard.ConfigureHiddenProcess(cmd, subprocessPriorityLowered(p.LowerSubprocessPriority))
 	// Must run before Start: on POSIX hosts this is what puts the child in
 	// its own process group, and after the child has exec'd the parent can
 	// no longer move it (see procguard.Prepare).
 	procguard.Prepare(cmd)
-	cmd.Stdout = os.Stderr // whisper-server logs to stdout
+	// whisper-server prints every recognised segment to stdout, so stdout is
+	// left unset (the null device): transcripts must not reach a console or
+	// log. Its diagnostics (model load, backend, bind errors) go to stderr.
 	cmd.Stderr = os.Stderr
 
 	// gpu_mode is the *requested* mode; whether inference actually runs on a
@@ -72,18 +93,20 @@ func (p *Provider) StartServer(ctx context.Context) error {
 	// build silently ignores "auto"/"cuda" and transcription scales with
 	// audio length). whisper-server's own startup banner on stderr names the
 	// backend it actually initialised — check it when latency looks CPU-bound.
-	slog.Info("starting whisper-server", "binary", binaryPath, "args", args, "dir", workDir, "threads", threads, "gpu_mode", p.GPU)
+	p.log().Info("starting whisper-server", "binary", binaryPath, "args", args, "dir", workDir, "threads", threads, "gpu_mode", p.GPU)
 	if modelArg == p.ModelPath && !isASCII(modelArg) {
-		slog.Warn("whisper-server model path contains non-ASCII characters that cannot be passed through argv safely; move the model to an ASCII-only path if startup fails", "model", p.ModelPath)
+		p.log().Warn("whisper-server model path contains non-ASCII characters that cannot be passed through argv safely; move the model to an ASCII-only path if startup fails", "model", p.ModelPath)
 	}
 	if err := cmd.Start(); err != nil {
+		identity.remove()
 		return fmt.Errorf("start whisper-server: %w", err)
 	}
 	// Hand the child to the OS so it cannot outlive this process when the
 	// host dies without running its cleanup path (crash, taskkill, dev-loop
 	// rebuild). Assignment failing does not make the child unusable.
+	//nolint:staticcheck // SA4023: build-tag artifact; the !windows && !darwin stub always returns ErrUnsupportedPlatform, other platforms may return nil.
 	if err := procguard.Adopt(cmd); err != nil {
-		slog.Warn("whisper-server not adopted into the kill-on-exit job", "error", err, "pid", cmd.Process.Pid)
+		p.log().Warn("whisper-server not adopted into the kill-on-exit job", "error", err, "pid", cmd.Process.Pid)
 	}
 	processDone := make(chan struct{})
 	p.processMu.Lock()
@@ -91,11 +114,16 @@ func (p *Provider) StartServer(ctx context.Context) error {
 		p.processMu.Unlock()
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
+		identity.remove()
 		return fmt.Errorf("whisper-server startup generation changed unexpectedly")
 	}
 	p.cmd = cmd
 	p.processDone = processDone
 	p.processErr = nil
+	p.identity = identity
+	if p.Port == 0 {
+		p.activeBaseURL = fmt.Sprintf("http://127.0.0.1:%d", port)
+	}
 	stopAfterPublish := p.stopRequested || ctx.Err() != nil
 	p.processMu.Unlock()
 	go p.waitForProcess(ctx, cmd, processDone, generation)
@@ -117,7 +145,7 @@ func (p *Provider) StartServer(ctx context.Context) error {
 		p.stopStartedProcess(generation, cmd, processDone)
 		return fmt.Errorf("whisper-server stopped before readiness: %w", err)
 	}
-	slog.Info("whisper-server ready", "url", p.BaseURL)
+	p.log().Info("whisper-server ready", "url", p.serverURL())
 	return nil
 }
 
@@ -193,6 +221,9 @@ func (p *Provider) recordProcessExit(ctx context.Context, cmd *exec.Cmd, done ch
 	current := p.generation == generation && p.cmd == cmd && p.processDone == done
 	expected := !current || p.stopRequested || ctx.Err() != nil
 	if current {
+		// The identity directory belongs to the child that just exited.
+		defer p.identity.remove()
+		p.identity = nil
 		p.ready.Store(false)
 		p.cmd = nil
 		if expected {
@@ -316,4 +347,21 @@ func (p *Provider) runtimeExitError() error {
 	default:
 		return nil
 	}
+}
+
+// SetSubprocessPriorityLowered toggles the process-wide default for whether
+// STT subprocesses are spawned at BELOW_NORMAL priority (default true). No-op
+// on non-Windows. Providers with an explicit LowerSubprocessPriority ignore
+// it. It forwards to [procguard.SetSubprocessPriorityLowered], so the default
+// is shared with every other SpeechKit subprocess.
+func SetSubprocessPriorityLowered(lowered bool) {
+	procguard.SetSubprocessPriorityLowered(lowered)
+}
+
+// subprocessPriorityLowered resolves the effective setting for a provider.
+func subprocessPriorityLowered(override *bool) bool {
+	if override != nil {
+		return *override
+	}
+	return procguard.SubprocessPriorityLowered()
 }

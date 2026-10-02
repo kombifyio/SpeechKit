@@ -2037,7 +2037,7 @@ components:
                   properties:
                     status:
                       type: string
-                      enum: [ok, starting, degraded, unavailable]
+                      enum: [ok, starting, degraded, unavailable, disabled]
                     detail: { type: string }
                     updated_at: { type: string, format: date-time }
                     blocking: { type: boolean }
@@ -2319,7 +2319,7 @@ components:
 
     DeploymentStatus:
       type: object
-      required: [version, status, uptime_seconds, headless, auth, providers, store, modes]
+      required: [version, status, uptime_seconds, components, headless, auth, providers, store, modes]
       properties:
         version: { type: string }
         status:
@@ -2330,7 +2330,19 @@ components:
           type: object
           additionalProperties:
             type: object
-            additionalProperties: true
+            required: [status, updated_at, blocking]
+            properties:
+              status:
+                type: string
+                enum: [ok, starting, degraded, unavailable, disabled]
+              detail: { type: string }
+              updated_at: { type: string, format: date-time }
+              blocking: { type: boolean }
+              kind: { type: string }
+              modes:
+                type: array
+                items: { type: string }
+              provider: { type: string }
         headless:
           type: object
           required: [settings_path, settings_write, onboarding_ui]
@@ -2350,6 +2362,9 @@ components:
             - bearer_token_set
             - edge_auth_secret_env
             - edge_auth_secret_set
+            - bearer_role
+            - admin_username
+            - admin_password_set
           properties:
             mode:
               type: string
@@ -2369,30 +2384,52 @@ components:
               description: True when an admin password hash is configured.
         providers:
           type: object
+          required: [google, openai, groq, deepgram, assemblyai, huggingface, openrouter, cloud_keys_present]
           properties:
             google:
               type: object
+              required: [api_key, stt_key, stt_credentials_json, application_credentials]
               properties:
                 api_key: { $ref: '#/components/schemas/EnvStatus' }
                 stt_key: { $ref: '#/components/schemas/EnvStatus' }
+                stt_credentials_json: { $ref: '#/components/schemas/EnvStatus' }
+                application_credentials: { $ref: '#/components/schemas/EnvStatus' }
+            deepgram:
+              type: object
+              required: [api_key]
+              properties:
+                api_key: { $ref: '#/components/schemas/EnvStatus' }
+            assemblyai:
+              type: object
+              required: [api_key]
+              properties:
+                api_key: { $ref: '#/components/schemas/EnvStatus' }
+            cloud_keys_present:
+              type: boolean
+              description: True when any configured cloud-provider credential env var is set.
             openai:
               type: object
+              required: [api_key]
               properties:
                 api_key: { $ref: '#/components/schemas/EnvStatus' }
             groq:
               type: object
+              required: [api_key]
               properties:
                 api_key: { $ref: '#/components/schemas/EnvStatus' }
             huggingface:
               type: object
+              required: [token]
               properties:
                 token: { $ref: '#/components/schemas/EnvStatus' }
             openrouter:
               type: object
+              required: [api_key]
               properties:
                 api_key: { $ref: '#/components/schemas/EnvStatus' }
         store:
           type: object
+          required: [backend]
           properties:
             backend: { type: string }
         modes:
@@ -2401,9 +2438,11 @@ components:
 
     ProviderProfile:
       type: object
+      required: [id, mode, name, providerKind]
       properties:
         id: { type: string }
         mode: { type: string }
+        modality: { type: string }
         name: { type: string }
         providerKind: { type: string }
         executionMode: { type: string }
@@ -2416,14 +2455,37 @@ components:
         capabilities:
           type: array
           items: { type: string }
+        supportedLocales:
+          type: array
+          items: { type: string }
+        nativeOptions:
+          type: array
+          items: { type: string }
+        authRequirement: { type: string }
+        transport: { type: string }
+        evidenceUrl: { type: string }
         adapterKind: { type: string }
+        variants:
+          type: array
+          items: { $ref: '#/components/schemas/ModelVariant' }
         inferenceAllowed: { type: boolean }
         default: { type: boolean }
         recommended: { type: boolean }
         experimental: { type: boolean }
 
+    ModelVariant:
+      type: object
+      required: [id, name, modelId]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        modelId: { type: string }
+        description: { type: string }
+        recommended: { type: boolean }
+
     ProviderDefault:
       type: object
+      required: [provider, displayName, mode, profileId, providerKind, support, credentialRequired]
       properties:
         provider: { type: string }
         displayName: { type: string }
@@ -2451,17 +2513,11 @@ components:
         experimental: { type: boolean }
         variants:
           type: array
-          items:
-            type: object
-            properties:
-              id: { type: string }
-              name: { type: string }
-              modelId: { type: string }
-              description: { type: string }
-              recommended: { type: boolean }
+          items: { $ref: '#/components/schemas/ModelVariant' }
 
     ProviderFeatureSupport:
       type: object
+      required: [feature, support]
       properties:
         feature:
           type: string
@@ -2487,6 +2543,7 @@ components:
 
     ProviderMatrixRow:
       type: object
+      required: [provider, displayName, profiles, features]
       properties:
         provider: { type: string }
         displayName: { type: string }
@@ -2519,10 +2576,45 @@ components:
             admin_auth_enabled: { type: boolean }
             admin_username: { type: string }
             admin_password_set: { type: boolean }
+        modes:
+          type: array
+          items: { type: string, enum: [dictation, assist, voice_agent] }
+        uptime_seconds: { type: integer }
+        runtime:
+          type: object
+          description: Omitted from the bootstrap (pre-admin) snapshot except `settings_write`.
+          properties:
+            self_hosted_defaults: { type: boolean }
+            model_dir: { type: string }
+            onboarding_ui: { type: boolean }
+            settings_write: { type: boolean }
+            settings_persisted: { type: boolean }
+            restart_required: { type: boolean }
+        assistant_ui:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            variant: { type: string }
+            mark: { type: string }
+            transcript_default: { type: boolean }
+        tts:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            ready: { type: boolean }
+            mode: { type: string }
+        personas:
+          type: object
+          properties:
+            seeded: { type: integer }
+            roles: { type: integer }
+            sequences: { type: integer }
         editable:
           type: object
           properties:
+            active: { $ref: '#/components/schemas/ServerSettingsPatch' }
             desired: { $ref: '#/components/schemas/ServerSettingsPatch' }
+            restart_required: { type: boolean }
 
     ServerSettingsPatch:
       type: object
@@ -2572,6 +2664,7 @@ components:
 
     ModeContract:
       type: object
+      required: [mode, intelligence, input, output, allowed, forbidden]
       properties:
         mode: { type: string }
         intelligence: { type: string }
@@ -2586,6 +2679,7 @@ components:
 
     ProviderReadiness:
       type: object
+      required: [profileId, mode, providerKind, active, default, configured, credentialsReady, runtimeReady, capabilityReady, ready]
       description: |
         Server-side readiness for a catalog profile. `active` means selected
         by server configuration; `default` is static catalog metadata.
@@ -2611,9 +2705,62 @@ components:
           items:
             type: string
             enum: [mode_disabled, provider_disabled, credentials, runtime]
+        blockedByScope:
+          type: boolean
+          description: >-
+            The active network scope forbids this profile. When true,
+            `disabledReasonId` carries the stable localizable reason ID and
+            `ready` is false. Omitted when false or when the target has no
+            network scope.
+        disabledReasonId: { type: string }
+        requirements:
+          type: array
+          items: { $ref: '#/components/schemas/ReadinessRequirement' }
+        actions:
+          type: array
+          items: { $ref: '#/components/schemas/ReadinessAction' }
+        artifacts:
+          type: array
+          items: { $ref: '#/components/schemas/ReadinessArtifact' }
+
+    ReadinessRequirement:
+      type: object
+      required: [id, label, category, required, ready]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        category: { type: string }
+        required: { type: boolean }
+        ready: { type: boolean }
+        missing: { type: string }
+
+    ReadinessAction:
+      type: object
+      required: [id, label, kind]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        kind: { type: string }
+        target: { type: string }
+
+    ReadinessArtifact:
+      type: object
+      required: [id, name, kind, available, selected]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        kind: { type: string }
+        sizeLabel: { type: string }
+        sizeBytes: { type: integer, format: int64 }
+        available: { type: boolean }
+        selected: { type: boolean }
+        runtimeReady: { type: boolean }
+        runtimeProblem: { type: string }
+        recommended: { type: boolean }
 
     ConfigSummary:
       type: object
+      required: [version, public_url, modes, auth_mode, bearer_role, max_upload_mb, read_header_timeout_sec, read_timeout_sec, idle_timeout_sec, max_header_bytes, max_decoded_audio_seconds, features, ready_status]
       properties:
         version: { type: string }
         public_url: { type: string }
@@ -2681,6 +2828,8 @@ components:
         source: { type: string }
         enabled: { type: boolean }
         usage_count: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
 
     CustomizationScopeRef:
       type: object
@@ -2709,6 +2858,8 @@ components:
         source: { type: string }
         enabled: { type: boolean }
         usage_count: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
 
     Lexicon:
       type: object
@@ -2726,6 +2877,8 @@ components:
         scope: { $ref: '#/components/schemas/CustomizationScopeRef' }
         source: { type: string }
         enabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
 
     Ruleset:
       type: object
@@ -2743,6 +2896,8 @@ components:
         scope: { $ref: '#/components/schemas/CustomizationScopeRef' }
         source: { type: string }
         enabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
 
     WordsResponse:
       type: object
@@ -2837,6 +2992,7 @@ components:
 
     CustomizationTemplate:
       type: object
+      required: [id, version, name, source, builtIn, wordCount, replacementCount]
       properties:
         id: { type: string }
         version: { type: string }
@@ -2866,6 +3022,7 @@ components:
 
     CustomizationPack:
       type: object
+      required: [schema_version]
       properties:
         schema_version: { type: string, enum: [speechkit.customization.pack.v1] }
         id: { type: string }
@@ -2883,9 +3040,13 @@ components:
         rulesets:
           type: array
           items: { $ref: '#/components/schemas/Ruleset' }
+        attachments:
+          description: Free-form JSON attachments (opaque to the server).
+        created_at: { type: string, format: date-time }
 
     Transcript:
       type: object
+      required: [id, text, language, provider, model, durationMs, latencyMs, createdAt, pinned]
       properties:
         id: { type: integer }
         text: { type: string }
@@ -2894,18 +3055,24 @@ components:
         model: { type: string }
         durationMs: { type: integer }
         latencyMs: { type: integer }
-        audioPath: { type: string }
+        audioPath:
+          type: string
+          deprecated: true
+          description: Legacy copy of `audio.path`, kept for existing /v1 clients. Read `audio` instead.
         audio: { $ref: '#/components/schemas/AudioAsset' }
         createdAt: { type: string, format: date-time }
         ownerUserId: { type: string }
         ownerOrgId: { type: string }
         ownerSource: { type: string }
+        speakers:
+          $ref: '#/components/schemas/DiarizationResult'
+        pinned: { type: boolean }
 
     AudioAsset:
       type: object
+      required: [storageKind, mimeType, sizeBytes, durationMs]
       properties:
         storageKind: { type: string, enum: [local-file] }
-        path: { type: string }
         mimeType:
           type: string
           description: MIME type preserved from the source upload when available.
@@ -2914,6 +3081,7 @@ components:
 
     VoiceAgentTranscript:
       type: object
+      required: [id, transcript, language, created_at]
       properties:
         id: { type: integer }
         transcript: { type: string }
@@ -2921,6 +3089,7 @@ components:
           type: array
           items:
             type: object
+            required: [role, text]
             properties:
               role: { type: string }
               text: { type: string }
@@ -2930,13 +3099,32 @@ components:
 
     VoiceAgentSummaryResponse:
       type: object
+      required: [id, summary, language, created_at]
       properties:
         id: { type: integer }
-        summary:
-          type: object
-          additionalProperties: true
+        summary: { $ref: '#/components/schemas/VoiceAgentSessionSummary' }
         language: { type: string }
         created_at: { type: string, format: date-time }
+
+    VoiceAgentSessionSummary:
+      type: object
+      required: [summary]
+      properties:
+        title: { type: string }
+        summary: { type: string }
+        ideas:
+          type: array
+          items: { type: string }
+        decisions:
+          type: array
+          items: { type: string }
+        openQuestions:
+          type: array
+          items: { type: string }
+        nextSteps:
+          type: array
+          items: { type: string }
+        rawText: { type: string }
 
     TTSSynthesizeRequest:
       type: object
@@ -2946,7 +3134,9 @@ components:
         locale: { type: string }
         voice: { type: string }
         speed: { type: number }
-        format: { type: string, enum: [mp3, wav, opus, pcm] }
+        format:
+          type: string
+          description: Preferred output format, e.g. `mp3`, `wav`, `opus` or `pcm`. Not validated by the server; the provider decides what it can honor.
 
     TTSSynthesizeResponse:
       type: object
@@ -3000,6 +3190,7 @@ components:
     Voice:
       type: object
       description: Configured TTS voice entry. This is a server configuration snapshot, not live provider voice discovery.
+      required: [provider, id, locale, default, discovery]
       properties:
         provider: { type: string }
         id: { type: string }
@@ -3247,6 +3438,7 @@ components:
 
     Speaker:
       type: object
+      required: [label]
       properties:
         label: { type: string }
         personId: { type: string }
@@ -3257,6 +3449,7 @@ components:
 
     SpeakerSegment:
       type: object
+      required: [text]
       properties:
         text: { type: string }
         startMs: { type: integer }
@@ -3274,6 +3467,7 @@ components:
 
     SpeakerWord:
       type: object
+      required: [text]
       properties:
         text: { type: string }
         startMs: { type: integer }
@@ -3541,4 +3735,4 @@ components:
 # /v1/voiceagent/sessions/{id}/ws is documented via tags + the
 # CreateSessionResponse.ws_url field above. The full protocol is described
 # in docs/server/README.md and the wire types in
-# internal/server/voiceagent/protocol.go.
+# app/internal/server/voiceagent/protocol.go.

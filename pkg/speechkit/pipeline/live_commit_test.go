@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
@@ -56,21 +57,22 @@ func TestLiveCommitPassageFlushesAfterTwoSentences(t *testing.T) {
 }
 
 func TestLiveCommitHoldFlushesIncompletePassage(t *testing.T) {
-	inner := &recordingDictationSink{}
-	sink := &liveCommitSink{
-		inner:  inner,
-		policy: LiveCommitPolicy{Mode: LiveCommitPassage, MinSentences: 2, Hold: 20 * time.Millisecond},
-	}
-	if err := sink.HandleDictationStreamEvent(context.Background(), speechkit.DictationStreamEvent{Text: "Nur ein Satz.", IsFinal: true}, speechkit.DictationStreamSinkOptions{}); err != nil {
-		t.Fatalf("final: %v", err)
-	}
-	deadline := time.Now().Add(500 * time.Millisecond)
-	for time.Now().Before(deadline) && inner.count() == 0 {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if got := inner.count(); got != 1 {
-		t.Fatalf("hold flush events = %d, want 1", got)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		inner := &recordingDictationSink{}
+		sink := &liveCommitSink{
+			inner:  inner,
+			policy: LiveCommitPolicy{Mode: LiveCommitPassage, MinSentences: 2, Hold: 20 * time.Millisecond},
+		}
+		if err := sink.HandleDictationStreamEvent(context.Background(), speechkit.DictationStreamEvent{Text: "Nur ein Satz.", IsFinal: true}, speechkit.DictationStreamSinkOptions{}); err != nil {
+			t.Fatalf("final: %v", err)
+		}
+		// Virtual time: advance past the hold window and let the timer fire.
+		time.Sleep(50 * time.Millisecond)
+		synctest.Wait()
+		if got := inner.count(); got != 1 {
+			t.Fatalf("hold flush events = %d, want 1", got)
+		}
+	})
 }
 
 type recordingDictationSink struct {

@@ -4,6 +4,8 @@
 // file with a JSON sidecar (Record) describing the trigger. An opt-in
 // Uploader ships those records to a SpeechKit server. Every switch defaults
 // to off: nothing is recorded or sent unless the host enables it.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package training
 
 import (

@@ -23,7 +23,7 @@ const (
 // recorder satisfies this interface the controller installs the
 // pool-aware handler and releases each buffer as soon as the frame has
 // been fed to the collector/stream — the controller never retains a
-// frame. Structurally matches internal/audio's SetPooledPCMHandler.
+// frame. Structurally matches app/internal/audio's SetPooledPCMHandler.
 type PooledPCMRecorder interface {
 	SetPooledPCMHandler(func(buf []byte, release func()))
 }
@@ -71,6 +71,7 @@ type RecordingController struct {
 	current          speechkit.RecordingStartOptions
 	collector        speechkit.SegmentCollector
 	idleWatcherCh    chan struct{}
+	maxDurationTimer *time.Timer
 	streamedCount    int
 	streamSegmentSeq uint64
 	streamPending    []speechkit.AudioSegment

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -39,7 +38,7 @@ func (p *Provider) StartSpeakerStream(ctx context.Context, opts speaker.Options,
 		return nil, fmt.Errorf("assemblyai speaker streaming requires diarization options")
 	}
 	format = format.Normalized()
-	model := assemblyAIStreamingSpeechModel(stt.FirstNonEmptyTrimmed(opts.Model, p.StreamingModel, assemblyAIStreamingModel))
+	model := assemblyAIStreamingSpeechModel(opts.Model, p.StreamingModel)
 	endpoint, err := p.assemblyAIStreamingEndpoint(model, opts, format)
 	if err != nil {
 		return nil, err
@@ -85,7 +84,7 @@ func (p *Provider) StartDictationStream(ctx context.Context, opts speechkit.Dict
 			"assemblyai dictation streaming requires mono audio (the v3 realtime API has no channel parameter and decodes the socket as a single channel); got %d channels: %w",
 			format.Channels, speechkit.ErrUnsupportedAudioFormat)
 	}
-	model := assemblyAIStreamingSpeechModel(stt.FirstNonEmptyTrimmed(opts.Model, p.StreamingModel, assemblyAIStreamingModel))
+	model := assemblyAIStreamingSpeechModel(opts.Model, p.StreamingModel)
 	endpoint, err := p.assemblyAIDictationStreamingEndpoint(model, opts, format)
 	if err != nil {
 		return nil, err
@@ -102,7 +101,7 @@ func (p *Provider) StartDictationStream(ctx context.Context, opts speechkit.Dict
 	if err != nil {
 		return nil, fmt.Errorf("assemblyai dictation stream dial: %w", err)
 	}
-	slog.Info("assemblyai dictation stream opened", "speech_model", model)
+	p.log().Info("assemblyai dictation stream opened", "speech_model", model)
 	return &assemblyAIDictationStream{
 		conn:      conn,
 		provider:  p.Name(),
@@ -219,14 +218,16 @@ func (p *Provider) assemblyAIStreamingURL() (*url.URL, error) {
 }
 
 // assemblyAIStreamingSpeechModel picks a single v3 realtime speech_model.
-// Catalog ModelIDs are comma lists ("universal-3-5-pro,universal-2") for the
-// batch fallback chain; the streaming handshake rejects that as one token.
-func assemblyAIStreamingSpeechModel(requested string) string {
-	for _, token := range strings.Split(requested, ",") {
-		token = strings.TrimSpace(token)
-		if token == "" || assemblyAIBatchOnlySpeechModel(token) {
-			continue
-		}
+// Catalog ModelIDs are comma lists ("universal-3-5-pro,universal-2") that
+// describe the pre-recorded fallback chain; the streaming handshake rejects
+// that as one token, and the chain's lead is the batch flagship, not the
+// realtime one. So only a single requested token overrides the configured
+// streaming model; a chain falls through to configured, then the default.
+func assemblyAIStreamingSpeechModel(requested, configured string) string {
+	if token := strings.TrimSpace(requested); token != "" && !strings.Contains(token, ",") && !assemblyAIBatchOnlySpeechModel(token) {
+		return token
+	}
+	if token := strings.TrimSpace(configured); token != "" && !strings.Contains(token, ",") && !assemblyAIBatchOnlySpeechModel(token) {
 		return token
 	}
 	return assemblyAIStreamingModel

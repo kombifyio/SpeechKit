@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/telemetry"
 )
 
 func (w *TranscriptionWorker) handleJob(ctx context.Context, job speechkit.TranscriptionJob) {
@@ -268,10 +269,10 @@ func (w *TranscriptionWorker) commitEmptyFinalTranscript(ctx context.Context, jo
 	provider := firstNonEmptyField(transcript.Provider, "unknown")
 	model := firstNonEmptyField(transcript.Model, "unknown")
 	language := firstNonEmptyField(transcript.Language, "unset")
-	speechkit.RecordOutcome(ctx, speechkit.OutcomeEmptyFinalTranscript, errors.New(speechkit.EmptyFinalTranscriptMessage),
-		speechkit.StringAttr("provider", provider),
-		speechkit.StringAttr("model", model),
-		speechkit.StringAttr("language", language),
+	telemetry.RecordOutcome(ctx, telemetry.OutcomeEmptyFinalTranscript, errors.New(speechkit.EmptyFinalTranscriptMessage), //nolint:staticcheck // ST1005: user-facing message shared with the UI state, not a Go-style error string.
+		telemetry.StringAttr("provider", provider),
+		telemetry.StringAttr("model", model),
+		telemetry.StringAttr("language", language),
 	)
 	w.onLog(
 		fmt.Sprintf("%s (provider=%s model=%s language=%s)",

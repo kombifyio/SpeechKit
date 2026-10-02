@@ -3,6 +3,7 @@ package openaicompat
 import (
 	"context"
 	"encoding/json"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"io"
 	"net/http"
@@ -13,15 +14,15 @@ import (
 )
 
 func TestNewOpenAISTTProvider_Defaults(t *testing.T) {
-	p := NewOpenAI("oai-key")
+	p := NewOpenAI(Options{APIKey: "oai-key"})
 	if p.Name() != "openai" {
 		t.Errorf("Name() = %q, want %q", p.Name(), "openai")
 	}
 	if p.BaseURL != "https://api.openai.com" {
 		t.Errorf("BaseURL = %q", p.BaseURL)
 	}
-	if p.Model != "whisper-1" {
-		t.Errorf("Model = %q, want %q", p.Model, "whisper-1")
+	if p.Model != "gpt-transcribe" {
+		t.Errorf("Model = %q, want %q", p.Model, "gpt-transcribe")
 	}
 	if p.APIKey != "oai-key" {
 		t.Errorf("APIKey = %q", p.APIKey)
@@ -29,7 +30,7 @@ func TestNewOpenAISTTProvider_Defaults(t *testing.T) {
 }
 
 func TestNewGroqSTTProvider_Defaults(t *testing.T) {
-	p := NewGroq("groq-key")
+	p := NewGroq(Options{APIKey: "groq-key"})
 	if p.Name() != "groq" {
 		t.Errorf("Name() = %q, want %q", p.Name(), "groq")
 	}
@@ -45,7 +46,7 @@ func TestNewGroqSTTProvider_Defaults(t *testing.T) {
 }
 
 func TestNewOllamaSTTProvider_Defaults(t *testing.T) {
-	p := NewOllama("", "gemma4:e4b")
+	p := NewOllama(Options{Model: "gemma4:e4b"})
 	if p.Name() != "ollama" {
 		t.Errorf("Name() = %q, want %q", p.Name(), "ollama")
 	}
@@ -90,7 +91,12 @@ func TestOpenAICompat_Transcribe_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New("test", server.URL, "test-key", "default-model")
+	p := New(Options{
+		Name:    "test",
+		BaseURL: server.URL,
+		APIKey:  "test-key",
+		Model:   "default-model",
+	})
 	p.Validation = testValidation
 	result, err := p.Transcribe(context.Background(), []byte("wav-data"), stt.TranscribeOpts{Language: "de"})
 	if err != nil {
@@ -136,7 +142,7 @@ func TestOpenAICompat_Transcribe_PreservesWAVInput(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New("test", server.URL, "key", "model")
+	p := New(Options{Name: "test", BaseURL: server.URL, APIKey: "key", Model: "model"})
 	p.Validation = testValidation
 	if _, err := p.Transcribe(context.Background(), wav, stt.TranscribeOpts{}); err != nil {
 		t.Fatalf("Transcribe: %v", err)
@@ -157,7 +163,12 @@ func TestOpenAICompat_Transcribe_ModelOverride(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New("test", server.URL, "key", "default-model")
+	p := New(Options{
+		Name:    "test",
+		BaseURL: server.URL,
+		APIKey:  "key",
+		Model:   "default-model",
+	})
 	p.Validation = testValidation
 	result, err := p.Transcribe(context.Background(), []byte("wav"), stt.TranscribeOpts{Model: "custom-model"})
 	if err != nil {
@@ -196,7 +207,7 @@ func TestOpenAICompat_Transcribe_LanguageField(t *testing.T) {
 			}))
 			defer server.Close()
 
-			p := New("test", server.URL, "key", "model")
+			p := New(Options{Name: "test", BaseURL: server.URL, APIKey: "key", Model: "model"})
 			p.Validation = testValidation
 			_, err := p.Transcribe(context.Background(), []byte("wav"), stt.TranscribeOpts{Language: tt.lang})
 			if err != nil {
@@ -218,7 +229,7 @@ func TestOpenAICompat_Transcribe_DefaultLanguageInResult(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New("test", server.URL, "key", "model")
+	p := New(Options{Name: "test", BaseURL: server.URL, APIKey: "key", Model: "model"})
 	p.Validation = testValidation
 	result, err := p.Transcribe(context.Background(), []byte("wav"), stt.TranscribeOpts{})
 	if err != nil {
@@ -236,7 +247,7 @@ func TestOpenAICompat_Transcribe_ServerError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New("myapi", server.URL, "key", "model")
+	p := New(Options{Name: "myapi", BaseURL: server.URL, APIKey: "key", Model: "model"})
 	p.Validation = testValidation
 	_, err := p.Transcribe(context.Background(), []byte("wav"), stt.TranscribeOpts{})
 	if err == nil {
@@ -259,7 +270,7 @@ func TestOpenAICompat_Transcribe_InvalidJSON(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New("test", server.URL, "key", "model")
+	p := New(Options{Name: "test", BaseURL: server.URL, APIKey: "key", Model: "model"})
 	p.Validation = testValidation
 	_, err := p.Transcribe(context.Background(), []byte("wav"), stt.TranscribeOpts{})
 	if err == nil {
@@ -273,7 +284,7 @@ func TestOpenAICompat_Transcribe_ContextCancelled(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New("test", server.URL, "key", "model")
+	p := New(Options{Name: "test", BaseURL: server.URL, APIKey: "key", Model: "model"})
 	p.Validation = testValidation
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
@@ -295,7 +306,7 @@ func TestOpenAICompat_Health_HealthEndpoint(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New("test", server.URL, "key", "model")
+	p := New(Options{Name: "test", BaseURL: server.URL, APIKey: "key", Model: "model"})
 	p.Validation = testValidation
 	if err := p.Health(context.Background()); err != nil {
 		t.Errorf("Health: %v", err)
@@ -317,7 +328,7 @@ func TestOpenAICompat_Health_FallbackToModels(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New("test", server.URL, "key", "model")
+	p := New(Options{Name: "test", BaseURL: server.URL, APIKey: "key", Model: "model"})
 	p.Validation = testValidation
 	if err := p.Health(context.Background()); err != nil {
 		t.Errorf("Health: %v", err)
@@ -339,7 +350,7 @@ func TestOpenAICompat_Health_BothFail(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New("myapi", server.URL, "key", "model")
+	p := New(Options{Name: "myapi", BaseURL: server.URL, APIKey: "key", Model: "model"})
 	p.Validation = testValidation
 	err := p.Health(context.Background())
 	if err == nil {
@@ -351,7 +362,12 @@ func TestOpenAICompat_Health_BothFail(t *testing.T) {
 }
 
 func TestOpenAICompat_Health_Unreachable(t *testing.T) {
-	p := New("test", "http://127.0.0.1:1", "key", "model")
+	p := New(Options{
+		Name:    "test",
+		BaseURL: "http://127.0.0.1:1",
+		APIKey:  "key",
+		Model:   "model",
+	})
 	p.Validation = testValidation
 	p.client.Timeout = 100 * time.Millisecond
 	err := p.Health(context.Background())
@@ -362,4 +378,42 @@ func TestOpenAICompat_Health_Unreachable(t *testing.T) {
 
 func TestOpenAICompat_ImplementsSTTProvider(t *testing.T) {
 	var _ stt.STTProvider = (*Provider)(nil)
+}
+
+// gpt-transcribe takes Words & Replacements as native keywords and the
+// session's candidate languages; the older OpenAI-compatible models reject
+// both fields, so only the OpenAI gpt-transcribe request may carry them.
+func TestOpenAICompat_Transcribe_GPTTranscribeSendsKeywordsAndLanguages(t *testing.T) {
+	for _, tc := range []struct {
+		name, provider, model string
+		wantFields            bool
+	}{
+		{"openai gpt-transcribe", "openai", "gpt-transcribe", true},
+		{"groq whisper", "groq", "whisper-large-v3-turbo", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var keywords, languages []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := r.ParseMultipartForm(1 << 20); err != nil {
+					t.Fatalf("parse multipart: %v", err)
+				}
+				keywords, languages = r.MultipartForm.Value["keywords[]"], r.MultipartForm.Value["languages[]"]
+				json.NewEncoder(w).Encode(map[string]string{"text": "ok"})
+			}))
+			defer server.Close()
+
+			p := New(Options{Name: tc.provider, BaseURL: server.URL, APIKey: "key", Model: tc.model})
+			p.Validation = testValidation
+			_, err := p.Transcribe(context.Background(), []byte("wav"), stt.TranscribeOpts{
+				Keyterms:        []string{"kombify", "SpeechKit"},
+				ProviderOptions: provideropts.Values{provideropts.OptionLanguageHints: []string{"de", "en"}},
+			})
+			if err != nil {
+				t.Fatalf("Transcribe: %v", err)
+			}
+			if got := len(keywords) == 2 && len(languages) == 2; got != tc.wantFields {
+				t.Fatalf("keywords = %v, languages = %v; want fields present = %v", keywords, languages, tc.wantFields)
+			}
+		})
+	}
 }

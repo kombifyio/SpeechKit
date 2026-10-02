@@ -2,7 +2,7 @@ package local
 
 import (
 	"fmt"
-	"log/slog"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -142,7 +142,7 @@ func findWhisperBinary() (string, error) {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("SPEECHKIT_ALLOW_WHISPER_PATH")), "1") {
 		for _, name := range names {
 			if path, err := exec.LookPath(name); err == nil {
-				slog.Warn("using whisper-server from PATH due to SPEECHKIT_ALLOW_WHISPER_PATH=1", "path", path)
+				logutil.Resolve(nil).Warn("using whisper-server from PATH due to SPEECHKIT_ALLOW_WHISPER_PATH=1", "path", path)
 				return path, nil
 			}
 		}

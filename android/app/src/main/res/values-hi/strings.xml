@@ -133,8 +133,8 @@
     <string name="dev_status_label">स्थिति: %1$s</string>
     <string name="dev_dictation_title">स्ट्रीमिंग डिक्टेशन (Dev)</string>
     <string name="dev_session_open">सेशन खुला है (%1$s)</string>
-    <string name="dev_segment_ready">सेगमेंट %1$s तैयार</string>
-    <string name="dev_segment_done">सेगमेंट %1$s पूरा</string>
+    <string name="dev_segment_ready">सेगमेंट %1$d तैयार</string>
+    <string name="dev_segment_done">सेगमेंट %1$d पूरा</string>
     <string name="dev_disconnected_reason">डिस्कनेक्ट हुआ (%1$s)</string>
     <string name="dev_connect_failed">कनेक्शन विफल: %1$s</string>
     <string name="dev_capture_failed">कैप्चर त्रुटि: %1$s</string>

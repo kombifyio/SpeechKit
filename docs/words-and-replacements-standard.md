@@ -246,7 +246,7 @@ for example, an Assist-only command from affecting Dictation.
 ## Central Customization Service
 
 The public contract lives in `pkg/speechkit/customize`; the internal runtime
-implementation lives in `internal/customize`. Runtime consumers go through the
+implementation lives in `app/internal/customize`. Runtime consumers go through the
 central Customization Service instead of calling store facets ad hoc.
 
 | Responsibility | Contract |

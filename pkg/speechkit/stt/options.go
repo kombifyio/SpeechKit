@@ -1,9 +1,9 @@
 package stt
 
 import (
-	"log/slog"
 	"strings"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
@@ -122,7 +122,7 @@ func ResolveTranscribeOptions(provider, profileID string, opts TranscribeOpts, p
 
 func logUnsupportedOptions(reports []provideropts.UnsupportedOptionReport) {
 	for _, report := range reports {
-		slog.Debug("speech option ignored by provider",
+		logutil.Resolve(nil).Debug("speech option ignored by provider",
 			"provider", report.Provider,
 			"modality", report.Modality,
 			"option", report.ID,

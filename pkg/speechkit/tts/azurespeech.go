@@ -220,8 +220,10 @@ func (n *azureSpeechInt) UnmarshalJSON(data []byte) error {
 	raw := strings.Trim(strings.TrimSpace(string(data)), `"`)
 	value, err := strconv.Atoi(raw)
 	if err != nil {
+		// Intentional: a malformed value degrades to 0 rather than failing the
+		// whole voices list (see the type comment).
 		*n = 0
-		return nil
+		return nil //nolint:nilerr // documented lenient decode
 	}
 	*n = azureSpeechInt(value)
 	return nil

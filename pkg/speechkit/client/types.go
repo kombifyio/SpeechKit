@@ -131,7 +131,6 @@ type Transcript struct {
 	Model       string                     `json:"model"`
 	DurationMs  int64                      `json:"durationMs"`
 	LatencyMs   int64                      `json:"latencyMs"`
-	AudioPath   string                     `json:"audioPath,omitempty"`
 	Audio       *AudioAsset                `json:"audio,omitempty"`
 	CreatedAt   time.Time                  `json:"createdAt"`
 	OwnerUserID string                     `json:"ownerUserId,omitempty"`

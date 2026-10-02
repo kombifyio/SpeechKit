@@ -3,7 +3,7 @@ package io.kombify.speechkit.vad
 /**
  * Voice Activity Detection interface.
  *
- * Mirrors: internal/vad/silero.go Detector interface.
+ * Mirrors: app/internal/vad/silero.go Detector interface.
  * Processes 512-byte PCM frames (16kHz, 16-bit signed mono) and returns
  * speech probability [0.0, 1.0].
  *

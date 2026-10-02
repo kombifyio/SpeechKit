@@ -17,6 +17,11 @@ import type {
   SpeechKitVoiceSessionStatus
 } from "../core/voice-surface.js";
 import type { VoiceUiMessageCatalog } from "../i18n/index.js";
+import { INDICATOR_CSS, RecordingIndicator, sessionStatusToIndicatorState } from "../core/indicator.js";
+import { SpeechKitVoiceNoticeElement } from "./voice-notice.js";
+
+const EXIT_ICON =
+  '<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
 
 const CSS = `
 :host {
@@ -28,17 +33,18 @@ const CSS = `
   display: block;
 }
 .overlay {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
   max-height: min(60vh, 420px);
-  width: min(92vw, 360px);
-  border: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
-  border-radius: var(--sk-radius, 14px);
-  background: var(--sk-surface, color-mix(in srgb, #ffffff 72%, transparent));
-  backdrop-filter: blur(var(--sk-blur, 16px));
-  -webkit-backdrop-filter: blur(var(--sk-blur, 16px));
-  box-shadow: var(--sk-shadow, 0 12px 40px -12px rgba(16, 20, 24, 0.25));
+  width: min(92vw, var(--sk-dialog-width, 340px));
+  border: 0;
+  border-radius: var(--sk-dialog-radius, 18px);
+  background: var(--sk-dialog-surface, color-mix(in srgb, #ffffff 58%, transparent));
+  backdrop-filter: blur(var(--sk-dialog-blur, 22px)) saturate(1.2);
+  -webkit-backdrop-filter: blur(var(--sk-dialog-blur, 22px)) saturate(1.2);
+  box-shadow: var(--sk-dialog-shadow, 0 18px 48px -20px rgba(16, 20, 24, 0.35));
   overflow: hidden;
 }
 :host([placement="center"]) {
@@ -55,7 +61,7 @@ const CSS = `
 .transcript-wrap {
   position: relative;
   display: flex;
-  min-height: 120px;
+  min-height: 0;
   flex: 1;
 }
 .transcript {
@@ -65,10 +71,11 @@ const CSS = `
   flex-direction: column;
   gap: 8px;
   overflow: auto;
-  padding: 16px 14px;
-  mask-image: linear-gradient(to bottom, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
+  padding: 16px 14px 4px;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 var(--sk-dialog-fade, 28px));
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--sk-dialog-fade, 28px));
 }
+.transcript:empty { display: none; }
 .turn {
   display: grid;
   gap: 2px;
@@ -122,7 +129,6 @@ const CSS = `
   flex: 0 0 auto;
   justify-items: center;
   gap: 6px;
-  border-top: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
   padding: 12px 14px 12px;
 }
 .status {
@@ -132,59 +138,46 @@ const CSS = `
   font-size: var(--sk-font-size-small, 11px);
   font-weight: 700;
 }
-.live-dot {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 auto;
-  border-radius: var(--sk-radius-pill, 999px);
-  background: var(--sk-live, #dc2626);
-  animation: sk-ov-breathe 1.2s ease-in-out infinite;
-}
-@keyframes sk-ov-breathe {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .live-dot { animation: none; }
-}
+.status[data-state="listening"] { color: var(--sk-live, #dc2626); }
 .hint {
   color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
   font-size: var(--sk-font-size-small, 11px);
 }
 .ended {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
   font-size: var(--sk-font-size-small, 11px);
 }
-.denied {
-  display: grid;
-  justify-items: center;
-  gap: 4px;
-  font-size: var(--sk-font-size-small, 11px);
-  text-align: center;
-}
-.denied span {
-  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
-}
-.actions {
-  display: flex;
-  gap: var(--sk-gap, 8px);
-}
-.actions button {
-  border: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
-  border-radius: var(--sk-radius, 14px);
+.reconnect {
+  border: 0;
+  border-radius: var(--sk-radius-pill, 999px);
   background: transparent;
-  color: inherit;
+  color: var(--sk-accent, oklch(0.65 0.13 210));
   cursor: pointer;
   font: inherit;
-  font-size: var(--sk-font-size-small, 11px);
   font-weight: 600;
-  padding: 5px 10px;
+  padding: 4px 8px;
 }
-.actions .reconnect {
-  border-color: transparent;
-  background: var(--sk-accent, oklch(0.65 0.13 210));
-  color: var(--sk-accent-contrast, #ffffff);
+.reconnect:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+.exit {
+  position: absolute;
+  top: 8px;
+  inset-inline-end: 8px;
+  z-index: 1;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--sk-radius-pill, 999px);
+  background: transparent;
+  color: var(--sk-text-muted, color-mix(in srgb, currentColor 55%, transparent));
+  cursor: pointer;
+  padding: 0;
 }
+.exit:hover { background: color-mix(in srgb, currentColor 10%, transparent); color: var(--sk-text, inherit); }
 .orb {
   border: 0;
   background: transparent;
@@ -206,6 +199,7 @@ button:focus-visible {
   outline: 2px solid var(--sk-accent, oklch(0.65 0.13 210));
   outline-offset: -2px;
 }
+${INDICATOR_CSS}
 `;
 
 /**
@@ -242,6 +236,9 @@ export class SpeechKitVoiceOverlayElement extends SpeechKitElement {
   #jump: HTMLButtonElement;
   #stage: HTMLDivElement;
   #visualizer: SpeechKitVoiceVisualizerElement | undefined;
+  #exit: HTMLButtonElement;
+  #notice: SpeechKitVoiceNoticeElement;
+  #indicator = new RecordingIndicator();
   #pinned = true;
   #programmaticScroll = false;
 
@@ -279,7 +276,25 @@ export class SpeechKitVoiceOverlayElement extends SpeechKitElement {
     this.#stage.className = "stage";
     this.#stage.setAttribute("part", "actions");
 
-    overlay.append(wrap, this.#stage);
+    this.#exit = document.createElement("button");
+    this.#exit.type = "button";
+    this.#exit.className = "exit";
+    this.#exit.setAttribute("part", "exit");
+    this.#exit.innerHTML = EXIT_ICON;
+    this.#exit.addEventListener("click", () => this.exit());
+
+    this.#notice = document.createElement(
+      SpeechKitVoiceNoticeElement.tagName
+    ) as SpeechKitVoiceNoticeElement;
+    this.#notice.setAttribute("part", "denied");
+    this.#notice.setAttribute("flat", "");
+    this.#notice.addEventListener("speechkit-retry", (event) => {
+      event.preventDefault();
+      this.#reconnect();
+    });
+    this.#notice.addEventListener("speechkit-dismiss", () => this.exit());
+
+    overlay.append(this.#exit, wrap, this.#stage);
     this.root.append(overlay);
   }
 
@@ -311,6 +326,7 @@ export class SpeechKitVoiceOverlayElement extends SpeechKitElement {
 
   set level(value: number) {
     if (this.#visualizer) this.#visualizer.level = value;
+    this.#indicator.setLevel(value);
   }
 
   get consentAdapter(): VoiceConsentAdapter {
@@ -388,11 +404,13 @@ export class SpeechKitVoiceOverlayElement extends SpeechKitElement {
   override connectedCallback(): void {
     super.connectedCallback();
     this.addEventListener("keydown", this.#onKeydown);
+    this.#indicator.resume();
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this.removeEventListener("keydown", this.#onKeydown);
+    this.#indicator.stop();
     this.#unsubscribeLevel?.();
     this.#unsubscribeLevel = undefined;
   }
@@ -400,9 +418,12 @@ export class SpeechKitVoiceOverlayElement extends SpeechKitElement {
   protected override onControllerChanged(controller: VoiceUiController | null): void {
     this.#unsubscribeLevel?.();
     this.#unsubscribeLevel = undefined;
+    this.#notice.controller = controller;
+    this.#indicator.setLevelFeed(Boolean(controller?.subscribeLevel));
     if (controller?.subscribeLevel) {
-      this.#unsubscribeLevel = controller.subscribeLevel((level) => {
-        this.level = level;
+      this.#unsubscribeLevel = controller.subscribeLevel((level, source) => {
+        if (this.#visualizer) this.#visualizer.level = level;
+        this.#indicator.setLevel(level, source);
       });
     }
   }
@@ -534,94 +555,83 @@ export class SpeechKitVoiceOverlayElement extends SpeechKitElement {
     const denial = this.#denial();
     const ended = this.#isEnded();
     const speaking = status === "speaking";
+    this.#exit.setAttribute("aria-label", messages["sk.voice.agent.exit"]);
+    this.#exit.title = messages["sk.voice.agent.exit"];
 
     if (denial) {
-      const denied = document.createElement("div");
-      denied.className = "denied";
-      denied.setAttribute("part", "denied");
-      denied.setAttribute("role", "alert");
-      const title = document.createElement("strong");
-      title.textContent = denial.user_guidance.title;
-      const body = document.createElement("span");
-      body.textContent = denial.user_guidance.body;
-      denied.append(title, body);
-      this.#stage.append(denied);
-    } else if (ended) {
+      // Compact one-line notice: localized by reason code, details on demand,
+      // Retry reconnects, dismiss exits. Never the raw code or an URL.
+      this.#notice.denial = this.#denialOverride;
+      const locale = this.getAttribute("locale");
+      if (locale) this.#notice.setAttribute("locale", locale);
+      this.#stage.append(this.#notice);
+      return;
+    }
+
+    if (ended) {
       const endedEl = document.createElement("span");
       endedEl.className = "ended";
       endedEl.setAttribute("role", "status");
-      endedEl.textContent = messages["sk.voice.agent.ended"];
-      this.#stage.append(endedEl);
-    } else {
-      const statusLabel =
-        status === "capturing"
-          ? messages["sk.voice.agent.listening"]
-          : status === "processing"
-            ? messages["sk.voice.state.processing"]
-            : speaking
-              ? messages["sk.voice.agent.speaking"]
-              : messages["sk.voice.agent.connecting"];
-
-      const orb = document.createElement("button");
-      orb.type = "button";
-      orb.className = "orb";
-      orb.setAttribute("part", "orb");
-      orb.setAttribute("aria-label", speaking ? messages["sk.voice.agent.interrupt"] : statusLabel);
-      orb.addEventListener("click", () => this.#interrupt());
-      this.#visualizer = document.createElement(
-        SpeechKitVoiceVisualizerElement.tagName
-      ) as SpeechKitVoiceVisualizerElement;
-      this.#visualizer.setAttribute(
-        "state",
-        this.state || this.#statusOverride
-          ? sessionStatusToVisualizerState(status)
-          : "connecting"
-      );
-      orb.append(this.#visualizer);
-      this.#stage.append(orb);
-
-      const statusEl = document.createElement("span");
-      statusEl.className = "status";
-      statusEl.setAttribute("part", "status");
-      statusEl.setAttribute("role", "status");
-      if (status === "capturing") {
-        const dot = document.createElement("span");
-        dot.className = "live-dot";
-        dot.setAttribute("aria-hidden", "true");
-        const sr = document.createElement("span");
-        sr.className = "sr-only";
-        sr.textContent = messages["sk.voice.agent.live"];
-        statusEl.append(dot, sr);
-      }
-      statusEl.append(document.createTextNode(statusLabel));
-      this.#stage.append(statusEl);
-
-      if (speaking) {
-        const hint = document.createElement("span");
-        hint.className = "hint";
-        hint.textContent = messages["sk.voice.agent.interrupt"];
-        this.#stage.append(hint);
-      }
-    }
-
-    const actions = document.createElement("div");
-    actions.className = "actions";
-    const canReconnect = ended || (status === "denied" && denial?.retryable === true);
-    if (canReconnect) {
+      endedEl.append(document.createTextNode(messages["sk.voice.agent.ended"]));
       const reconnect = document.createElement("button");
       reconnect.type = "button";
       reconnect.className = "reconnect";
       reconnect.setAttribute("part", "reconnect");
       reconnect.textContent = messages["sk.voice.agent.reconnect"];
       reconnect.addEventListener("click", () => this.#reconnect());
-      actions.append(reconnect);
+      endedEl.append(reconnect);
+      this.#stage.append(endedEl);
+      return;
     }
-    const exit = document.createElement("button");
-    exit.type = "button";
-    exit.setAttribute("part", "exit");
-    exit.textContent = messages["sk.voice.agent.exit"];
-    exit.addEventListener("click", () => this.exit());
-    actions.append(exit);
-    this.#stage.append(actions);
+
+    const statusLabel =
+      status === "capturing"
+        ? messages["sk.voice.agent.listening"]
+        : status === "processing"
+          ? messages["sk.voice.state.processing"]
+          : speaking
+            ? messages["sk.voice.agent.speaking"]
+            : messages["sk.voice.agent.connecting"];
+
+    const orb = document.createElement("button");
+    orb.type = "button";
+    orb.className = "orb";
+    orb.setAttribute("part", "orb");
+    orb.setAttribute("aria-label", speaking ? messages["sk.voice.agent.interrupt"] : statusLabel);
+    orb.addEventListener("click", () => this.#interrupt());
+    this.#visualizer = document.createElement(
+      SpeechKitVoiceVisualizerElement.tagName
+    ) as SpeechKitVoiceVisualizerElement;
+    this.#visualizer.setAttribute(
+      "state",
+      this.state || this.#statusOverride
+        ? sessionStatusToVisualizerState(status)
+        : "connecting"
+    );
+    orb.append(this.#visualizer);
+    this.#stage.append(orb);
+
+    const indicatorState = sessionStatusToIndicatorState(status, !isVoiceSessionActive(status));
+    this.#indicator.setState(indicatorState);
+    const statusEl = document.createElement("span");
+    statusEl.className = "status";
+    statusEl.setAttribute("part", "status");
+    statusEl.setAttribute("role", "status");
+    statusEl.dataset["state"] = indicatorState;
+    if (status === "capturing") {
+      const sr = document.createElement("span");
+      sr.className = "sr-only";
+      sr.textContent = messages["sk.voice.agent.live"];
+      statusEl.append(sr);
+    }
+    statusEl.append(this.#indicator.element, document.createTextNode(statusLabel));
+    this.#stage.append(statusEl);
+
+    if (speaking) {
+      const hint = document.createElement("span");
+      hint.className = "hint";
+      hint.textContent = messages["sk.voice.agent.interrupt"];
+      this.#stage.append(hint);
+    }
   }
 }

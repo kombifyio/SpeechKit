@@ -9,16 +9,20 @@
 // (ChatGPT subscription or API key), the bridge reads nothing beyond the
 // sign-in method and plan label, and a policy reversal on OpenAI's side
 // degrades to API-key-authed Codex with zero code change here.
+//
+// Stability: Experimental — may change in any release.
 package codex
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/agentbridge"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 )
 
 // Config configures the bridge. All fields are optional.
@@ -81,7 +85,7 @@ func New(cfg Config) *Bridge {
 	}
 	logger := cfg.Logger
 	if logger == nil {
-		logger = slog.Default()
+		logger = logutil.Resolve(nil)
 	}
 	return &Bridge{cfg: cfg, logger: logger, events: make(chan agentbridge.Event, cfg.EventBuffer)}
 }
@@ -102,6 +106,10 @@ func (b *Bridge) Status(ctx context.Context) agentbridge.Status {
 	binary, err := resolveBinary(b.cfg.BinaryPath)
 	if err != nil {
 		st.Detail = "Codex is not installed — install the official codex CLI to enable the coding bridge"
+		if errors.Is(err, errBinaryNotNative) {
+			st.Detail = "Codex was found only as a script launcher — set agent_bridge.codex.binary_path to the absolute path of codex.exe"
+		}
+		b.logger.Warn("agentbridge: codex binary not usable", "err", err)
 		return st
 	}
 	st.Installed = true
@@ -239,7 +247,7 @@ func (b *Bridge) ensureSession(ctx context.Context, binary string) (*appServerSe
 		b.execDegraded = true
 		b.mu.Unlock()
 		b.emit(agentbridge.Event{Type: agentbridge.EventBridgeState,
-			Err: fmt.Sprintf("codex app-server failed %d times within %s — bridge degraded to exec mode (no steer/approvals)", maxSpawnAttempts, spawnWindow)})
+			Err: fmt.Sprintf("codex app-server failed %d times within %s — bridge degraded to exec mode (read-only tasks only, no steer/approvals)", maxSpawnAttempts, spawnWindow)})
 		return nil, fmt.Errorf("app-server restart budget exhausted")
 	}
 	b.spawnTimes = append(b.spawnTimes, now)

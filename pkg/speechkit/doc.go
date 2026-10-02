@@ -59,5 +59,7 @@
 // v1.0 onward. Before v1.0 the surface may still evolve — see
 // [CHANGELOG.md] and the release notes for breaking-change calls.
 //
+// Stability: Stable — no breaking change without a minor version bump and a changelog callout.
+//
 // [CHANGELOG.md]: https://github.com/kombifyio/SpeechKit/blob/main/CHANGELOG.md
 package speechkit

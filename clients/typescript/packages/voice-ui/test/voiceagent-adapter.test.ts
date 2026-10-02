@@ -150,7 +150,24 @@ describe("createVoiceAgentUiController", () => {
     });
     await controller.start();
     expect(controller.getState().status).toBe("denied");
-    expect(controller.getState().denial?.error_code).toBe("mic_permission_denied");
+    expect(controller.getState().denial?.reason_code).toBe("microphone_permission_denied");
     expect(openBrowserSession).not.toHaveBeenCalled();
+  });
+
+  it("never mints a session or opens the mic when the browser already blocks it", async () => {
+    const getUserMedia = vi.fn();
+    vi.stubGlobal("navigator", {
+      mediaDevices: { getUserMedia },
+      permissions: { query: () => Promise.resolve({ state: "denied" }) }
+    });
+    try {
+      const controller = createVoiceAgentUiController({ serverUrl: "http://localhost:8080" });
+      await controller.start();
+      expect(controller.getState().status).toBe("denied");
+      expect(getUserMedia).not.toHaveBeenCalled();
+      expect(openBrowserSession).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

@@ -3,14 +3,18 @@
 // WebSocket carries listen (Flux or Nova STT), think (a Deepgram-managed or
 // bring-your-own LLM) and speak (Aura-2 or Flux TTS). It needs a Deepgram
 // API key in the [live.LiveConfig].
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package deepgram
 
 import (
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 )
 
@@ -73,6 +77,9 @@ type Provider struct {
 	// SpeakSpeed adjusts delivery pace on the speak leg. Zero keeps the
 	// provider default.
 	SpeakSpeed float64
+	// SpeakExpressivity sets a Flux TTS voice's calm-to-animated range, -2
+	// to 2; zero keeps the voice's tuned delivery. Aura voices ignore it.
+	SpeakExpressivity int
 
 	// ThinkEndpointURL + ThinkAPIKey switch the think leg to a bring-your-own
 	// LLM deployment. When ThinkEndpointURL is set, the Settings message carries
@@ -82,6 +89,10 @@ type Provider struct {
 	// use Deepgram's managed LLM for ThinkProvider/ThinkModel (no key needed).
 	ThinkEndpointURL string
 	ThinkAPIKey      string
+
+	// Logger receives this provider's diagnostics. Nil falls back to
+	// slog.Default() at log time.
+	Logger *slog.Logger
 
 	mu         sync.RWMutex
 	conn       *websocket.Conn
@@ -123,8 +134,11 @@ type AudioSettings struct {
 	// a "flux-*" voice uses the v2 (Flux TTS) leg and is only honoured for
 	// English-pinned sessions — see resolveSpeakModel.
 	SpeakModel string
-	// SpeakSpeed sets the delivery pace (Flux accepts 0.85–1.15 in 0.05 steps).
+	// SpeakSpeed sets the delivery pace (Flux accepts 0.5–1.5 in 0.05 steps).
 	SpeakSpeed float64
+	// SpeakExpressivity sets a Flux voice's calm-to-animated range (-2..2,
+	// clamped); zero keeps the voice's tuned delivery.
+	SpeakExpressivity int
 	// EOTThreshold, EagerEOTThreshold, and EOTTimeoutMs tune Flux's
 	// model-integrated end-of-turn detection.
 	EOTThreshold      float64
@@ -142,6 +156,9 @@ func (p *Provider) ConfigureAudio(s AudioSettings) {
 	}
 	if v := strings.TrimSpace(s.SpeakModel); v != "" {
 		p.SpeakModel = v
+	}
+	if s.SpeakExpressivity != 0 {
+		p.SpeakExpressivity = s.SpeakExpressivity
 	}
 	if s.SpeakSpeed > 0 {
 		p.SpeakSpeed = s.SpeakSpeed
@@ -171,3 +188,6 @@ var (
 	_ live.LiveProvider           = (*Provider)(nil)
 	_ live.LiveInstructionUpdater = (*Provider)(nil)
 )
+
+// log returns the provider's logger, or the default logger when none is set.
+func (p *Provider) log() *slog.Logger { return logutil.Resolve(p.Logger) }

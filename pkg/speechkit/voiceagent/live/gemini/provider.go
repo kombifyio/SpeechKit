@@ -2,11 +2,14 @@
 // google.golang.org/genai SDK) to [live.LiveProvider]. It is an opt-in
 // bring-your-own-key provider: callers supply their own Google AI API key in
 // the [live.LiveConfig], and SpeechKit never selects it by default.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package gemini
 
 import (
 	"context"
 	"fmt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 	"log/slog"
 	"strings"
@@ -29,19 +32,24 @@ type Provider struct {
 	session    geminiLiveSession
 	resume     *live.ResumeHandle // live.Session resumption handle: DPAPI-at-rest on Windows, TTL-bounded everywhere.
 	lastConfig *live.LiveConfig   // Stored for reconnection
+
+	// Logger receives this provider's diagnostics. Nil falls back to
+	// slog.Default() at log time.
+	Logger *slog.Logger
 }
+
+// log returns the provider's logger, or the default logger when none is set.
+func (g *Provider) log() *slog.Logger { return logutil.Resolve(g.Logger) }
 
 // defaultGeminiLiveModel is the kernel-level default for realtime sessions
 // when the caller does not specify a Model in live.LiveConfig. It tracks the
-// current Gemini Live family primary model.
-//
-// As of April 2026 this is gemini-3.1-flash-live-preview. When Google
-// promotes a model to GA or publishes a newer preview, bump this constant
-// and update both defaults in internal/config/config.go
-// (defaultGeminiNativeAudioModel / fallbackGeminiNativeAudioModel) so the
-// whole Framework picks up the new default without breaking running
-// deployments that pinned an explicit live.LiveConfig.Model.
-const defaultGeminiLiveModel = "gemini-3.1-flash-live-preview"
+// current Gemini Live family primary model: gemini-3.8-live, GA since
+// September 2026. When Google publishes a newer Live model, bump this constant
+// together with the google row in catalog.DefaultModelRegistry and the config
+// defaults in app/internal/config so the whole Framework picks up the new
+// default without breaking deployments that pinned an explicit
+// live.LiveConfig.Model.
+const defaultGeminiLiveModel = "gemini-3.8-live"
 
 // New creates a Gemini Live provider.
 func New() *Provider {
@@ -67,8 +75,6 @@ func (g *Provider) Connect(ctx context.Context, cfg live.LiveConfig) error {
 	}
 	g.client = client
 
-	connectCfg := buildGeminiLiveConnectConfig(cfg)
-
 	// Build the candidate list: primary model first, then optional fallback.
 	// live.ShouldTryFallback decides whether the fallback is distinct enough from
 	// the primary to be worth attempting; the function is tested in isolation
@@ -81,6 +87,7 @@ func (g *Provider) Connect(ctx context.Context, cfg live.LiveConfig) error {
 
 	var lastErr error
 	for i, model := range candidates {
+		connectCfg := buildGeminiLiveConnectConfigForModel(cfg, model)
 		session, err := client.Live.Connect(ctx, model, connectCfg)
 		if err == nil {
 			g.mu.Lock()
@@ -88,7 +95,7 @@ func (g *Provider) Connect(ctx context.Context, cfg live.LiveConfig) error {
 			g.lastConfig = &cfg
 			g.mu.Unlock()
 			if i == 0 {
-				slog.Info("Gemini Live connected",
+				g.log().Info("Gemini Live connected",
 					"model", model,
 					"voice", connectCfg.SpeechConfig.VoiceConfig.PrebuiltVoiceConfig.VoiceName,
 					// configured_region is logged for compliance evidence only.
@@ -99,7 +106,7 @@ func (g *Provider) Connect(ctx context.Context, cfg live.LiveConfig) error {
 					"configured_region", cfg.Region,
 				)
 			} else {
-				slog.Warn("Gemini Live connected via fallback model",
+				g.log().Warn("Gemini Live connected via fallback model",
 					"primary", candidates[0],
 					"fallback", model,
 					"primary_err", lastErr,
@@ -111,7 +118,7 @@ func (g *Provider) Connect(ctx context.Context, cfg live.LiveConfig) error {
 		}
 		lastErr = err
 		if i+1 < len(candidates) {
-			slog.Warn("Gemini Live primary connect failed; trying fallback",
+			g.log().Warn("Gemini Live primary connect failed; trying fallback",
 				"primary", model,
 				"err", err,
 			)
@@ -219,13 +226,14 @@ func (g *Provider) Receive(ctx context.Context) (*live.LiveMessage, error) {
 	// GoAway: server signals imminent session end.
 	if resp.GoAway != nil {
 		msg.GoAway = true
-		slog.Warn("Gemini Live GoAway received — session will end soon")
+		g.log().Warn("Gemini Live GoAway received — session will end soon")
 	}
 
 	// live.Session resumption: store handle for reconnection.
 	// The handle is kept in a DPAPI-protected container with a TTL so a stale
 	// memory dump cannot replay old sessions indefinitely.
 	if resp.SessionResumptionUpdate != nil && resp.SessionResumptionUpdate.NewHandle != "" {
+		g.resume.SetLogger(g.Logger)
 		g.resume.Set(resp.SessionResumptionUpdate.NewHandle)
 		msg.SessionResumable = true
 	}
@@ -275,6 +283,7 @@ func (g *Provider) Reconnect(ctx context.Context) error {
 	g.mu.RLock()
 	lastCfg := g.lastConfig
 	g.mu.RUnlock()
+	g.resume.SetLogger(g.Logger)
 	resumeHandleValue := g.resume.Get()
 
 	if lastCfg == nil {
@@ -288,7 +297,7 @@ func (g *Provider) Reconnect(ctx context.Context) error {
 	// session may already be half-dead on the wire, and aborting here would
 	// leave the caller without a working session at all.
 	if err := g.Close(); err != nil {
-		slog.Warn("gemini live: close prior session during reconnect", "err", err)
+		g.log().Warn("gemini live: close prior session during reconnect", "err", err)
 	}
 
 	// Re-create client.
@@ -303,7 +312,7 @@ func (g *Provider) Reconnect(ctx context.Context) error {
 
 	model := resolvedGeminiLiveModel(*lastCfg)
 
-	connectCfg := buildGeminiLiveConnectConfig(*lastCfg)
+	connectCfg := buildGeminiLiveConnectConfigForModel(*lastCfg, model)
 	connectCfg.SessionResumption = buildGeminiLiveSessionResumptionConfig(resumeHandleValue)
 
 	session, err := client.Live.Connect(ctx, model, connectCfg)
@@ -316,7 +325,7 @@ func (g *Provider) Reconnect(ctx context.Context) error {
 	g.session = session
 	g.mu.Unlock()
 
-	slog.Info("Gemini Live reconnected", "model", model, "had_resume_handle", resumeHandleValue != "")
+	g.log().Info("Gemini Live reconnected", "model", model, "had_resume_handle", resumeHandleValue != "")
 	return nil
 }
 

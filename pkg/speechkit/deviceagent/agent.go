@@ -1,5 +1,7 @@
 // Package deviceagent implements the credential-minimal LAN-side SpeechKit
 // device-agent client and its versioned wire contract.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package deviceagent
 
 import (

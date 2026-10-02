@@ -12,4 +12,6 @@
 // (profiles, modes, capabilities, [speechkit.RuntimePolicy]); this package
 // owns the data. Hosts that never show a provider picker do not need to import
 // it.
+//
+// Stability: Stable — no breaking change without a minor version bump and a changelog callout.
 package catalog

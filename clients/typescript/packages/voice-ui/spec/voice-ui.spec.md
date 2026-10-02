@@ -119,6 +119,43 @@ Behavior:
   Granting `continuous` implies `one_shot`; the reverse never holds.
   Declining revokes all scopes. Fail-closed: unset/declined never captures.
 - The overlay gates on `continuous` consent BEFORE `start("voice_agent")`.
+- A decision is asked once and persisted on the device; hosts mirror it in
+  the account (`onConsentChange`) and seed it back (`setConsentRecord`). A
+  record with another `consent_version` reads as unset (asked again).
+
+## Microphone permission
+
+- Check permission (Permissions API, then device labels, optional probe)
+  BEFORE minting a server session; `denied`/`unsupported` fail without a
+  session. getUserMedia failures map to `microphone_permission_denied`,
+  `microphone_unavailable`, `microphone_in_use`, `microphone_unsupported`.
+- Every acquired stream is released (all tracks stopped) on stop, cancel,
+  session error and connect failure.
+
+## Recording indicator
+
+- States per `tokens.json` → `indicator`: idle, requesting, listening,
+  processing, speaking, error. Listening always shows the live colour (solid
+  dot plus level bars) and a state label; error is a hollow ring, never the
+  solid live dot.
+- Motion lives inside the control only; reduced motion keeps static bars,
+  the solid dot and the visible label.
+
+## Notices
+
+- Errors render as one localized line chosen by reason code
+  (`voiceNoticeKind`), plus Retry (retryable kinds or `retryable: true`) and
+  dismiss. Raw codes, guidance free text and URLs never appear in the default
+  view; the details disclosure shows the localized hint, URL-free guidance
+  steps, the reason code and the support reference.
+
+## Dialog and live transcript
+
+- The dialog is frameless and translucent, newest turn at the bottom with a
+  top fade, bounded height; end-session is an icon control. Only closed turns
+  are announced (polite), drafts are not.
+- The live transcript keeps the newest words visible within 1–2 lines and
+  announces only final segments.
 
 ## Interrupt / exit / reconnect
 

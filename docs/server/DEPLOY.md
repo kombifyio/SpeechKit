@@ -72,8 +72,8 @@ operator should bootstrap a self-host server without cloning the repository.
 Pair the server with MCP when a coding agent should inspect or operate it:
 
 ```bash
-go run ./cmd/speechkit-mcp --mode=docs,test
-go run ./cmd/speechkit-mcp --mode=docs,management,test \
+go run ./app/cmd/speechkit-mcp --mode=docs,test
+go run ./app/cmd/speechkit-mcp --mode=docs,management,test \
   --server http://localhost:8080 \
   --token "$SPEECHKIT_SERVER_TOKEN"
 ```

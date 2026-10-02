@@ -1,6 +1,8 @@
 // Package genkitadapter keeps host-specific Assist wiring out of the core
 // public assist package. Hosts can wrap their own flow callback here
 // without making pkg/speechkit/assist import the AI runtime directly.
+//
+// Stability: Experimental — may change in any release.
 package genkitadapter
 
 import (

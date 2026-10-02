@@ -17,7 +17,7 @@ What you expected instead.
 ## Surface
 
 - [ ] Framework / library (`pkg/speechkit`)
-- [ ] Server-Target (`cmd/speechkit-server`)
+- [ ] Server-Target (`app/cmd/speechkit-server`)
 - [ ] Windows client (reference UI)
 
 ## Mode

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
@@ -146,28 +147,25 @@ func TestRuntimeResumeKeepsTheOriginalTimeline(t *testing.T) {
 }
 
 func TestRuntimeKeepsRecordingWhenOneChannelDies(t *testing.T) {
-	runtime, pipelines := newTestRuntime(t, newFakePipeline(ChannelMicrophone), newFakePipeline(ChannelSystem))
-	startTestMeeting(t, runtime)
+	synctest.Test(t, func(t *testing.T) {
+		runtime, pipelines := newTestRuntime(t, newFakePipeline(ChannelMicrophone), newFakePipeline(ChannelSystem))
+		startTestMeeting(t, runtime)
+		t.Cleanup(func() { _, _ = runtime.Stop(context.Background()) })
 
-	pipelines[ChannelSystem].events <- capture.Event{Type: capture.EventError, Message: "output device removed"}
+		pipelines[ChannelSystem].events <- capture.Event{Type: capture.EventError, Message: "output device removed"}
 
-	deadline := time.Now().Add(2 * time.Second)
-	for {
+		synctest.Wait()
 		snapshot := runtime.Snapshot()
-		if channelState(snapshot, ChannelSystem) == ChannelStateFailed {
-			if snapshot.State != StateLive {
-				t.Fatalf("meeting state = %q, want the meeting to stay live on the surviving channel", snapshot.State)
-			}
-			if got := channelState(snapshot, ChannelMicrophone); got != ChannelStateRecording {
-				t.Fatalf("microphone state = %q, want it to keep recording", got)
-			}
-			return
-		}
-		if time.Now().After(deadline) {
+		if channelState(snapshot, ChannelSystem) != ChannelStateFailed {
 			t.Fatalf("system channel never reported the device error: %+v", snapshot)
 		}
-		time.Sleep(5 * time.Millisecond)
-	}
+		if snapshot.State != StateLive {
+			t.Fatalf("meeting state = %q, want the meeting to stay live on the surviving channel", snapshot.State)
+		}
+		if got := channelState(snapshot, ChannelMicrophone); got != ChannelStateRecording {
+			t.Fatalf("microphone state = %q, want it to keep recording", got)
+		}
+	})
 }
 
 func TestRuntimeStartsWithoutAnUnavailableChannel(t *testing.T) {
@@ -206,35 +204,37 @@ func TestRuntimeRefusesASecondConcurrentMeeting(t *testing.T) {
 }
 
 func TestRuntimeStopWaitsForInFlightTranscription(t *testing.T) {
-	runtime, pipelines := newTestRuntime(t, newFakePipeline(ChannelMicrophone))
-	startTestMeeting(t, runtime)
+	synctest.Test(t, func(t *testing.T) {
+		runtime, pipelines := newTestRuntime(t, newFakePipeline(ChannelMicrophone))
+		startTestMeeting(t, runtime)
 
-	runtime.NoteSegmentSubmitted(42)
-	committed := make(chan struct{})
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		runtime.NoteSegmentCommitted(42)
-		close(committed)
-	}()
+		runtime.NoteSegmentSubmitted(42)
+		committed := make(chan struct{})
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			runtime.NoteSegmentCommitted(42)
+			close(committed)
+		}()
 
-	snapshot, err := runtime.Stop(context.Background())
-	if err != nil {
-		t.Fatalf("Stop() error = %v", err)
-	}
-	select {
-	case <-committed:
-	default:
-		t.Fatal("Stop() finished before the in-flight segment was committed")
-	}
-	if snapshot.State != StateEnded {
-		t.Fatalf("state = %q, want ended", snapshot.State)
-	}
-	if !pipelines[ChannelMicrophone].isClosed() {
-		t.Fatal("Stop() left the capture device open")
-	}
-	if runtime.ActiveSessionID() != 0 {
-		t.Fatal("a finished meeting must release the runtime")
-	}
+		snapshot, err := runtime.Stop(context.Background())
+		if err != nil {
+			t.Fatalf("Stop() error = %v", err)
+		}
+		select {
+		case <-committed:
+		default:
+			t.Fatal("Stop() finished before the in-flight segment was committed")
+		}
+		if snapshot.State != StateEnded {
+			t.Fatalf("state = %q, want ended", snapshot.State)
+		}
+		if !pipelines[ChannelMicrophone].isClosed() {
+			t.Fatal("Stop() left the capture device open")
+		}
+		if runtime.ActiveSessionID() != 0 {
+			t.Fatal("a finished meeting must release the runtime")
+		}
+	})
 }
 
 func TestRuntimeStopGivesUpOnTranscriptionThatNeverLands(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 )
 
 // Errors of the transcription worker. [NewTranscriptionWorker] returns
@@ -38,6 +39,9 @@ type TranscriptionWorkerConfig struct {
 	// <= 0 disables the check. Only providers that expose per-word confidence
 	// (Deepgram, AssemblyAI) produce data here.
 	LowConfidenceThreshold float64
+	// Logger receives the worker's diagnostics. Nil falls back to
+	// slog.Default() at log time.
+	Logger *slog.Logger
 }
 
 // TranscriptionWorker processes [TranscriptionJob] values from an internal
@@ -53,6 +57,7 @@ type TranscriptionWorker struct {
 	ledger      *TranscriptSessionLedger
 
 	lowConfidenceThreshold float64
+	logger                 *slog.Logger
 
 	mu        sync.Mutex
 	persistWG sync.WaitGroup
@@ -95,6 +100,7 @@ func NewTranscriptionWorker(cfg TranscriptionWorkerConfig) (*TranscriptionWorker
 		observer:               cfg.Observer,
 		ledger:                 firstNonNilLedger(cfg.Ledger),
 		lowConfidenceThreshold: cfg.LowConfidenceThreshold,
+		logger:                 cfg.Logger,
 		jobs:                   make(chan speechkit.TranscriptionJob, cfg.QueueSize),
 		done:                   make(chan struct{}),
 	}, nil
@@ -150,7 +156,7 @@ func (w *TranscriptionWorker) handleJobSafely(ctx context.Context, job speechkit
 // with no log. Use as: defer w.recoverWorkerGoroutine("name").
 func (w *TranscriptionWorker) recoverWorkerGoroutine(name string) {
 	if r := recover(); r != nil {
-		slog.Error("speechkit: transcription worker goroutine panic recovered",
+		logutil.Resolve(w.logger).Error("speechkit: transcription worker goroutine panic recovered",
 			"goroutine", name,
 			"err", r,
 			"stack", string(debug.Stack()),

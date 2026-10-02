@@ -1,7 +1,7 @@
 // Wire protocol for the streaming Dictation WebSocket
 // (GET /v1/dictation/stream/sessions/{id}/ws).
 //
-// Kotlin mirror of the Go SSOT internal/server/dictation/stream_protocol.go.
+// Kotlin mirror of the Go SSOT app/internal/server/dictation/stream_protocol.go.
 // Field names and semantics are pinned by the golden fixtures in
 // docs/server/fixtures/dictation-stream.v1.json; DictationFrameCodecTest
 // replays those fixtures against these codecs (consumer drift-check).

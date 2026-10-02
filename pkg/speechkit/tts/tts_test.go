@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/kombifyio/SpeechKit/internal/sdkparity"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/sdkparity"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 

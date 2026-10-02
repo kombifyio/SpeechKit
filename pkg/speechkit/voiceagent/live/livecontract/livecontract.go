@@ -1,5 +1,7 @@
 // Package livecontract provides reusable conformance checks for LiveProvider
 // implementations.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package livecontract
 
 import (

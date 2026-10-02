@@ -3,23 +3,32 @@
 // [live.LiveProvider]. It needs an API key or a bearer-token source in the
 // [live.LiveConfig]; dial URL, handshake headers and session shape are
 // pluggable so the Foundry and Voice Live packages reuse the same loop.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package openai
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 )
 
 // defaultOpenAIRealtimeModel is the kernel-level default for the OpenAI
-// Realtime provider when live.LiveConfig.Model is empty. gpt-realtime-2 requires the
-// GA Realtime WebSocket API, so the provider must not send the legacy beta
-// routing header.
-const defaultOpenAIRealtimeModel = "gpt-realtime-2"
+// Realtime provider when live.LiveConfig.Model is empty. gpt-realtime-2.1
+// requires the GA Realtime WebSocket API, so the provider must not send the
+// legacy beta routing header.
+const defaultOpenAIRealtimeModel = "gpt-realtime-2.1"
+
+// defaultInputTranscriptionModel transcribes the user's committed turns when
+// input transcripts are requested; gpt-transcribe replaced the deprecated
+// whisper-1 for Realtime input transcription.
+const defaultInputTranscriptionModel = "gpt-transcribe"
 
 // DefaultRealtimeModel is the public runtime default for OpenAI-backed
 // Voice Agent sessions.
@@ -56,6 +65,9 @@ type Provider struct {
 	// is the resolved model and instructions the assembled host prompt. nil
 	// builds the GA OpenAI Realtime session shape.
 	BuildSession func(cfg live.LiveConfig, model, instructions string) map[string]any
+	// Logger receives this provider's diagnostics. Nil falls back to
+	// slog.Default() at log time.
+	Logger *slog.Logger
 
 	mu         sync.RWMutex
 	conn       *websocket.Conn
@@ -93,3 +105,6 @@ var (
 	_ live.LiveProvider           = (*Provider)(nil)
 	_ live.LiveInstructionUpdater = (*Provider)(nil)
 )
+
+// log returns the provider's logger, or the default logger when none is set.
+func (p *Provider) log() *slog.Logger { return logutil.Resolve(p.Logger) }

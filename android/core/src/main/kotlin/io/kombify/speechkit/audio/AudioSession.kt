@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.Flow
 /**
  * Audio capture session interface.
  *
- * Mirrors: internal/audio/capturer.go AudioSession interface.
+ * Mirrors: app/internal/audio/capturer.go AudioSession interface.
  * Go callbacks map to Kotlin Flow emissions.
  *
  * All audio is captured as PCM 16-bit signed mono at 16kHz,

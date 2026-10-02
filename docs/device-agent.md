@@ -269,7 +269,7 @@ a satellite integration. For a LAN server, provide the trusted local CA to the
 host runtime and use HTTPS:
 
 ```powershell
-go run ./cmd/speechkit-device-agent `
+go run ./app/cmd/speechkit-device-agent `
   --server https://speechkit.home.arpa:8443 `
   --pairing-token file:C:\ProgramData\SpeechKit\kitchen-device.token `
   --pairing-id pairing-kitchen-2026-07 `
@@ -291,5 +291,5 @@ Bounded local verification:
 
 ```powershell
 $env:GOWORK='off'
-go test ./pkg/speechkit/deviceagent ./cmd/speechkit-device-agent ./internal/config ./internal/server/deviceagent/... -count=1
+go test ./pkg/speechkit/deviceagent ./app/cmd/speechkit-device-agent ./app/internal/config ./app/internal/server/deviceagent/... -count=1
 ```

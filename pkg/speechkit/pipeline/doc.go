@@ -18,4 +18,6 @@
 // Hosts that only need the ready-made dictation flow should use
 // [github.com/kombifyio/SpeechKit/pkg/speechkit/dictation]; this
 // package is for hosts that compose their own pipeline or replace one stage.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package pipeline

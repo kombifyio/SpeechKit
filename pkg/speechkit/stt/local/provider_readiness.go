@@ -11,10 +11,15 @@ import (
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 )
 
 func (p *Provider) waitForReady(ctx context.Context) error {
-	healthURL := fmt.Sprintf("%s/health", p.BaseURL)
+	baseURL := p.serverURL()
+	healthURL := fmt.Sprintf("%s/health", baseURL)
+	p.processMu.Lock()
+	identity := p.identity
+	p.processMu.Unlock()
 	for i := 0; i < whisperHealthRetries; i++ {
 		if err := p.runtimeExitError(); err != nil {
 			return err
@@ -32,7 +37,11 @@ func (p *Provider) waitForReady(ctx context.Context) error {
 		resp, err := p.client.Do(req)
 		if err == nil {
 			_ = resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
+			// whisper-server loads the model before it binds the port, so
+			// for seconds another process holding the port answers here. A
+			// 200 counts only from the listener that serves this start's
+			// nonce (see serverIdentity).
+			if resp.StatusCode == http.StatusOK && identity.confirm(ctx, p.client, baseURL) == nil {
 				return nil
 			}
 		}
@@ -64,7 +73,7 @@ func (p *Provider) waitForInferenceReadyWithClient(ctx context.Context, client *
 		client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second, DialValidation: &p.Validation})
 	}
 
-	endpoint := fmt.Sprintf("%s/v1/audio/transcriptions", p.BaseURL)
+	endpoint := fmt.Sprintf("%s/v1/audio/transcriptions", p.serverURL())
 	warmupAudio := buildWarmupWAV()
 	var lastErr error
 
@@ -135,7 +144,7 @@ func (p *Provider) probeInferenceReady(ctx context.Context, client *http.Client,
 		return fmt.Errorf("read warmup response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return netsec.ProviderStatusError("local warmup", resp.StatusCode, respBody)
+		return stt.HTTPError("local warmup", resp, respBody)
 	}
 
 	return nil

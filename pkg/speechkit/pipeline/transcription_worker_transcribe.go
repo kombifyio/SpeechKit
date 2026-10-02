@@ -3,13 +3,13 @@ package pipeline
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 )
 
 func (w *TranscriptionWorker) transcribeJob(ctx context.Context, job speechkit.TranscriptionJob, segments []speechkit.Submission) (speechkit.Transcript, error) {
@@ -79,7 +79,7 @@ func (w *TranscriptionWorker) transcribeSegmentsParallel(ctx context.Context, ca
 			defer wg.Done()
 			defer func() {
 				if r := recover(); r != nil {
-					slog.Error("speechkit: transcription worker segment panic recovered",
+					logutil.Resolve(w.logger).Error("speechkit: transcription worker segment panic recovered",
 						"segment", i+1,
 						"err", r,
 						"stack", string(debug.Stack()),

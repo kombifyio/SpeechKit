@@ -16,6 +16,8 @@
 // normally use skills.New rather than this package directly.
 //
 // See docs/voice-companion.md for the Voice-Companion design overview.
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package companion
 
 import (

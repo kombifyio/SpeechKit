@@ -42,7 +42,35 @@ export type VoiceUiMessageId =
   | "sk.voice.consent.accept"
   | "sk.voice.consent.decline"
   | "sk.voice.consent.declined"
-  | "sk.voice.consent.continuous";
+  | "sk.voice.consent.continuous"
+  | "sk.voice.state.requesting"
+  | "sk.voice.notice.mic_denied"
+  | "sk.voice.notice.mic_denied.hint"
+  | "sk.voice.notice.mic_unavailable"
+  | "sk.voice.notice.mic_unavailable.hint"
+  | "sk.voice.notice.mic_busy"
+  | "sk.voice.notice.mic_busy.hint"
+  | "sk.voice.notice.mic_unsupported"
+  | "sk.voice.notice.mic_unsupported.hint"
+  | "sk.voice.notice.connection"
+  | "sk.voice.notice.connection.hint"
+  | "sk.voice.notice.not_available"
+  | "sk.voice.notice.not_available.hint"
+  | "sk.voice.notice.quota"
+  | "sk.voice.notice.quota.hint"
+  | "sk.voice.notice.consent"
+  | "sk.voice.notice.consent.hint"
+  | "sk.voice.notice.generic"
+  | "sk.voice.notice.generic.hint"
+  | "sk.voice.notice.details"
+  | "sk.voice.notice.hide_details"
+  | "sk.voice.notice.dismiss"
+  | "sk.voice.notice.code"
+  | "sk.voice.notice.reference"
+  | "sk.voice.dialog.label"
+  | "sk.voice.dialog.end"
+  | "sk.voice.dialog.hide"
+  | "sk.voice.transcript.label";
 
 export type VoiceUiMessageCatalog = Readonly<Record<VoiceUiMessageId, string>>;
 
@@ -79,7 +107,35 @@ export const en: VoiceUiMessageCatalog = {
   "sk.voice.consent.decline": "Decline",
   "sk.voice.consent.declined": "Voice input is off: you declined voice capture on this surface.",
   "sk.voice.consent.continuous":
-    "Voice conversation streams your microphone continuously to kombify hosted voice (api.kombify.io) for the entire session — not only while you press record. Streaming stops when you exit voice mode."
+    "Voice conversation streams your microphone continuously to kombify hosted voice (api.kombify.io) for the entire session — not only while you press record. Streaming stops when you exit voice mode.",
+  "sk.voice.state.requesting": "Waiting for microphone",
+  "sk.voice.notice.mic_denied": "Microphone is blocked",
+  "sk.voice.notice.mic_denied.hint": "Allow microphone access for this site in the browser's address bar or settings, then try again.",
+  "sk.voice.notice.mic_unavailable": "No microphone found",
+  "sk.voice.notice.mic_unavailable.hint": "Connect a microphone or pick another input device, then try again.",
+  "sk.voice.notice.mic_busy": "Microphone is in use",
+  "sk.voice.notice.mic_busy.hint": "Close the other app that uses the microphone, then try again.",
+  "sk.voice.notice.mic_unsupported": "Voice input not supported",
+  "sk.voice.notice.mic_unsupported.hint": "This browser or page can't capture audio. Use a current browser on a secure (HTTPS) page.",
+  "sk.voice.notice.connection": "Couldn't connect to voice",
+  "sk.voice.notice.connection.hint": "Check your connection and try again.",
+  "sk.voice.notice.not_available": "Voice isn't available here",
+  "sk.voice.notice.not_available.hint": "This voice feature isn't enabled for your account or workspace.",
+  "sk.voice.notice.quota": "Voice limit reached",
+  "sk.voice.notice.quota.hint": "The usage limit for voice has been reached. Try again later.",
+  "sk.voice.notice.consent": "Voice needs confirmation",
+  "sk.voice.notice.consent.hint": "Confirm voice capture once to continue; you can revoke it at any time.",
+  "sk.voice.notice.generic": "Voice stopped unexpectedly",
+  "sk.voice.notice.generic.hint": "Try again. If it keeps happening, share the reference below with support.",
+  "sk.voice.notice.details": "Details",
+  "sk.voice.notice.hide_details": "Hide details",
+  "sk.voice.notice.dismiss": "Dismiss",
+  "sk.voice.notice.code": "Code",
+  "sk.voice.notice.reference": "Reference",
+  "sk.voice.dialog.label": "Voice conversation",
+  "sk.voice.dialog.end": "End conversation",
+  "sk.voice.dialog.hide": "Hide conversation",
+  "sk.voice.transcript.label": "Live transcript"
 };
 
 export const de: VoiceUiMessageCatalog = {
@@ -116,7 +172,35 @@ export const de: VoiceUiMessageCatalog = {
   "sk.voice.consent.declined":
     "Spracheingabe ist aus: du hast die Sprachaufnahme auf dieser Oberfläche abgelehnt.",
   "sk.voice.consent.continuous":
-    "Die Sprachkonversation streamt dein Mikrofon während der gesamten Sitzung fortlaufend an kombify Hosted Voice (api.kombify.io) — nicht nur während du aufnimmst. Das Streaming endet, sobald du den Sprachmodus verlässt."
+    "Die Sprachkonversation streamt dein Mikrofon während der gesamten Sitzung fortlaufend an kombify Hosted Voice (api.kombify.io) — nicht nur während du aufnimmst. Das Streaming endet, sobald du den Sprachmodus verlässt.",
+  "sk.voice.state.requesting": "Warte auf Mikrofon",
+  "sk.voice.notice.mic_denied": "Mikrofon ist blockiert",
+  "sk.voice.notice.mic_denied.hint": "Erlaube den Mikrofonzugriff für diese Seite in der Adressleiste oder den Browser-Einstellungen und versuche es erneut.",
+  "sk.voice.notice.mic_unavailable": "Kein Mikrofon gefunden",
+  "sk.voice.notice.mic_unavailable.hint": "Schließe ein Mikrofon an oder wähle ein anderes Eingabegerät und versuche es erneut.",
+  "sk.voice.notice.mic_busy": "Mikrofon wird verwendet",
+  "sk.voice.notice.mic_busy.hint": "Schließe die andere App, die das Mikrofon nutzt, und versuche es erneut.",
+  "sk.voice.notice.mic_unsupported": "Spracheingabe nicht unterstützt",
+  "sk.voice.notice.mic_unsupported.hint": "Dieser Browser oder diese Seite kann kein Audio aufnehmen. Nutze einen aktuellen Browser auf einer sicheren (HTTPS-)Seite.",
+  "sk.voice.notice.connection": "Sprache nicht erreichbar",
+  "sk.voice.notice.connection.hint": "Prüfe deine Verbindung und versuche es erneut.",
+  "sk.voice.notice.not_available": "Sprache hier nicht verfügbar",
+  "sk.voice.notice.not_available.hint": "Diese Sprachfunktion ist für dein Konto oder deinen Workspace nicht aktiviert.",
+  "sk.voice.notice.quota": "Sprachlimit erreicht",
+  "sk.voice.notice.quota.hint": "Das Nutzungslimit für Sprache ist erreicht. Versuche es später erneut.",
+  "sk.voice.notice.consent": "Sprache braucht Bestätigung",
+  "sk.voice.notice.consent.hint": "Bestätige die Sprachaufnahme einmalig, um fortzufahren; du kannst sie jederzeit widerrufen.",
+  "sk.voice.notice.generic": "Sprache unerwartet beendet",
+  "sk.voice.notice.generic.hint": "Versuche es erneut. Wenn es weiter passiert, gib dem Support die Referenz unten.",
+  "sk.voice.notice.details": "Details",
+  "sk.voice.notice.hide_details": "Details ausblenden",
+  "sk.voice.notice.dismiss": "Schließen",
+  "sk.voice.notice.code": "Code",
+  "sk.voice.notice.reference": "Referenz",
+  "sk.voice.dialog.label": "Sprachkonversation",
+  "sk.voice.dialog.end": "Konversation beenden",
+  "sk.voice.dialog.hide": "Konversation ausblenden",
+  "sk.voice.transcript.label": "Live-Transkript"
 };
 
 export const es: VoiceUiMessageCatalog = {
@@ -153,7 +237,35 @@ export const es: VoiceUiMessageCatalog = {
   "sk.voice.consent.declined":
     "La entrada de voz está desactivada: rechazaste la captura de voz en esta superficie.",
   "sk.voice.consent.continuous":
-    "La conversación por voz transmite tu micrófono de forma continua a la voz alojada de kombify (api.kombify.io) durante toda la sesión, no solo mientras grabas. La transmisión se detiene al salir del modo de voz."
+    "La conversación por voz transmite tu micrófono de forma continua a la voz alojada de kombify (api.kombify.io) durante toda la sesión, no solo mientras grabas. La transmisión se detiene al salir del modo de voz.",
+  "sk.voice.state.requesting": "Esperando el micrófono",
+  "sk.voice.notice.mic_denied": "Micrófono bloqueado",
+  "sk.voice.notice.mic_denied.hint": "Permite el acceso al micrófono para este sitio en la barra de direcciones o en la configuración del navegador y vuelve a intentarlo.",
+  "sk.voice.notice.mic_unavailable": "No se encontró ningún micrófono",
+  "sk.voice.notice.mic_unavailable.hint": "Conecta un micrófono o elige otro dispositivo de entrada y vuelve a intentarlo.",
+  "sk.voice.notice.mic_busy": "El micrófono está en uso",
+  "sk.voice.notice.mic_busy.hint": "Cierra la otra aplicación que usa el micrófono y vuelve a intentarlo.",
+  "sk.voice.notice.mic_unsupported": "La entrada de voz no es compatible aquí",
+  "sk.voice.notice.mic_unsupported.hint": "Este navegador o esta página no puede capturar audio. Usa un navegador actual en una página segura (HTTPS).",
+  "sk.voice.notice.connection": "No se pudo conectar con la voz",
+  "sk.voice.notice.connection.hint": "Comprueba tu conexión y vuelve a intentarlo.",
+  "sk.voice.notice.not_available": "La voz no está disponible aquí",
+  "sk.voice.notice.not_available.hint": "Esta función de voz no está activada para tu cuenta o espacio de trabajo.",
+  "sk.voice.notice.quota": "Se alcanzó el límite de voz",
+  "sk.voice.notice.quota.hint": "Se alcanzó el límite de uso de voz. Vuelve a intentarlo más tarde.",
+  "sk.voice.notice.consent": "La voz necesita tu confirmación",
+  "sk.voice.notice.consent.hint": "Confirma la captura de voz una vez para continuar; puedes revocarla en cualquier momento.",
+  "sk.voice.notice.generic": "La voz se detuvo inesperadamente",
+  "sk.voice.notice.generic.hint": "Vuelve a intentarlo. Si sigue ocurriendo, comparte la referencia de abajo con el soporte.",
+  "sk.voice.notice.details": "Detalles",
+  "sk.voice.notice.hide_details": "Ocultar detalles",
+  "sk.voice.notice.dismiss": "Descartar",
+  "sk.voice.notice.code": "Código",
+  "sk.voice.notice.reference": "Referencia",
+  "sk.voice.dialog.label": "Conversación por voz",
+  "sk.voice.dialog.end": "Terminar la conversación",
+  "sk.voice.dialog.hide": "Ocultar la conversación",
+  "sk.voice.transcript.label": "Transcripción en vivo"
 };
 
 export const zhHans: VoiceUiMessageCatalog = {
@@ -189,7 +301,35 @@ export const zhHans: VoiceUiMessageCatalog = {
   "sk.voice.consent.decline": "拒绝",
   "sk.voice.consent.declined": "语音输入已关闭：你在此界面拒绝了语音采集。",
   "sk.voice.consent.continuous":
-    "语音对话会在整个会话期间将你的麦克风音频持续传输到 kombify 托管语音服务（api.kombify.io），而不仅是在录音时。退出语音模式后传输即停止。"
+    "语音对话会在整个会话期间将你的麦克风音频持续传输到 kombify 托管语音服务（api.kombify.io），而不仅是在录音时。退出语音模式后传输即停止。",
+  "sk.voice.state.requesting": "正在等待麦克风",
+  "sk.voice.notice.mic_denied": "麦克风被阻止",
+  "sk.voice.notice.mic_denied.hint": "请在浏览器地址栏或设置中允许此网站访问麦克风，然后重试。",
+  "sk.voice.notice.mic_unavailable": "未找到麦克风",
+  "sk.voice.notice.mic_unavailable.hint": "请连接麦克风或选择其他输入设备，然后重试。",
+  "sk.voice.notice.mic_busy": "麦克风正被占用",
+  "sk.voice.notice.mic_busy.hint": "请关闭正在使用麦克风的其他应用，然后重试。",
+  "sk.voice.notice.mic_unsupported": "此处不支持语音输入",
+  "sk.voice.notice.mic_unsupported.hint": "此浏览器或页面无法采集音频。请在安全（HTTPS）页面上使用最新的浏览器。",
+  "sk.voice.notice.connection": "无法连接到语音服务",
+  "sk.voice.notice.connection.hint": "请检查网络连接，然后重试。",
+  "sk.voice.notice.not_available": "此处无法使用语音",
+  "sk.voice.notice.not_available.hint": "你的账户或工作区未启用此语音功能。",
+  "sk.voice.notice.quota": "已达到语音使用上限",
+  "sk.voice.notice.quota.hint": "语音使用量已达上限，请稍后重试。",
+  "sk.voice.notice.consent": "语音需要你的确认",
+  "sk.voice.notice.consent.hint": "确认一次语音采集即可继续；你可以随时撤销。",
+  "sk.voice.notice.generic": "语音意外停止",
+  "sk.voice.notice.generic.hint": "请重试。如果问题持续出现，请将下方的参考编号提供给支持团队。",
+  "sk.voice.notice.details": "详情",
+  "sk.voice.notice.hide_details": "隐藏详情",
+  "sk.voice.notice.dismiss": "关闭",
+  "sk.voice.notice.code": "代码",
+  "sk.voice.notice.reference": "参考编号",
+  "sk.voice.dialog.label": "语音对话",
+  "sk.voice.dialog.end": "结束对话",
+  "sk.voice.dialog.hide": "隐藏对话",
+  "sk.voice.transcript.label": "实时转写"
 };
 
 export const hi: VoiceUiMessageCatalog = {
@@ -225,7 +365,35 @@ export const hi: VoiceUiMessageCatalog = {
   "sk.voice.consent.decline": "अस्वीकार करें",
   "sk.voice.consent.declined": "वॉइस इनपुट बंद है: आपने इस सतह पर वॉइस कैप्चर अस्वीकार किया है।",
   "sk.voice.consent.continuous":
-    "वॉइस वार्तालाप पूरे सत्र के दौरान आपके माइक्रोफ़ोन का ऑडियो लगातार kombify होस्टेड वॉइस (api.kombify.io) को स्ट्रीम करता है — केवल रिकॉर्डिंग के दौरान नहीं। वॉइस मोड से बाहर निकलते ही स्ट्रीमिंग रुक जाती है।"
+    "वॉइस वार्तालाप पूरे सत्र के दौरान आपके माइक्रोफ़ोन का ऑडियो लगातार kombify होस्टेड वॉइस (api.kombify.io) को स्ट्रीम करता है — केवल रिकॉर्डिंग के दौरान नहीं। वॉइस मोड से बाहर निकलते ही स्ट्रीमिंग रुक जाती है।",
+  "sk.voice.state.requesting": "माइक्रोफ़ोन की प्रतीक्षा",
+  "sk.voice.notice.mic_denied": "माइक्रोफ़ोन ब्लॉक है",
+  "sk.voice.notice.mic_denied.hint": "ब्राउज़र के एड्रेस बार या सेटिंग्स में इस साइट के लिए माइक्रोफ़ोन एक्सेस की अनुमति दें, फिर से आज़माएँ।",
+  "sk.voice.notice.mic_unavailable": "कोई माइक्रोफ़ोन नहीं मिला",
+  "sk.voice.notice.mic_unavailable.hint": "माइक्रोफ़ोन कनेक्ट करें या कोई दूसरा इनपुट डिवाइस चुनें, फिर से आज़माएँ।",
+  "sk.voice.notice.mic_busy": "माइक्रोफ़ोन उपयोग में है",
+  "sk.voice.notice.mic_busy.hint": "माइक्रोफ़ोन का उपयोग करने वाला दूसरा ऐप बंद करें, फिर से आज़माएँ।",
+  "sk.voice.notice.mic_unsupported": "यहाँ वॉइस इनपुट समर्थित नहीं है",
+  "sk.voice.notice.mic_unsupported.hint": "यह ब्राउज़र या पेज ऑडियो कैप्चर नहीं कर सकता। सुरक्षित (HTTPS) पेज पर नया ब्राउज़र उपयोग करें।",
+  "sk.voice.notice.connection": "वॉइस से कनेक्ट नहीं हो सका",
+  "sk.voice.notice.connection.hint": "अपना कनेक्शन जाँचें और फिर से आज़माएँ।",
+  "sk.voice.notice.not_available": "यहाँ वॉइस उपलब्ध नहीं है",
+  "sk.voice.notice.not_available.hint": "यह वॉइस सुविधा आपके खाते या वर्कस्पेस के लिए चालू नहीं है।",
+  "sk.voice.notice.quota": "वॉइस सीमा पूरी हो गई",
+  "sk.voice.notice.quota.hint": "वॉइस की उपयोग सीमा पूरी हो गई है। बाद में फिर से आज़माएँ।",
+  "sk.voice.notice.consent": "वॉइस के लिए आपकी पुष्टि ज़रूरी है",
+  "sk.voice.notice.consent.hint": "जारी रखने के लिए एक बार वॉइस कैप्चर की पुष्टि करें; आप इसे कभी भी वापस ले सकते हैं।",
+  "sk.voice.notice.generic": "वॉइस अचानक रुक गया",
+  "sk.voice.notice.generic.hint": "फिर से आज़माएँ। अगर ऐसा होता रहे, तो नीचे दिया गया संदर्भ सपोर्ट के साथ साझा करें।",
+  "sk.voice.notice.details": "विवरण",
+  "sk.voice.notice.hide_details": "विवरण छिपाएँ",
+  "sk.voice.notice.dismiss": "खारिज करें",
+  "sk.voice.notice.code": "कोड",
+  "sk.voice.notice.reference": "संदर्भ",
+  "sk.voice.dialog.label": "वॉइस वार्तालाप",
+  "sk.voice.dialog.end": "वार्तालाप समाप्त करें",
+  "sk.voice.dialog.hide": "वार्तालाप छिपाएँ",
+  "sk.voice.transcript.label": "लाइव ट्रांसक्रिप्ट"
 };
 
 export const ar: VoiceUiMessageCatalog = {
@@ -261,7 +429,35 @@ export const ar: VoiceUiMessageCatalog = {
   "sk.voice.consent.decline": "رفض",
   "sk.voice.consent.declined": "الإدخال الصوتي متوقف: لقد رفضت التقاط الصوت على هذه الواجهة.",
   "sk.voice.consent.continuous":
-    "تبثّ المحادثة الصوتية صوت الميكروفون لديك باستمرار إلى خدمة الصوت المستضافة من kombify ‏(api.kombify.io) طوال الجلسة كاملة — وليس أثناء التسجيل فقط. يتوقف البث عند خروجك من الوضع الصوتي."
+    "تبثّ المحادثة الصوتية صوت الميكروفون لديك باستمرار إلى خدمة الصوت المستضافة من kombify ‏(api.kombify.io) طوال الجلسة كاملة — وليس أثناء التسجيل فقط. يتوقف البث عند خروجك من الوضع الصوتي.",
+  "sk.voice.state.requesting": "في انتظار الميكروفون",
+  "sk.voice.notice.mic_denied": "الميكروفون محظور",
+  "sk.voice.notice.mic_denied.hint": "اسمح بالوصول إلى الميكروفون لهذا الموقع من شريط العنوان أو إعدادات المتصفح، ثم حاول مرة أخرى.",
+  "sk.voice.notice.mic_unavailable": "لم يتم العثور على ميكروفون",
+  "sk.voice.notice.mic_unavailable.hint": "وصّل ميكروفونًا أو اختر جهاز إدخال آخر، ثم حاول مرة أخرى.",
+  "sk.voice.notice.mic_busy": "الميكروفون قيد الاستخدام",
+  "sk.voice.notice.mic_busy.hint": "أغلق التطبيق الآخر الذي يستخدم الميكروفون، ثم حاول مرة أخرى.",
+  "sk.voice.notice.mic_unsupported": "الإدخال الصوتي غير مدعوم هنا",
+  "sk.voice.notice.mic_unsupported.hint": "لا يستطيع هذا المتصفح أو هذه الصفحة التقاط الصوت. استخدم متصفحًا حديثًا على صفحة آمنة (HTTPS).",
+  "sk.voice.notice.connection": "تعذّر الاتصال بخدمة الصوت",
+  "sk.voice.notice.connection.hint": "تحقق من اتصالك وحاول مرة أخرى.",
+  "sk.voice.notice.not_available": "الصوت غير متاح هنا",
+  "sk.voice.notice.not_available.hint": "ميزة الصوت هذه غير مفعّلة لحسابك أو لمساحة عملك.",
+  "sk.voice.notice.quota": "تم بلوغ حد استخدام الصوت",
+  "sk.voice.notice.quota.hint": "تم بلوغ حد استخدام الصوت. حاول مرة أخرى لاحقًا.",
+  "sk.voice.notice.consent": "يحتاج الصوت إلى تأكيدك",
+  "sk.voice.notice.consent.hint": "أكّد التقاط الصوت مرة واحدة للمتابعة؛ يمكنك إلغاء ذلك في أي وقت.",
+  "sk.voice.notice.generic": "توقف الصوت بشكل غير متوقع",
+  "sk.voice.notice.generic.hint": "حاول مرة أخرى. إذا تكرر ذلك، شارك المرجع أدناه مع الدعم.",
+  "sk.voice.notice.details": "التفاصيل",
+  "sk.voice.notice.hide_details": "إخفاء التفاصيل",
+  "sk.voice.notice.dismiss": "إغلاق",
+  "sk.voice.notice.code": "الرمز",
+  "sk.voice.notice.reference": "المرجع",
+  "sk.voice.dialog.label": "محادثة صوتية",
+  "sk.voice.dialog.end": "إنهاء المحادثة",
+  "sk.voice.dialog.hide": "إخفاء المحادثة",
+  "sk.voice.transcript.label": "النص المباشر"
 };
 
 export const VOICE_UI_CATALOGS: Record<VoiceUiLocale, VoiceUiMessageCatalog> = {

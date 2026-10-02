@@ -1,0 +1,157 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/spf13/cobra"
+
+	"github.com/kombifyio/SpeechKit/app/internal/scaffold"
+)
+
+func newInitCommand(opts *globalOptions, stdout, stderr io.Writer) *cobra.Command {
+	var (
+		templateName string
+		listOnly     bool
+		runInstall   bool
+		varOverrides []string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "init [output-dir]",
+		Short: "Scaffold a SpeechKit integration from an embedded starter template",
+		Long: `Scaffold a SpeechKit integration project.
+
+Examples:
+  speechkit-cli init --list
+  speechkit-cli init --template browser-dictation-react my-app
+  speechkit-cli init --template browser-dictation-react my-app --install
+  speechkit-cli init --template browser-dictation-react my-app --var SPEECHKIT_TOKEN=xyz`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if listOnly {
+				return runInitList(stdout, stderr, opts.json)
+			}
+			if templateName == "" {
+				return exitError{code: 2, err: fmt.Errorf("--template is required (use --list to see options)")}
+			}
+			outputDir := ""
+			appName := ""
+			if len(args) == 1 {
+				outputDir = args[0]
+				appName = filepath.Base(outputDir)
+			}
+			return runInitScaffold(cmd.Context(), stdout, stderr, templateName, outputDir, appName, varOverrides, runInstall)
+		},
+	}
+	cmd.Flags().StringVar(&templateName, "template", "", "starter template to render")
+	cmd.Flags().BoolVar(&listOnly, "list", false, "list available templates and exit")
+	cmd.Flags().BoolVar(&runInstall, "install", false, "run post-init hooks such as npm install after scaffolding")
+	cmd.Flags().StringArrayVar(&varOverrides, "var", nil, "override a template variable as KEY=VALUE")
+	return cmd
+}
+
+func runInitList(stdout, stderr io.Writer, asJSON bool) error {
+	templates, err := scaffold.ListTemplates()
+	if err != nil {
+		return exitError{code: 1, err: err}
+	}
+	if asJSON {
+		return exitFromCode(writeJSON(stdout, stderr, map[string]any{"templates": templates}))
+	}
+	if len(templates) == 0 {
+		return writeLine(stdout, "no embedded templates found")
+	}
+	if err := writeLine(stdout, "Available SpeechKit starter templates:"); err != nil {
+		return err
+	}
+	for _, tpl := range templates {
+		if err := writef(stdout, "  %s\n      %s\n", tpl.Name, tpl.Description); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func runInitScaffold(ctx context.Context, stdout, stderr io.Writer, templateName, outputDir, appName string, varOverrides []string, runInstall bool) error {
+	overrides := map[string]string{}
+	if appName != "" {
+		overrides["APP_NAME"] = appName
+	}
+	for _, raw := range varOverrides {
+		key, value, ok := strings.Cut(raw, "=")
+		key = strings.TrimSpace(key)
+		if !ok || key == "" {
+			return exitError{code: 2, err: fmt.Errorf("--var must be KEY=VALUE, got %q", raw)}
+		}
+		overrides[key] = value
+	}
+	if outputDir != "" {
+		abs, err := filepath.Abs(outputDir)
+		if err != nil {
+			return exitError{code: 2, err: fmt.Errorf("resolve output dir: %w", err)}
+		}
+		outputDir = abs
+		if entries, _ := os.ReadDir(outputDir); len(entries) > 0 {
+			return exitError{code: 1, err: fmt.Errorf("output dir %s already exists and is not empty", outputDir)}
+		}
+	}
+
+	result, err := scaffold.ScaffoldContext(ctx, scaffold.ScaffoldOptions{
+		Template:    templateName,
+		OutputDir:   outputDir,
+		Vars:        overrides,
+		Interactive: outputDir != "" && os.Getenv("SPEECHKIT_INIT_NONINTERACTIVE") == "",
+		In:          os.Stdin,
+		Out:         stdout,
+		RunPostInit: runInstall,
+	})
+	if err != nil {
+		return exitError{code: 1, err: err}
+	}
+
+	if outputDir == "" {
+		for _, file := range result.Files {
+			if err := writef(stdout, "---- %s ----\n%s\n", file.RelPath, string(file.Content)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	if err := writef(stdout, "Scaffolded %s into %s (%d files).\n", result.Template, outputDir, len(result.Files)); err != nil {
+		return err
+	}
+	if !runInstall {
+		meta, _ := scaffold.LookupTemplate(templateName)
+		nextSteps := meta.NextSteps
+		if len(nextSteps) == 0 {
+			nextSteps = []string{"npm install && npm run dev"}
+		}
+		if err := writeLine(stdout, "Next steps:"); err != nil {
+			return err
+		}
+		if err := writef(stdout, "  cd %s\n", outputDir); err != nil {
+			return err
+		}
+		for _, step := range nextSteps {
+			if err := writef(stdout, "  %s\n", step); err != nil {
+				return err
+			}
+		}
+	}
+	for _, hook := range result.Hooks {
+		status := "ok"
+		if !hook.Success {
+			status = "FAILED"
+		}
+		if err := writef(stderr, "[hook %s] %s\n", status, hook.Cmd); err != nil {
+			return err
+		}
+	}
+	return nil
+}

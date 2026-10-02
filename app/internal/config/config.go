@@ -1,0 +1,221 @@
+package config
+
+import "github.com/kombifyio/SpeechKit/pkg/speechkit/hostconfig"
+
+const (
+	// HotkeyBehaviorHoldToTalk is the canonical name for the "hold the
+	// shortcut while you speak, release to end" capture model. It replaces
+	// the historical push_to_talk value; NormalizeHotkeyBehavior accepts the
+	// legacy string as an alias so existing config files keep loading.
+	HotkeyBehaviorHoldToTalk = hostconfig.HotkeyBehaviorHoldToTalk
+	HotkeyBehaviorToggle     = hostconfig.HotkeyBehaviorToggle
+
+	VoiceAgentCloseBehaviorContinue = hostconfig.VoiceAgentCloseBehaviorContinue
+	VoiceAgentCloseBehaviorNewChat  = hostconfig.VoiceAgentCloseBehaviorNewChat
+
+	// VoiceAgentBargeIn* control whether the microphone stays open while the
+	// agent is speaking so the user can interrupt mid-answer (full duplex).
+	VoiceAgentBargeInAuto   = "auto"
+	VoiceAgentBargeInAlways = "always"
+	VoiceAgentBargeInNever  = "never"
+
+	OverlayFeedbackModeBigProductivity = "big_productivity"
+	OverlayFeedbackModeSmallFeedback   = "small_feedback"
+
+	DictationProcessingModeFinalFull      = "final_full"
+	DictationProcessingModeSegmentBatch   = "segment_batch"
+	DictationProcessingModeProviderStream = "provider_stream"
+	DictationProcessingModeAuto           = "auto"
+
+	DictationLiveCommitImmediate = "immediate"
+	DictationLiveCommitPhrase    = "phrase"
+	DictationLiveCommitPassage   = "passage"
+
+	AudioInputSourceMicrophone     = "microphone"
+	AudioInputSourceSystemLoopback = "system_loopback"
+	AudioInputSourceMicAndSystem   = "mic_and_system"
+
+	DefaultLocalLLMBaseURL                = "http://127.0.0.1:8082/v1"
+	DefaultLocalLLMModel                  = "ggml-org/gemma-4-E2B-it-GGUF:Q8_0"
+	DefaultLocalSTTModel                  = "ggml-small.bin"
+	DefaultLocalSTTPort                   = 9000
+	DefaultDictationPauseMs               = 1500
+	DefaultDictationIntermediateSegmentMs = 6000
+	DefaultDictateSilenceTimeoutSec       = 3
+	// DefaultMaxRecordingSeconds is the hard cap on one dictation, Assist or
+	// Voice Agent fallback capture (10 minutes); meetings are not capped.
+	DefaultMaxRecordingSeconds = 600
+
+	// DefaultLocalLLMIdleStopMinutes pauses the bundled model server after a
+	// quarter hour without a request; see LocalLLMConfig.IdleStopMinutes.
+	DefaultLocalLLMIdleStopMinutes = 15
+
+	// ManagedDevServerURL and ManagedLiveKitURL are referenced by the
+	// pre-rewrite app/internal/config/credentials.go ServerConnection
+	// onboarding path. They are scheduled for removal together with that
+	// path's in-flight rewrite; do not remove them in isolation or
+	// CI will fail with "undefined: ManagedDevServerURL".
+	ManagedDevServerURL = "https://speechkit.kombify.io"
+	ManagedLiveKitURL   = "wss://livekit.kombify.io"
+
+	DefaultDictatePrimaryProfileID    = hostconfig.DefaultDictatePrimaryProfileID
+	DefaultAssistPrimaryProfileID     = hostconfig.DefaultAssistPrimaryProfileID
+	DefaultVoiceAgentPrimaryProfileID = hostconfig.DefaultVoiceAgentPrimaryProfileID
+	// DefaultTTSPrimaryProfileID is the Voice-Output profile pre-selected for
+	// fresh installs. Kokoro is the local built-in default; OpenAI
+	// gpt-4o-mini-tts is the cloud fallback once a key is configured. Opt-in cloud
+	// voices such as Google Cloud TTS are never the default.
+	DefaultTTSPrimaryProfileID  = "tts.local.kokoro-82m"
+	DefaultTTSFallbackProfileID = "tts.openai.gpt-4o-mini-tts"
+)
+
+type Config struct {
+	General        GeneralConfig        `toml:"general"`
+	Audio          AudioConfig          `toml:"audio"`
+	VAD            VADConfig            `toml:"vad"`
+	UI             UIConfig             `toml:"ui"`
+	Vocabulary     VocabularyConfig     `toml:"vocabulary"`
+	Customization  CustomizationConfig  `toml:"customization"`
+	Speech         SpeechDefaultsConfig `toml:"speech"`
+	Assist         AssistConfig         `toml:"assist"`
+	Shortcuts      ShortcutsConfig      `toml:"shortcuts"`
+	ModelSelection ModelSelectionConfig `toml:"model_selection"`
+
+	// Privacy holds the central network-scope policy ("open",
+	// "local_network", "device_only") enforced at every outbound network
+	// boundary of the Device-Target. See app/internal/config/privacy.go.
+	Privacy PrivacyConfig `toml:"privacy"`
+
+	// Output tunes how the Device-Target injects transcribed text into the
+	// focused application (injection strategy, per-app paste overrides).
+	// Server- and Local-Target ignore this block.
+	Output OutputConfig `toml:"output"`
+
+	// ServerConnection points the device/local-target at a remote SpeechKit
+	// Server-Target. Only consulted when at least one mode in ModelSelection
+	// has mode_source = "server". Disabled by default; the desktop app runs
+	// fully self-contained until a user opts a mode into server-side
+	// execution (typically via onboarding or settings).
+	ServerConnection ServerConnectionConfig `toml:"server_connection"`
+
+	Local           LocalConfig           `toml:"local"`
+	LocalLLM        LocalLLMConfig        `toml:"local_llm"`
+	VPS             VPSConfig             `toml:"vps"`
+	HuggingFace     HuggingFaceConfig     `toml:"huggingface"`
+	Routing         RoutingConfig         `toml:"routing"`
+	Update          UpdateConfig          `toml:"update"`
+	Performance     PerformanceConfig     `toml:"performance"`
+	Logging         LoggingConfig         `toml:"logging"`
+	Audit           AuditConfig           `toml:"audit"`
+	Telemetry       TelemetryConfig       `toml:"telemetry"`
+	Feedback        FeedbackConfig        `toml:"feedback"` // legacy compat; prefer Store
+	Store           StoreConfig           `toml:"store"`
+	Providers       ProvidersConfig       `toml:"providers"`
+	ProviderOptions ProviderOptionsConfig `toml:"provider_options"`
+	TTS             TTSConfig             `toml:"tts"`
+	VoiceAgent      VoiceAgentConfig      `toml:"voice_agent"`
+
+	// Server configures the standalone Linux server binary (app/cmd/speechkit-server).
+	// All fields are optional; the desktop app (app/cmd/speechkit) ignores them entirely.
+	Server    ServerConfig     `toml:"server"`
+	Personas  []PersonaConfig  `toml:"personas"`
+	Roles     []RoleConfig     `toml:"roles"`
+	Sequences []SequenceConfig `toml:"sequences"`
+
+	// HandsFree is the user-facing activation + optional voice-output layer
+	// across the three strict modes. New config writes should prefer this
+	// block; Wakeword remains the low-level detector compatibility block.
+	HandsFree HandsFreeConfig `toml:"hands_free"`
+
+	// Wakeword configures the always-on "Hey Quby" activation-word listener.
+	// Read by app/cmd/speechkit (Device-Target) and any library embedder; the
+	// Server-Target ignores this block in v1.
+	Wakeword WakewordConfig `toml:"wakeword"`
+
+	// AgentBridge configures the External Coding Agent Bridge (desktop-only,
+	// default off, fail-closed; AI-VOICE-SPEECHKIT-TARGET.md 2026-08-10).
+	// The Server-Target ignores this block entirely.
+	AgentBridge AgentBridgeConfig `toml:"agent_bridge"`
+
+	// Meeting configures meeting capture and its note write-ups. Desktop-only;
+	// the Server-Target ignores this block.
+	Meeting MeetingConfig `toml:"meeting"`
+	Copilot CopilotConfig `toml:"copilot"`
+	// Microsoft365 connects meetings to the user's Microsoft 365 account.
+	// Desktop-only; the Server-Target ignores this block.
+	Microsoft365 Microsoft365Config `toml:"microsoft365"`
+
+	// policy is the machine policy this config was loaded under (nil when
+	// none). It is never serialized; it travels with copies so every
+	// enforcement point and Save honour it. See policy.go.
+	policy *policyBinding
+}
+
+// MeetingConfig configures meeting capture.
+type MeetingConfig struct {
+	Enabled bool `toml:"enabled"`
+	// AutoDetect offers to take notes when a call starts, which SpeechKit
+	// notices by seeing a calling application take the microphone. The check
+	// reads process names and nothing else, stores nothing and sends nothing.
+	AutoDetect bool `toml:"auto_detect"`
+	// AutoDetectApps replaces the built-in list of applications whose
+	// microphone use means a call. Empty uses the built-in list, which covers
+	// the common clients and browsers.
+	AutoDetectApps []string `toml:"auto_detect_apps"`
+	// AutoEnhance writes a meeting up as soon as it ends, rather than waiting
+	// to be asked.
+	AutoEnhance    bool `toml:"auto_enhance"`
+	CompactOnStart bool `toml:"compact_on_start"`
+	AlwaysOnTop    bool `toml:"always_on_top"`
+	// GenerationProvider writes the meeting up: MeetingProviderLocal (models
+	// on this device only), MeetingProviderFoundry or MeetingProviderCopilot.
+	GenerationProvider string `toml:"generation_provider"`
+	// FallbackProviders are tried in this order when the primary fails.
+	FallbackProviders []string `toml:"fallback_providers"`
+	// FallbackPolicy is the removed predecessor of FallbackProviders. It is
+	// read once to migrate an existing file and never written again.
+	FallbackPolicy string `toml:"fallback_policy,omitempty"`
+	// FoundryTranscriptGrant* record the user's permission to send meeting
+	// transcripts to Microsoft Foundry for summaries and write-ups. Without
+	// it Foundry refuses meeting work, whatever the provider settings say.
+	FoundryTranscriptGrantVersion   int      `toml:"foundry_transcript_grant_version,omitempty"`
+	FoundryTranscriptGrantGrantedAt string   `toml:"foundry_transcript_grant_granted_at,omitempty"`
+	BatchMinutes                    int      `toml:"batch_minutes"`
+	SummaryLanguage                 string   `toml:"summary_language"`
+	AdditionalSummaryLanguages      []string `toml:"additional_summary_languages"`
+
+	// Screenshot configures the Meeting Mode screenshot quick action and its
+	// optional global keyboard shortcut. Captures are taken locally and stay
+	// local (recording-session snapshot store): they never enter model prompts
+	// and never leave the machine.
+	//
+	// ScreenshotEnabled toggles the quick action in the meeting UI.
+	// ScreenshotHotkey is a combo string (e.g. "ctrl+alt+s"); empty falls back
+	// to the default and "none" disables the shortcut.
+	// ScreenshotHotkeyEnabled arms the global shortcut while a meeting is live.
+	ScreenshotEnabled       bool   `toml:"screenshot_enabled"`
+	ScreenshotHotkey        string `toml:"screenshot_hotkey"`
+	ScreenshotHotkeyEnabled bool   `toml:"screenshot_hotkey_enabled"`
+}
+
+const CopilotTranscriptGrantVersion = 1
+
+// CopilotConfig is desktop-only. Authentication remains in the Copilot CLI's
+// operating-system credential store; SpeechKit persists only user preferences
+// and the explicit cloud-processing grant for generation inputs.
+type CopilotConfig struct {
+	Enabled bool   `toml:"enabled"`
+	Model   string `toml:"model"`
+	CLIPath string `toml:"cli_path"`
+
+	TranscriptGrantProvider  string `toml:"transcript_grant_provider"`
+	TranscriptGrantVersion   int    `toml:"transcript_grant_version"`
+	TranscriptGrantGrantedAt string `toml:"transcript_grant_granted_at"`
+}
+
+func (c CopilotConfig) HasTranscriptGrant() bool {
+	return c.Enabled &&
+		c.TranscriptGrantProvider == "github_copilot" &&
+		c.TranscriptGrantVersion == CopilotTranscriptGrantVersion &&
+		c.TranscriptGrantGrantedAt != ""
+}

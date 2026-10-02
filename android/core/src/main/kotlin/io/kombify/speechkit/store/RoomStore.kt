@@ -15,7 +15,7 @@ import java.time.Instant
 /**
  * Room/SQLite store implementation.
  *
- * Mirrors: internal/store/sqlite.go SQLiteStore.
+ * Mirrors: app/internal/store/sqlite.go SQLiteStore.
  */
 class RoomStore(context: Context) : Store {
 

@@ -12,7 +12,7 @@ import (
 func TestProviderModelDescriptorFreshnessFieldsRoundTrip(t *testing.T) {
 	row := ProviderModelDescriptor{
 		Provider:             "deepgram",
-		ModelID:              ModelDeepgramNova3,
+		ModelID:              modelDeepgramNova3,
 		Mode:                 speechkit.ModeDictation,
 		Name:                 "Nova-3",
 		Lifecycle:            speechkit.ModelLifecycleGA,
@@ -61,7 +61,7 @@ func TestStaleFreshnessReportsUsesVerifiedDay(t *testing.T) {
 	now := time.Date(2026, 8, 25, 0, 0, 0, 0, time.UTC)
 	old := ProviderModelDescriptor{
 		Provider:       "deepgram",
-		ModelID:        ModelDeepgramNova3,
+		ModelID:        modelDeepgramNova3,
 		Default:        true,
 		LastVerifiedAt: "2026-01-01",
 	}

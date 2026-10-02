@@ -8,6 +8,8 @@
 //
 // All HTTP provider constructors MUST route user-supplied URLs through
 // ValidateProviderURL and MUST obtain their *http.Client via NewSafeHTTPClient.
+//
+// Stability: Stable — no breaking change without a minor version bump and a changelog callout.
 package netsec
 
 import (

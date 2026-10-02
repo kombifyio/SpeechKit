@@ -9,6 +9,8 @@
 // the Home Assistant lexicon embedded from catalogs/home_assistant.json.
 // Hosts extend it by cloning DefaultRegistry and registering their own
 // IntentLexicon values (for example config-driven aliases).
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package shortcuts
 
 import (

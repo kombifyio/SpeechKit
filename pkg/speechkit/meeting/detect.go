@@ -89,7 +89,7 @@ func DetectCall(users []MicrophoneUser, allowlist []string) (Detection, bool) {
 			continue
 		}
 		if !found || user.Since.Before(best.Since) {
-			best = Detection{App: user.App, Since: user.Since}
+			best = Detection(user)
 			found = true
 		}
 	}

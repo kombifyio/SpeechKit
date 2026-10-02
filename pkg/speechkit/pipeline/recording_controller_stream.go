@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/telemetry"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
@@ -101,8 +102,8 @@ func (r *dictationStreamRuntime) enqueuePCM(pcm []byte, controller *RecordingCon
 		dropped := r.droppedPCM.Add(1)
 		if dropped == 1 || dropped%100 == 0 {
 			controller.onLog(fmt.Sprintf("Provider-stream PCM queue full; dropped %d frame(s)", dropped), "warn")
-			speechkit.RecordOutcome(r.ctx, speechkit.OutcomePCMQueueDrop, errors.New("pcm queue full"),
-				speechkit.Int64Attr("dropped_frames", dropped),
+			telemetry.RecordOutcome(r.ctx, telemetry.OutcomePCMQueueDrop, errors.New("pcm queue full"),
+				telemetry.Int64Attr("dropped_frames", dropped),
 			)
 		}
 	}

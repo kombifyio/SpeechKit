@@ -29,7 +29,7 @@ const (
 	// StatusDisabled means an operator has explicitly turned the mode off
 	// (e.g. config flag), distinct from Stopped (transient) — disabled
 	// modes never auto-start and do not block readiness checks.
-	// See internal/server/core/health.go for the analogous distinction
+	// See app/internal/server/core/health.go for the analogous distinction
 	// at the HTTP /readyz surface.
 	StatusDisabled Status = "disabled"
 )

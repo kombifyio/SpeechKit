@@ -1,5 +1,7 @@
 // Package localization resolves stable SpeechKit message IDs against the
 // repository-owned locale catalogs.
+//
+// Stability: Stable — no breaking change without a minor version bump and a changelog callout.
 package localization
 
 import (
@@ -61,7 +63,7 @@ const (
 	PrivacyDisabledProviderRetains  MessageID = "sk.privacy.disabled.provider_retains"
 
 	// Meeting Mode screenshot status prose. These mirror the stable status
-	// codes emitted by internal/meetingsnapshot so the device UI can surface
+	// codes emitted by app/internal/meetingsnapshot so the device UI can surface
 	// selecting/capturing/saving/saved/cancelled/error accessibly and
 	// translated. Captures stay local; none of these strings name a window.
 	MeetingSnapshotSelecting MessageID = "meeting.snapshot.selecting"

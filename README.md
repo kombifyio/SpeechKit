@@ -24,11 +24,11 @@ This repository owns:
 - The platform-neutral Go voice kernel in `pkg/speechkit`: mode contracts,
   provider profiles, routing policy, readiness metadata, and the reusable
   Dictation, Assist, and Voice Agent services.
-- The self-host server target in `cmd/speechkit-server`, which wraps the same
+- The self-host server target in `app/cmd/speechkit-server`, which wraps the same
   kernel behind HTTP and WebSocket APIs plus its OpenAPI/AsyncAPI contracts.
 - The agent-facing surfaces: the `speechkit-mcp` MCP server and the
   `speechkit-cli` command-line tool.
-- The Wails desktop device client in `cmd/speechkit`, a reference
+- The Wails desktop device client in `app/cmd/speechkit`, a reference
   implementation of a device target — not a separate product. Windows is the
   supported client; macOS is a Dictation-only beta.
 - The shared voice surface contract consumed by Kombify Companion, Workbench,
@@ -66,6 +66,15 @@ deliberate open-core exception. The relationships that do exist are contract and
 edge relationships: shared client and voice contracts, and
 `kombify-Gateway` as the edge for the Kombify-hosted server target consumed by
 Companion and Workbench.
+
+Module layout ([ADR 0004](docs/ADR/0004-sdk-module-boundary.md)): the public SDK
+`pkg/speechkit/...` is the root module `github.com/kombifyio/SpeechKit`
+(import paths unchanged, no app-only dependencies in its `go.mod`); the
+reference apps (`app/cmd`, `app/internal`, `app/tools`) are the nested module
+`github.com/kombifyio/SpeechKit/app`, which requires the root module.
+The committed root `go.work` joins both, so run Go commands for the apps from
+the repository root with `./app/...` paths (for example
+`go test ./app/internal/server/...`); a bare `./...` covers only the SDK module.
 
 Public dependency and export rules are documented in the
 [SDK surface boundary](docs/architecture/sdk-surface-boundary.md). Most of
@@ -126,9 +135,9 @@ Provider support and auth status are tracked in the
 | Target | Entry point | Use it when |
 | --- | --- | --- |
 | Local-first Go kernel | `pkg/speechkit` | You embed voice into your own Go product, internal tool, prototype, or automation host. |
-| Self-host server | `cmd/speechkit-server` | You need a durable Linux process for your own clients, teams, browsers, or centrally managed provider configuration. |
-| Agent tools | `cmd/speechkit-mcp`, `cmd/speechkit-cli` | An agent or operator should inspect the framework, generate starters, validate payloads, or operate a self-hosted server. |
-| Desktop device client | `cmd/speechkit` | You want a ready-to-run desktop reference host for local use, provider testing, or server-connected workflows. |
+| Self-host server | `app/cmd/speechkit-server` | You need a durable Linux process for your own clients, teams, browsers, or centrally managed provider configuration. |
+| Agent tools | `app/cmd/speechkit-mcp`, `app/cmd/speechkit-cli` | An agent or operator should inspect the framework, generate starters, validate payloads, or operate a self-hosted server. |
+| Desktop device client | `app/cmd/speechkit` | You want a ready-to-run desktop reference host for local use, provider testing, or server-connected workflows. |
 
 Windows 10/11 x64 is the supported desktop client. macOS 14+ on Apple Silicon
 is a beta: an ad-hoc signed `SpeechKit.app` bundle that does Dictation —
@@ -193,8 +202,8 @@ tools:
 ```bash
 speechkit-cli init --template go-assist-voice-companion ./my-companion
 docker pull ghcr.io/kombifyio/speechkit-server:latest
-go run ./cmd/speechkit-mcp --mode=docs,test
-go run ./cmd/speechkit-cli status --server "$SPEECHKIT_SERVER_URL" --token "$SPEECHKIT_SERVER_TOKEN"
+go run ./app/cmd/speechkit-mcp --mode=docs,test
+go run ./app/cmd/speechkit-cli status --server "$SPEECHKIT_SERVER_URL" --token "$SPEECHKIT_SERVER_TOKEN"
 ```
 
 More starting points: [Framework API](docs/speechkit-framework-api.md),
@@ -207,8 +216,8 @@ More starting points: [Framework API](docs/speechkit-framework-api.md),
 Public source verification:
 
 ```bash
-go test ./pkg/... ./cmd/speechkit-cli/... ./cmd/speechkit-mcp/... ./examples/...
-GOOS=linux CGO_ENABLED=0 go build ./cmd/speechkit-server ./cmd/speechkit-mcp ./cmd/speechkit-cli
+go test ./pkg/... ./app/cmd/speechkit-cli/... ./app/cmd/speechkit-mcp/... ./examples/...
+GOOS=linux CGO_ENABLED=0 go build ./app/cmd/speechkit-server ./app/cmd/speechkit-mcp ./app/cmd/speechkit-cli
 ```
 
 The complete public-clone gate is documented in
@@ -240,7 +249,7 @@ which needs `pkg-config`, `libopus-dev`, `libopusfile-dev` and `libsoxr-dev`
 installed before the audio-dependent packages will build. The Windows
 Device-Target builds through
 `powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -SkipInstaller`;
-a raw `go build ./cmd/speechkit/` bypasses required CGo and ldflags.
+a raw `go build ./app/cmd/speechkit/` bypasses required CGo and ldflags.
 
 Gate contract and evidence rules: workspace `LOCAL-E2E-DEPLOYMENT-STANDARD.md`.
 While the product version is below 1.0.0 the `fast-pre-1.0` profile defers this
@@ -251,11 +260,13 @@ gates and provider/secret safety invariants stay mandatory regardless.
 
 ```text
 pkg/speechkit/          Public Go kernel and SDK surface
-cmd/speechkit/          Desktop device client, Windows and macOS (reference implementation)
-cmd/speechkit-server/   Self-host server entry point
-cmd/speechkit-mcp/      MCP server for agent docs, validation, and management
-cmd/speechkit-cli/      CLI diagnostics, scaffolding, and quick actions
-internal/               Implementation packages behind the public binaries
+app/cmd/speechkit/          Desktop device client, Windows and macOS (reference implementation)
+app/cmd/speechkit-server/   Self-host server entry point
+app/cmd/speechkit-mcp/      MCP server for agent docs, validation, and management
+app/cmd/speechkit-cli/      CLI diagnostics, scaffolding, and quick actions
+app/internal/           Implementation packages behind the public binaries
+app/go.mod              Nested module for the reference apps (cmd/, internal/, tools/)
+go.work                 Joins the root SDK module and ./app for local development
 docs/                   Detailed documentation
 deploy/                 Container and server configuration
 scripts/                Install and release-note helpers

@@ -126,6 +126,10 @@ func providerDisplayName(provider string) string {
 		return "Microsoft Foundry"
 	case "foundry-voicelive":
 		return "Microsoft Foundry Voice Live"
+	case "gpt-live":
+		return "OpenAI GPT-Live"
+	case "foundry-gpt-live":
+		return "Microsoft Foundry GPT-Live"
 	case "cloudflare":
 		return "Cloudflare"
 	case "piper":
@@ -151,6 +155,7 @@ func providerOrderIndex(provider string) int {
 		"assemblyai",
 		"foundry",
 		"foundry-voicelive",
+		"foundry-gpt-live",
 		"groq",
 		"cloudflare",
 		"piper",

@@ -10,6 +10,8 @@
 // instance; pass a recorder, a [speechkit.Transcriber] — typically
 // stt.AsTranscriber wrapped around any stt.STTProvider — and the
 // [speechkit.RuntimePolicy] from the host config.
+//
+// Stability: Stable — no breaking change without a minor version bump and a changelog callout.
 package dictation
 
 import (

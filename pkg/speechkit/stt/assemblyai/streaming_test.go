@@ -73,13 +73,13 @@ func TestAssemblyAI_StartSpeakerStream_LabelsSpeakersAndUnknown(t *testing.T) {
 	}
 	if !strings.Contains(gotQuery, "speaker_labels=true") ||
 		!strings.Contains(gotQuery, "max_speakers=2") ||
-		!strings.Contains(gotQuery, "speech_model=universal-3-5-pro") {
+		!strings.Contains(gotQuery, "speech_model=universal-3-6-pro") {
 		t.Fatalf("query = %q", gotQuery)
 	}
 }
 
 func TestAssemblyAIStreamingEndpointUsesConfiguredBaseURL(t *testing.T) {
-	p := New("assembly-test-key", "universal-3-pro")
+	p := New(Options{APIKey: "assembly-test-key", Models: "universal-3-pro"})
 	p.StreamingBaseURL = "https://eu.streaming.example.test"
 
 	endpoint, err := p.assemblyAIStreamingEndpoint("u3-rt-pro",

@@ -6,8 +6,8 @@ import (
 )
 
 // ChunkRMS computes the RMS level (0.0-1.0) of an S16LE PCM buffer.
-// Matches the formula in internal/audio/pcm.PCMLevel; duplicated here to
-// avoid pulling internal/audio into this package's import set.
+// Matches the formula in app/internal/audio/pcm.PCMLevel; duplicated here to
+// avoid pulling app/internal/audio into this package's import set.
 func ChunkRMS(pcm []byte) float64 {
 	if len(pcm) < 2 {
 		return 0

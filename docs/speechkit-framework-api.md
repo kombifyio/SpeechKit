@@ -65,7 +65,7 @@ full mode runtime:
 | Spoken output only | `pkg/speechkit/tts` |
 | Hands-Free composition | `pkg/speechkit/companion` |
 | Speaker diarization/attribution contracts | `pkg/speechkit/speaker` |
-| Customization contracts | `pkg/speechkit/customize`, with runtime implementation in `internal/customize` and the semantic standard in `docs/words-and-replacements-standard.md` |
+| Customization contracts | `pkg/speechkit/customize`, with runtime implementation in `app/internal/customize` and the semantic standard in `docs/words-and-replacements-standard.md` |
 | Meeting capture runtime and note primitives | `pkg/speechkit/meeting` |
 | Server-connected mode calls | `pkg/speechkit/client` |
 | Embedded Voice Agent tools/session harness | `pkg/speechkit/agentkit`, `pkg/speechkit/voiceagent/live` |

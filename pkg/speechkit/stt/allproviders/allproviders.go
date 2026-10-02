@@ -15,6 +15,8 @@
 //   - BuildRouter assembles a [stt.Router] from a set of enabled providers so
 //     the Device- and Server-Targets share one assembly path while each keeps
 //     its own config-resolution specifics (mirrors pkg/speechkit/tts.BuildRouter).
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
 package allproviders
 
 import (
@@ -29,6 +31,7 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/assemblyai"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/azurespeech"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/deepgram"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/geminitranscribe"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/google"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/huggingface"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/local"
@@ -53,11 +56,14 @@ type BuildSpec struct {
 	// DiarizationModel overrides the Deepgram diarization model (optional).
 	DiarizationModel string
 	// Deepgram forwards provider-specific Listen options (optional).
-	Deepgram deepgram.Options
+	Deepgram deepgram.Tuning
 	// Google streaming credential env-var names (optional), forwarded to the
 	// Google provider so realtime transcription can authenticate.
 	GoogleStreamingCredentialsEnv   string
 	GoogleApplicationCredentialsEnv string
+	// GoogleRegion is the Speech-to-Text v2 multi-region ("us" or "eu") for
+	// models that run only regionally, such as chirp_3. Empty uses "us".
+	GoogleRegion string
 
 	// FoundrySpeech, when set, builds the Foundry provider on the resource's
 	// Azure Speech surface (MAI-Transcribe) instead of the OpenAI-compatible
@@ -102,6 +108,14 @@ func Build(spec BuildSpec) (string, stt.STTProvider, error) {
 	return descriptor.Name, provider, nil
 }
 
+// IsGeminiTranscribeModel reports whether a Google STT model id names a Gemini
+// Transcribe model, which runs on the Gemini API (with a Gemini API key)
+// instead of Cloud Speech-to-Text.
+func IsGeminiTranscribeModel(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(model, "gemini-") && strings.Contains(model, "transcribe")
+}
+
 // Register adds a provider constructor under the given id so hosts can extend
 // the Build mapping with custom providers. The id is normalized like
 // spec.Provider in Build. Registering an id that already exists (including
@@ -137,38 +151,52 @@ var providerRegistry = map[string]providerDescriptor{
 	"huggingface": {
 		Name: "huggingface",
 		Build: func(spec BuildSpec) (stt.STTProvider, error) {
-			return huggingface.New(spec.ModelID, spec.Token), nil
+			return huggingface.New(huggingface.Options{Model: spec.ModelID, APIKey: spec.Token}), nil
 		},
 	},
 	"openai": {
 		Name: "openai",
 		Build: func(spec BuildSpec) (stt.STTProvider, error) {
-			return openaicompat.New("openai", "https://api.openai.com", spec.APIKey, spec.ModelID), nil
+			return openaicompat.New(openaicompat.Options{
+				Name:    "openai",
+				BaseURL: "https://api.openai.com",
+				APIKey:  spec.APIKey,
+				Model:   spec.ModelID,
+			}), nil
 		},
 	},
 	"groq": {
 		Name: "groq",
 		Build: func(spec BuildSpec) (stt.STTProvider, error) {
-			return openaicompat.New("groq", "https://api.groq.com/openai", spec.APIKey, spec.ModelID), nil
+			return openaicompat.New(openaicompat.Options{
+				Name:    "groq",
+				BaseURL: "https://api.groq.com/openai",
+				APIKey:  spec.APIKey,
+				Model:   spec.ModelID,
+			}), nil
 		},
 	},
 	"google": {
 		Name: "google",
 		Build: func(spec BuildSpec) (stt.STTProvider, error) {
-			provider := google.New(spec.APIKey, spec.ModelID)
+			if IsGeminiTranscribeModel(spec.ModelID) {
+				return geminitranscribe.New(geminitranscribe.Options{APIKey: spec.APIKey, Model: spec.ModelID}), nil
+			}
+			provider := google.New(google.Options{APIKey: spec.APIKey, Model: spec.ModelID})
 			provider.SetStreamingCredentialEnvs(spec.GoogleStreamingCredentialsEnv, spec.GoogleApplicationCredentialsEnv)
+			provider.Region = spec.GoogleRegion
 			return provider, nil
 		},
 	},
 	"deepgram": {
 		Name: "deepgram",
 		Build: func(spec BuildSpec) (stt.STTProvider, error) {
-			provider := deepgram.New(spec.APIKey, spec.ModelID)
+			provider := deepgram.New(deepgram.Options{APIKey: spec.APIKey, Model: spec.ModelID})
 			if spec.DiarizationModel != "" {
 				provider.DiarizationModel = spec.DiarizationModel
 			}
 			if hasDeepgramOptions(spec.Deepgram) {
-				provider.ApplyOptions(spec.Deepgram)
+				provider.ApplyTuning(spec.Deepgram)
 			}
 			return provider, nil
 		},
@@ -176,13 +204,13 @@ var providerRegistry = map[string]providerDescriptor{
 	"assemblyai": {
 		Name: "assemblyai",
 		Build: func(spec BuildSpec) (stt.STTProvider, error) {
-			return assemblyai.New(spec.APIKey, spec.ModelID), nil
+			return assemblyai.New(assemblyai.Options{APIKey: spec.APIKey, Models: spec.ModelID}), nil
 		},
 	},
 	"openrouter": {
 		Name: "openrouter",
 		Build: func(spec BuildSpec) (stt.STTProvider, error) {
-			return openrouter.New(spec.APIKey, spec.ModelID), nil
+			return openrouter.New(openrouter.Options{APIKey: spec.APIKey, Model: spec.ModelID}), nil
 		},
 	},
 	"foundry": {
@@ -218,7 +246,7 @@ var providerRegistry = map[string]providerDescriptor{
 			if model == "" {
 				model = "gpt-transcribe"
 			}
-			p := openaicompat.New("foundry", baseURL, spec.APIKey, model)
+			p := openaicompat.New(openaicompat.Options{Name: "foundry", BaseURL: baseURL, APIKey: spec.APIKey, Model: model})
 			p.BearerToken = spec.BearerToken
 			return p, nil
 		},
@@ -230,12 +258,12 @@ var providerRegistry = map[string]providerDescriptor{
 			if baseURL == "" {
 				baseURL = "http://localhost:11434"
 			}
-			return openaicompat.NewOllama(baseURL, spec.ModelID), nil
+			return openaicompat.NewOllama(openaicompat.Options{BaseURL: baseURL, Model: spec.ModelID}), nil
 		},
 	},
 }
 
-func hasDeepgramOptions(opts deepgram.Options) bool {
+func hasDeepgramOptions(opts deepgram.Tuning) bool {
 	return opts.Configured ||
 		opts.SmartFormat ||
 		opts.Dictation ||
@@ -266,7 +294,7 @@ type RouterConfig struct {
 
 // Per-provider assembly options. These carry the union of what the Device-
 // and Server-Targets configure; nil fields in EnabledProviders are skipped.
-// (deepgram.Options is the existing Listen-option type; the assembly struct is
+// (deepgram.Tuning is the existing Listen-option type; the assembly struct is
 // DeepgramOpts and embeds it as Listen.)
 type (
 	// LocalOpts configures the host-managed whisper.cpp provider. The
@@ -299,7 +327,7 @@ type (
 	}
 
 	// OpenAIOpts configures the OpenAI transcription provider. Model defaults
-	// to "whisper-1" when empty.
+	// to "gpt-transcribe" when empty.
 	OpenAIOpts struct {
 		APIKey string
 		Model  string
@@ -313,7 +341,9 @@ type (
 	}
 
 	// GoogleOpts configures the opt-in Google Cloud Speech-to-Text provider
-	// (bring your own key). Model defaults to "latest_long" when empty.
+	// (bring your own key). Model defaults to "latest_long" when empty; a
+	// Gemini Transcribe model (see IsGeminiTranscribeModel) builds the Gemini
+	// API adapter instead, and APIKey must then be a Gemini API key.
 	GoogleOpts struct {
 		APIKey string
 		Model  string
@@ -321,6 +351,8 @@ type (
 		// SetStreamingCredentialEnvs.
 		CredentialsJSONEnv        string
 		ApplicationCredentialsEnv string
+		// Region is the v2 multi-region ("us" or "eu") for chirp_3.
+		Region string
 	}
 
 	// DeepgramOpts configures the Deepgram Listen provider. Model defaults to
@@ -331,7 +363,7 @@ type (
 		// DiarizationModel overrides the provider default when non-empty.
 		DiarizationModel string
 		// Listen forwards Deepgram Listen options (applied when configured).
-		Listen deepgram.Options
+		Listen deepgram.Tuning
 	}
 
 	// AssemblyAIOpts configures the AssemblyAI provider; empty fields keep
@@ -352,7 +384,7 @@ type (
 	}
 
 	// OpenRouterOpts configures the OpenRouter provider. Model defaults to
-	// "openai/whisper-1" when empty.
+	// "openai/gpt-transcribe" when empty.
 	OpenRouterOpts struct {
 		APIKey string
 		Model  string
@@ -435,15 +467,15 @@ func BuildRouter(cfg RouterConfig, enabled EnabledProviders) (router *stt.Router
 	var cloud []stt.STTProvider
 
 	if o := enabled.HuggingFace; o != nil {
-		cloud = append(cloud, huggingface.New(o.Model, o.Token))
+		cloud = append(cloud, huggingface.New(huggingface.Options{Model: o.Model, APIKey: o.Token}))
 		notes = append(notes, "STT: HuggingFace registered (model="+o.Model+")")
 	}
 	if o := enabled.OpenRouter; o != nil {
-		cloud = append(cloud, openrouter.New(o.APIKey, o.Model))
+		cloud = append(cloud, openrouter.New(openrouter.Options{APIKey: o.APIKey, Model: o.Model}))
 		notes = append(notes, "STT: OpenRouter registered (model="+o.Model+")")
 	}
 	if o := enabled.VPS; o != nil {
-		p := vps.NewWithModel(o.URL, o.APIKey, o.Model)
+		p := vps.New(vps.Options{BaseURL: o.URL, APIKey: o.APIKey, Model: o.Model})
 		if o.Validation != nil {
 			// The provider's HTTP client dials through &p.Validation, so
 			// tightening the field also tightens dial-time IP checks.
@@ -453,7 +485,7 @@ func BuildRouter(cfg RouterConfig, enabled EnabledProviders) (router *stt.Router
 		notes = append(notes, "STT: VPS registered (url="+o.URL+", model="+p.Model+")")
 	}
 	if o := enabled.Ollama; o != nil {
-		p := openaicompat.NewOllama(o.BaseURL, o.Model)
+		p := openaicompat.NewOllama(openaicompat.Options{BaseURL: o.BaseURL, Model: o.Model})
 		if o.Validation != nil {
 			p.Validation = *o.Validation
 		}
@@ -465,30 +497,40 @@ func BuildRouter(cfg RouterConfig, enabled EnabledProviders) (router *stt.Router
 		if model == "" {
 			model = "whisper-large-v3-turbo"
 		}
-		cloud = append(cloud, openaicompat.New("groq", "https://api.groq.com/openai", o.APIKey, model))
+		cloud = append(cloud, openaicompat.New(openaicompat.Options{
+			Name:    "groq",
+			BaseURL: "https://api.groq.com/openai",
+			APIKey:  o.APIKey,
+			Model:   model,
+		}))
 		notes = append(notes, "STT: Groq registered (model="+model+")")
 	}
 	if o := enabled.OpenAI; o != nil {
 		model := strings.TrimSpace(o.Model)
 		if model == "" {
-			model = "whisper-1"
+			model = openaicompat.OpenAIDefaultModel
 		}
-		cloud = append(cloud, openaicompat.New("openai", "https://api.openai.com", o.APIKey, model))
+		cloud = append(cloud, openaicompat.New(openaicompat.Options{
+			Name:    "openai",
+			BaseURL: "https://api.openai.com",
+			APIKey:  o.APIKey,
+			Model:   model,
+		}))
 		notes = append(notes, "STT: OpenAI registered (model="+model+")")
 	}
 	if o := enabled.Deepgram; o != nil {
-		p := deepgram.New(o.APIKey, o.Model)
+		p := deepgram.New(deepgram.Options{APIKey: o.APIKey, Model: o.Model})
 		if strings.TrimSpace(o.DiarizationModel) != "" {
 			p.DiarizationModel = o.DiarizationModel
 		}
 		if hasDeepgramOptions(o.Listen) {
-			p.ApplyOptions(o.Listen)
+			p.ApplyTuning(o.Listen)
 		}
 		cloud = append(cloud, p)
 		notes = append(notes, "STT: Deepgram registered (model="+p.Model+")")
 	}
 	if o := enabled.AssemblyAI; o != nil {
-		p := assemblyai.New(o.APIKey, o.Models)
+		p := assemblyai.New(assemblyai.Options{APIKey: o.APIKey, Models: o.Models})
 		if strings.TrimSpace(o.StreamingModel) != "" {
 			p.StreamingModel = o.StreamingModel
 		}
@@ -505,9 +547,13 @@ func BuildRouter(cfg RouterConfig, enabled EnabledProviders) (router *stt.Router
 		cloud = append(cloud, p)
 		notes = append(notes, "STT: AssemblyAI registered (models="+strings.Join(p.Models, ",")+")")
 	}
-	if o := enabled.Google; o != nil {
-		p := google.New(o.APIKey, o.Model)
+	if o := enabled.Google; o != nil && IsGeminiTranscribeModel(o.Model) {
+		cloud = append(cloud, geminitranscribe.New(geminitranscribe.Options{APIKey: o.APIKey, Model: o.Model}))
+		notes = append(notes, "STT: Gemini Transcribe registered (model="+o.Model+")")
+	} else if o != nil {
+		p := google.New(google.Options{APIKey: o.APIKey, Model: o.Model})
 		p.SetStreamingCredentialEnvs(o.CredentialsJSONEnv, o.ApplicationCredentialsEnv)
+		p.Region = o.Region
 		p.SecretResolver = enabled.Secrets
 		cloud = append(cloud, p)
 		notes = append(notes, "STT: Google registered (model="+o.Model+")")
@@ -518,7 +564,7 @@ func BuildRouter(cfg RouterConfig, enabled EnabledProviders) (router *stt.Router
 			if model == "" {
 				model = "gpt-transcribe"
 			}
-			p := openaicompat.New("foundry", baseURL, o.APIKey, model)
+			p := openaicompat.New(openaicompat.Options{Name: "foundry", BaseURL: baseURL, APIKey: o.APIKey, Model: model})
 			p.BearerToken = o.BearerToken
 			cloud = append(cloud, p)
 			notes = append(notes, "STT: Microsoft Foundry registered (deployment="+model+")")
@@ -552,7 +598,7 @@ func BuildRouter(cfg RouterConfig, enabled EnabledProviders) (router *stt.Router
 
 	var localProvider stt.STTProvider
 	if o := enabled.Local; o != nil {
-		localProvider = local.New(o.Port, o.ModelPath, o.GPU)
+		localProvider = local.New(local.Options{Port: o.Port, ModelPath: o.ModelPath, GPU: o.GPU})
 		notes = append(notes, "STT: local whisper.cpp registered (not started)")
 	}
 

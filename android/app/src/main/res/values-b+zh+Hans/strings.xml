@@ -133,8 +133,8 @@
     <string name="dev_status_label">状态：%1$s</string>
     <string name="dev_dictation_title">流式听写（Dev）</string>
     <string name="dev_session_open">会话已打开（%1$s）</string>
-    <string name="dev_segment_ready">片段 %1$s 就绪</string>
-    <string name="dev_segment_done">片段 %1$s 完成</string>
+    <string name="dev_segment_ready">片段 %1$d 就绪</string>
+    <string name="dev_segment_done">片段 %1$d 完成</string>
     <string name="dev_disconnected_reason">已断开（%1$s）</string>
     <string name="dev_connect_failed">连接失败：%1$s</string>
     <string name="dev_capture_failed">采集错误：%1$s</string>

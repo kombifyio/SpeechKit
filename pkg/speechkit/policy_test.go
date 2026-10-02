@@ -12,14 +12,14 @@ func TestRuntimePolicyFiltersFixedDictationProfile(t *testing.T) {
 	profiles := speechkit.FilterProviderProfiles(catalog.DefaultProviderProfiles(), speechkit.RuntimePolicy{
 		EnabledModes: []speechkit.Mode{speechkit.ModeDictation},
 		FixedProfiles: map[speechkit.Mode]string{
-			speechkit.ModeDictation: "stt.openai.whisper-1",
+			speechkit.ModeDictation: "stt.openai.gpt-transcribe",
 		},
 	})
 
 	if len(profiles) != 1 {
 		t.Fatalf("profiles = %d, want 1: %#v", len(profiles), profiles)
 	}
-	if got := profiles[0].ID; got != "stt.openai.whisper-1" {
+	if got := profiles[0].ID; got != "stt.openai.gpt-transcribe" {
 		t.Fatalf("profile ID = %q, want fixed profile", got)
 	}
 }
@@ -71,7 +71,7 @@ func TestRuntimePolicyRejectsFallbackWhenDisabled(t *testing.T) {
 			ModeSetting: speechkit.ModeSetting{
 				Enabled:           true,
 				PrimaryProfileID:  "stt.local.whispercpp",
-				FallbackProfileID: "stt.openai.whisper-1",
+				FallbackProfileID: "stt.openai.gpt-transcribe",
 			},
 		},
 	}, speechkit.RuntimePolicy{
@@ -141,8 +141,8 @@ func TestRuntimePolicyAcceptsARenamedProfileID(t *testing.T) {
 	}
 }
 
-// Google Cloud STT is an opt-in BYOK provider; its legacy chirp-3 profile id
-// keeps resolving to the current latest-long profile.
+// Google Cloud STT is an opt-in BYOK provider; its Chirp 3 profile is
+// selectable under the dictation policy.
 func TestRuntimePolicyAcceptsLegacyGoogleSTTProfileID(t *testing.T) {
 	err := speechkit.ValidateModeSettingsForPolicy(catalog.DefaultProviderProfiles(), speechkit.ModeSettings{
 		Dictation: speechkit.DictationSetting{
@@ -164,7 +164,7 @@ func TestRuntimePolicyRejectsFixedProfileOutsideAllowedSet(t *testing.T) {
 		EnabledModes:    []speechkit.Mode{speechkit.ModeDictation},
 		AllowedProfiles: []string{"stt.deepgram.nova-3"},
 		FixedProfiles: map[speechkit.Mode]string{
-			speechkit.ModeDictation: "stt.openai.whisper-1",
+			speechkit.ModeDictation: "stt.openai.gpt-transcribe",
 		},
 	})
 

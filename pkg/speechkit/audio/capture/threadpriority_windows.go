@@ -1,4 +1,4 @@
-//go:build windows
+//go:build windows && cgo
 
 package capture
 
@@ -6,7 +6,7 @@ import "golang.org/x/sys/windows"
 
 // threadPriorityAboveNormal matches the Win32 THREAD_PRIORITY_ABOVE_NORMAL
 // constant (not exposed by x/sys/windows). Inlined here (instead of the
-// reference app's internal/winapi helper) so this public package stays
+// reference app's app/internal/winapi helper) so this public package stays
 // free of internal/ imports.
 const threadPriorityAboveNormal = 1
 

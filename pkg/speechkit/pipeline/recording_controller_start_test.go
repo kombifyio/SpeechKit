@@ -102,7 +102,7 @@ func TestRecordingControllerWithoutEpochStartsTimelineAtZero(t *testing.T) {
 	if len(submitter.jobs) != 1 {
 		t.Fatalf("jobs = %d, want 1", len(submitter.jobs))
 	}
-	if got := submitter.jobs[0].Submission.CapturedStartMs; got != 0 {
+	if got := submitter.jobs[0].CapturedStartMs; got != 0 {
 		t.Fatalf("CapturedStartMs = %d, want 0 for a session timed from its own start", got)
 	}
 }
