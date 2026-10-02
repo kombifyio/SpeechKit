@@ -96,8 +96,9 @@ func New(config Config) (*Agent, error) {
 // Run sends one user turn as a JSON-RPC "message/stream" request and returns
 // the agent's text answer with Action "display". It fails closed: a blank
 // utterance, a [HeaderProvider] error (reported before any network call), a
-// non-2xx status, a JSON-RPC error object (also inside an SSE stream), or an
-// answer without text parts is an error. Streamed answers concatenate the
+// non-2xx status, a JSON-RPC error object (also inside an SSE stream; a
+// [*TurnError] carrying the agent's typed reason), or an answer without text
+// parts is an error. Streamed answers concatenate the
 // text of every result event.
 func (a *Agent) Run(ctx context.Context, input cascaded.AgentInput) (cascaded.AgentOutput, error) {
 	utterance := strings.TrimSpace(input.Utterance)
@@ -210,7 +211,7 @@ func readSSEAnswer(reader io.Reader) (string, error) {
 		var envelope any
 		if json.Unmarshal([]byte(data), &envelope) == nil {
 			if rpcError(envelope) {
-				return "", errors.New("speechkit a2a: agent denied the streamed turn")
+				return "", &TurnError{code: rpcErrorCode(envelope)}
 			}
 			if text := answerText(envelope); text != "" {
 				answers = append(answers, text)
@@ -226,6 +227,53 @@ func readSSEAnswer(reader io.Reader) (string, error) {
 	}
 	return answer, nil
 }
+
+// TurnError is a streamed turn the agent answered with a JSON-RPC error.
+// It implements [cascaded.CodedError]: Code is the agent's typed reason from
+// error.data.code (for example "quota_exhausted" for used-up AI credits), or
+// "" when the agent named none.
+type TurnError struct {
+	code string
+}
+
+// Code is the agent's typed reason, or "".
+func (e *TurnError) Code() string { return e.code }
+
+func (e *TurnError) Error() string {
+	if e.code == "" {
+		return "speechkit a2a: agent turn failed"
+	}
+	return "speechkit a2a: agent turn failed: " + e.code
+}
+
+// rpcErrorCode reads the typed reason a JSON-RPC error carries in
+// error.data.code; the numeric JSON-RPC code says nothing about why.
+func rpcErrorCode(value any) string {
+	root, _ := value.(map[string]any)
+	errorValue, _ := root["error"].(map[string]any)
+	data, _ := errorValue["data"].(map[string]any)
+	code, _ := data["code"].(string)
+	if !machineCode(code) {
+		return ""
+	}
+	return code
+}
+
+// machineCode accepts only a short snake_case identifier, so nothing but a
+// stable code from the agent reaches clients.
+func machineCode(value string) bool {
+	if value == "" || len(value) > 64 {
+		return false
+	}
+	for _, r := range value {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+var _ cascaded.CodedError = (*TurnError)(nil)
 
 func rpcError(value any) bool {
 	root, ok := value.(map[string]any)

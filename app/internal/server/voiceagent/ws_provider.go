@@ -134,6 +134,10 @@ type LiveMessage struct {
 	Interrupted            bool
 	GoAway                 bool
 	SessionResumable       bool
+	// ErrorCode reports a failed turn (cascaded pipeline); the adapter sends
+	// it as an error frame with ErrorMessage, never as transcript text.
+	ErrorCode    string
+	ErrorMessage string
 }
 
 type ToolCall struct {

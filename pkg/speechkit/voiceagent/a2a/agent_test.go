@@ -2,6 +2,7 @@ package a2a
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -84,9 +85,12 @@ func TestAgentFailsClosedWhenA2ADeniesTurn(t *testing.T) {
 	}
 }
 
+// The agent's typed reason (here: used-up AI credits) must survive the turn
+// failure so the client can show the matching notice (owner report
+// 2026-10-02: every reply read "agent denied the streamed turn").
 func TestAgentFailsClosedOnStreamedJSONRPCDenial(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		body := "data: {\"jsonrpc\":\"2.0\",\"id\":\"turn-1\",\"error\":{\"code\":-32600,\"message\":\"lease denied\"}}\n\n"
+		body := "data: {\"jsonrpc\":\"2.0\",\"id\":\"turn-1\",\"error\":{\"code\":-32603,\"message\":\"Companion run failed.\",\"data\":{\"code\":\"quota_exhausted\",\"reasonCode\":\"ai_credit_budget_reservation_exhausted\"}}}\n\n"
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
@@ -98,8 +102,10 @@ func TestAgentFailsClosedOnStreamedJSONRPCDenial(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	if _, err := agent.Run(context.Background(), cascaded.AgentInput{Utterance: "hello"}); err == nil {
-		t.Fatal("Run() error = nil, want streamed denial")
+	_, err = agent.Run(context.Background(), cascaded.AgentInput{Utterance: "hello"})
+	var coded cascaded.CodedError
+	if !errors.As(err, &coded) || coded.Code() != "quota_exhausted" {
+		t.Fatalf("Run() error = %v, want the agent's typed reason quota_exhausted", err)
 	}
 }
 

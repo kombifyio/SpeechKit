@@ -139,12 +139,15 @@ func TestAgentErrorSurfacesAsMessage(t *testing.T) {
 	msgs := collectMessages(t, p, 1*time.Second)
 	var sawError bool
 	for _, m := range msgs {
-		if m.OutputTranscriptDone && strings.Contains(m.OutputTranscript, "turn_failed") {
+		if m.ErrorCode == "turn_failed" {
 			sawError = true
+		}
+		if m.OutputTranscript != "" {
+			t.Fatalf("a failed turn must not become transcript text; got %q", m.OutputTranscript)
 		}
 	}
 	if !sawError {
-		t.Fatalf("expected turn_failed error in output; got %+v", msgs)
+		t.Fatalf("expected turn_failed error; got %+v", msgs)
 	}
 }
 

@@ -147,6 +147,14 @@ func (a *Adapter) writePump(ctx context.Context, done chan<- struct{}) {
 		// Any provider-emitted message counts as activity for the idle
 		// watchdog so a long-running TTS reply doesn't get cut off.
 		a.idle.Reset()
+		if msg.ErrorCode != "" {
+			// A failed turn ends that reply; the client shows an error,
+			// never a transcript line.
+			a.replyActive.set(false)
+			a.suppressDownlink.set(false)
+			a.sendError(ctx, msg.ErrorCode, msg.ErrorMessage)
+			continue
+		}
 		if len(msg.Audio) > 0 || msg.OutputTranscript != "" {
 			a.replyActive.set(true)
 		}

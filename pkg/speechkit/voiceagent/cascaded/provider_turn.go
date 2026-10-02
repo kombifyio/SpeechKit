@@ -2,6 +2,7 @@ package cascaded
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -77,7 +78,7 @@ func (p *Provider) processOneTurn(ctx context.Context) {
 	emit(inputTranscriptMessage(sttResult))
 
 	if err := p.runTurn(ctx, sttResult.Text, true); err != nil {
-		p.emitError("turn_failed", err.Error())
+		p.emitError(turnFailureCode(err), err.Error())
 	}
 }
 
@@ -203,10 +204,24 @@ func (p *Provider) renderHistorySnapshot() string {
 	return renderHistory(p.history)
 }
 
+// emitError reports a failed turn as an error message, never as transcript
+// text: "[turn_failed] ..." used to reach clients as the agent's reply.
 func (p *Provider) emitError(code, message string) {
 	logutil.Resolve(p.logger).Warn("cascaded: emit error", "code", code, "err", message)
 	select {
-	case p.messages <- &Message{OutputTranscript: "[" + code + "] " + message, OutputTranscriptDone: true}:
+	case p.messages <- &Message{ErrorCode: code, ErrorMessage: message}:
 	case <-p.closedCh:
 	}
+}
+
+// turnFailureCode is the agent's typed reason for a failed turn, or
+// "turn_failed" when it names none.
+func turnFailureCode(err error) string {
+	var coded CodedError
+	if errors.As(err, &coded) {
+		if code := strings.TrimSpace(coded.Code()); code != "" {
+			return code
+		}
+	}
+	return "turn_failed"
 }

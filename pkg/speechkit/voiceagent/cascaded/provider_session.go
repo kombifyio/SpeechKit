@@ -139,7 +139,7 @@ func (p *Provider) SendText(text string) error {
 	go func() {
 		defer p.recoverGoroutine("runTurn")
 		if err := p.runTurn(context.Background(), text, false); err != nil {
-			p.emitError("turn_failed", err.Error())
+			p.emitError(turnFailureCode(err), err.Error())
 		}
 	}()
 	return nil

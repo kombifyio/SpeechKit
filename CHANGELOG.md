@@ -9,6 +9,13 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.74.2](https://github.com/kombifyio/SpeechKit/compare/v0.74.1...v0.74.2) (2026-10-02)
+
+
+### Bug Fixes
+
+* **voiceagent:** report failed turns as error frames with the agent's typed reason ([#712](https://github.com/kombifyio/SpeechKit/issues/712)) ([49cf642](https://github.com/kombifyio/SpeechKit/commit/49cf642fbc206efed89a9c7b0f6616c73244942d))
+
 ## [0.74.1](https://github.com/kombifyio/SpeechKit/compare/v0.74.0...v0.74.1) (2026-10-02)
 
 

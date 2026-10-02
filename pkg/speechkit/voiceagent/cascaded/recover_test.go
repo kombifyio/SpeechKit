@@ -1,7 +1,6 @@
 package cascaded
 
 import (
-	"strings"
 	"testing"
 	"time"
 )
@@ -24,7 +23,7 @@ func TestRecoverGoroutine_SurfacesPanicAsMessage(t *testing.T) {
 	msgs := collectMessages(t, p, 1*time.Second)
 	var saw bool
 	for _, m := range msgs {
-		if strings.Contains(m.OutputTranscript, "internal_panic") {
+		if m.ErrorCode == "internal_panic" {
 			saw = true
 		}
 	}
