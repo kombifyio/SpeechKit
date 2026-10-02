@@ -29,9 +29,11 @@ android {
         applicationId = "io.kombify.speechkit"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7404
-        versionName = "0.74.4"
+        versionCode = 7405
+        versionName = "0.74.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // An OSS installation has no admitted hosted media origin.
+        buildConfigField("String", "HOSTED_VOICE_ORIGIN", "\"\"")
     }
 
     // Lint findings that predate the android-pr gate live in the baseline;
@@ -92,6 +94,9 @@ android {
         }
         create("kombify") {
             dimension = "distribution"
+            // Distribution authority, never accepted from a Binder request.
+            buildConfigField("String", "HOSTED_VOICE_ORIGIN",
+                "\"" + speechKitBuildValue("speechkit.hostedVoiceOrigin", "SPEECHKIT_HOSTED_VOICE_ORIGIN") + "\"")
 
             // A connection the build can ship so a tester install exercises
             // every mode without pairing anything first. Both default to

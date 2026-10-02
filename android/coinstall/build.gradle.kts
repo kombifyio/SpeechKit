@@ -41,6 +41,10 @@ android {
         "io/kombify/speechkit/coinstall/v1/ProvisionRequest.aidl",
         "io/kombify/speechkit/coinstall/v1/ProvisionResult.aidl",
         "io/kombify/speechkit/coinstall/v1/TurnRequest.aidl",
+        "io/kombify/speechkit/coinstall/voiceagent/v1/IVoiceAgentCallback.aidl",
+        "io/kombify/speechkit/coinstall/voiceagent/v1/IVoiceAgentService.aidl",
+        "io/kombify/speechkit/coinstall/voiceagent/v1/VoiceAgentCapability.aidl",
+        "io/kombify/speechkit/coinstall/voiceagent/v1/VoiceAgentSessionRequest.aidl",
     )
 
     publishing {
