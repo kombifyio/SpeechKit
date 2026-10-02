@@ -9,6 +9,13 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.74.3](https://github.com/kombifyio/SpeechKit/compare/v0.74.2...v0.74.3) (2026-10-02)
+
+
+### Bug Fixes
+
+* **models:** download Gemma 4 E4B Q4_K_M from a live, pinned source ([#714](https://github.com/kombifyio/SpeechKit/issues/714)) ([4435a08](https://github.com/kombifyio/SpeechKit/commit/4435a081aeca23ab99246da8184e49174aab3906))
+
 ## [0.74.2](https://github.com/kombifyio/SpeechKit/compare/v0.74.1...v0.74.2) (2026-10-02)
 
 

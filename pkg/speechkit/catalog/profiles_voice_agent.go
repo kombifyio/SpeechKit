@@ -22,7 +22,7 @@ func voiceAgentProviderProfiles() []speechkit.ProviderProfile {
 			AdapterKind:   "voice_pipeline",
 			Variants: []speechkit.ModelVariant{
 				{ID: "llamacpp.gemma-4-e2b-it-q8-0-voice", Name: "Gemma 4 E2B IT Q8_0", ModelID: "gemma-4-E2B-it-Q8_0.gguf", Description: "Default lightweight GGUF model for local Voice Agent pipeline fallback.", Recommended: true},
-				{ID: "llamacpp.gemma-4-e4b-it-q4-k-m-voice", Name: "Gemma 4 E4B IT Q4_K_M", ModelID: "gemma-4-E4B-it-Q4_K_M.gguf", Description: "Stronger optional GGUF model for Voice Agent pipeline fallback."},
+				{ID: "llamacpp.gemma-4-e4b-it-q4-k-m-voice", Name: "Gemma 4 E4B IT Q4_K_M", ModelID: "google_gemma-4-E4B-it-Q4_K_M.gguf", Description: "Stronger optional GGUF model for Voice Agent pipeline fallback."},
 			},
 			AllowInference: true,
 			Default:        true,

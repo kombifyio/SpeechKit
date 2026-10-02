@@ -22,7 +22,7 @@ func assistProviderProfiles() []speechkit.ProviderProfile {
 			AdapterKind:   "genkit_llm",
 			Variants: []speechkit.ModelVariant{
 				{ID: "llamacpp.gemma-4-e2b-it-q8-0", Name: "Gemma 4 E2B IT Q8_0", ModelID: "gemma-4-E2B-it-Q8_0.gguf", Description: "Default lightweight GGUF model for local Assist usage.", Recommended: true},
-				{ID: "llamacpp.gemma-4-e4b-it-q4-k-m", Name: "Gemma 4 E4B IT Q4_K_M", ModelID: "gemma-4-E4B-it-Q4_K_M.gguf", Description: "Stronger optional GGUF model for devices with enough memory."},
+				{ID: "llamacpp.gemma-4-e4b-it-q4-k-m", Name: "Gemma 4 E4B IT Q4_K_M", ModelID: "google_gemma-4-E4B-it-Q4_K_M.gguf", Description: "Stronger optional GGUF model for devices with enough memory."},
 			},
 			AllowInference: true,
 			Default:        true,
