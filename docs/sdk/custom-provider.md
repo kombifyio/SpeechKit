@@ -111,8 +111,7 @@ Rules the contract suite enforces, so build them in from the start:
 - HTTP 5xx becomes an error; a canceled context becomes an error.
 - Audio arrives as WAV bytes (`speechkit.PCMToWAV` produces the same shape the
   device and server pipelines use). Do not assume raw PCM.
-- Do not log audio or transcripts. See
-  [`docs/server/local-only-guarantee.md`](../server/local-only-guarantee.md).
+- Do not log audio or transcripts.
 
 Public URLs should go through `pkg/speechkit/netsec` validation like the
 shipped providers do; accept loopback only when the host explicitly opts in

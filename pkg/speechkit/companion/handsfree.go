@@ -96,7 +96,7 @@ type Options struct {
 	// succeeds; hosts that want async playback should spawn their own goroutine.
 	OnResult func(context.Context, speechkit.AssistResult)
 	// OnStage, when set, receives turn-lifecycle stages so hosts can drive a
-	// status UI (e.g. the kombify box ring) from the canonical flow instead of
+	// status UI (e.g. an LED ring on a satellite) from the canonical flow instead of
 	// scraping logs or events. Called synchronously — keep handlers fast.
 	OnStage func(Stage)
 }

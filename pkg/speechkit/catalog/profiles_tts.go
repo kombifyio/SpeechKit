@@ -75,8 +75,8 @@ func ttsProviderProfiles() []speechkit.ProviderProfile {
 		// Chatterbox-multilingual is the strongest open voice-cloning
 		// TTS on Hugging Face. Same ONNX path as Kokoro/Supertonic.
 		// Voice-cloning capability is the differentiator — useful for
-		// kombify Companion personas that need a custom voice baked
-		// from a short reference clip.
+		// assistant personas that need a custom voice baked from a short
+		// reference clip.
 		{
 			ID:            "tts.local.chatterbox-multilingual",
 			Mode:          speechkit.ModeTTS,

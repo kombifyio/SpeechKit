@@ -6,10 +6,11 @@
 *.dylib
 /build/
 /dist/
-installer/wix/llama-fragment.wxs
-SpeechKit-Portable-v*.zip
+/speechkit-server
+/speechkit-cli
+/speechkit-mcp
 
-# Intentional latest-installer metadata mirror; binaries live on GitHub Releases.
+# Latest-installer metadata is tracked; installers live on GitHub Releases.
 !/release/
 !/release/latest/
 !/release/latest/windows/
@@ -17,150 +18,51 @@ release/latest/windows/*.exe
 release/latest/windows/*.msi
 release/latest/windows/*.zip
 
-# Server-target Linux binary (no extension, dropped at repo root by
-# `go build ./app/cmd/speechkit-server`). Catches it on Windows dev hosts
-# where *.exe doesn't apply.
-/speechkit-server
-/speechkit-cli
-/speechkit-mcp
-/sk-e2e
-
 # Go
 /vendor/
-clients/python/**/__pycache__/
-clients/python/**/*.pyc
-__pycache__/
-*.pyc
+coverage
+*.test
+*.prof
 
 # Models (large files)
 *.bin
 *.ggml
 /models/
-examples/kombify-box-satellite/models/
-.public-export*/
 
-# Wake-word training artifacts (ONNX checkpoints + training logs land here,
-# committed model assets go into tools/wakeword-training/*.yaml configs and
-# the prepared bundle under wakeword-kws/ -- not the raw training output).
-tools/wakeword-training/output/
-
-# Hygiene / audit working artifacts
-AUDIT-REPORT.md
-_export/
-coverage
-$cover
-/landing.html
-/getting_started.html
-/integrations.html
-
-# Config with secrets
+# Local configuration and secrets
 config.toml
 !config.example.toml
-
-# Feedback database
-*.db
-*.db-journal
-*.db-wal
-/SpeechKit/
-/audio/
-/data/
-/app/internal/store/audio/
-
-# Local tooling state
-.cache/
-.agents/*
-!.agents/skills/
-!.agents/skills/**
-.stitch/
-.claude/settings.local.json
-.claude/scheduled_tasks.lock
-.codex-tmp/
-.tmp/
-.tmp-website-npm-ci/
-.release-src-v*/
-.public-oss-release/
-.public-release-notes-*.md
-logs/
-.beads/*.sock
-.beads/*.pid
-.beads/*.lock
-.beads/*.log
-.beads/config.yaml
-.beads/README.md
-.beads/*.db-shm
-.beads/.local_version
-.beads/last-touched
-.beads/metadata.json
-CLAUDE.md.backup-*
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-Desktop.ini
-
-# SBOMs (generated in release workflow, attached to GitHub Releases)
-*.sbom.json
-*.cdx.json
-
-# Wails
-node_modules/
-frontend/node_modules/
-frontend/**/node_modules/
-frontend/dist/
-frontend/app/coverage/
-/frontend/app-v2/
-frontend/app/.git/
-
-# Playwright E2E artifacts
-frontend/app/test-results/
-frontend/app/playwright-report/
-frontend/app/.playwright-cache/
-frontend/app/.git.local-backup/
-
-# whisper.cpp binaries
-scripts/whisper-server/*.exe
-scripts/whisper-server/whisper-server
-
-# Doppler
 .env
 .env.*
 !.env.example
-!.env.example.tmpl
-
-# Cloudflare local emulator state
-infra/cloudflare/**/.wrangler/
-
-# Android device-target modules are tracked again (Android voice
-# integration track, 2026-07-15). Local Gradle/IDE artifacts stay
-# ignored via android/.gitignore.
-
-# Embedded frontend build output (regenerated on every frontend build)
-app/internal/frontendassets/dist/
-clients/typescript/**/dist/
-# RepoWise local development index/cache
-.repowise/
-
-# Local docker-compose env overrides — may carry provider secrets when
-# pulled via `doppler run`. Never commit. Use .env.example for templates.
-deploy/docker/.env.local*
 deploy/docker/.env
+deploy/docker/.env.local*
 
-# Local wakeword training pipeline output (generated corpus packages)
-tools/wakeword-training/corpus-packages/
+# Local data
+*.db
+*.db-journal
+*.db-wal
+/audio/
+/data/
+.cache/
 
-# bd 1.3 workspace-gate lock beside .beads/
-*.gate.lock*
+# Node
+node_modules/
+clients/typescript/**/dist/
 
-# SpeechKit website: generated Paraglide output
-Website/src/paraglide/
-Website/project.inlang/cache/
+# Android
+android/**/build/
+android/.gradle/
+android/local.properties
 
-# Local desktop build output (`go build ./app/cmd/speechkit` from its directory).
-/app/cmd/speechkit/speechkit
+# Release metadata generated in CI
+*.sbom.json
+*.cdx.json
+
+# IDE and OS
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db

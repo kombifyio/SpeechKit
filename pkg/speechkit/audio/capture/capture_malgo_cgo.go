@@ -106,13 +106,13 @@ var _ Session = (*MalgoSession)(nil)
 // errSourceUnavailableOnPlatform reports an input source the platform seam
 // cannot open in this build (see platformSupportsLoopback).
 func errSourceUnavailableOnPlatform(source InputSource) error {
-	return fmt.Errorf("%w: %q is not available on %s in this build (Meeting system audio lands in kombify-SpeechKit-mcos.16)", ErrUnsupportedSource, source, runtime.GOOS)
+	return fmt.Errorf("%w: %q is not available on %s in this build", ErrUnsupportedSource, source, runtime.GOOS)
 }
 
 func newMalgoSession(cfg Config) (Session, error) {
 	// Refuse system-audio sources the platform seam cannot serve before a
 	// malgo context exists: miniaudio has no CoreAudio loopback, so on
-	// macOS both land in kombify-SpeechKit-mcos.16.
+	// macOS both are refused here.
 	if !platformSupportsLoopback() {
 		switch cfg.InputSource {
 		case InputSourceSystemLoopback, InputSourceMicAndSystem:

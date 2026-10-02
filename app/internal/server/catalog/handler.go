@@ -180,7 +180,7 @@ func (h *Handler) profileSelected(profile framework.ProviderProfile) bool {
 	// from ModelSelection.VoiceAgent — so Active must follow the provider
 	// that actually serves a default session. Deriving from ModelSelection
 	// here made the readiness display assert a backend that was not the
-	// serving one (kombify-SpeechKit-5nt5).
+	// serving one.
 	if framework.NormalizeMode(profile.Mode) == framework.ModeVoiceAgent {
 		return profile.ID == config.EffectiveVoiceAgentProfileID(h.cfg)
 	}

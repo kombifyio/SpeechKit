@@ -17,7 +17,7 @@ func whisperBinaryNames() []string {
 
 // platformWhisperSearchDirs returns the trusted managed-install candidates on
 // macOS: only the app bundle's Contents/Helpers directory (where
-// scripts/build-macos.sh places whisper-server, kombify-SpeechKit-mcos.11).
+// the macOS bundle build places whisper-server).
 //
 // Nothing outside the signed bundle is probed. A child of SpeechKit.app runs
 // with SpeechKit's TCC grants (microphone, Accessibility) and is never

@@ -69,7 +69,7 @@ const (
 // one more successful span with an unusual attribute.
 //
 // Attributes must stay free of transcript text, audio, window titles and
-// clipboard contents; the privacy invariant in AGENTS.md is binding and this
+// clipboard contents; the privacy invariant is binding and this
 // path is exported to a third party by definition. Pass counts, states and
 // enumerations, never content.
 func ReportOutcome(ctx context.Context, name string, severity OutcomeSeverity, attrs ...attribute.KeyValue) {

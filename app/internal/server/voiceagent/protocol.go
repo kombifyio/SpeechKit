@@ -150,7 +150,7 @@ type StateFrame struct {
 	// start.provider → voice-preference → server-default precedence ran) and
 	// the media transport actually applied ("websocket" | "livekit").
 	// Clients gate provider-dependent behavior — e.g. sending `cancel` — on
-	// these fields being present (kombify-SpeechKit-aajy).
+	// these fields being present.
 	Provider       string `json:"provider,omitempty"`
 	MediaTransport string `json:"media_transport,omitempty"`
 }

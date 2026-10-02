@@ -2,8 +2,8 @@ name: server-preview-docker
 
 # Publishes the non-release SpeechKit Server preview image used by
 # speechkit.cc/install-server.sh --channel preview. This workflow runs only in
-# kombifyio/SpeechKit and intentionally uses GitHub-hosted Docker Buildx so it
-# does not require private-org Depot secrets.
+# kombifyio/SpeechKit and uses GitHub-hosted Docker Buildx, so it needs no
+# extra build secrets.
 
 on:
   push:

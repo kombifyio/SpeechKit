@@ -261,7 +261,7 @@ of it.
 
 It proves nothing about acoustics. Real echo, real room noise, real
 loudspeaker leakage at real volumes, and whether `AcousticEchoCanceler`
-actually attaches on a given handset are device evidence. The bead closes on a
+actually attaches on a given handset are device evidence. Acceptance needs a
 recorded multi-turn dialogue on hardware with no screen interaction, not on
 this suite.
 

@@ -4,7 +4,7 @@
 // [assist.ToolExecutor] pair, ready to plug into an [assist.Service].
 //
 // It is the catalog the SpeechKit desktop app and the self-host server run;
-// an external host (e.g. the kombify-box firmware companion) wires the same
+// an external host (e.g. a voice-satellite firmware companion) wires the same
 // skills instead of re-implementing a keyword router. The skill
 // implementations live in the companion subpackage; the codeword phrases they
 // are matched against live in the shortcuts package, and the

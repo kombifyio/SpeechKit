@@ -1,167 +1,62 @@
 # SpeechKit
 
-[![Maturity: beta](https://img.shields.io/badge/maturity-beta-blue.svg)](STATUS.md)
 [![Go Reference](https://pkg.go.dev/badge/github.com/kombifyio/SpeechKit.svg)](https://pkg.go.dev/github.com/kombifyio/SpeechKit)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/go-1.26%2B-00ADD8.svg)](go.mod)
 
-SpeechKit is a local-first voice framework, server, device runtime, and the
-home of the shared voice contracts. The kernel is platform-neutral Go and can be
-embedded directly, run as a self-hosted server, or used through a device client.
+SpeechKit is an open-source, local-first speech framework. Its platform-neutral
+Go kernel handles dictation, one-shot voice assistance and realtime voice
+conversations over a pluggable set of speech-to-text, text-to-speech, LLM and
+realtime providers. Embed it in your own Go program, run it as a self-hosted
+server, or drive it from the included CLI and MCP server.
 
-> **Beta.** Public APIs, config keys, and defaults can still change between
-> minor releases. Use it in production only with version pins. Pre-1.0 releases
-> use the `v0.MAJOR.MINOR` scheme; breaking changes are called out in each
-> [CHANGELOG.md](CHANGELOG.md) entry.
+> **Beta.** Public APIs, config keys and defaults can still change between
+> minor releases; pin versions. Breaking changes are called out in
+> [CHANGELOG.md](CHANGELOG.md).
 
-> Local testing standard: run the public verification gate before any deploy.
-> See [CONTRIBUTING.md](CONTRIBUTING.md#public-verification).
+## What is in this repository
 
-## Scope
-
-This repository owns:
-
-- The platform-neutral Go voice kernel in `pkg/speechkit`: mode contracts,
-  provider profiles, routing policy, readiness metadata, and the reusable
-  Dictation, Assist, and Voice Agent services.
-- The self-host server target in `app/cmd/speechkit-server`, which wraps the same
-  kernel behind HTTP and WebSocket APIs plus its OpenAPI/AsyncAPI contracts.
-- The agent-facing surfaces: the `speechkit-mcp` MCP server and the
-  `speechkit-cli` command-line tool.
-- The Wails desktop device client in `app/cmd/speechkit`, a reference
-  implementation of a device target — not a separate product. Windows is the
-  supported client; macOS is a Dictation-only beta.
-- The shared voice surface contract consumed by Kombify Companion, Workbench,
-  and embeds.
-
-This repository does not own:
-
-- Product identity, tenancy, entitlement decisions, or edge policy. Those belong
-  to `kombify-Gateway` and the platform standards.
-- Cloud AI provider-key custody for the platform. `kombify-AI-Platform` is the
-  only cloud provider-key custodian; SpeechKit deliberately keeps its own
-  self-contained provider layer so the open-core framework stays usable
-  standalone.
-- The consuming client UX of Companion, Workbench, or any embedding host.
-
-When a SpeechKit server is operated as a Kombify-hosted surface, its public
-traffic goes through `https://api.kombify.io`.
-
-## Runtime And Stack
-
-| Concern | Choice |
+| Path | What it is |
 | --- | --- |
-| Language / runtime | Go 1.26+ (kernel, server, CLI, MCP); Node.js 22+ for the client frontend |
-| Device client | Wails v3 (Windows 10/11 x64, WASAPI capture and playback; macOS 14+ arm64 beta, CoreAudio capture) |
-| Server target | Linux container, `net/http` + WebSocket, OpenAPI and AsyncAPI contracts |
-| Package managers | Go modules, npm, `mise` for the task surface |
-| Authentication | Bearer tokens or edge-auth for the server target; Auth0 JWT at `api.kombify.io` for the Kombify-hosted deployment |
-| Data | SQLite by default (pure-Go driver); optional PostgreSQL 17; Render Managed Postgres for the hosted server target |
-| Voice providers | whisper.cpp, Piper, OpenAI, Groq, Deepgram, AssemblyAI, Hugging Face, OpenRouter, Ollama; Google Cloud STT/TTS and Gemini Live as opt-in BYOK (never a default) |
-| Delivery | GitHub Releases (Windows installer and portable, ad-hoc signed macOS arm64 bundle), `ghcr.io/kombifyio/speechkit-server` container |
+| `pkg/speechkit/` | The Go SDK: mode contracts, provider adapters, routing, wake word, TTS, client |
+| `app/cmd/speechkit-server/` | Self-hosted Linux server with HTTP/WebSocket APIs (OpenAPI and AsyncAPI contracts in `docs/server/`) |
+| `app/cmd/speechkit-cli/` | CLI for diagnostics, scaffolding and quick actions against a server |
+| `app/cmd/speechkit-mcp/` | MCP server so coding agents can read the docs, validate payloads and operate a server |
+| `clients/typescript/` | TypeScript server client, realtime voice client and a web-component voice UI kit |
+| `android/` | Android library modules, keyboard (IME) and assistant app |
+| `examples/` | Small runnable programs, one per integration pattern |
+| `deploy/` | Dockerfile, Compose files and server configuration templates |
+| `docs/` | Framework, server, MCP and API documentation |
 
-SpeechKit imports no Kombify Go modules — it has no dependency on
-`kombify-go-common` and does not call `/v1/ai/*`. That self-containment is a
-deliberate open-core exception. The relationships that do exist are contract and
-edge relationships: shared client and voice contracts, and
-`kombify-Gateway` as the edge for the Kombify-hosted server target consumed by
-Companion and Workbench.
-
-Module layout ([ADR 0004](docs/ADR/0004-sdk-module-boundary.md)): the public SDK
-`pkg/speechkit/...` is the root module `github.com/kombifyio/SpeechKit`
-(import paths unchanged, no app-only dependencies in its `go.mod`); the
-reference apps (`app/cmd`, `app/internal`, `app/tools`) are the nested module
-`github.com/kombifyio/SpeechKit/app`, which requires the root module.
-The committed root `go.work` joins both, so run Go commands for the apps from
-the repository root with `./app/...` paths (for example
-`go test ./app/internal/server/...`); a bare `./...` covers only the SDK module.
-
-Public dependency and export rules are documented in the
-[SDK surface boundary](docs/architecture/sdk-surface-boundary.md). Most of
-`pkg/speechkit` is pure Go; the few packages that need cgo (WASAPI capture,
-sherpa-onnx wake word) or an external binary (whisper-server) are listed in
-its [Native Requirements](docs/architecture/sdk-surface-boundary.md#native-requirements)
-table and fail closed with a sentinel error when the dependency is absent.
-
-## Repository Context
-
-<!-- generated: repo-context v2026-07-19; source: PLATFORM-ARCHITECTURE-TARGET.md ownership map -->
-
-```mermaid
-flowchart LR
-  CORE["Shared client + voice contracts"] --> SK["kombify-SpeechKit"]
-  HOST["Go host apps<br/>self-hosted servers"] --> SK
-  SK --> GW["kombify-Gateway<br/>api.kombify.io"]
-  GW --> COMP["kombify-Mobile<br/>Companion"]
-  GW --> WB["kombify-Workbench"]
-```
-
-The public kernel and adapter boundary is documented in the
-[SDK surface boundary](docs/architecture/sdk-surface-boundary.md).
+The SDK (`pkg/speechkit/...`) is the root Go module. The reference apps
+(`app/cmd`, `app/internal`) are the nested module `.../app`, which requires the
+root module; the committed `go.work` joins both, so run app commands from the
+repository root with `./app/...` paths. SDK code never imports the app module.
 
 ## Modes
 
-The runtime targets share the same three strict modes:
-
 | Mode | Purpose | Boundary |
 | --- | --- | --- |
-| Dictation | Turn speech into text. | STT only. No LLM rewriting, no utilities, no codewords. |
-| Assist | Turn speech or text into one useful result. | Codeword, utility, or LLM output with optional TTS and explicit UI surface metadata. |
-| Voice Agent | Run realtime audio-to-audio dialogue. | Live conversation for brainstorming, support, and fast follow-ups. |
+| Dictation | Turn speech into text. | STT only. No LLM rewriting. |
+| Assist | Turn speech or text into one useful result. | Codeword, utility or LLM output, optional TTS. |
+| Voice Agent | Realtime audio-to-audio dialogue. | Live conversation with a realtime provider. |
 
-Hands-Free is not a fourth mode. It is an activation and voice-output layer over
-the three modes: wake activation, microphone capture, auto-end policy, and
-optional speaker output.
+Hands-Free is an activation layer over the three modes (wake word, capture,
+auto-end and spoken output), not a fourth mode. Words and Replacements
+customize recognition and apply deterministic text transformations; see the
+[Words and Replacements standard](docs/words-and-replacements-standard.md).
 
-Meeting is not a fourth mode either. It is a separate recording service that
-captures the microphone and the system loopback as two channels, shares only
-the STT transcriber with Dictation, and writes the meeting up into a Meeting
-Review. Its public shape is `pkg/speechkit/meeting` plus one REST and SSE
-contract served by the desktop and the server; see
-[Meeting Mode architecture](docs/architecture/meeting-mode.md).
+## Providers
 
-Words and Replacements are the first-class customization axis over the same
-three modes. Words teach SpeechKit terms to recognize; Replacements define
-deterministic text, command, snippet, synonym, and template transformations.
-See the
-[Words And Replacements standard](docs/words-and-replacements-standard.md).
+Local: whisper.cpp, Piper, Ollama-style local LLM endpoints and sherpa-onnx wake
+words. Cloud (bring your own key): OpenAI, Groq, Deepgram, AssemblyAI, Hugging
+Face, OpenRouter, Azure AI / Foundry, Google Cloud STT/TTS and Gemini Live. A
+fresh install runs local-only with no cloud keys. The
+[provider option matrix](docs/capabilities/provider-option-matrix.json) and the
+[voice capability matrix](docs/capabilities/voice-capability-matrix.json) list
+what each provider supports.
 
-Speaker diarization, identification, and attribution are add-on capabilities.
-Provider support and auth status are tracked in the
-[voice capability matrix](docs/capabilities/voice-capability-matrix.json).
-
-## Targets
-
-| Target | Entry point | Use it when |
-| --- | --- | --- |
-| Local-first Go kernel | `pkg/speechkit` | You embed voice into your own Go product, internal tool, prototype, or automation host. |
-| Self-host server | `app/cmd/speechkit-server` | You need a durable Linux process for your own clients, teams, browsers, or centrally managed provider configuration. |
-| Agent tools | `app/cmd/speechkit-mcp`, `app/cmd/speechkit-cli` | An agent or operator should inspect the framework, generate starters, validate payloads, or operate a self-hosted server. |
-| Desktop device client | `app/cmd/speechkit` | You want a ready-to-run desktop reference host for local use, provider testing, or server-connected workflows. |
-
-Windows 10/11 x64 is the supported desktop client. macOS 14+ on Apple Silicon
-is a beta: an ad-hoc signed `SpeechKit.app` bundle that does Dictation —
-microphone capture, global hotkeys, text injection, a menu-bar item, the
-bundled local `whisper-server` and the cloud STT providers. Meeting system
-audio, screen snapshots, wake word, and the local LLM are not ported to macOS:
-each refuses with a typed error and its UI is hidden. Voice Agent and Assist
-are not verified there yet. Because the bundle carries no Developer ID, the
-download needs one documented `xattr` step before it opens and macOS asks for
-Microphone and Accessibility again after every update;
-`UNSIGNED-MACOS-RELEASE.txt` ships beside it and explains both.
-
-Linux is a server runtime, not a desktop capture client. Default device hotkeys
-are `Ctrl+Win` (Dictation), `Win+Alt` (Assist), and `Ctrl+Shift` (Voice Agent);
-the stored values are the same on macOS, where they read as Command, Option,
-and Control.
-
-Public Windows builds are published on
-[GitHub Releases](https://github.com/kombifyio/SpeechKit/releases). A fresh
-clone also carries current installer metadata in `release/latest/windows/`,
-including canonical download URLs and SHA-256 hashes; the GitHub Release assets
-remain canonical.
-
-## Quick Start
+## Quick start
 
 Embed the Go kernel:
 
@@ -169,165 +64,84 @@ Embed the Go kernel:
 go get github.com/kombifyio/SpeechKit
 ```
 
-Import only the components your host needs: `pkg/speechkit/dictation` for
-dictation, `pkg/speechkit/wakeword` for activation, `pkg/speechkit/tts` for
-spoken output, `pkg/speechkit/companion` plus Assist/TTS adapters for one-shot
-Voice Companion hosts, `pkg/speechkit/speaker` for speaker-aware apps, and
-`pkg/speechkit/client` for server-connected apps.
-
-To drive the framework from a `config.toml` instead of building settings by
-hand, `pkg/speechkit/hostconfig` turns a config file into the public
-`ModeSettings` and a starting `RuntimePolicy` in one call:
+Import only what your host needs: `pkg/speechkit/dictation`,
+`pkg/speechkit/wakeword`, `pkg/speechkit/tts`, `pkg/speechkit/companion`
+(one-shot voice companion hosts), `pkg/speechkit/speaker` and
+`pkg/speechkit/client` (server-connected apps). To configure from a file:
 
 ```go
 settings, policy, err := hostconfig.Load("config.toml")
 ```
 
-A missing file yields the shipped defaults (local-only, zero cloud keys); a
-broken file returns an error wrapping `hostconfig.ErrMalformedConfig`. The
-package owns the loader semantics and the desktop app delegates to it, so an
-embedder and the reference app read the same `config.toml` identically.
+A missing file yields the local-only defaults; a malformed file returns an
+error wrapping `hostconfig.ErrMalformedConfig`. `config.example.toml` lists
+every key.
 
-Real providers run in-process — no SpeechKit server required. A runnable
-reference:
+Run a provider in-process, no server needed:
 
 ```bash
-# in-process Voice Agent (OpenAI Realtime), no server:
 OPENAI_API_KEY=... go run ./examples/voice-agent/in-process
 ```
 
-Scaffold a single-prompt Go starter, run the server image, or drive the agent
-tools:
+Run the self-hosted server:
 
 ```bash
-speechkit-cli init --template go-assist-voice-companion ./my-companion
 docker pull ghcr.io/kombifyio/speechkit-server:latest
+```
+
+Compose files and configuration templates are in `deploy/`; the
+[server documentation](docs/server/README.md) and
+[deployment notes](docs/server/DEPLOY.md) cover modes, authentication and
+providers. Public binds must use an authenticated `auth_mode`; never expose
+`auth_mode = "none"`.
+
+Agent tooling:
+
+```bash
 go run ./app/cmd/speechkit-mcp --mode=docs,test
 go run ./app/cmd/speechkit-cli status --server "$SPEECHKIT_SERVER_URL" --token "$SPEECHKIT_SERVER_TOKEN"
 ```
 
-More starting points: [Framework API](docs/speechkit-framework-api.md),
-[Adding a custom provider](docs/sdk/custom-provider.md),
-[Voice Companion](docs/voice-companion.md), and
-[examples/](examples/README.md).
-
-## Common Commands
-
-Public source verification:
+## Verify a change
 
 ```bash
 go test ./pkg/... ./app/cmd/speechkit-cli/... ./app/cmd/speechkit-mcp/... ./examples/...
 GOOS=linux CGO_ENABLED=0 go build ./app/cmd/speechkit-server ./app/cmd/speechkit-mcp ./app/cmd/speechkit-cli
 ```
 
-The complete public-clone gate is documented in
-[CONTRIBUTING.md](CONTRIBUTING.md#public-verification).
-
-## Local Gate
-
-The repository gate runs locally before CI or any deploy dispatch. CI does not
-replace it.
-
-```bash
-mise run test:e2e:local          # the canonical bounded exact-source gate
-mise run doctor:container        # confirm a container engine is reachable first
-```
-
-`test:e2e:local` is a real gate, not a wrapper: it runs the bounded
-device-agent → Home Assistant → state-verify → Piper process end-to-end
-(`test:device-agent-ha-local-e2e`) and the headless dictation hold-to-talk
-capture gate (`test:dictation-hold-gate`, which needs no microphone, keyboard
-or Docker).
-
-Any Docker-API engine satisfies the container requirement — Docker Desktop,
-Podman, colima or a remote `DOCKER_HOST`. Docker Desktop is one option, never a
-prerequisite.
-
-Two surfaces need a different path. The Server-Target is `//go:build linux` and
-cannot run natively on a Windows host; run it in a `golang:1.26` container,
-which needs `pkg-config`, `libopus-dev`, `libopusfile-dev` and `libsoxr-dev`
-installed before the audio-dependent packages will build. The Windows
-Device-Target builds through
-`powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -SkipInstaller`;
-a raw `go build ./app/cmd/speechkit/` bypasses required CGo and ldflags.
-
-Gate contract and evidence rules: workspace `LOCAL-E2E-DEPLOYMENT-STANDARD.md`.
-While the product version is below 1.0.0 the `fast-pre-1.0` profile defers this
-gate to stable promotion and production deploys; fail-closed production receipt
-gates and provider/secret safety invariants stay mandatory regardless.
-
-## Repository Layout
-
-```text
-pkg/speechkit/          Public Go kernel and SDK surface
-app/cmd/speechkit/          Desktop device client, Windows and macOS (reference implementation)
-app/cmd/speechkit-server/   Self-host server entry point
-app/cmd/speechkit-mcp/      MCP server for agent docs, validation, and management
-app/cmd/speechkit-cli/      CLI diagnostics, scaffolding, and quick actions
-app/internal/           Implementation packages behind the public binaries
-app/go.mod              Nested module for the reference apps (cmd/, internal/, tools/)
-go.work                 Joins the root SDK module and ./app for local development
-docs/                   Detailed documentation
-deploy/                 Container and server configuration
-scripts/                Install and release-note helpers
-```
-
-## Standards
-
-- [CONTRIBUTING.md](CONTRIBUTING.md)
-- [SDK surface boundary](docs/architecture/sdk-surface-boundary.md)
-- [SECURITY.md](SECURITY.md)
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-- [SUPPORT.md](SUPPORT.md)
+The full set is in [CONTRIBUTING.md](CONTRIBUTING.md). Most of `pkg/speechkit`
+is pure Go; packages that need cgo or an external binary are listed in the
+[SDK surface boundary](docs/architecture/sdk-surface-boundary.md) and fail with
+a typed error when the dependency is absent.
 
 ## Documentation
 
 | Document | Purpose |
 | --- | --- |
 | [docs/README.md](docs/README.md) | Documentation index |
-| [docs/sdk/README.md](docs/sdk/README.md) | SDK in 10 minutes: first transcript and where to go next |
-| [docs/sdk/custom-provider.md](docs/sdk/custom-provider.md) | Add your own STT/TTS/live provider |
-| [docs/architecture/sdk-surface-boundary.md](docs/architecture/sdk-surface-boundary.md) | Public SDK and export boundary |
-| [docs/architecture/android-sdk-surface-boundary.md](docs/architecture/android-sdk-surface-boundary.md) | Android Gradle module cut for hosts |
-| [android/README.md](android/README.md) | Android modules: which to depend on, consume, build |
-| [docs/speechkit-framework-api.md](docs/speechkit-framework-api.md) | Public framework API contracts |
-| [docs/api/openapi.v1.yaml](docs/api/openapi.v1.yaml) | Local control-plane OpenAPI |
-| [docs/server/README.md](docs/server/README.md) | Server target documentation |
-| [docs/server/openapi.v1.yaml](docs/server/openapi.v1.yaml) | Server OpenAPI contract |
-| [docs/mcp/README.md](docs/mcp/README.md) | MCP server documentation |
-| [docs/agent/llms.txt](docs/agent/llms.txt) | Agent entrypoint |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Public development and verification workflow |
-| [CHANGELOG.md](CHANGELOG.md) | Release notes |
+| [docs/sdk/README.md](docs/sdk/README.md) | SDK in 10 minutes |
+| [docs/sdk/custom-provider.md](docs/sdk/custom-provider.md) | Add your own STT, TTS or live provider |
+| [docs/speechkit-framework-api.md](docs/speechkit-framework-api.md) | Framework API contracts |
+| [docs/server/README.md](docs/server/README.md) | Server target |
+| [docs/mcp/README.md](docs/mcp/README.md) | MCP server |
+| [android/README.md](android/README.md) | Android modules |
+| [examples/README.md](examples/README.md) | Runnable examples |
 
-Generated agent documentation never overrides this README or the detailed
-public documentation.
+## Releases
 
-## Issue Tracking
+Windows and macOS desktop builds, the server image
+`ghcr.io/kombifyio/speechkit-server` and release notes are published on
+[GitHub Releases](https://github.com/kombifyio/SpeechKit/releases). Desktop
+builds are not code-signed yet; each release carries checksums and an
+`UNSIGNED-*-RELEASE.txt` notice. Download only from the official releases page.
 
-Public issues and contributions use the
-[GitHub repository](https://github.com/kombifyio/SpeechKit). Internal planning
-metadata is not part of the public source export.
+## Contributing and support
 
-## Dual-Repo
-
-The consumer-facing source repository is `kombifyio/SpeechKit`: the `go get`
-path, Go Reference badge, container image, and release assets all use that
-identity. The public source tree is produced by an allowlist-based export from
-governed working source. Exported code and documentation must remain usable
-without access to that working repository; the three identities (working
-repository, public mirror, Go module path) and the rules that follow are
-spelled out in [CONTRIBUTING.md](CONTRIBUTING.md#repository-identities); the
-package boundary is in the
-[SDK surface boundary](docs/architecture/sdk-surface-boundary.md).
-
-## Trust
-
-Public releases include checksums and an unsigned-artifact notice while the
-no-cost unsigned release path is active: `UNSIGNED-WINDOWS-RELEASE.txt` for the
-Windows assets, and `UNSIGNED-MACOS-RELEASE.txt` for the macOS bundle, which is
-ad-hoc signed rather than notarized. Download only from the official
-[kombifyio/SpeechKit releases](https://github.com/kombifyio/SpeechKit/releases).
+Issues and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md),
+[SUPPORT.md](SUPPORT.md), [SECURITY.md](SECURITY.md) and the
+[Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
+Apache-2.0, see [LICENSE](LICENSE). The Android keyboard links a GPL-3.0 fork of
+HeliBoard; see [android/GPL-NOTICE.md](android/GPL-NOTICE.md).

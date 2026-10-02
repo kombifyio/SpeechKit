@@ -72,9 +72,8 @@ re-interpretation of the visuals.
 
 <script type="module">
   // The kit is UI-only: inject a VoiceUiController (sessions/transport/audio
-  // stay host-owned). kombify surfaces wrap @kombify/ai-sdk/voice; OSS hosts
-  // use the ready-made adapter from ./voiceagent-adapter (see below) instead
-  // of writing their own.
+  // stay host-owned). Use the ready-made adapter from ./voiceagent-adapter
+  // (see below) or write your own.
   document.getElementById("voice").controller = myController;
 </script>
 ```
@@ -86,7 +85,7 @@ SSR hosts must import `./define` client-side only.
 ## Controller boundary
 
 The kit renders the canonical `speechkit.voice_surface.v1` event stream and
-owns no session FSM, provider keys, tickets, or entitlement authority. See
+owns no session FSM, provider keys, tickets, or authorization decisions. See
 `VoiceUiController` in the typed API: `start/stop/cancel/subscribe/getState`
 plus optional `interrupt()` (barge-in) and `subscribeLevel()` (visualizer).
 

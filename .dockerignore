@@ -1,32 +1,16 @@
-# VCS and local agent/runtime state
 .git
-.beads
 .cache
-.codex
-.agents
 .tmp
-
-# Dependency caches and generated frontend output
 **/node_modules
-frontend/app/dist
-Website/dist
-Website/.next
-
-# Local build/test artifacts
-bin
-build
 android/**/build
 android/.gradle
-tools/wakeword-training/corpus-packages
-tools/wakeword-training/output
-**/__pycache__
+bin
+build
 dist
 coverage.out
 *.test
 *.prof
 *.log
-
-# Local environment files
 .env
 .env.*
 !.env.example

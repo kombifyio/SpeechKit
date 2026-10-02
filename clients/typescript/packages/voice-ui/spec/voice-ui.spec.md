@@ -9,7 +9,7 @@ implementation. The workspace-level policy source is
 
 Implementations render the canonical `speechkit.voice_surface.v1` event stream
 through a host-injected controller. The kit owns no session FSM, transport,
-provider keys, tickets, or entitlement authority.
+provider keys, tickets, or authorization decisions.
 
 ## Session status → visual state
 

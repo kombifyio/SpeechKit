@@ -18,7 +18,7 @@ func TestDarwinMalgoSeamIsCoreAudioWithoutLoopback(t *testing.T) {
 		t.Fatalf("defaultBackend() = %q, want %q", got, BackendDarwinCoreAudioMalgo)
 	}
 	if platformSupportsLoopback() {
-		t.Fatal("platformSupportsLoopback() = true on darwin, want false until kombify-SpeechKit-mcos.16")
+		t.Fatal("platformSupportsLoopback() = true on darwin, want false until the CoreAudio process tap lands")
 	}
 	backends := platformMalgoContextBackends()
 	if len(backends) != 1 || backends[0] != malgo.BackendCoreaudio {
@@ -53,8 +53,8 @@ func TestEnsureLoopbackOutputDeviceAvailableFailsClosedOnDarwin(t *testing.T) {
 	}
 }
 
-// TestListCaptureDevicesOnDarwinIsErrorFree is the headless-runner contract
-// from kombify-SpeechKit-mcos.5: a macos-14 runner has no audio input device
+// TestListCaptureDevicesOnDarwinIsErrorFree is the headless-runner contract:
+// a macos-14 runner has no audio input device
 // and grants no microphone permission, and enumeration must still answer with
 // an empty list instead of an error. The desktop calls this on every settings
 // open, so an error here would surface as a broken device picker.

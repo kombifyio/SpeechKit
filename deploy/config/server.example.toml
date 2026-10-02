@@ -26,7 +26,7 @@ public_url             = ""
 # entries to disable a mode for a given deployment (e.g. a Dictation-only
 # pool).
 modes                  = ["dictation", "assist", "voiceagent"]
-auth_mode              = "bearer_or_edge"       # bearer | edge_hmac | bearer_or_edge | oidc | bearer_or_oidc | none. Production default accepts service bearer tokens and Gateway X-Edge-* HMAC. Use "oidc" to validate JWTs from an external IdP (see [server.oidc]); "bearer_or_oidc" additionally keeps the static service bearer working — the shape for mobile/native per-user clients next to existing service callers.
+auth_mode              = "bearer_or_edge"       # bearer | edge_hmac | bearer_or_edge | oidc | bearer_or_oidc | none. Production default accepts service bearer tokens and edge-proxy X-Edge-* HMAC. Use "oidc" to validate JWTs from an external IdP (see [server.oidc]); "bearer_or_oidc" additionally keeps the static service bearer working — the shape for mobile/native per-user clients next to existing service callers.
 bearer_token_env       = "SPEECHKIT_SERVER_TOKEN"
 # Optional public demo token. When SPEECHKIT_SMOKE_TOKEN is set in the env,
 # the smoke UI on `/` embeds it so visitors can drive all three modes from
@@ -118,8 +118,8 @@ storage_reads  = true
 vocabulary     = true
 tts_direct     = true
 # Public wake-word model catalog (GET /v1/wakeword/models*): openWakeWord ONNX
-# metadata for host consumers + microWakeWord v2 manifests for ESPHome / the
-# Kombify-Box on-device. Already-public model metadata + redirects; on by
+# metadata for host consumers + microWakeWord v2 manifests for ESPHome and
+# other on-device satellites. Already-public model metadata + redirects; on by
 # default. Set false to hide the surface.
 wakeword_models = true
 
@@ -155,7 +155,7 @@ wakeword_models = true
 #
 # # Immutable exact G0 rule: device + room + rule + phrase + locale + time +
 # # action + entity must match. Only turn_on/turn_off for light.* is accepted.
-# # This local allowlist is not a Workbench approval or Cloud standing grant.
+# # This local allowlist is not a remote approval or standing grant.
 # [[server.device_agent.devices.local_rules]]
 # rule_id      = "kitchen-light-off"
 # trigger_text = "turn off the kitchen light"
@@ -187,7 +187,7 @@ wakeword_models = true
 # locale              = "en-US"
 #
 # The bridge exposes only POST /v1/device-agent/{register,events,assist,tts}.
-# It is absent from /api/v1, MCP, Gateway, federation, and general Assist/LLM.
+# It is absent from /api/v1, MCP, edge proxies, federation, and general Assist/LLM.
 # The durable ledger commits before HA dispatch. action_executed=yes requires
 # the exact successful HA target and a matching REST state readback; ambiguous
 # outcomes remain indeterminate and are never redispatched for that request ID.

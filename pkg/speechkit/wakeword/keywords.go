@@ -23,8 +23,8 @@ const wordBoundary = "▁"
 //
 // Greedy longest-match approximates the true SentencePiece/BPE segmentation and
 // is intended for short wake phrases. For long or ambiguous phrases prefer
-// generating keywords.txt with the model's bpe.model (see
-// examples/kombify-box-satellite/tools/make-keywords.ps1).
+// generating keywords.txt with the model's bpe.model (sherpa-onnx ships a
+// text2token tool for this).
 func EncodeKeywords(tokensPath string, rawKeywords []string) ([]string, error) {
 	vocab, maxLen, err := loadTokenVocab(tokensPath)
 	if err != nil {

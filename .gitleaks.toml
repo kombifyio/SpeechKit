@@ -38,19 +38,12 @@ regexTarget = "match"
 regexes = ['''^[A-Z][A-Z0-9_]*=\s''']
 
 [[allowlists]]
-description = "Historical local Gateway example URL, not a committed secret"
-paths = ['''(^|.*/)docs/speechkit-integration-plan\.md$''']
-regexTarget = "line"
-regexes = ['''url: http://kombify-speechkit-api:8080/v1/speechkit''']
-
-[[allowlists]]
 description = "This gitleaks config documents the exact fake fixtures it allows"
 paths = ['''(^|.*/)\.gitleaks\.toml$''']
 regexes = [
   '''e2e-dev-token''',
   '''sk-1234567890''',
   '''OPENAI_API_KEY=$''',
-  '''url: http://kombify-speechkit-api:8080/v1/speechkit''',
 ]
 
 [[allowlists]]

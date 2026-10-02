@@ -28,8 +28,8 @@ const (
 	BackendWindowsWASAPINative Backend = "windows-wasapi-native"
 	// BackendDarwinCoreAudioMalgo is the macOS capture backend: the same
 	// malgo session as BackendWindowsWASAPIMalgo, opened on CoreAudio.
-	// System loopback is not available on it until the process-tap slice
-	// (kombify-SpeechKit-mcos.16).
+	// System loopback is not available on it yet; it needs a CoreAudio
+	// process tap.
 	BackendDarwinCoreAudioMalgo Backend = "darwin-coreaudio-malgo"
 )
 

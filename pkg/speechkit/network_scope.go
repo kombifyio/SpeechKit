@@ -157,8 +157,8 @@ const (
 	// EndpointClassTelemetry is the optional OTLP audit/trace exporter.
 	EndpointClassTelemetry EndpointClass = "telemetry"
 
-	// EndpointClassCloud is any public SaaS endpoint (provider APIs, the
-	// kombify cloud account, update/download hosts outside setup consent).
+	// EndpointClassCloud is any public SaaS endpoint (provider APIs, hosted
+	// accounts, update/download hosts outside setup consent).
 	EndpointClassCloud EndpointClass = "cloud"
 )
 

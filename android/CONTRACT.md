@@ -8,7 +8,7 @@ them using idiomatic equivalents.
 
 SpeechKit is a developer framework: one owner per concern, reused by every
 host (keyboard, system assistant, in-app test screens). Product UX stays in
-`:app` (GPL glue) and Companion; these modules stay Apache-2.0.
+`:app` (GPL glue) and in consuming apps; these modules stay Apache-2.0.
 
 Module cut, dependency rules, and what counts as an SDK break:
 [docs/architecture/android-sdk-surface-boundary.md](../docs/architecture/android-sdk-surface-boundary.md).
@@ -210,8 +210,8 @@ These interfaces have no Go counterpart (Android-specific):
 | `net/DictationWsClient.kt` | present | Client of the server's streaming Dictation WS (`docs/server/asyncapi.dictation-stream.v1.yaml`); implements `StreamingSttSession`, mirrors Go `speechkit.DictationStream` |
 | `core/stt/system/SystemSpeechRecognizerSession.kt` | present | System on-device STT tier (B-M2b): platform `SpeechRecognizer` behind `StreamingSttSession` (`capturesOwnAudio = true`); API 31+ on-device recognizer when available, `EXTRA_PREFER_OFFLINE` fallback below; unit-testable via the `SpeechRecognizerHandle` seam |
 | `core/stt/system/SystemSttSupport.kt` | present | API 33+ `checkRecognitionSupport` / `triggerModelDownload` surface for the B-M4 onboarding language downloads (null / no-op below 33) |
-| `domain/ConnectionProfile.kt` + `ConnectionMode.kt` | present | Shared connection contract. Flavor-bound resolution lives in `:app` DI; `:net` `StoredServerProfile` is the prefs adapter. `oss` = on-device; `kombify` uses persisted `connection_mode`. Companion is applied only after explicit Connect. See `docs/android-connect-distribution-standard.md`. |
-| Pairing/auth provisioning | present | kombify tester APKs dial `https://speechkit.kombify.io` with a shared, revocable bearer baked at Firebase / `assemble-tester.ps1`. Companion `provision()` supplies the user JWT only when the user Connects Cloud or Companion launches `speechkit://connect/kombify`. Homelab: Settings can still browse `_speechkit._tcp` and override. OSS stays local-only. |
+| `domain/ConnectionProfile.kt` + `ConnectionMode.kt` | present | Shared connection contract. Flavor-bound resolution lives in `:app` DI; `:net` `StoredServerProfile` is the prefs adapter. `oss` = on-device; the hosted flavor uses persisted `connection_mode`, applied only after an explicit Connect. |
+| Pairing/auth provisioning | present | A build may ship a default server URL and a revocable bearer through build properties; a companion app supplies a user token only after an explicit Connect. Homelab: Settings can browse `_speechkit._tcp` and override. OSS stays local-only. |
 
 ## Drift Detection
 

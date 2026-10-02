@@ -41,7 +41,7 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 	// Single source of truth with the catalog readiness surface: GET
 	// /v1/catalog/readiness marks the voice_agent profile Active from the
 	// same derivation, so the profile shown active is the provider that
-	// actually serves a default session (kombify-SpeechKit-5nt5).
+	// actually serves a default session.
 	defaultProvider := config.EffectiveVoiceAgentProvider(cfg)
 
 	// Register a factory for every Voice-Agent-capable provider that builds on

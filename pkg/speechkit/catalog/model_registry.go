@@ -137,7 +137,7 @@ type ProviderModelDescriptor struct {
 	Recommended bool                     `json:"recommended,omitempty"`
 	SourceURL   string                   `json:"sourceUrl"`
 
-	// Freshness metadata (kombify-SpeechKit-glnc). Dates are calendar days
+	// Freshness metadata. Dates are calendar days
 	// (YYYY-MM-DD) from vendor documentation. LastVerifiedAt is the day the
 	// row was last checked against those docs. TestDefaultModelRegistryFreshnessSLA
 	// always fails when a default/recommended row lacks it; the age check

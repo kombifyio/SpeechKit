@@ -38,11 +38,8 @@ jobs:
         with:
           node-version: 24
 
-      - name: Verify changelog and version
-        run: |
-          node scripts/release/lint-version-sync.mjs --allow-derived-pre-1-patch
-          node scripts/release/lint-changelog.mjs --unreleased
-          node scripts/release/check-doc-links.mjs
+      - name: Check documentation links
+        run: node scripts/release/check-doc-links.mjs
 
       - name: Secret scan
         run: |
@@ -72,27 +69,3 @@ jobs:
           pnpm run build
           pnpm run test
           pnpm run typecheck
-
-      - name: Verify no private source trees are exported
-        shell: bash
-        run: |
-          set -euo pipefail
-          for path in tools testdata frontend installer Website .agents .beads android; do
-            if [ -e "$path" ]; then
-              echo "::error title=Private tree exported::$path must not be present in the public repository"
-              exit 1
-            fi
-          done
-          for path in app/cmd/speechkit app/cmd/sk-e2e app/cmd/sk-localprobe app/cmd/sk-browser-smoke app/cmd/speechkit-wakeword app/cmd/speechkit-openwakeword; do
-            if [ -e "$path" ]; then
-              echo "::error title=Desktop or release-only command exported::$path is not part of the public framework source surface"
-              exit 1
-            fi
-          done
-          # app/internal/voiceeval is public-test support for app/internal/server/voiceagent.
-          for path in app/internal/desktop app/internal/frontendassets app/internal/hotkey app/internal/output app/internal/tray app/internal/winapi app/internal/testutil; do
-            if [ -e "$path" ]; then
-              echo "::error title=Private implementation package exported::$path is not needed for the public server, SDK, CLI, or MCP tools"
-              exit 1
-            fi
-          done

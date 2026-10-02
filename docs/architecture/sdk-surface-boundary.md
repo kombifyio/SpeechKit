@@ -15,7 +15,7 @@ Local-Library hosts without depending on the reference-app module
 Windows-only adapters, desktop storage, server middleware, or bundled app
 assets.
 
-Module layout ([ADR 0004](../ADR/0004-sdk-module-boundary.md)): `pkg/speechkit/...`
+Module layout: `pkg/speechkit/...`
 lives in the root module `github.com/kombifyio/SpeechKit`; the reference
 apps (`app/cmd`, `app/internal`, `app/tools`) are a separate nested module
 (`.../app`) that requires the root module. The root module therefore cannot

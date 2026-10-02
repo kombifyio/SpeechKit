@@ -16,8 +16,6 @@ not the entire desktop application.
 - `voice-agent/in-process/`: fully in-process Voice Agent — constructs a `live.LiveProvider` (OpenAI Realtime) and drives a text dialogue with no SpeechKit server in the path.
 - `voice-agent/provider-switching/`: credential-free provider/profile/model selection using the public `pkg/speechkit/voiceagent/live` descriptors, `ProviderIntent`, and config helpers.
 - `agentbridge-codex/`: External Coding Agent Bridge in exec mode — one prompt in, normalized events out, against the real codex CLI or the fakecodex fixture.
-- `kombify-box-satellite/`: Go host for the kombify box following the SpeechKit Hands-Free contract (USB mic -> sherpa-KWS wakeword -> optional Hands-Free/Assist flow -> box speaker).
-- `box-evidence-harness/`: headless fake box driving the exact Voice-Agent WebSocket path the kombify-Box firmware uses, reporting the runtime facts the firmware hardcodes against.
 
 ## Agent prompts
 

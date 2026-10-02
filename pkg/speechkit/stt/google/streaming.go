@@ -227,7 +227,7 @@ func (p *Provider) resolveGoogleStreamingCredentials() (*auth.Credentials, error
 
 	if raw := stt.FirstNonEmptyTrimmed(os.Getenv(credentialsJSONEnv), p.SecretResolver.Resolve(credentialsJSONEnv)); raw != "" {
 		// DetectDefault validates the credential configuration (the gap that deprecated the older
-		// CredentialsFromJSON/WithCredentialsJSON path); the JSON itself is operator-controlled (Doppler/env).
+		// CredentialsFromJSON/WithCredentialsJSON path); the JSON itself is operator-controlled (secret manager/env).
 		creds, err := credentials.DetectDefault(&credentials.DetectOptions{
 			CredentialsJSON: []byte(raw), //nolint:staticcheck // SA1019: credential type is not known up front, so typed NewCredentialsFromJSON cannot be used; DetectDefault validates it and the JSON is operator-controlled.
 			Scopes:          []string{googleSTTScope},

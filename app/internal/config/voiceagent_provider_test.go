@@ -4,7 +4,7 @@ import "testing"
 
 // The catalog readiness surface marks the voice_agent profile Active from
 // this derivation while session serving reads the same value — both sides of
-// the kombify-SpeechKit-5nt5 contract hang off these two functions.
+// that contract hang off these two functions.
 func TestEffectiveVoiceAgentProviderMatchesServingDefault(t *testing.T) {
 	if got := EffectiveVoiceAgentProvider(nil); got != "assemblyai" {
 		t.Errorf("nil config = %q, want assemblyai", got)

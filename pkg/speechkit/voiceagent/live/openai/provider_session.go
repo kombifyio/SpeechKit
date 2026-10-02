@@ -53,7 +53,7 @@ func (p *Provider) SendAudio(chunk []byte) error {
 // so an explicit commit here races that automatic commit and, once the buffer
 // has already been drained, fails the whole session with
 // input_audio_buffer_commit_empty. That is exactly what a server-VAD client
-// that also signals audio_end (e.g. kombify-Box toggle-talk) triggered. Only
+// that also signals audio_end (e.g. a satellite with toggle-talk) triggered. Only
 // push-to-talk (server VAD disabled) needs the manual commit + response.create.
 func (p *Provider) SendAudioStreamEnd() error {
 	conn := p.snapshotConn()

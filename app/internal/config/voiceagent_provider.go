@@ -10,7 +10,7 @@ import "strings"
 // a default Voice Agent session". The catalog readiness surface marks the
 // voice_agent profile Active from this same derivation so the ops display
 // never asserts a backend that is not the serving one, on vanilla and
-// kombify-default deployments alike (kombify-SpeechKit-5nt5).
+// opinionated-default deployments alike.
 
 // NormalizeVoiceAgentProviderName maps public aliases and catalog profile IDs
 // onto the canonical Voice Agent provider names ("gemini", "deepgram",

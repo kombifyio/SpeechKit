@@ -246,7 +246,7 @@ conformance suite, catalog profile, routing — is
 Provider profiles include stable IDs, provider group, execution mode, model variants, capabilities, and metadata that host applications can use to build their own settings UI.
 
 `DefaultProviderMatrix()` is the provider-agnostic view for settings, onboarding,
-and Workbench-style clients. It normalizes the 10+ supported provider IDs into a
+and operator consoles. It normalizes the 10+ supported provider IDs into a
 single matrix and classifies each feature as `native`, `routed`, `cascaded`,
 `planned`, or `unsupported` for Dictation, streaming dictation, long
 transcription, diarization, speaker identification, Assist, realtime voice, and
@@ -426,7 +426,7 @@ The adapter owns microphone capture, the ticket WebSocket, playback with
 barge-in flushing, and level metering; the provider that answers is whatever
 the server's Voice Agent settings select (Deepgram and AssemblyAI are the
 first-class managed providers). The kit itself holds no session FSM, provider
-keys, tickets, or entitlement authority.
+keys, tickets, or authorization decisions.
 
 Normative details: `clients/typescript/packages/voice-ui/spec/voice-ui.spec.md`
 and the package README.

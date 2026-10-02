@@ -212,7 +212,7 @@ func (a *Adapter) Run(parent context.Context) {
 	// the session_ready frame (the start.provider → voice-pref → default
 	// precedence already ran above). Clients need this to distinguish e.g.
 	// native Deepgram from the cascaded pipeline and to gate `cancel`
-	// support on servers that ship it (kombify-SpeechKit-aajy).
+	// support on servers that ship it.
 	providerName := normalizeProviderName(start.Provider)
 	if providerName == "" && a.Provider != nil {
 		// Pre-injected provider (tests) with no client-requested name.

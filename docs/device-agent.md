@@ -43,8 +43,8 @@ loopback-only, while every off-loopback Home Assistant origin requires HTTPS.
 Redirects and proxy traversal are disabled for both credential-bearing clients.
 
 The general `/api/v1` compatibility alias deliberately does not expose these
-routes. They are also absent from Gateway, federation, MCP, and the general
-Assist/LLM pipeline.
+routes. They are also absent from any edge proxy, federation, MCP, and the
+general Assist/LLM pipeline.
 
 ## Fail-closed command policy
 
@@ -60,8 +60,8 @@ G0 accepts only reversible Tier-1 actions:
 - `turn_off` for one explicit `light.*` entity.
 
 The rule window must be positive and no longer than 31 days. These static local
-rules are a narrow G0 allowlist. They are explicitly **not** a Workbench
-approval, Cloud standing grant, delegated identity, or federated capability.
+rules are a narrow local allowlist. They are explicitly **not** a remote
+approval, standing grant, delegated identity, or federated capability.
 
 Home Assistant is the sole smart-home semantic authority. SpeechKit sends the
 server-owned canonical rule phrase to Home Assistant's Conversation API. It
@@ -109,9 +109,9 @@ whose ID does not match its request. TTS retry never repeats the Home Assistant
 action because it reads the already completed claim rather than invoking
 Assist again.
 
-## Phase-A Kombify Box media ingress
+## Box media ingress
 
-The Kombify Box uses a separate finite media endpoint rather than receiving a
+A paired voice satellite (the "Box") uses a separate finite media endpoint rather than receiving a
 general SpeechKit server credential or any Home Assistant credential. This
 endpoint is owned by the local device-agent implementation but is not one of
 the four `speechkit.device_agent.v1` routes:
@@ -281,8 +281,7 @@ go run ./app/cmd/speechkit-device-agent `
   --locale en-US
 ```
 
-The product MCP management boundary is documented in
-[`product-mcp.md`](product-mcp.md). Home Assistant's official response and
+Home Assistant's official response and
 state shapes are documented in the
 [Conversation API](https://developers.home-assistant.io/docs/intent_conversation_api/)
 and [REST API](https://developers.home-assistant.io/docs/api/rest/).

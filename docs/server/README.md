@@ -4,8 +4,7 @@ The SpeechKit Server is the network deployment form of the SpeechKit Framework.
 It exposes Dictation, Assist, and Voice Agent over HTTP/WebSocket while using
 the same mode contracts as the Windows app and embeddable Go API.
 
-SpeechKit ships as framework modules, not as a hosted service operated by
-kombify:
+SpeechKit ships as framework modules, not as a hosted service:
 
 | Module | Use it when | Surface |
 |---|---|---|
@@ -35,7 +34,7 @@ The server:
 - Takes secrets from environment variables whose names are referenced from config.
 - Exposes the same auth, health, readiness, and API conventions for all modes.
 - Exposes Words/Replacements, Native Templates, Customization Packs, and active template selection so products can combine global defaults with scoped org/user/session rules.
-- Hands homelab clients a `speechkit.pairing.v1` payload and QR from `/setup` ([pairing.md](pairing.md)); LAN DNS-SD never carries the token.
+- Hands homelab clients a `speechkit.pairing.v1` payload and QR from `/setup`; LAN DNS-SD never carries the token.
 
 ## Quick start
 
@@ -338,8 +337,8 @@ session owner or an admin. The endpoint never returns LiveKit API secrets.
 
 Built-in auth is configured via `[server].auth_mode`:
 
-- `bearer_or_edge` (Kombify production default) — accepts either a static
-  service bearer token or trusted Gateway edge auth.
+- `bearer_or_edge` (production default) — accepts either a static
+  service bearer token or trusted edge-proxy auth.
 - `bearer` — single static token from
   `$SPEECHKIT_SERVER_TOKEN`.
 - `edge_hmac` — trusts HMAC-signed headers from an authenticated edge.
@@ -495,7 +494,7 @@ authenticated operator.
 ## LAN discovery (mDNS)
 
 Homelab installs can announce themselves on the local network so LAN devices
-— the Kombify Box, the desktop app, Android — find the server without typing
+— voice satellites, the desktop app, Android — find the server without typing
 an address. Opt-in (default OFF; a public deployment has no business
 multicasting its presence):
 

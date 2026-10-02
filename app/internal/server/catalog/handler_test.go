@@ -167,7 +167,7 @@ func TestReadinessGoogleSTTDoesNotUseGeminiKey(t *testing.T) {
 
 // Voice Agent Active must follow the provider that actually serves a default
 // session (cfg.VoiceAgent.Provider), not ModelSelection.VoiceAgent — serving
-// never reads the latter (kombify-SpeechKit-5nt5).
+// never reads the latter.
 func TestReadinessVoiceAgentActiveFollowsServingProviderKombifyShape(t *testing.T) {
 	cfg := &config.Config{}
 	// kombify-default deployment shape: kombify defaults flip the provider to

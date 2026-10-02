@@ -14,13 +14,13 @@ its Go source of truth.
 | Capture microphone PCM, play PCM, run VAD / turn-taking, log with `sk.voice` | `:core` | `io.kombify.speechkit:core` |
 | Speak the Dictation and Voice Agent wire protocol (WebSocket + REST) | `:net` | `io.kombify.speechkit:net` |
 | Draw the voice orb in Compose | `:voice-ui-compose` | `io.kombify.speechkit:voice-ui-compose` |
-| Co-install with the Companion app across the GPL boundary (AIDL contract only) | `:coinstall` | `io.kombify.speechkit:coinstall-contract` |
+| Co-install with a companion app across the GPL boundary (AIDL contract only) | `:coinstall` | `io.kombify.speechkit:coinstall-contract` |
 | Ship a voice-only keyboard (IME) | `:ime` | in-repo host; not published |
 | Ship a system assistant (`VoiceInteractionService`, overlay, Assist) | `:assistant` | in-repo host; not published |
 
 `:ime` and `:assistant` are SpeechKit-owned hosts, not libraries: they show
-how a keyboard and an assistant compose the published modules. Companion owns
-its own app, Wear and Car UX on top of the same modules. `:app`, `:heliboard`
+how a keyboard and an assistant compose the published modules. Other apps
+build their own UX on top of the same modules. `:app`, `:heliboard`
 and `:test-shared` are the reference APK and test glue — start a new host
 from the published modules, never by copying `:app`.
 
@@ -70,8 +70,8 @@ published set.
 
 Everything outside `:app` and `:heliboard` is Apache-2.0. `:heliboard` is a
 GPL-3.0 fork ([HELIBOARD.md](HELIBOARD.md)); an APK that links it is GPL as a
-whole, so no proprietary code may enter `:app`. `:coinstall` exists so the
-Companion app and the keyboard can share one AIDL contract without linking
+whole, so no proprietary code may enter `:app`. `:coinstall` exists so a
+companion app and the keyboard can share one AIDL contract without linking
 each other across that line. See [GPL-NOTICE.md](GPL-NOTICE.md).
 
 ## Diagnose on device

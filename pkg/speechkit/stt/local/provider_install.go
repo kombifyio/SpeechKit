@@ -109,7 +109,7 @@ func FindWhisperBinary() (string, error) {
 
 // findWhisperBinary looks for the whisper-server executable in standard locations.
 //
-// Per the kernel/adapter discipline in CLAUDE.md, this kernel function
+// Per the kernel/adapter discipline, this kernel function
 // must stay platform-neutral. Windows-specific binary names and
 // install locations live in local_search_windows.go;
 // local_search_unix.go is the no-op fallback for Linux/macOS where

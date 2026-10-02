@@ -9,7 +9,7 @@ import (
 )
 
 // The point of this file: on a platform with no guard, every entry point must
-// say so. Adopt returned nil here until kombify-SpeechKit-mcos.14, which the
+// say so. Adopt used to return nil here, which the
 // callers could not distinguish from a successful adoption.
 
 func TestAdoptReportsTheUnsupportedPlatformSentinel(t *testing.T) {

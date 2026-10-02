@@ -42,7 +42,6 @@ changing with it.
 ## Coverage beyond the catalogs
 
 The catalogs carry the message IDs the framework resolves itself. User-facing
-text that still bypasses them is tracked as child beads of the localization
-audit (v0.68): the desktop notepad's snapshot status map, the Android
+text that still bypasses them is known: the desktop notepad's snapshot status map, the Android
 assistant's hardcoded result strings, the desktop activity log, and the
 TypeScript voice-ui locales, which should join this evidence file.

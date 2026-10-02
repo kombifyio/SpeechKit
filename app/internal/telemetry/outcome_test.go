@@ -24,7 +24,7 @@ func recordOutcomes(t *testing.T) *tracetest.SpanRecorder {
 	return recorder
 }
 
-// The local-only guarantee in AGENTS.md is the reason this is the first test:
+// The local-only guarantee is the reason this is the first test:
 // a fresh install configures no endpoint, so ConfigureTracing installs nothing
 // and reporting an outcome must reach nobody and cost nothing.
 func TestReportOutcomeEmitsNothingWithoutAConfiguredEndpoint(t *testing.T) {

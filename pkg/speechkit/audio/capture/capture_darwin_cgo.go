@@ -8,7 +8,7 @@ import "github.com/gen2brain/malgo"
 // the CoreAudio backend name and the malgo context backend list.
 // Microphone capture runs the very same session as Windows; system
 // loopback has no CoreAudio equivalent in miniaudio and waits for the
-// process-tap slice (kombify-SpeechKit-mcos.16).
+// CoreAudio process tap.
 
 func init() {
 	if err := RegisterBackend(BackendDarwinCoreAudioMalgo, newMalgoSession); err != nil {

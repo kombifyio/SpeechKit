@@ -16,10 +16,10 @@ not import `:app` or `:heliboard`.
 
 The assembled `io.kombify.speechkit` APK is GPL-3.0 because it links the
 HeliBoard fork. That license applies to the APK as a whole, not to the
-framework modules. Those stay Apache-2.0 so Companion can compile against them
-without becoming a HeliBoard derivative. Co-install with Companion is IPC
-([android-coinstall-contract.md](android-coinstall-contract.md)), never a
-Gradle dependency on `:app`.
+framework modules. Those stay Apache-2.0 so another app can compile against
+them without becoming a HeliBoard derivative. Co-installing with another app is
+IPC through the `:coinstall` AIDL contract, never a Gradle dependency on
+`:app`.
 
 ## Public modules
 
@@ -66,9 +66,7 @@ dependencies {
 
 **GitHub Packages is the internal lane.** Its Maven endpoint requires a token
 even for public artifacts, so an outside developer hits 401 before they see a
-package. Treating it as a public channel is what left `:core`, `:net` and
-`:domain` documented as consumable while being unresolvable, and that gap is
-how kombify-Mobile ended up vendoring a copy in the first place.
+package. Treat JitPack as the public channel.
 
 `jitpack.yml` builds exactly the modules above. It cannot build `:app`,
 because the HeliBoard fork's GPL sources are not mirrored — the mirror records
@@ -79,13 +77,11 @@ fresh clone configure the framework modules before running
 
 The artifactId `coinstall-contract` does not match its module name. That is
 deliberate: what a consumer reads in a dependency block should say that this is
-a contract and carries no implementation. Owner decision 2026-08-11 A8 names
-it, and kombify-Mobile pins it.
+a contract and carries no implementation.
 
 A published artifact is the only supported way to consume these modules from
 another repository. Vendoring a snapshot or wiring an `includeBuild` against
-this tree is not: it is how kombify-Mobile ended up carrying a copy of
-`voice-capability`, a module that no longer exists here.
+this tree is not; a vendored copy drifts from the published contract.
 
 Consuming the co-install contract needs both halves of the AAR — the compiled
 stubs in `classes.jar` and the `.aidl` under `aidl/`. AGP ships the second only
@@ -138,7 +134,7 @@ not this APK starts from the public modules, not by copying `:app`.
    wiring and `StoredServerProfile` stay in `:app` / `:net`.
 6. Public modules must not import `:heliboard` or `helium314.keyboard.*`.
 7. Public binds and cloud paths fail closed in the host; OSS flavor stays
-   local-only. See [android-connect-distribution-standard.md](../android-connect-distribution-standard.md).
+   local-only.
 8. Do not log PCM, bearer tokens, or transcript text. Diagnosis is
    `adb logcat -s sk.voice`.
 

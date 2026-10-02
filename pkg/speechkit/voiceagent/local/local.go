@@ -10,7 +10,7 @@
 // final input/output transcripts accumulate into the returned
 // [speechkit.VoiceAgentSession] record.
 //
-// Hosts that own audio I/O (the kombify box companion, future satellites)
+// Hosts that own audio I/O (voice satellites, embedded devices)
 // feed microphone PCM through [Provider.SendAudio] and play back agent
 // audio via Options.Callbacks.OnAudio.
 //

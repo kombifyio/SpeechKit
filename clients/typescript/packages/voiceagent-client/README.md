@@ -14,11 +14,11 @@ TypeScript WebSocket client for the SpeechKit Voice Agent:
 import { openBrowserSession } from "@kombifyio/speechkit-voiceagent-client";
 
 const session = await openBrowserSession({
-  serverUrl: "https://api.kombify.io",
+  serverUrl: "https://speech.example.com",
   basePath: "/v1/speechkit",
-  token: auth0AccessToken,
+  token: accessToken,
   resolveWsUrl: (t) =>
-    `wss://api.kombify.io/v1/speechkit/voiceagent/sessions/${t.session_id}/ws`,
+    `wss://speech.example.com/v1/speechkit/voiceagent/sessions/${t.session_id}/ws`,
   // `provider` selects the realtime backend for this session
   // (openai | deepgram | assemblyai | cascaded, or opt-in BYOK gemini); empty = server default.
   start: { locale: "en-US", provider: "deepgram" },

@@ -9,14 +9,14 @@ SpeechKit ships with a local-first storage layer that is usable without accounts
 - `sqlite` is the default production-ready local backend.
 - `postgres` is supported when a DSN is configured.
 - Host applications can register additional backends without changing the OSS core.
-- Kombify Cloud remains an external backend path, not a dependency of the default framework.
+- A hosted backend is always an external, registered backend, never a dependency of the default framework.
 
 The public framework contract lives in `pkg/speechkit/storage`. It defines `Scope`, context helpers, scope policies, backend capabilities, and backend registration primitives. The internal app store keeps its existing facade, but all user-owned records resolve a scope from `context.Context`.
 
 For `v0.34.1`, this is the product boundary: SQLite, scope resolution, scoped
 history/settings-adjacent records, audio metadata links, and per-scope stats are
-release surface. Proprietary Kombify backend wiring remains a future backend
-implementation and must not be required by local OSS usage.
+release surface. Any additional backend is registered by the host and must not
+be required by local usage.
 
 ## Scope Model
 

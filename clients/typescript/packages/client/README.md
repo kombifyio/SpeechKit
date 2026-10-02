@@ -12,11 +12,11 @@ const client = new SpeechKitClient({
   token: process.env.SPEECHKIT_TOKEN,
 });
 
-// Through the kombify Gateway
-const gatewayClient = new SpeechKitClient({
-  baseUrl: "https://api.kombify.io",
+// Behind a reverse proxy that mounts the server under a path prefix
+const proxiedClient = new SpeechKitClient({
+  baseUrl: "https://speech.example.com",
   basePath: "/v1/speechkit",
-  token: auth0AccessToken,
+  token: accessToken,
 });
 
 const result = await client.transcribe(audioBlob, { language: "en" });

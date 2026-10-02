@@ -9,6 +9,13 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.74.4](https://github.com/kombifyio/SpeechKit/compare/v0.74.3...v0.74.4) (2026-10-02)
+
+
+### Bug Fixes
+
+* **oss:** export only standalone open-source content to kombifyio/SpeechKit ([#717](https://github.com/kombifyio/SpeechKit/issues/717)) ([c8a5a2d](https://github.com/kombifyio/SpeechKit/commit/c8a5a2dad9ff804d62f2fe855d8a051c5587a736))
+
 ## [0.74.3](https://github.com/kombifyio/SpeechKit/compare/v0.74.2...v0.74.3) (2026-10-02)
 
 
@@ -214,7 +221,6 @@ Notes cover changes after VERSION 0.71.0 (1928f9295bcc67faf0a3a8b67150c75b9c5e58
 
 ### Bug Fixes
 
-* **beads:** pin SpeechKit issue prefix ([#500](https://github.com/kombifyio/SpeechKit/issues/500)) ([bc4c626](https://github.com/kombifyio/SpeechKit/commit/bc4c62602afb6ed9eaaa73ee383e40799dd5463f))
 * **ci:** run the kernel packages on pull requests again ([#507](https://github.com/kombifyio/SpeechKit/issues/507)) ([8a5edf1](https://github.com/kombifyio/SpeechKit/commit/8a5edf153fd29614849270ddb4c811abda4b818e))
 * **config:** stop defaulting onto retired Google providers ([#492](https://github.com/kombifyio/SpeechKit/issues/492)) ([b9dce1c](https://github.com/kombifyio/SpeechKit/commit/b9dce1c8e3d657fe2d51310a33229eef4995c6f3))
 * **desktop:** one relaunch after Install and restart ([#469](https://github.com/kombifyio/SpeechKit/issues/469)) ([5862ab7](https://github.com/kombifyio/SpeechKit/commit/5862ab70677b0768dc02f803b4d8ee8d143b383b))
@@ -1656,7 +1662,7 @@ Automatic-update, Voice UI, and dictation reliability rollup.
 - Dependency updates clear the high-severity advisories present on the prior
   release line.
 - Numeric pre-1.0 delivery, public mirror authentication, server-image checks,
-  and asynchronous multi-platform publishers use the shared Delivery v2 path.
+  and asynchronous multi-platform publishers share one release path.
 
 ## [0.51.2] - 2026-07-24
 
@@ -4804,7 +4810,7 @@ gate.
   the seven previously-undocumented kernel packages
   (`internal/{ai,dictation,models,router,shortcuts,stt,tts}`).
 - The historical decomposition and audit plan files from this release line
-  are retained in Git history; current follow-up scope is tracked in Beads.
+  are retained in Git history.
 - `npm run deadcode:strict` is now a CI step in the Frontend Checks job
   and gates merges on unused-code regressions.
 
@@ -4821,9 +4827,6 @@ gate.
 - `CONTRIBUTING.md` now documents the `dist/tools/` output convention
   for ad-hoc developer builds of `speechkit-mcp`, `speechkit-cli`, and
   `sk-e2e` so 20 MB binaries do not accidentally land at the repo root.
-- `STATUS.md` and `ROADMAP.md` carry an "Audit 2026-05-13" section that
-  cross-links the Phase A/B commits and the six SK-004.6.x Phase C
-  tracking issues.
 
 ### Fixed
 
@@ -5455,7 +5458,6 @@ The Server-Target publishes one central image, `speechkit-server`.
 
 - Assist no longer routes direct replies to the SpeechKit-managed local LLM endpoint when no downloaded GGUF model is selected and present.
 - Local LLM connection failures now surface actionable Assist/Voice Agent guidance instead of raw loopback `connectex` errors.
-- Restored the missing Beads parent issues `SK-002`, `SK-003`, and `SK-004` so the local backlog can import again.
 
 ## [0.23.1] - 2026-04-21
 

@@ -41,8 +41,8 @@ func TestExplicitExternalTestConfigRequiredIgnoresCI(t *testing.T) {
 }
 
 func TestMissingConfigMessageIncludesGuidance(t *testing.T) {
-	got := missingConfigMessage("OPENAI_API_KEY", "Inject credentials through Doppler.")
-	want := "missing required test configuration: OPENAI_API_KEY. Inject credentials through Doppler."
+	got := missingConfigMessage("OPENAI_API_KEY", "Inject credentials through your secret manager.")
+	want := "missing required test configuration: OPENAI_API_KEY. Inject credentials through your secret manager."
 	if got != want {
 		t.Fatalf("message = %q, want %q", got, want)
 	}
