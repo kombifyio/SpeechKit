@@ -125,7 +125,7 @@ class VoiceAgentController(
             VoiceAgentEvent.Interrupted -> _state.value.copy(agentText = "")
 
             is VoiceAgentEvent.Failure -> {
-                VoiceLog.e(VoiceLog.AGENT, "session code=${event.code}")
+                VoiceLog.e(VoiceLog.AGENT, "session failure")
                 _state.value.copy(
                     error = event.message,
                     errorCode = event.code,

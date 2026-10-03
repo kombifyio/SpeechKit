@@ -2,7 +2,6 @@ package io.kombify.speechkit.net
 
 import com.squareup.moshi.Moshi
 import io.kombify.speechkit.domain.ConnectionProfile
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import okhttp3.WebSocket
@@ -10,6 +9,7 @@ import okhttp3.WebSocketListener
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -32,17 +32,17 @@ class VoiceAgentProviderSelectionTest {
     fun `the requested provider reaches the start frame`() {
         val received = AtomicReference<String>()
         val started = CountDownLatch(1)
-        val server = agentServer { _, text ->
+        val server = agentServer { socket, text ->
             received.set(text)
             started.countDown()
+            socket.send("""{"type":"state","state":"listening","event_type":"session_ready"}""")
         }
-
+        val controller = VoiceAgentController(
+            ConnectionProfile.Server(server.url("/").toString()),
+        )
         try {
-            val controller = VoiceAgentController(
-                ConnectionProfile.Server(server.url("/").toString()),
-            )
             runBlocking {
-                withTimeout(20_000) { controller.start(VoiceAgentStartFrame(provider = "assemblyai")) }
+                withTimeout(5_000) { controller.start(VoiceAgentStartFrame(provider = "assemblyai")) }
             }
             check(started.await(10, TimeUnit.SECONDS)) { "no start frame reached the server" }
 
@@ -56,6 +56,7 @@ class VoiceAgentProviderSelectionTest {
             val upgrade = server.takeRequest(10, TimeUnit.SECONDS)
             assertEquals("ticket.t-1", upgrade?.getHeader("Sec-WebSocket-Protocol"))
         } finally {
+            runCatching { runBlocking { withTimeout(5_000) { controller.stop() } } }
             // MockWebServer.shutdown() races the WebSocket close handshake;
             // teardown hygiene, not part of the contract under test.
             runCatching { server.shutdown() }
@@ -69,37 +70,41 @@ class VoiceAgentProviderSelectionTest {
     fun `a refused provider is reported under its own code`() {
         val server = agentServer { socket, _ ->
             socket.send(
-                """{"type":"error","code":"provider_unavailable",""" +
+                """{"type":"error","code":"provider_unavailable","fatal":true,""" +
                     """"message":"voice agent provider \"assemblyai\" is not available"}""",
             )
         }
-
+        val controller = VoiceAgentController(
+            ConnectionProfile.Server(server.url("/").toString()),
+        )
         try {
-            val controller = VoiceAgentController(
-                ConnectionProfile.Server(server.url("/").toString()),
-            )
-            runBlocking {
-                withTimeout(20_000) {
-                    val events = controller.start(VoiceAgentStartFrame(provider = "assemblyai"))
-                    val failure = events.first { it is VoiceAgentEvent.Failure }
-                    controller.accept(failure)
+            // Setup now waits for actual readiness. A rejected provider fails start
+            // under its own safe code; no usable event flow or capture can begin.
+            val failure = assertThrows(VoiceAgentSetupException::class.java) {
+                runBlocking {
+                    withTimeout(5_000) {
+                        controller.start(VoiceAgentStartFrame(provider = "assemblyai"))
+                    }
                 }
             }
 
             assertEquals(
                 VoiceAgentErrorCodes.PROVIDER_UNAVAILABLE,
-                controller.state.value.errorCode,
+                failure.code,
             )
         } finally {
+            runCatching { runBlocking { withTimeout(5_000) { controller.stop() } } }
             runCatching { server.shutdown() }
         }
     }
 
-    /** A mint response plus a socket that hands every client frame to [onStart]. */
+    /** A mint response plus a socket that hands the start frame to [onStart]. */
     private fun agentServer(onStart: (WebSocket, String) -> Unit): MockWebServer {
         val server = MockWebServer()
         val listener = object : WebSocketListener() {
-            override fun onMessage(webSocket: WebSocket, text: String) = onStart(webSocket, text)
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                if (startAdapter.fromJson(text)?.type == VoiceAgentMsg.START) onStart(webSocket, text)
+            }
         }
         server.start()
         server.enqueue(

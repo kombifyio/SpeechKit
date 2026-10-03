@@ -27,12 +27,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.kombify.speechkit.R
 import androidx.core.content.ContextCompat
 import io.kombify.speechkit.audio.MicAudioCapture
 import io.kombify.speechkit.audio.PcmStreamPlayer
+import io.kombify.speechkit.audio.PcmPlaybackException
+import io.kombify.speechkit.audio.PcmPlaybackQueue
 import io.kombify.speechkit.ime.ui.toAuraState
 import io.kombify.speechkit.domain.ConnectionProfile
 import io.kombify.speechkit.domain.ConnectionProfileSource
@@ -42,11 +45,18 @@ import io.kombify.speechkit.net.VoiceAgentController
 import io.kombify.speechkit.net.VoiceAgentEvent
 import io.kombify.speechkit.net.VoiceAgentStartFrame
 import io.kombify.speechkit.net.VoiceAgentUiState
+import io.kombify.speechkit.net.VoiceAgentSetupException
+import io.kombify.speechkit.net.safeVoiceAgentCode
 import io.kombify.speechkit.domain.serverDisplayToken
 import io.kombify.speechkit.domain.serverDisplayUrl
 import io.kombify.speechkit.domain.testSurfaceConnectProfile
 import io.kombify.speechkit.voiceui.VoiceAuraOrb
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 
 /**
@@ -66,6 +76,7 @@ fun VoiceAgentTestScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
 
@@ -84,9 +95,10 @@ fun VoiceAgentTestScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     var controller by remember { mutableStateOf<VoiceAgentController?>(null) }
-    var status by remember { mutableStateOf(context.getString(R.string.dev_status_disconnected)) }
+    var status by remember { mutableStateOf(resources.getString(R.string.dev_status_disconnected)) }
     var holding by remember { mutableStateOf(false) }
     var recordJob by remember { mutableStateOf<Job?>(null) }
+    var connectJob by remember { mutableStateOf<Job?>(null) }
     val capture = remember { MicAudioCapture() }
     val player = remember { PcmStreamPlayer(VoiceAgentAudio.SERVER_SAMPLE_RATE) }
 
@@ -95,8 +107,8 @@ fun VoiceAgentTestScreen(
     DisposableEffect(Unit) {
         onDispose {
             recordJob?.cancel()
+            connectJob?.cancel()
             player.release()
-            controller?.let { live -> scope.launch { runCatching { live.stop() } } }
         }
     }
 
@@ -104,13 +116,22 @@ fun VoiceAgentTestScreen(
         recordJob = scope.launch {
             runCatching {
                 capture.frames().collect { live.sendAudio(it) }
-            }.onFailure { VoiceLog.w(VoiceLog.AUDIO, "test voice agent capture failed", it) }
+            }.onFailure {
+                if (it is CancellationException) throw it
+                VoiceLog.w(VoiceLog.AUDIO, "test voice agent capture failed")
+                status = resources.getString(R.string.dev_status_error, "capture_failed")
+                connectJob?.cancel()
+            }
         }
     }
 
     fun connect() {
-        scope.launch {
-            runCatching {
+        if (connectJob?.isActive == true || controller != null) return
+        val connecting = scope.launch(start = CoroutineStart.LAZY) {
+            val owner = coroutineContext[Job]
+            var live: VoiceAgentController? = null
+            val playback = PcmPlaybackQueue(VoiceAgentAudio.SERVER_SAMPLE_RATE)
+            try {
                 val profile = testSurfaceConnectProfile(
                     profileSource.currentProfile(),
                     serverUrl,
@@ -120,24 +141,50 @@ fun VoiceAgentTestScreen(
                     status = "Voice Agent needs a SpeechKit server (tester origin, Cloud, or self-host)."
                     return@launch
                 }
-                status = context.getString(R.string.dev_status_connecting)
-                val live = VoiceAgentController(profile)
-                val events = live.start(VoiceAgentStartFrame())
-                controller = live
-                status = context.getString(R.string.dev_status_connected)
-                launch {
+                status = resources.getString(R.string.dev_status_connecting)
+                val session = VoiceAgentController(profile)
+                live = session
+                controller = session
+                val events = session.start(VoiceAgentStartFrame())
+                status = resources.getString(R.string.dev_status_connected)
+                coroutineScope {
+                    val playing = launch { playback.consume { player.play(it) } }
                     events.collect { event ->
-                        live.accept(event)
-                        // Audio is the one event the controller passes through:
-                        // playback is the host's job, not the session's.
-                        if (event is VoiceAgentEvent.Audio) player.play(event.pcm)
+                        session.accept(event)
+                        when (event) {
+                            is VoiceAgentEvent.Audio -> if (!playback.offer(event.pcm))
+                                throw PcmPlaybackException("voice_buffer_overflow")
+                            VoiceAgentEvent.Interrupted -> { playback.clear(); player.flush() }
+                            is VoiceAgentEvent.Closed -> { playback.clear(); player.release() }
+                            is VoiceAgentEvent.Failure -> if (event.fatal) { playback.clear(); player.release() }
+                            else -> Unit
+                        }
                     }
+                    playback.close()
+                    playing.join()
                 }
-            }.onFailure {
-                status = context.getString(R.string.dev_status_error, it.message ?: "")
-                VoiceLog.w(VoiceLog.AGENT, "test connect failed", it)
+                status = resources.getString(R.string.dev_status_ended)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: PcmPlaybackException) {
+                status = resources.getString(R.string.dev_status_error, safeVoiceAgentCode(failure.code, "playback_failed"))
+            } catch (failure: VoiceAgentSetupException) {
+                status = resources.getString(R.string.dev_status_error, safeVoiceAgentCode(failure.code, "ws_setup_failed"))
+            } catch (_: Throwable) {
+                status = resources.getString(R.string.dev_status_error, "voice_session_failed")
+                VoiceLog.w(VoiceLog.AGENT, "test connect failed")
+            } finally {
+                playback.close()
+                recordJob?.cancel()
+                holding = false
+                player.release()
+                withContext(NonCancellable) { runCatching { live?.stop() } }
+                if (controller === live) controller = null
+                if (connectJob === owner) connectJob = null
             }
         }
+        connectJob = connecting
+        connecting.start()
     }
 
     Column(
@@ -169,15 +216,14 @@ fun VoiceAgentTestScreen(
         )
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = ::connect, enabled = controller == null) { Text(stringResource(R.string.dev_connect)) }
+            Button(onClick = ::connect, enabled = controller == null && connectJob?.isActive != true) { Text(stringResource(R.string.dev_connect)) }
             Button(
                 onClick = {
                     recordJob?.cancel()
-                    val live = controller
-                    controller = null
+                    connectJob?.cancel()
+                    player.release()
                     holding = false
-                    scope.launch { runCatching { live?.stop() } }
-                    status = context.getString(R.string.dev_status_ended)
+                    status = resources.getString(R.string.dev_status_ended)
                 },
                 enabled = controller != null,
             ) { Text(stringResource(R.string.dev_end)) }
@@ -188,7 +234,7 @@ fun VoiceAgentTestScreen(
             Button(
                 onClick = {
                     if (!hasMicPermission(context)) {
-                        status = context.getString(R.string.dev_status_mic_missing)
+                        status = resources.getString(R.string.dev_status_mic_missing)
                         return@Button
                     }
                     if (holding) {
@@ -201,6 +247,7 @@ fun VoiceAgentTestScreen(
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
+                enabled = state.phase != VoiceAgentUiState.Phase.Connecting && state.phase != VoiceAgentUiState.Phase.Ended,
             ) { Text(stringResource(if (holding) R.string.dev_release_to_answer else R.string.dev_hold_to_talk)) }
         }
 

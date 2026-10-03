@@ -9,6 +9,43 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.75.0](https://github.com/kombifyio/SpeechKit/compare/f78a55815bf3e5f96ba4b1262aab303f7200efc6...ea738fa16d6ade7b012c3591376332f341be790f) (2026-10-03)
+
+### Highlights
+
+* **Long live dictations stay whole:** Deepgram live dictation keeps transcribing past the first pause, and the overlay returns to idle when the text is in. If the live connection drops mid-dictation, the rest of the recording is transcribed from the local capture.
+* **Ready before recording:** Android and web voice clients wait for the server to be ready before sending microphone audio, and end stalled setup with a clear failure.
+* **Stop means stop:** Canceling a conversation cuts queued speech and releases audio resources. Bounded microphone and playback queues report overload instead of accumulating old audio.
+* **Clear session endings:** Voice clients preserve safe failure reasons and end expired authorization promptly. Start a fresh authenticated session to continue; interrupted turns are not replayed.
+* **Android keyboard migration:** Keyboard embedders must replace `ImeVoiceAgentController.audio` with `consumeAudio(flush, play)`. This public source API change brings bounded playback and cancellation to the keyboard host.
+
+
+
+### ⚠ BREAKING CHANGES
+
+* **voice:** IME source embedders replace the removed audio property with consumeAudio(flush, play).
+
+### Features
+
+* **android:** run attested hosted Voice co-install sessions ([#720](https://github.com/kombifyio/SpeechKit/issues/720)) ([741d92b](https://github.com/kombifyio/SpeechKit/commit/741d92b8e75527b2b9f19c3bf2952a2b0427431d))
+* **voice:** bound readiness, media and session authority ([#730](https://github.com/kombifyio/SpeechKit/issues/730)) ([f8ca761](https://github.com/kombifyio/SpeechKit/commit/f8ca761266117b71721dd40c8163edf2490c872d))
+
+
+### Bug Fixes
+
+* **android:** bind application artifacts to prepared release version ([#722](https://github.com/kombifyio/SpeechKit/issues/722)) ([4974d11](https://github.com/kombifyio/SpeechKit/commit/4974d11428eeea5ccc381879eae8c69b9e41a2c1))
+* **android:** stamp the delivery version into Firebase tester builds ([#705](https://github.com/kombifyio/SpeechKit/issues/705)) ([d71053e](https://github.com/kombifyio/SpeechKit/commit/d71053ea613a60e101a9b57e5fd358d3c2bd5182))
+* **android:** start coinstalled Voice from the visible caller ([#724](https://github.com/kombifyio/SpeechKit/issues/724)) ([0992ba5](https://github.com/kombifyio/SpeechKit/commit/0992ba50b5bf12d63e89d7a4dcbf1ce125cabf6b))
+* **dictation:** keep long Deepgram live dictations whole ([#733](https://github.com/kombifyio/SpeechKit/issues/733)) ([ea738fa](https://github.com/kombifyio/SpeechKit/commit/ea738fa16d6ade7b012c3591376332f341be790f))
+* **models:** download Gemma 4 E4B Q4_K_M from a live, pinned source ([#714](https://github.com/kombifyio/SpeechKit/issues/714)) ([4435a08](https://github.com/kombifyio/SpeechKit/commit/4435a081aeca23ab99246da8184e49174aab3906))
+* **oss:** export only standalone open-source content to kombifyio/SpeechKit ([#717](https://github.com/kombifyio/SpeechKit/issues/717)) ([c8a5a2d](https://github.com/kombifyio/SpeechKit/commit/c8a5a2dad9ff804d62f2fe855d8a051c5587a736))
+* **pipeline:** preserve pending audio across recording restart ([#726](https://github.com/kombifyio/SpeechKit/issues/726)) ([641f6b4](https://github.com/kombifyio/SpeechKit/commit/641f6b4dec1fcf16c6bad31b48b02741a645b34c))
+* **server:** derive WS origin from public_url and free the session slot on rejected upgrade ([#707](https://github.com/kombifyio/SpeechKit/issues/707)) ([3c7d8f8](https://github.com/kombifyio/SpeechKit/commit/3c7d8f834475708198268eb61a08a6eca74ae6b0))
+* **voiceagent:** deliver agent speech as 24 kHz PCM and keep spaces between streamed words ([#708](https://github.com/kombifyio/SpeechKit/issues/708)) ([2bc0a18](https://github.com/kombifyio/SpeechKit/commit/2bc0a18d2db6dab353adc8a2ee3eb5cf88402ebf))
+* **voiceagent:** report failed turns as error frames with the agent's typed reason ([#712](https://github.com/kombifyio/SpeechKit/issues/712)) ([49cf642](https://github.com/kombifyio/SpeechKit/commit/49cf642fbc206efed89a9c7b0f6616c73244942d))
+
+Notes cover changes after VERSION 0.74.0 (f78a55815bf3e5f96ba4b1262aab303f7200efc6), the earliest available contiguous 0.74.x VERSION anchor, through selected source ea738fa16d6ade7b012c3591376332f341be790f.
+
 ## [0.74.6](https://github.com/kombifyio/SpeechKit/compare/v0.74.5...v0.74.6) (2026-10-03)
 
 

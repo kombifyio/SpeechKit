@@ -85,6 +85,7 @@ object VoiceAgentEndReasons {
     const val ERROR = "error"
     const val SHUTDOWN = "shutdown"
     const val MAX_DURATION = "max_duration"
+    const val AUTHORIZATION_EXPIRED = "authorization_expired"
 }
 
 /**
@@ -303,7 +304,7 @@ data class VoiceAgentInterruptedFrame(
     @Json(name = "provider_metadata") override val providerMetadata: Map<String, Any?>? = null,
 ) : VoiceAgentServerFrame, VoiceAgentFrameMeta
 
-/** Recoverable error; the socket stays open unless session_end follows. */
+/** Turn errors are recoverable; fatal errors terminate and require a new session. */
 @JsonClass(generateAdapter = true)
 data class VoiceAgentErrorFrame(
     val type: String = VoiceAgentMsg.ERROR,
@@ -311,7 +312,15 @@ data class VoiceAgentErrorFrame(
     val message: String = "",
     val remediation: String? = null,
     @Json(name = "request_id") val requestId: String? = null,
-) : VoiceAgentServerFrame
+    val fatal: Boolean = false,
+) : VoiceAgentServerFrame {
+    constructor(type: String = VoiceAgentMsg.ERROR, code: String = "", message: String = "",
+        remediation: String? = null, requestId: String? = null) :
+        this(type, code, message, remediation, requestId, false)
+    fun copy(type: String = this.type, code: String = this.code, message: String = this.message,
+        remediation: String? = this.remediation, requestId: String? = this.requestId): VoiceAgentErrorFrame =
+        VoiceAgentErrorFrame(type, code, message, remediation, requestId, fatal)
+}
 
 /** Terminal; the server closes the socket after sending it. */
 @JsonClass(generateAdapter = true)

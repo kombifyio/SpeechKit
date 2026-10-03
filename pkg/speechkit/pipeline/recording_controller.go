@@ -72,11 +72,11 @@ type RecordingController struct {
 	collector        speechkit.SegmentCollector
 	idleWatcherCh    chan struct{}
 	maxDurationTimer *time.Timer
-	streamedCount    int
-	streamSegmentSeq uint64
-	streamPending    []speechkit.AudioSegment
-	streamFlush      bool
+	streamQueue      streamSegmentQueue
 	nativeStream     *dictationStreamRuntime
+	// capturedPCMBytes counts the PCM the handler saw this session, so a
+	// native stream records where in the capture its own audio begins.
+	capturedPCMBytes int
 }
 
 type dictationStreamRuntime struct {
@@ -96,6 +96,20 @@ type dictationStreamRuntime struct {
 	eventSeq     atomic.Uint64
 	finalCount   atomic.Int64
 	droppedPCM   atomic.Int64
+
+	// captureOffsetBytes is where the stream's audio begins in the full
+	// capture; frames captured while the handshake dialed never reached it.
+	captureOffsetBytes int
+	// failed is set when a send or receive error ended the stream before
+	// Stop, so its finals no longer cover the capture.
+	failed atomic.Bool
+	// cutShort is set when Stop had to cancel the drain (sender stuck,
+	// finalize refused, receiver still open), so trailing speech may be
+	// uncommitted although the stream reported no error.
+	cutShort atomic.Bool
+	// committedEndMs is the end of the last word handed to the sink as final,
+	// on the stream's own audio timeline.
+	committedEndMs atomic.Int64
 }
 
 // NewRecordingController wires a controller to its recorder, the queue that

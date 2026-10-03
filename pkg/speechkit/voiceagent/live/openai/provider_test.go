@@ -311,7 +311,6 @@ func TestParseEventSwallowsLifecycleEvents(t *testing.T) {
 	p := &Provider{}
 	for _, typ := range []string{
 		"session.created",
-		"session.updated",
 		"response.audio.done",
 		"input_audio_buffer.speech_stopped",
 		"rate_limits.updated", // unknown → forward-compatible swallow

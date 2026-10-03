@@ -49,7 +49,7 @@ func TestDeepgramParseControlEvents(t *testing.T) {
 	t.Parallel()
 	p := &Provider{}
 
-	for _, swallowType := range []string{"Welcome", "SettingsApplied", "AgentThinking", "AgentStartedSpeaking", "History", "Warning"} {
+	for _, swallowType := range []string{"Welcome", "AgentThinking", "AgentStartedSpeaking", "History", "Warning"} {
 		frame := mustMarshal(t, map[string]any{"type": swallowType})
 		msg, swallow, err := p.parseEvent(frame)
 		if err != nil {

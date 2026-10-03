@@ -24,10 +24,14 @@ const noiseFloorRMS = 0.003
 // the optional opts.TailDelay it closes the recorder and drops captures that
 // are too short, silent, or implausibly long for the wall-clock window (stale
 // device buffer). A provider-native stream that produced finals completes the
-// session itself; otherwise one full-capture job is submitted (VAD segments
-// when fragmenting or streaming is enabled) with opts.Label in the log. It
+// session itself; one that failed mid-session leaves the capture after its
+// last committed word to a single job; otherwise one full-capture job is
+// submitted (VAD segments when fragmenting or streaming is enabled) with
+// opts.Label in the log. It
 // returns the submitter's error and reports "processing" or "idle" to the
-// observer. A no-op while nothing is recording or a stop is in progress.
+// observer, except after a drained provider stream: its sink's commits carry
+// the session's terminal state, so Stop reports none of its own. A no-op while
+// nothing is recording or a stop is in progress.
 func (c *RecordingController) Stop(opts speechkit.RecordingStopOptions) error {
 	if c == nil {
 		return nil
@@ -65,7 +69,7 @@ func (c *RecordingController) Stop(opts speechkit.RecordingStopOptions) error {
 	collector := c.collector
 	startedAt := c.startedAt
 	streamSegments := current.StreamSegments
-	streamedCount := c.streamedCount
+	streamedCount := c.streamQueue.streamedCount(sessionID)
 	nativeStream := c.nativeStream
 	c.collector = nil
 	c.startedAt = time.Time{}
@@ -139,21 +143,37 @@ func (c *RecordingController) Stop(opts speechkit.RecordingStopOptions) error {
 	}
 	c.onLog(fmt.Sprintf("dictation audio: full=%.1fs vs %d VAD-segments totalling %.1fs (delta=%.1fs)", dur, len(segments), segTotalSecs, dur-segTotalSecs), "info")
 
+	// A stream that died mid-session, or whose drain Stop had to cut short,
+	// committed only part of the speech; the rest of the capture is
+	// transcribed as one job that continues the stream's session.
+	var tailOffsetMs int64
+	var tailSessionID uint64
 	if nativeStream != nil {
 		finals := c.stopNativeDictationStream(nativeStream)
-		if finals > 0 {
+		switch {
+		case finals > 0 && (nativeStream.failed.Load() || nativeStream.cutShort.Load()):
+			tail, offsetMs := c.uncommittedStreamAudio(nativeStream, pcm, finals)
+			if tail == nil {
+				return nil
+			}
+			pcm, dur = tail, speechkit.PCMDurationSecs(tail)
+			tailOffsetMs, tailSessionID = offsetMs, nativeStream.sessionID
+			segments = FallbackDictationSegments(tail)
+		case finals > 0:
+			// The stream is drained and the worker already reported the
+			// committed finals' terminal state (the host latches it while the
+			// mic is open and applies it after Stop). A "processing" here
+			// would replace that state with one nothing ever ends.
 			c.onLog(fmt.Sprintf("Provider-stream dictation finalized with %d committed segment(s)", finals), "info")
-			// Capture has stopped; leave "recording" immediately so the overlay
-			// does not sit on a phantom take while the last finals settle.
-			c.onState("processing", "")
 			return nil
+		default:
+			c.onLog("Provider-stream dictation produced no final transcript; falling back to full capture", "warn")
 		}
-		c.onLog("Provider-stream dictation produced no final transcript; falling back to full capture", "warn")
 		streamSegments = false
 	}
 
 	if streamSegments {
-		c.queueStreamSegments(sessionID, segments)
+		c.streamQueue.enqueue(sessionID, segments)
 		submitted, err := c.flushPendingStreamSegments(sessionID, current, "remaining dictation segment", c.clockNow().Add(5*time.Second))
 		if err != nil {
 			c.onLog(fmt.Sprintf("Queue error: %v", err), "error")
@@ -205,7 +225,7 @@ func (c *RecordingController) Stop(opts speechkit.RecordingStopOptions) error {
 		}
 	}
 
-	capturedStartMs := elapsedCaptureMs(captureEpoch(current, startedAt), startedAt)
+	capturedStartMs := elapsedCaptureMs(captureEpoch(current, startedAt), startedAt) + tailOffsetMs
 	if err := c.submitter.Submit(speechkit.TranscriptionJob{
 		Submission: speechkit.Submission{
 			PCM:                pcm,
@@ -214,6 +234,7 @@ func (c *RecordingController) Stop(opts speechkit.RecordingStopOptions) error {
 			Language:           current.Language,
 			QuickNote:          current.QuickNote,
 			QuickNoteID:        current.QuickNoteID,
+			SessionID:          tailSessionID,
 			RecordingSessionID: current.RecordingSessionID,
 			CaptureChannel:     current.CaptureChannel,
 			CapturedStartMs:    capturedStartMs,
@@ -271,8 +292,7 @@ func (c *RecordingController) Cancel(opts speechkit.RecordingCancelOptions) erro
 	c.current = speechkit.RecordingStartOptions{}
 	c.collector = nil
 	c.startedAt = time.Time{}
-	c.streamPending = nil
-	c.streamFlush = false
+	c.streamQueue.discard(sessionID)
 	nativeStream := c.nativeStream
 	c.nativeStream = nil
 	c.mu.Unlock()

@@ -2,6 +2,7 @@ package cascaded
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 	"runtime/debug"
@@ -27,6 +28,19 @@ func (p *Provider) Connect(ctx context.Context, cfg SessionConfig) error {
 	}
 
 	p.mu.Lock()
+	select {
+	case <-p.closedCh:
+		p.mu.Unlock()
+		return ErrClosed
+	default:
+	}
+	if p.sessionCtx != nil {
+		p.mu.Unlock()
+		return errors.New("cascaded: session already connected")
+	}
+	ctx, sessionCancel := context.WithCancel(ctx)
+	p.sessionCancel = sessionCancel
+	p.sessionCtx = ctx
 	p.locale = firstNonEmpty(cfg.Locale, "en")
 	p.voice = cfg.Voice
 	p.systemPrompt = firstNonEmpty(cfg.SystemPrompt, "")
@@ -35,10 +49,11 @@ func (p *Provider) Connect(ctx context.Context, cfg SessionConfig) error {
 	p.mu.Unlock()
 
 	if err := p.ensureSpeakerStream(ctx); err != nil {
-		logutil.Resolve(p.logger).Warn("cascaded: speaker stream unavailable", "err", err)
+		logutil.Resolve(p.logger).Warn("cascaded: speaker stream unavailable", "code", turnFailureCode(err))
 	}
 
 	go func() {
+		defer sessionCancel()
 		defer p.recoverGoroutine("processorLoop")
 		p.processorLoop(ctx)
 	}()
@@ -56,10 +71,9 @@ func (p *Provider) recoverGoroutine(name string) {
 	}
 	logutil.Resolve(p.logger).Error("cascaded: goroutine panic recovered",
 		"goroutine", name,
-		"err", rec,
 		"stack", string(debug.Stack()),
 	)
-	p.emitError("internal_panic", "internal error during processing")
+	p.emitError("internal_panic")
 }
 
 // UpdateInstructions changes future-turn host instructions without
@@ -93,10 +107,18 @@ func (p *Provider) UpdateInstructions(ctx context.Context, cfg SessionConfig) er
 // SendAudio appends PCM to the current turn buffer and triggers
 // processing when a silence boundary is reached.
 func (p *Provider) SendAudio(chunk []byte) error {
+	ctx, err := p.activeContext()
+	if err != nil {
+		return err
+	}
 	if len(chunk) == 0 {
 		return nil
 	}
 	p.mu.Lock()
+	if err := ctx.Err(); err != nil {
+		p.mu.Unlock()
+		return err
+	}
 	p.buffer = append(p.buffer, chunk...)
 	if rms := ChunkRMS(chunk); rms > p.cfg.SilenceRMSThreshold {
 		p.lastVoiceAt = time.Now()
@@ -105,8 +127,8 @@ func (p *Provider) SendAudio(chunk []byte) error {
 	p.mu.Unlock()
 
 	if stream := p.currentSpeakerStream(); stream != nil {
-		if err := stream.SendAudio(context.Background(), chunk); err != nil {
-			logutil.Resolve(p.logger).Warn("cascaded: speaker stream audio send failed", "err", err)
+		if err := stream.SendAudio(ctx, chunk); err != nil {
+			logutil.Resolve(p.logger).Warn("cascaded: speaker stream audio send failed", "code", turnFailureCode(err))
 		}
 	}
 	return nil
@@ -115,6 +137,10 @@ func (p *Provider) SendAudio(chunk []byte) error {
 // SendAudioStreamEnd forces the current buffer to be treated as a
 // complete turn, even if silence has not yet been detected.
 func (p *Provider) SendAudioStreamEnd() error {
+	ctx, err := p.activeContext()
+	if err != nil {
+		return err
+	}
 	p.mu.Lock()
 	if len(p.buffer) == 0 {
 		p.mu.Unlock()
@@ -123,8 +149,8 @@ func (p *Provider) SendAudioStreamEnd() error {
 	p.fire()
 	p.mu.Unlock()
 	if stream := p.currentSpeakerStream(); stream != nil {
-		if err := stream.EndAudio(context.Background()); err != nil {
-			logutil.Resolve(p.logger).Warn("cascaded: speaker stream end failed", "err", err)
+		if err := stream.EndAudio(ctx); err != nil {
+			logutil.Resolve(p.logger).Warn("cascaded: speaker stream end failed", "code", turnFailureCode(err))
 		}
 	}
 	return nil
@@ -133,13 +159,17 @@ func (p *Provider) SendAudioStreamEnd() error {
 // SendText injects a text turn (skipping STT). Useful for testing and
 // for clients that already have a transcript from their own STT.
 func (p *Provider) SendText(text string) error {
+	ctx, err := p.activeContext()
+	if err != nil {
+		return err
+	}
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
 	go func() {
 		defer p.recoverGoroutine("runTurn")
-		if err := p.runTurn(context.Background(), text, false); err != nil {
-			p.emitError(turnFailureCode(err), err.Error())
+		if err := p.runTurn(ctx, text, false); err != nil && ctx.Err() == nil {
+			p.emitError(turnFailureCode(err))
 		}
 	}()
 	return nil
@@ -163,10 +193,34 @@ func (p *Provider) Receive(ctx context.Context) (*Message, error) {
 // Close stops the processor loop and drains any pending buffer.
 func (p *Provider) Close() error {
 	p.closeOnce.Do(func() {
-		p.closeSpeakerStream()
 		close(p.closedCh)
+		p.mu.Lock()
+		if p.sessionCancel != nil {
+			p.sessionCancel()
+		}
+		p.buffer = nil
+		p.history = nil
+		p.mu.Unlock()
+		p.closeSpeakerStream()
 	})
 	return nil
+}
+
+func (p *Provider) activeContext() (context.Context, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	select {
+	case <-p.closedCh:
+		return nil, ErrClosed
+	default:
+	}
+	if p.sessionCtx == nil {
+		return nil, ErrNotConfigured
+	}
+	if err := p.sessionCtx.Err(); err != nil {
+		return nil, err
+	}
+	return p.sessionCtx, nil
 }
 
 // Name returns the provider identifier used in logs and observability.

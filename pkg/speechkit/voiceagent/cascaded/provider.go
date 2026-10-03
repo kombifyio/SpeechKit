@@ -33,11 +33,13 @@ type Provider struct {
 	logger          *slog.Logger
 
 	// Per-session live config from Connect()
-	locale       string
-	voice        string
-	systemPrompt string
-	refinement   string
-	speaker      speaker.Options
+	locale        string
+	voice         string
+	systemPrompt  string
+	refinement    string
+	speaker       speaker.Options
+	sessionCtx    context.Context
+	sessionCancel context.CancelFunc
 
 	// Turn state
 	mu          sync.Mutex

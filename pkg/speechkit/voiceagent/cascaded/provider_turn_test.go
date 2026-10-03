@@ -19,8 +19,12 @@ func TestSendTextProducesFullRoundTrip(t *testing.T) {
 	}
 	msgs := collectMessages(t, p, 2*time.Second)
 
-	var sawInput, sawOutput, sawAudio bool
+	var sawInput, sawOutput, sawAudio, completed bool
 	for _, m := range msgs {
+		if completed && len(m.Audio) > 0 {
+			t.Fatal("audio followed turn completion")
+		}
+		completed = completed || m.Done
 		if m.InputTranscript != "" && m.InputTranscriptDone {
 			sawInput = true
 		}
@@ -39,6 +43,9 @@ func TestSendTextProducesFullRoundTrip(t *testing.T) {
 	}
 	if !sawAudio {
 		t.Fatalf("expected audio chunks; got %d messages", len(msgs))
+	}
+	if !completed {
+		t.Fatal("successful turn never completed")
 	}
 	if agent.calls != 1 {
 		t.Fatalf("agent should be called exactly once; got %d", agent.calls)
@@ -126,7 +133,8 @@ func TestEmptySTTResultIsDropped(t *testing.T) {
 
 func TestAgentErrorSurfacesAsMessage(t *testing.T) {
 	sttFake := &fakeSTT{text: "hello"}
-	agent := &fakeAgent{err: errors.New("llm down")}
+	const sensitive = "bearer_secret_private_transcript"
+	agent := &fakeAgent{err: errors.New(sensitive)}
 	p := newTestProvider(t, Deps{
 		STT: sttFake, Agent: agent,
 		Config: Config{SilenceTurnMs: 50, MinTurnMs: 50},
@@ -139,6 +147,9 @@ func TestAgentErrorSurfacesAsMessage(t *testing.T) {
 	msgs := collectMessages(t, p, 1*time.Second)
 	var sawError bool
 	for _, m := range msgs {
+		if strings.Contains(m.ErrorMessage, sensitive) {
+			t.Fatal("upstream content leaked through turn error")
+		}
 		if m.ErrorCode == "turn_failed" {
 			sawError = true
 		}

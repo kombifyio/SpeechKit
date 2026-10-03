@@ -43,6 +43,10 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 	// same derivation, so the profile shown active is the provider that
 	// actually serves a default session.
 	defaultProvider := config.EffectiveVoiceAgentProvider(cfg)
+	usageReporter, err := buildVoiceUsageReporter()
+	if err != nil {
+		return nil, "voice usage reporting unavailable", err
+	}
 
 	// Register a factory for every Voice-Agent-capable provider that builds on
 	// this deployment so a client can switch backend per session via the WS
@@ -127,20 +131,12 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 		LiveKit:            buildLiveKitIssuer(cfg, app),
 		ReadLimit:          cfg.Server.WSReadLimitBytes,
 		ToolRouter:         buildVoiceAgentToolRouter(cfg),
-		Usage:              buildVoiceUsageReporter(),
+		Usage:              usageReporter,
 	})
 	if err != nil {
 		return nil, status, err
 	}
 	return h, status, nil
-}
-
-func buildVoiceUsageReporter() vsserver.UsageReporter {
-	endpoint := strings.TrimSpace(os.Getenv("KOMBIFY_USAGE_ENDPOINT"))
-	if endpoint == "" {
-		return nil
-	}
-	return vsserver.NewHTTPUsageReporter(endpoint)
 }
 
 // buildVoiceAgentToolRouter constructs the generic tool bridge from

@@ -94,7 +94,8 @@ func (f *openaiProviderFactory) NewProvider() vsserver.LiveProviderAdapter {
 // interface the WebSocket handler consumes. Kernel enum types are rebuilt from
 // string fields on vsserver.LiveConfigFrame.
 type openaiLiveBridge struct {
-	inner *openai.Provider
+	inner   *openai.Provider
+	pending []*live.LiveMessage
 }
 
 func (b *openaiLiveBridge) Connect(ctx context.Context, cfg vsserver.LiveConfigFrame) error {
@@ -126,10 +127,11 @@ func (b *openaiLiveBridge) Connect(ctx context.Context, cfg vsserver.LiveConfigF
 		},
 	}
 	if err := b.inner.Connect(ctx, liveCfg); err != nil {
-		slog.Warn("voiceagent: OpenAI Realtime connect failed", "err", err)
 		return err
 	}
-	return nil
+	var err error
+	b.pending, err = waitVoiceProviderReady(ctx, b.inner.Receive)
+	return err
 }
 
 func (b *openaiLiveBridge) SendAudio(chunk []byte) error { return b.inner.SendAudio(chunk) }
@@ -170,6 +172,11 @@ func (b *openaiLiveBridge) SendToolResponse(frame vsserver.ToolResponseFrame) er
 }
 
 func (b *openaiLiveBridge) Receive(ctx context.Context) (*vsserver.LiveMessage, error) {
+	if len(b.pending) > 0 {
+		msg := b.pending[0]
+		b.pending = b.pending[1:]
+		return mapKernelLiveMessage(msg), nil
+	}
 	msg, err := b.inner.Receive(ctx)
 	if err != nil {
 		return nil, err
@@ -228,6 +235,7 @@ func (b *gptLiveBridge) SendAudioStreamEnd() error    { return b.inner.SendAudio
 func (b *gptLiveBridge) SendText(text string) error   { return b.inner.SendText(text) }
 func (b *gptLiveBridge) Close() error                 { return b.inner.Close() }
 func (b *gptLiveBridge) Name() string                 { return b.inner.Name() }
+func (b *gptLiveBridge) ContinuousDuplex() bool       { return b.inner.ContinuousDuplex() }
 
 func (b *gptLiveBridge) SendToolResponse(frame vsserver.ToolResponseFrame) error {
 	return b.inner.SendToolResponse(live.ToolResponse{
@@ -453,7 +461,8 @@ func (f *deepgramProviderFactory) NewProvider() vsserver.LiveProviderAdapter {
 // interface the WebSocket handler consumes. Same translation pattern as
 // geminiLiveBridge / openaiLiveBridge.
 type deepgramLiveBridge struct {
-	inner *deepgram.Provider
+	inner   *deepgram.Provider
+	pending []*live.LiveMessage
 }
 
 func (b *deepgramLiveBridge) Connect(ctx context.Context, cfg vsserver.LiveConfigFrame) error {
@@ -469,10 +478,11 @@ func (b *deepgramLiveBridge) Connect(ctx context.Context, cfg vsserver.LiveConfi
 		Speaker:          cfg.Speaker,
 	}
 	if err := b.inner.Connect(ctx, liveCfg); err != nil {
-		slog.Warn("voiceagent: Deepgram Voice Agent connect failed", "err", err)
 		return err
 	}
-	return nil
+	var err error
+	b.pending, err = waitVoiceProviderReady(ctx, b.inner.Receive)
+	return err
 }
 
 func (b *deepgramLiveBridge) SendAudio(chunk []byte) error   { return b.inner.SendAudio(chunk) }
@@ -500,6 +510,11 @@ func (b *deepgramLiveBridge) SendToolResponse(frame vsserver.ToolResponseFrame) 
 }
 
 func (b *deepgramLiveBridge) Receive(ctx context.Context) (*vsserver.LiveMessage, error) {
+	if len(b.pending) > 0 {
+		msg := b.pending[0]
+		b.pending = b.pending[1:]
+		return mapKernelLiveMessage(msg), nil
+	}
 	msg, err := b.inner.Receive(ctx)
 	if err != nil {
 		return nil, err

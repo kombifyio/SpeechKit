@@ -8,14 +8,79 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/cascaded"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
+func TestAgentRejectsCumulativeStreamOverflow(t *testing.T) {
+	var stream strings.Builder
+	delta := strings.Repeat("x", 8<<10)
+	for range 20 {
+		fmt.Fprintf(&stream, "data: {\"result\":{\"parts\":[{\"kind\":\"text\",\"text\":%q}]}}\n\n", delta)
+	}
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(stream.String())), Request: req}, nil
+	})}
+	agent, err := New(Config{Endpoint: "https://agents.example.test/a2a", TargetAgentID: "agent", SessionID: "session", HTTPClient: client})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := agent.Run(context.Background(), cascaded.AgentInput{Utterance: "hello"})
+	var coded cascaded.CodedError
+	if !errors.As(err, &coded) || coded.Code() != "provider_failed" || out.Text != "" {
+		t.Fatalf("overflow returned an answer: text bytes=%d error=%v", len(out.Text), err)
+	}
+}
+
 func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
 	return fn(request)
+}
+
+func TestAgentDenialNeverExposesUpstreamContent(t *testing.T) {
+	const sensitive = "bearer_secret_private_transcript"
+	for _, tc := range []struct {
+		name                    string
+		status                  int
+		contentType, body, code string
+	}{
+		{"http quota", 429, "application/json", `{"error":{"code":"quota_exhausted","message":"` + sensitive + `"}}`, "quota_exhausted"},
+		{"http auth", 403, "application/json", `{"error":{"code":"` + sensitive + `"}}`, "permission_denied"},
+		{"json rpc", 200, "application/json", `{"error":{"data":{"code":"quota_exhausted"},"message":"` + sensitive + `"}}`, "quota_exhausted"},
+		{"stream", 200, "text/event-stream", "data: {\"error\":{\"data\":{\"code\":\"" + sensitive + "\"}}}\n\n", "turn_failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: tc.status, Header: http.Header{"Content-Type": {tc.contentType}}, Body: io.NopCloser(strings.NewReader(tc.body)), Request: req}, nil
+			})}
+			agent, err := New(Config{Endpoint: "https://agents.example.test/a2a", TargetAgentID: "agent", SessionID: "session", HTTPClient: client})
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := agent.Run(context.Background(), cascaded.AgentInput{Utterance: "hello"})
+			var coded cascaded.CodedError
+			if !errors.As(err, &coded) || coded.Code() != tc.code || strings.Contains(err.Error(), sensitive) || out.Text != "" {
+				t.Fatalf("unsafe or misclassified denial: code=%v error=%v output=%v", coded, err, out)
+			}
+		})
+	}
+}
+
+func TestAgentBoundsTurnWithCustomHTTPClient(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		<-req.Context().Done()
+		return nil, req.Context().Err()
+	})}
+	agent, err := New(Config{Endpoint: "https://agents.example.test/a2a", TargetAgentID: "agent", SessionID: "session", HTTPClient: client, TurnTimeout: 10 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = agent.Run(context.Background(), cascaded.AgentInput{Utterance: "hello"})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("unbounded turn: %v", err)
+	}
 }
 
 func TestAgentStreamsRegisteredA2ATurn(t *testing.T) {

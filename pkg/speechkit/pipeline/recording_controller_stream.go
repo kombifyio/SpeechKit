@@ -11,6 +11,7 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/telemetry"
 
+	speechkitaudio "github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
@@ -128,6 +129,7 @@ func (r *dictationStreamRuntime) sendLoop(controller *RecordingController) {
 		if err := r.stream.SendPCM(r.ctx, pcm); err != nil {
 			if r.ctx.Err() == nil {
 				controller.onLog(fmt.Sprintf("Provider-stream send error: %v", err), "error")
+				r.failed.Store(true)
 			}
 			r.cancel()
 			return
@@ -145,6 +147,7 @@ func (r *dictationStreamRuntime) receiveLoop(controller *RecordingController) {
 				return
 			default:
 				controller.onLog(fmt.Sprintf("Provider-stream receive error: %v", err), "error")
+				r.failed.Store(true)
 				r.cancel()
 				return
 			}
@@ -171,8 +174,58 @@ func (r *dictationStreamRuntime) receiveLoop(controller *RecordingController) {
 		}
 		if event.IsFinal {
 			r.finalCount.Add(1)
+			for _, word := range event.Words {
+				if word.EndMs > r.committedEndMs.Load() {
+					r.committedEndMs.Store(word.EndMs)
+				}
+			}
 		}
 	}
+}
+
+// uncommittedTail returns the part of the full capture the stream never
+// committed: everything after the last committed word, mapped from the
+// stream's timeline onto the capture. Frames the stream never received (a full
+// PCM queue, a capture overrun) shorten its timeline, so the mapped boundary
+// can only land early: the tail may repeat committed words but never skips
+// uncommitted ones. ok is false when the stream reported no word timings and
+// the boundary is unknown. offsetMs is where the tail begins.
+func (r *dictationStreamRuntime) uncommittedTail(pcm []byte) (tail []byte, offsetMs int64, ok bool) {
+	endMs := r.committedEndMs.Load()
+	if endMs <= 0 {
+		return nil, 0, false
+	}
+	from := r.captureOffsetBytes + int(endMs)*pcmBytesPerMs
+	from -= from % speechkitaudio.BytesPerSample
+	if from >= len(pcm) {
+		return nil, int64(len(pcm) / pcmBytesPerMs), true
+	}
+	return pcm[from:], int64(from / pcmBytesPerMs), true
+}
+
+const pcmBytesPerMs = speechkitaudio.SampleRate * speechkitaudio.Channels * speechkitaudio.BytesPerSample / 1000
+
+// uncommittedStreamAudio returns the capture Stop still owes a stream that
+// committed finals but did not finish cleanly, and where it begins. It returns
+// nil when nothing uncommitted remains, or when a drain was merely cut short
+// and no word timings locate the committed text.
+func (c *RecordingController) uncommittedStreamAudio(r *dictationStreamRuntime, pcm []byte, finals int64) ([]byte, int64) {
+	tail, offsetMs, bounded := r.uncommittedTail(pcm)
+	if !bounded {
+		if !r.failed.Load() {
+			c.onLog(fmt.Sprintf("Provider-stream drain cut short after %d committed segment(s); no word timings locate the rest", finals), "warn")
+			return nil, 0
+		}
+		// A failed stream without word timings repeats committed text rather
+		// than lose the speech after it.
+		tail, offsetMs = pcm, 0
+	}
+	if len(tail) < c.minPCMBytes || (speechkit.PCMDurationSecs(tail) < shortNoSpeechGateSecs && speechkitaudio.PCMLevel(tail) < noiseFloorRMS) {
+		c.onLog(fmt.Sprintf("Provider-stream ended early after %d committed segment(s); no uncommitted audio remains", finals), "info")
+		return nil, 0
+	}
+	c.onLog(fmt.Sprintf("Provider-stream ended early after %d committed segment(s); transcribing the remaining %.1fs of capture", finals, speechkit.PCMDurationSecs(tail)), "warn")
+	return tail, offsetMs
 }
 
 func (c *RecordingController) stopNativeDictationStream(runtime *dictationStreamRuntime) int64 {
@@ -182,15 +235,18 @@ func (c *RecordingController) stopNativeDictationStream(runtime *dictationStream
 	runtime.closeInput()
 	if !waitForChannel(runtime.senderDone, 3*time.Second) {
 		c.onLog("Provider-stream sender did not drain before finalize; cancelling stream", "warn")
+		runtime.cutShort.Store(true)
 		runtime.cancel()
 	}
 	finalizeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	if err := runtime.stream.Finalize(finalizeCtx); err != nil && finalizeCtx.Err() == nil {
 		c.onLog(fmt.Sprintf("Provider-stream finalize warning: %v", err), "warn")
+		runtime.cutShort.Store(true)
 	}
 	cancel()
 	if !waitForChannel(runtime.receiverDone, 5*time.Second) {
 		c.onLog("Provider-stream receiver did not finish after finalize; cancelling stream", "warn")
+		runtime.cutShort.Store(true)
 		runtime.cancel()
 	}
 	if flusher, ok := runtime.sink.(LiveCommitFlusher); ok {
@@ -200,6 +256,9 @@ func (c *RecordingController) stopNativeDictationStream(runtime *dictationStream
 	}
 	runtime.cancel()
 	_ = runtime.stream.Close()
+	// A cancelled receiver may still be returning from its last read; let it
+	// exit so the counts below are final.
+	waitForChannel(runtime.receiverDone, time.Second)
 	return runtime.finalCount.Load()
 }
 

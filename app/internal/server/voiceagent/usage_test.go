@@ -66,7 +66,7 @@ func TestAdapterMetersOnlyProviderConnectedSessions(t *testing.T) {
 	}
 	select {
 	case usage := <-env.usage:
-		if usage.SessionID != "test-session" || usage.Duration <= 0 {
+		if usage.SessionID != "test-session" || usage.Duration <= 0 || usage.OwnerUserID != "u1" {
 			t.Fatalf("usage = %#v", usage)
 		}
 	case <-time.After(2 * time.Second):

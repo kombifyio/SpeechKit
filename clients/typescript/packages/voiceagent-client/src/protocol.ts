@@ -225,6 +225,8 @@ export interface InterruptedFrame extends ServerFrameMeta {
 }
 
 export interface ErrorFrame {
+  /** Absent/false is a recoverable turn error; true ends the session. */
+  fatal?: boolean;
   type: "error";
   code: string;
   message: string;
@@ -242,7 +244,7 @@ export interface ErrorFrame {
 
 export interface SessionEndFrame extends ServerFrameMeta {
   type: "session_end";
-  reason: "idle" | "go_away" | "client" | "error" | "shutdown" | "max_duration";
+  reason: "idle" | "go_away" | "client" | "error" | "shutdown" | "max_duration" | "authorization_expired";
 }
 
 export interface PongFrame {

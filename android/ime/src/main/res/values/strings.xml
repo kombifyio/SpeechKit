@@ -39,4 +39,6 @@
     <string name="speechkit_ime_agent_phase_ended">Ended</string>
     <string name="speechkit_ime_agent_error_provider_unavailable">This voice provider is not configured on the server</string>
     <string name="speechkit_ime_agent_error_no_server">The voice assistant needs a paired SpeechKit server</string>
+    <string name="speechkit_ime_agent_error_audio">Voice audio could not continue</string>
+    <string name="speechkit_ime_agent_error_generic">The voice connection failed</string>
 </resources>

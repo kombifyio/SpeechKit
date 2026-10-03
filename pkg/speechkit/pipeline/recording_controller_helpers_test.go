@@ -241,7 +241,10 @@ func (s *fakeDictationStreamSink) finalEvents() []speechkit.DictationStreamEvent
 	return out
 }
 
+// fakeObserver locks its writes: native-stream goroutines log while the
+// controller's own goroutine does.
 type fakeObserver struct {
+	mu      sync.Mutex
 	states  []string
 	logs    []string
 	onState func(status, text string)
@@ -251,14 +254,20 @@ func (o *fakeObserver) OnState(status, text string) {
 	if o.onState != nil {
 		o.onState(status, text)
 	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
 	o.states = append(o.states, status+":"+text)
 }
 
 func (o *fakeObserver) OnLog(message, kind string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
 	o.logs = append(o.logs, kind+":"+message)
 }
 
 func (o *fakeObserver) hasLog(message string) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
 	for _, log := range o.logs {
 		if strings.Contains(log, message) {
 			return true

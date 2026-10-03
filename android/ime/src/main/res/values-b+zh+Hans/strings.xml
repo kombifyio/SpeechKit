@@ -34,4 +34,6 @@
     <string name="speechkit_ime_agent_phase_ended">已结束</string>
     <string name="speechkit_ime_agent_error_provider_unavailable">服务器上未配置此语音提供方</string>
     <string name="speechkit_ime_agent_error_no_server">语音助手需要已配对的 SpeechKit 服务器</string>
+    <string name="speechkit_ime_agent_error_audio">无法继续传输语音</string>
+    <string name="speechkit_ime_agent_error_generic">语音连接失败</string>
 </resources>

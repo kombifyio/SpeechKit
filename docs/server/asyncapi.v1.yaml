@@ -687,6 +687,13 @@ components:
           type: string
           description: Stable machine-readable error code.
         message: { type: string }
+        fatal:
+          type: boolean
+          default: false
+          description: |
+            True when this session is ending. False or absent means a failed
+            turn; the session remains usable. Errors contain safe public
+            guidance and allowlisted outcomes, never upstream response bodies.
         remediation:
           type: string
           description: >-
@@ -715,7 +722,13 @@ components:
           additionalProperties: true
         reason:
           type: string
-          enum: [idle, go_away, client, error, shutdown, max_duration]
+          enum: [idle, go_away, client, error, shutdown, max_duration, authorization_expired]
+          description: |
+            Registered-agent sessions end at the earliest capability-lease,
+            delegated JWT, or signed issuer credential expiry, even while active.
+            Start a new authorized session; clients do not renew credentials or
+            replay an interrupted turn. Provider/media readiness is bounded to
+            15 seconds. A terminal frame seals further downlink.
 
     PongFrame:
       type: object

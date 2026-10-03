@@ -13,6 +13,7 @@ TypeScript WebSocket client for the SpeechKit Voice Agent:
 ```ts
 import { openBrowserSession } from "@kombifyio/speechkit-voiceagent-client";
 
+const abortController = new AbortController();
 const session = await openBrowserSession({
   serverUrl: "https://speech.example.com",
   basePath: "/v1/speechkit",
@@ -22,18 +23,46 @@ const session = await openBrowserSession({
   // `provider` selects the realtime backend for this session
   // (openai | deepgram | assemblyai | cascaded, or opt-in BYOK gemini); empty = server default.
   start: { locale: "en-US", provider: "deepgram" },
+  signal: abortController.signal, // cancels ticket minting, setup, and active tools
   onPlaybackLevel: (level) => setAgentLevel(level), // RMS 0..1 for visualizers
   hooks: {
     onAgentTranscript: (text, done) => render(text, done),
     onAudio: (chunk) => session.playChunk(chunk),
-    // Barge-in: drop queued agent audio so stale speech stops immediately.
-    onInterrupted: () => session.flushPlayback(),
   },
 });
 
 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 const stopMic = session.attachMicrophone(stream);
 ```
+
+The browser and Node factories resolve after the server confirms both
+`state: "listening"` and `event_type: "session_ready"`. Ticket minting expires
+after 15 seconds, socket upgrade after 10 seconds, and provider readiness
+after 20 seconds from upgrade. Direct `VoiceAgentSession` users can await `ready`.
+Microphone bytes sent before readiness are discarded rather than buffered.
+Pass an `AbortSignal` to cancel pending minting, setup, and the active session.
+Tool handlers also receive `{ signal }` as their second argument; late results
+after cancellation, interruption, or termination are never sent.
+
+Call `openBrowserSession` directly from a click/tap to resume playback during
+that gesture. If the browser suspends audio later, call `resumeAudio()` from a
+new click/tap. `session.cancel()` flushes scheduled playback synchronously and
+mutes in-flight PCM until the server acknowledges interruption. Closing or
+receiving a terminal frame stops capture tracks, clears playback, and closes
+the local socket without waiting for the peer.
+Attempting playback while the context is suspended ends the session with
+`audio_resume_required`; resume audio before supplying playback chunks.
+
+Outbound WebSocket buffering is limited to 64,000 bytes (two seconds of
+microphone PCM); control frames are limited to 64 KiB and transcript callbacks
+retain at most the last 16,384 characters per frame. Browser playback retains
+at most 96,000 PCM bytes (two seconds) and 64 scheduled sources. Exceeding a
+media/control budget terminates with `voice_buffer_overflow`. Error frames
+without `fatal: true` remain recoverable; fatal `auth_expired` terminates with
+`authorization_expired`, and other fatal errors terminate with `error`. Local
+transport/tool failures expose stable codes without raw exceptions or HTTP
+response bodies. The server's structured error/remediation fields remain
+available through `onError`.
 
 See `docs/clients/typescript.md` in the
 [SpeechKit repository](https://github.com/kombifyio/SpeechKit) for full usage,

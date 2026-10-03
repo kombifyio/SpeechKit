@@ -7,7 +7,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/app/internal/server/httpx"
@@ -89,7 +88,7 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 		ToolRouter:      h.toolRouter,
 		//nolint:contextcheck // OnUsage has no context parameter and runs after the request context is done
 		OnUsage: func(usage VoiceUsage) {
-			if h.usage == nil || strings.TrimSpace(session.BridgeCredential) == "" {
+			if h.usage == nil {
 				return
 			}
 			// Usage is reported as the session ends, when the request context is
@@ -97,7 +96,7 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := h.usage.Report(ctx, session.BridgeCredential, usage); err != nil {
-				slog.Warn("voiceagent: usage report failed", "session_id", session.ID, "err", err) // #nosec G706 -- slog writes session IDs/errors as structured attributes, not interpolated log text.
+				slog.Warn("voiceagent: usage report failed", "session_id", session.ID, "code", "usage_report_failed") // #nosec G706 -- session ID is a structured attribute; upstream details may contain credentials.
 			}
 		},
 		OnClose: func() {

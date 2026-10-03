@@ -13,13 +13,14 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/a2a"
 	publiccascaded "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/cascaded"
 )
 
 func TestRegisteredAgentHeadersBindTurnAndDisclosureIsSpokenOnce(t *testing.T) {
-	leasePayload, _ := json.Marshal(map[string]any{"capabilities": []string{"agent.conversation"}})
+	leasePayload, _ := json.Marshal(map[string]any{"capabilities": []string{"agent.conversation"}, "exp": time.Now().Add(time.Minute).Unix()})
 	lease := "header." + base64.RawURLEncoding.EncodeToString(leasePayload) + ".signature"
 	var received http.Header
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -34,6 +35,7 @@ func TestRegisteredAgentHeadersBindTurnAndDisclosureIsSpokenOnce(t *testing.T) {
 		Headers: registeredAgentHeaders(LiveConfigFrame{
 			AgentTargetID: "kombify-ai", AgentEndpoint: server.URL, CapabilityLease: lease,
 			OwnerUserID: "owner", OwnerOrgID: "org", OwnerPlan: "pro", OboSubjectToken: "subject-token",
+			CredentialExpiresAt: time.Now().Add(time.Minute).Unix(),
 		}, "signing-secret"),
 	})
 	if err != nil {

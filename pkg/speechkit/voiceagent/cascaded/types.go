@@ -62,17 +62,19 @@ type Message struct {
 	OutputTranscript       string
 	OutputTranscriptDone   bool
 	// ErrorCode reports a failed turn: "stt_failed", "turn_failed",
-	// "internal_panic", or the agent's own typed reason (see [CodedError]).
-	// ErrorMessage is its diagnostic detail. Neither is transcript text;
+	// "internal_panic", or a recognized agent reason (see [SafeFailureCode]).
+	// ErrorMessage is safe public guidance. Neither is transcript text;
 	// adapters forward them as an error, never as agent speech.
 	ErrorCode    string
 	ErrorMessage string
+	// Done marks completion of a successful turn after all its audio.
+	Done bool
 }
 
 // CodedError is an [Agent] error that names why the turn failed with a
 // stable machine code, for example "quota_exhausted" for used-up AI credits.
-// The pipeline reports that code instead of the generic "turn_failed", so a
-// client can show the matching notice.
+// The pipeline reports recognized public outcomes (see [SafeFailureCode]);
+// unknown reasons become "turn_failed" without exposing diagnostic text.
 type CodedError interface {
 	error
 	Code() string

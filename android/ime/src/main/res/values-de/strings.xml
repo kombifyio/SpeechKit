@@ -37,4 +37,6 @@
     <string name="speechkit_ime_agent_phase_ended">Beendet</string>
     <string name="speechkit_ime_agent_error_provider_unavailable">Dieser Sprachanbieter ist auf dem Server nicht konfiguriert</string>
     <string name="speechkit_ime_agent_error_no_server">Der Sprachassistent braucht einen gekoppelten SpeechKit-Server</string>
+    <string name="speechkit_ime_agent_error_audio">Die Sprachübertragung konnte nicht fortgesetzt werden</string>
+    <string name="speechkit_ime_agent_error_generic">Die Sprachverbindung ist fehlgeschlagen</string>
 </resources>

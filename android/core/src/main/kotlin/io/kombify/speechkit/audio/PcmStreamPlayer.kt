@@ -3,135 +3,146 @@ package io.kombify.speechkit.audio
 import android.media.AudioAttributes
 import android.media.AudioFormat as AndroidAudioFormat
 import android.media.AudioTrack
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.util.concurrent.atomic.AtomicInteger
-import kotlin.coroutines.CoroutineContext
 import io.kombify.speechkit.log.VoiceLog
+import kotlin.coroutines.CoroutineContext
 
-/**
- * Streams agent PCM to the speaker. Shared by the keyboard panel, the Voice
- * IME, and the in-app Voice Agent test surface so those hosts do not each
- * own an AudioTrack.
- *
- * The track is created lazily and released when the conversation ends. [play]
- * is `suspend` and runs on [playback]: `AudioTrack.write` in `MODE_STREAM`
- * blocks, and Compose hosts call this from the main thread.
- *
- * Every touch of the track goes through one [Mutex]. A frame remembers how
- * many [release] calls had happened when it was handed over, and a frame that
- * arrives across a release boundary is dropped instead of resurrecting the
- * track.
- *
- * @param sampleRateHz the rate of the PCM this player will be given, in Hz.
- *   No default on purpose. Playback is the one variable rate in this pipeline
- *   — the Voice Agent downlink is 24 kHz S16 mono (`:net`'s
- *   `VoiceAgentAudio.SERVER_SAMPLE_RATE`; `:core` cannot name it, the
- *   dependency runs the other way) while capture is 16 kHz
- *   ([AudioFormat.SAMPLE_RATE]) — and a default is exactly the omission that goes
- *   unnoticed: an `AudioTrack` opened at 16 kHz accepts 24 kHz bytes without
- *   complaint and simply reads them out too slowly, so the agent speaks at
- *   two-thirds speed roughly a fifth low. Nothing throws and no log line
- *   fires; the only symptom is the sound. Every host here knows which stream
- *   it holds, so it says so.
- * @param playback the dispatcher `AudioTrack.write` blocks on.
+/** A safe local failure code; no driver exception or captured media is retained. */
+class PcmPlaybackException(val code: String) : IllegalStateException(code)
+
+/** Shared S16 mono stream player. [play] suspends until a chunk has reached the driver.
+ * [flush] and [release] invalidate waiting writes synchronously, including frames queued
+ * behind another [play]. The next new call may open a track after [release].
  */
-class PcmStreamPlayer(
+class PcmStreamPlayer internal constructor(
     private val sampleRateHz: Int,
-    private val playback: CoroutineContext = Dispatchers.IO,
+    private val playback: CoroutineContext,
+    private val createTrack: (Int) -> PcmPlaybackTrack,
 ) {
-    init {
-        require(sampleRateHz > 0) { "playback sample rate must be positive, was $sampleRateHz" }
-    }
+    constructor(sampleRateHz: Int, playback: CoroutineContext = Dispatchers.IO) :
+        this(sampleRateHz, playback, ::createAndroidTrack)
 
-    private val scope = CoroutineScope(SupervisorJob() + playback)
-    private val trackLock = Mutex()
-    private var track: AudioTrack? = null
-    private val releases = AtomicInteger()
+    init { require(sampleRateHz > 0) { "Playback sample rate must be positive" } }
+
+    private val stateLock = Any()
+    private val writes = Mutex()
+    private var track: PcmPlaybackTrack? = null
+    private var generation = 0L
 
     suspend fun play(pcm: ByteArray) {
         if (pcm.isEmpty()) return
-        val issued = releases.get()
+        if (pcm.size % AudioFormat.BYTES_PER_SAMPLE != 0 ||
+            pcm.size.toLong() > sampleRateHz.toLong() * AudioFormat.BYTES_PER_SAMPLE * MAX_CHUNK_SECONDS) {
+            throw PcmPlaybackException("playback_frame_invalid")
+        }
+        val issued = synchronized(stateLock) { generation }
         withContext(playback) {
-            trackLock.withLock {
-                if (releases.get() != issued) return@withLock
-                val active = track ?: create().also { track = it }
-                runCatching { active.write(pcm, 0, pcm.size) }
-                    .onFailure { VoiceLog.w(VoiceLog.AUDIO, "agent playback failed", it) }
-            }
-        }
-    }
-
-    /** Drops buffered speech. Barge-in cuts the agent mid-sentence. */
-    fun flush() {
-        scope.launch {
-            trackLock.withLock {
-                val active = track ?: return@withLock
-                runCatching {
-                    active.pause()
-                    active.flush()
-                    active.play()
-                }.onFailure { VoiceLog.w(VoiceLog.AUDIO, "agent flush failed", it) }
-            }
-        }
-    }
-
-    fun release() {
-        releases.incrementAndGet()
-        scope.launch {
-            trackLock.withLock {
-                runCatching {
-                    track?.stop()
-                    track?.release()
+            writes.withLock {
+                var offset = 0
+                var idleMillis = 0
+                while (offset < pcm.size) {
+                    currentCoroutineContext().ensureActive()
+                    val written = synchronized(stateLock) {
+                        if (generation != issued) return@withLock
+                        try {
+                            val active = track ?: createTrack(sampleRateHz).also { track = it }
+                            active.write(pcm, offset, pcm.size - offset)
+                        } catch (_: Exception) {
+                            discardTrack()
+                            throw PcmPlaybackException("playback_device_failed")
+                        }
+                    }
+                    if (written < 0 || written > pcm.size - offset || written % AudioFormat.BYTES_PER_SAMPLE != 0) {
+                        synchronized(stateLock) {
+                            if (generation != issued) return@withLock
+                            discardTrack()
+                        }
+                        throw PcmPlaybackException("playback_write_failed")
+                    }
+                    if (written == 0) {
+                        idleMillis += RETRY_MILLIS
+                        if (idleMillis >= WRITE_TIMEOUT_MILLIS) {
+                            synchronized(stateLock) {
+                                if (generation != issued) return@withLock
+                                discardTrack()
+                            }
+                            throw PcmPlaybackException("playback_stalled")
+                        }
+                        delay(RETRY_MILLIS.toLong())
+                    } else {
+                        offset += written
+                        idleMillis = 0
+                    }
                 }
-                track = null
             }
         }
     }
 
-    private fun create(): AudioTrack {
-        val minBuffer = AudioTrack.getMinBufferSize(
-            sampleRateHz,
-            AndroidAudioFormat.CHANNEL_OUT_MONO,
-            AndroidAudioFormat.ENCODING_PCM_16BIT,
-        )
-        // A duration, not a byte count: the same 400 ms of slack whatever the
-        // stream's rate. Derived from AudioFormat.STREAM_CHUNK_BYTES it would
-        // silently shrink to 267 ms on the 24 kHz downlink.
-        val floor = sampleRateHz * AudioFormat.BYTES_PER_SAMPLE * BUFFER_MILLIS / 1000
-        return AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build(),
-            )
-            .setAudioFormat(
-                AndroidAudioFormat.Builder()
-                    .setEncoding(AndroidAudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(sampleRateHz)
-                    .setChannelMask(AndroidAudioFormat.CHANNEL_OUT_MONO)
-                    .build(),
-            )
-            .setBufferSizeInBytes(maxOf(minBuffer, floor))
-            .setTransferMode(AudioTrack.MODE_STREAM)
-            .build()
-            .also {
-                // The capture side logs its rate too (AndroidAudioSession).
-                // A rate mismatch has no exception and no failed write to
-                // find it by, so the opened rate has to be on the record:
-                // `adb logcat -s sk.voice` is the whole diagnosis.
-                VoiceLog.i(VoiceLog.AUDIO, "agent track opened rate=$sampleRateHz")
-                it.play()
-            }
+    /** Stops current speech and permits the next reply to play on a fresh track. */
+    fun flush() = synchronized(stateLock) { discardTrack() }
+
+    /** Returns only once the held track has been stopped and released. */
+    fun release() = synchronized(stateLock) { discardTrack() }
+
+    private fun discardTrack() {
+        generation++
+        val active = track
+        track = null
+        if (active != null) {
+            // Nonblocking writes keep this critical section short. Cleanup steps are
+            // independent so a failed stop cannot leak the native track.
+            runCatching { active.stop() }.onFailure { VoiceLog.w(VoiceLog.AUDIO, "agent track stop failed") }
+            runCatching { active.release() }.onFailure { VoiceLog.w(VoiceLog.AUDIO, "agent track release failed") }
+        }
     }
 
     private companion object {
-        const val BUFFER_MILLIS = 400
+        const val MAX_CHUNK_SECONDS = 2
+        const val RETRY_MILLIS = 10
+        const val WRITE_TIMEOUT_MILLIS = 2000
+    }
+}
+
+internal interface PcmPlaybackTrack {
+    fun write(pcm: ByteArray, offset: Int, size: Int): Int
+    fun stop()
+    fun release()
+}
+
+private fun createAndroidTrack(sampleRateHz: Int): PcmPlaybackTrack {
+    val minBuffer = AudioTrack.getMinBufferSize(sampleRateHz,
+        AndroidAudioFormat.CHANNEL_OUT_MONO, AndroidAudioFormat.ENCODING_PCM_16BIT)
+    if (minBuffer <= 0) throw PcmPlaybackException("playback_device_failed")
+    val floor = sampleRateHz * AudioFormat.BYTES_PER_SAMPLE * 400 / 1000
+    val active = AudioTrack.Builder()
+        .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+        .setAudioFormat(AndroidAudioFormat.Builder().setEncoding(AndroidAudioFormat.ENCODING_PCM_16BIT)
+            .setSampleRate(sampleRateHz).setChannelMask(AndroidAudioFormat.CHANNEL_OUT_MONO).build())
+        .setBufferSizeInBytes(maxOf(minBuffer, floor))
+        .setTransferMode(AudioTrack.MODE_STREAM).build()
+    try {
+        if (active.state != AudioTrack.STATE_INITIALIZED) throw PcmPlaybackException("playback_device_failed")
+        active.play()
+    } catch (_: Exception) {
+        runCatching { active.release() }
+        throw PcmPlaybackException("playback_device_failed")
+    }
+    VoiceLog.i(VoiceLog.AUDIO, "agent track opened rate=$sampleRateHz")
+    return object : PcmPlaybackTrack {
+        override fun write(pcm: ByteArray, offset: Int, size: Int): Int =
+            active.write(pcm, offset, size, AudioTrack.WRITE_NON_BLOCKING)
+        override fun stop() {
+            active.pause()
+            active.flush()
+            active.stop()
+        }
+        override fun release() = active.release()
     }
 }

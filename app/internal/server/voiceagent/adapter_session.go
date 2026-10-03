@@ -110,8 +110,40 @@ func (a *Adapter) waitForStart(ctx context.Context) (StartFrame, error) {
 	// Tight deadline so clients that never send `start` don't park a slot.
 	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-
-	typ, data, err := a.Conn.Read(readCtx)
+	// coder/websocket cancels the connection when Read's context ends. Keep the
+	// sole read alive until terminal delivery, then CloseNow releases it. Join
+	// an already-started cancellation callback before admitting any start frame.
+	finished := make(chan struct{})
+	stop := context.AfterFunc(readCtx, func() {
+		defer close(finished)
+		reason := "error"
+		if errors.Is(context.Cause(readCtx), errAuthorizationExpired) {
+			reason = "authorization_expired"
+			a.sendFatalError(context.WithoutCancel(ctx), "auth_expired", "Start a new authorized voice session.")
+		} else if ctx.Err() != nil {
+			reason = "shutdown"
+		} else {
+			a.sendFatalError(context.WithoutCancel(ctx), "start_required", "Send a valid start frame before starting voice media.")
+		}
+		a.sendSessionEnd(context.WithoutCancel(ctx), reason)
+		a.closeSocket()
+	})
+	joined := false
+	defer func() {
+		if !joined && !stop() {
+			<-finished
+		}
+	}()
+	typ, data, err := a.Conn.Read(context.WithoutCancel(readCtx))
+	if !stop() {
+		<-finished
+		joined = true
+		return StartFrame{}, context.Cause(readCtx)
+	}
+	joined = true
+	if ctx.Err() != nil {
+		return StartFrame{}, context.Cause(ctx)
+	}
 	if err != nil {
 		return StartFrame{}, err
 	}

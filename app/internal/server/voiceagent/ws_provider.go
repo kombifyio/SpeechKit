@@ -100,14 +100,15 @@ type LiveConfigFrame struct {
 	Tools []ToolDefinitionFrame
 	// Registered-agent fields are trusted session state captured at mint time,
 	// never values accepted from the WebSocket start frame.
-	AgentTargetID   string
-	AgentEndpoint   string
-	CapabilityLease string
-	VoiceSessionID  string
-	AISessionID     string
-	OwnerUserID     string
-	OwnerOrgID      string
-	OwnerPlan       string
+	AgentTargetID       string
+	AgentEndpoint       string
+	CapabilityLease     string
+	CredentialExpiresAt int64
+	VoiceSessionID      string
+	AISessionID         string
+	OwnerUserID         string
+	OwnerOrgID          string
+	OwnerPlan           string
 	// OboSubjectToken is the short-lived delegated AI session credential
 	// captured at mint time. It is never the owner's raw login JWT.
 	OboSubjectToken string

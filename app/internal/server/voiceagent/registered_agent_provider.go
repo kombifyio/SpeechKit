@@ -27,6 +27,8 @@ type RegisteredAgentProvider struct {
 	signingSecret func() string
 	mu            sync.Mutex
 	inner         *CascadedProvider
+	expiresAt     time.Time
+	cancel        context.CancelFunc
 }
 
 func NewRegisteredAgentProvider(deps CascadedDeps, signingSecret func() string) *RegisteredAgentProvider {
@@ -47,6 +49,14 @@ func (p *RegisteredAgentProvider) Connect(ctx context.Context, cfg LiveConfigFra
 	if secret == "" {
 		return errors.New("voiceagent: A2A delegation signer is unavailable")
 	}
+	expiresAt, err := registeredAuthorizationExpiry(cfg.CapabilityLease, cfg.OboSubjectToken, cfg.CredentialExpiresAt)
+	if err != nil {
+		return err
+	}
+	if !time.Now().Before(expiresAt) {
+		return errAuthorizationExpired
+	}
+	ctx, cancel := context.WithDeadline(ctx, expiresAt)
 	agent, err := a2a.New(a2a.Config{
 		Endpoint:      cfg.AgentEndpoint,
 		TargetAgentID: cfg.AgentTargetID,
@@ -54,16 +64,21 @@ func (p *RegisteredAgentProvider) Connect(ctx context.Context, cfg LiveConfigFra
 		Headers:       registeredAgentHeaders(cfg, secret),
 	})
 	if err != nil {
+		cancel()
 		return err
 	}
 	deps := p.deps
 	deps.Agent = &disclosingAgent{inner: agent}
 	inner := NewCascadedProvider(deps)
 	if err := inner.Connect(ctx, cfg); err != nil {
+		cancel()
+		_ = inner.Close()
 		return err
 	}
 	p.mu.Lock()
 	p.inner = inner
+	p.expiresAt = expiresAt
+	p.cancel = cancel
 	p.mu.Unlock()
 	return nil
 }
@@ -71,6 +86,13 @@ func (p *RegisteredAgentProvider) Connect(ctx context.Context, cfg LiveConfigFra
 func registeredAgentHeaders(cfg LiveConfigFrame, secret string) a2a.HeaderProvider {
 	return func(_ context.Context, turn a2a.RequestContext) (http.Header, error) {
 		now := time.Now().Unix()
+		expiresAt, err := registeredAuthorizationExpiry(cfg.CapabilityLease, cfg.OboSubjectToken, cfg.CredentialExpiresAt)
+		if err != nil {
+			return nil, err
+		}
+		if now >= expiresAt.Unix() {
+			return nil, errAuthorizationExpired
+		}
 		parsed, err := url.Parse(cfg.AgentEndpoint)
 		if err != nil {
 			return nil, err
@@ -82,7 +104,7 @@ func registeredAgentHeaders(cfg LiveConfigFrame, secret string) a2a.HeaderProvid
 			return nil, err
 		}
 		delegation := map[string]any{
-			"version": 1, "contract": "kombify.a2a-delegation.v1", "issued_at": now, "expires_at": now + 300,
+			"version": 1, "contract": "kombify.a2a-delegation.v1", "issued_at": now, "expires_at": min(now+300, expiresAt.Unix()),
 			"source_agent": "speechkit-server", "delegated_agent_id": cfg.AgentTargetID,
 			"trace_id": runID, "session_id": turn.SessionID, "run_id": runID,
 			"subject": cfg.OwnerUserID, "org_id": cfg.OwnerOrgID, "actor_type": "user",
@@ -172,6 +194,9 @@ func (p *RegisteredAgentProvider) current() (*CascadedProvider, error) {
 	if p.inner == nil {
 		return nil, errors.New("voiceagent: registered agent provider is not connected")
 	}
+	if !time.Now().Before(p.expiresAt) {
+		return nil, errAuthorizationExpired
+	}
 	return p.inner, nil
 }
 
@@ -204,9 +229,16 @@ func (p *RegisteredAgentProvider) Receive(ctx context.Context) (*LiveMessage, er
 	return inner.Receive(ctx)
 }
 func (p *RegisteredAgentProvider) Close() error {
-	inner, err := p.current()
-	if err != nil {
-		return nil //nolint:nilerr // no inner provider was ever established, so there is nothing to close
+	p.mu.Lock()
+	inner := p.inner
+	p.inner = nil
+	if p.cancel != nil {
+		p.cancel()
+		p.cancel = nil
+	}
+	p.mu.Unlock()
+	if inner == nil {
+		return nil
 	}
 	return inner.Close()
 }

@@ -6,6 +6,7 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -42,6 +43,10 @@ class MicAudioCapture(
     private val chunkBytes: Int = AudioFormat.STREAM_CHUNK_BYTES,
     private val duplex: Boolean = false,
 ) : AudioCapture {
+
+    init {
+        require(sampleRateHz > 0 && chunkBytes > 0 && chunkBytes % AudioFormat.BYTES_PER_SAMPLE == 0)
+    }
 
     /**
      * Set from the attach in [frames], cleared when capture ends. Volatile
@@ -116,16 +121,25 @@ class MicAudioCapture(
         val canceller = if (duplex) attachEchoCanceller(recorder.audioSessionId) else null
         try {
             recorder.startRecording()
+            check(recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "AudioRecord failed to start recording" }
             VoiceLog.i(
                 VoiceLog.AUDIO,
                 "mic capture started rate=$sampleRateHz chunk=$chunkBytes duplex=$duplex " +
                     "aec=${canceller?.enabled ?: false}",
             )
             val chunk = ByteArray(chunkBytes)
+            var filled = 0
             while (currentCoroutineContext().isActive) {
-                val read = recorder.read(chunk, 0, chunk.size)
+                val read = recorder.read(chunk, filled, chunk.size - filled, AudioRecord.READ_NON_BLOCKING)
                 when {
-                    read > 0 -> emit(chunk.copyOf(read))
+                    read > 0 -> {
+                        filled += read
+                        if (filled == chunk.size) {
+                            emit(chunk.copyOf())
+                            filled = 0
+                        }
+                    }
+                    read == 0 -> delay(10)
                     read < 0 -> {
                         VoiceLog.e(VoiceLog.AUDIO, "AudioRecord.read failed code=$read")
                         error("AudioRecord.read failed: $read")
@@ -136,7 +150,8 @@ class MicAudioCapture(
             attachedEchoControl = EchoControl.None
             runCatching { canceller?.release() }
             runCatching { recorder.stop() }
-            recorder.release()
+            runCatching { recorder.release() }
+                .onFailure { VoiceLog.w(VoiceLog.AUDIO, "mic release failed") }
         }
     }.flowOn(Dispatchers.IO)
 

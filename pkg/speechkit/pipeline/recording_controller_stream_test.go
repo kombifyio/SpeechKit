@@ -1,12 +1,15 @@
 package pipeline
 
 import (
+	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 func TestRecordingControllerProviderStreamCommitsFinalWithoutBatchDuplicate(t *testing.T) {
@@ -23,8 +26,9 @@ func TestRecordingControllerProviderStreamCommitsFinalWithoutBatchDuplicate(t *t
 		}),
 	}
 	sink := &fakeDictationStreamSink{}
+	observer := &fakeObserver{}
 	collector := &fakeCollector{readySegments: []dictationSegment{{pcm: []byte(strings.Repeat("a", 6400))}}}
-	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, func() speechkit.SegmentCollector {
+	controller := NewRecordingController(recorder, submitter, observer, func() speechkit.SegmentCollector {
 		return collector
 	})
 	controller.SetDictationStream(provider, sink)
@@ -64,6 +68,79 @@ func TestRecordingControllerProviderStreamCommitsFinalWithoutBatchDuplicate(t *t
 	if len(provider.opts) != 1 || !provider.opts[0].InterimResults {
 		t.Fatalf("provider opts = %#v, want interim stream opts", provider.opts)
 	}
+	// The drained finals already carry the session's terminal state; a
+	// trailing "processing" has no job behind it and strands the overlay.
+	if got := observer.states; got[len(got)-1] == "processing:" {
+		t.Fatalf("states = %#v, want no processing state after the stream drained", got)
+	}
+}
+
+// A stream that dies mid-dictation (Deepgram's UtteranceEnd once failed to
+// decode) must not take the rest of the dictation with it: Stop transcribes
+// the capture after the last committed word, mapped past the audio captured
+// while the handshake was still dialing.
+func TestRecordingControllerProviderStreamFailureTranscribesUncommittedTail(t *testing.T) {
+	const bytesPerMs = 32 // 16 kHz mono PCM16
+	dialing := strings.Repeat("d", 200*bytesPerMs)
+	committed := strings.Repeat("c", 500*bytesPerMs)
+	rest := strings.Repeat("r", 1000*bytesPerMs)
+	recorder := &fakeRecorder{stopPCM: []byte(dialing + committed + rest)}
+	submitter := &fakeSubmitter{}
+	stream := &failingDictationStream{final: speechkit.DictationStreamEvent{
+		Text:    "Erster Satz.",
+		IsFinal: true,
+		Words:   []speechkit.WordConfidence{{Text: "Satz.", StartMs: 100, EndMs: 500}},
+	}}
+	provider := &dialingDictationStreamProvider{recorder: recorder, dialing: []byte(dialing), stream: stream}
+	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, nil)
+	controller.SetDictationStream(provider, &fakeDictationStreamSink{})
+
+	if err := controller.Start(speechkit.RecordingStartOptions{Language: "de", ProviderStream: true}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	recorder.pcmHandler([]byte(committed))
+	recorder.pcmHandler([]byte(rest))
+	if err := controller.Stop(speechkit.RecordingStopOptions{Label: "Captured"}); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+
+	if len(submitter.jobs) != 1 {
+		t.Fatalf("jobs after stream failure = %d, want one job for the uncommitted audio", len(submitter.jobs))
+	}
+	if got := string(submitter.jobs[0].PCM); got != rest {
+		t.Fatalf("tail job = %d bytes, want exactly the %d uncommitted bytes", len(got), len(rest))
+	}
+}
+
+// dialingDictationStreamProvider delivers capture frames while its handshake
+// is still in flight, like a real websocket dial.
+type dialingDictationStreamProvider struct {
+	recorder *fakeRecorder
+	dialing  []byte
+	stream   speechkit.DictationStream
+}
+
+func (p *dialingDictationStreamProvider) StartDictationStream(context.Context, speechkit.DictationStreamOptions, speaker.AudioFormat) (speechkit.DictationStream, error) {
+	p.recorder.pcmHandler(p.dialing)
+	return p.stream, nil
+}
+
+// failingDictationStream commits one final, then fails like an undecodable
+// provider message.
+type failingDictationStream struct {
+	final    speechkit.DictationStreamEvent
+	received atomic.Int32
+}
+
+func (s *failingDictationStream) SendPCM(context.Context, []byte) error { return nil }
+func (s *failingDictationStream) Finalize(context.Context) error        { return nil }
+func (s *failingDictationStream) Close() error                          { return nil }
+
+func (s *failingDictationStream) Receive(context.Context) (speechkit.DictationStreamEvent, error) {
+	if s.received.Add(1) == 1 {
+		return s.final, nil
+	}
+	return speechkit.DictationStreamEvent{}, errors.New("stream parse failure")
 }
 
 func TestRecordingControllerProviderStreamDialTimeoutFallsBackWithoutBlockingCapture(t *testing.T) {

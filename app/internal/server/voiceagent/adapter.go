@@ -4,22 +4,25 @@ package voiceagent
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"runtime/debug"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 )
 
 // Adapter bridges a live WebSocket conversation to the Framework kernel's
 // voiceagent session. One Adapter instance handles exactly one session,
 // which matches the manager's concurrency model.
 //
-// The adapter owns two long-lived goroutines:
+// The adapter owns three joined goroutines:
 //
 //	readPump:  WebSocket → kernel (control + audio frames from client)
-//	writePump: kernel → WebSocket (audio + transcript + tool-call frames)
+//	providerReadPump: kernel → bounded provider-event handoff
+//	writePump: handoff → paced WebSocket (audio + transcript + tool-call frames)
 //
 // When either pump errors or the provider reports session_end, the adapter
 // closes the socket, calls OnClose, and returns from Run.
@@ -44,6 +47,8 @@ type Adapter struct {
 	// MaxDuration terminates a session after this wall-clock duration even
 	// when it remains active. Zero disables the hard cap.
 	MaxDuration time.Duration
+	// ConnectTimeout bounds provider and media readiness. Zero uses 15 seconds.
+	ConnectTimeout time.Duration
 	// ToolRouter, when non-nil, supplies server-executed tools for this
 	// session. Tool names it claims (via Definitions) are executed
 	// server-side; all other provider tool calls keep the existing client
@@ -58,10 +63,15 @@ type Adapter struct {
 	OnUsage func(VoiceUsage)
 	Clock   func() time.Time
 
-	writeMu sync.Mutex
-	closed  atomicBool
-	idle    *idleWatchdog
-	flow    *SequenceRunner
+	writeMu          sync.Mutex
+	providerClose    sync.Once
+	mediaClose       sync.Once
+	closed           atomicBool
+	terminal         bool               // guarded by writeMu; a terminal frame seals all downlink
+	failureEndReason string             // guarded by writeMu; fatal error determines subsequent terminal reason
+	stopAdmission    context.CancelFunc // set before pumps start; fatal writes cancel upstream first
+	idle             *idleWatchdog
+	flow             *SequenceRunner
 
 	// replyActive tracks whether an agent reply is currently streaming from
 	// the provider (set by writePump on downlink audio/transcript, cleared at
@@ -70,10 +80,19 @@ type Adapter struct {
 	// never mute the NEXT reply.
 	replyActive atomicBool
 	// suppressDownlink drops the CURRENT reply's downlink audio after a
-	// client `cancel`; cleared at the provider's turn boundary (Done or
-	// Interrupted). Transcript frames keep flowing so the client can still
+	// client `cancel`; cleared at Done, or at the existing quiet cadence for
+	// continuous-duplex providers. Transcript frames keep flowing so the client can still
 	// render text for the cancelled reply.
 	suppressDownlink atomicBool
+	// Continuous-duplex output has no Done event. A cadence gap settles only
+	// local cancellation state; it never invents a provider turn boundary.
+	continuousDuplex bool      // selected once before pumps start
+	replyActivityAt  time.Time // guarded by writeMu; includes paced delivery
+	// Provider receipt and playback advance independently. Epochs keep a
+	// queued, cancelled tail muted even after its ordered Done is delivered.
+	receiveEpoch uint64 // guarded by writeMu; initialized before pumps start
+	outputEpoch  uint64 // guarded by writeMu; currently relayed reply
+	mutedThrough uint64 // guarded by writeMu; cancelled reply epochs
 
 	// bridgeTools is the set of tool names claimed by ToolRouter for this
 	// session, keyed by name. Written once before the pumps start; read-only
@@ -91,17 +110,46 @@ type Adapter struct {
 // Run blocks until the session ends. The first frame from the client MUST be
 // a StartFrame; if it isn't, the adapter closes with an error.
 func (a *Adapter) Run(parent context.Context) {
-	defer a.closeSocket(websocket.StatusNormalClosure, "done")
+	defer a.closeSocket()
 	if a.OnClose != nil {
 		defer a.OnClose()
 	}
 
 	ctx, cancel := context.WithCancel(parent)
+	a.stopAdmission = cancel
 	defer cancel()
+	endReason := "error"
+	defer func() {
+		a.sendSessionEnd(context.WithoutCancel(parent), endReason)
+	}()
+	var authorizationExpiry time.Time
+	if a.Session != nil && a.Session.VoiceAgentBinding.TargetAgentID != "" {
+		var err error
+		authorizationExpiry, err = registeredAuthorizationExpiry(a.Session.VoiceAgentBinding.Lease, a.Session.BridgeCredential, a.Session.VoiceAgentBinding.CredentialExpiresAt)
+		if err != nil || !time.Now().Before(authorizationExpiry) {
+			a.sendFatalError(parent, "auth_expired", "Start a new authorized voice session.")
+			endReason = "authorization_expired"
+			return
+		}
+		var deadlineCancel context.CancelFunc
+		ctx, deadlineCancel = context.WithDeadlineCause(ctx, authorizationExpiry, errAuthorizationExpired)
+		defer deadlineCancel()
+	}
+	authorizationEnded := func() bool {
+		return !authorizationExpiry.IsZero() &&
+			(errors.Is(context.Cause(ctx), errAuthorizationExpired) || !time.Now().Before(authorizationExpiry))
+	}
 
 	start, err := a.waitForStart(ctx)
-	if err != nil {
-		a.sendError(ctx, "start_required", err.Error())
+	if err != nil || ctx.Err() != nil || authorizationEnded() {
+		if authorizationEnded() {
+			endReason = "authorization_expired"
+			a.sendFatalError(parent, "auth_expired", "Start a new authorized voice session.")
+		} else if ctx.Err() != nil {
+			endReason = "shutdown"
+		} else {
+			a.sendFatalError(parent, "start_required", "Send a valid start frame before starting voice media.")
+		}
 		return
 	}
 	// Fill provider/persona fields the client omitted from the user's
@@ -116,7 +164,7 @@ func (a *Adapter) Run(parent context.Context) {
 	if a.Provider == nil {
 		provider, resolved, err := a.selectProvider(start.Provider)
 		if err != nil {
-			a.sendError(ctx, "provider_unavailable", err.Error())
+			a.sendFatalError(ctx, "provider_unavailable", "The selected voice provider is unavailable.")
 			return
 		}
 		a.Provider = provider
@@ -124,25 +172,26 @@ func (a *Adapter) Run(parent context.Context) {
 		// per provider) and the sequence runner see the resolved backend.
 		start.Provider = resolved
 	}
+	defer a.closeProvider()
 	transport, err := normalizeMediaTransport(start.MediaTransport)
 	if err != nil {
-		a.sendError(ctx, "invalid_media_transport", err.Error())
+		a.sendFatalError(ctx, "invalid_media_transport", err.Error())
 		return
 	}
 	a.mediaTransport = transport
 	if transport == MediaTransportLiveKit {
 		if !providerSupportsLiveKitTransport(a.Provider) {
-			a.sendError(ctx, "media_transport_unsupported", "media_transport=livekit requires a native realtime PCM provider")
+			a.sendFatalError(ctx, "media_transport_unsupported", "media_transport=livekit requires a native realtime PCM provider")
 			return
 		}
 		if a.MediaBridge == nil {
-			a.sendError(ctx, "media_transport_unavailable", "LiveKit media bridge is not configured")
+			a.sendFatalError(ctx, "media_transport_unavailable", "LiveKit media bridge is not configured")
 			return
 		}
 	}
 	cfg, err := a.resolvePersonaConfig(&start, personaFromPref)
 	if err != nil {
-		a.sendError(ctx, "persona_unresolved", err.Error())
+		a.sendFatalError(ctx, "persona_unresolved", "The voice persona could not be resolved.")
 		return
 	}
 	if a.Session != nil {
@@ -150,6 +199,7 @@ func (a *Adapter) Run(parent context.Context) {
 		cfg.AgentTargetID = binding.TargetAgentID
 		cfg.AgentEndpoint = binding.Endpoint
 		cfg.CapabilityLease = binding.Lease
+		cfg.CredentialExpiresAt = binding.CredentialExpiresAt
 		cfg.VoiceSessionID = a.Session.ID
 		cfg.AISessionID = a.Session.AISessionID
 		cfg.OwnerUserID = a.Session.Owner.UserID
@@ -161,8 +211,23 @@ func (a *Adapter) Run(parent context.Context) {
 	// provider config before Connect. Bounded and fail-open to tool-less:
 	// a slow or failing bridge never blocks or kills the voice session.
 	a.mergeBridgeTools(ctx, &cfg)
+	connectTimeout := a.ConnectTimeout
+	if connectTimeout <= 0 {
+		connectTimeout = 15 * time.Second
+	}
+	// Cancel the session only if readiness stalls. Stopping this timer after
+	// success preserves the context used by provider background work.
+	connectTimer := time.AfterFunc(connectTimeout, cancel)
+	defer connectTimer.Stop()
 	if err := a.Provider.Connect(ctx, cfg); err != nil {
-		a.sendError(ctx, "provider_connect_failed", err.Error())
+		cancel()
+		a.closeProvider()
+		if authorizationEnded() {
+			endReason = "authorization_expired"
+			a.sendFatalError(parent, "auth_expired", "Start a new authorized voice session.")
+		} else {
+			a.sendFatalError(parent, "provider_connect_failed", "The voice provider could not connect.")
+		}
 		return
 	}
 	connectedAt := a.now()
@@ -171,10 +236,12 @@ func (a *Adapter) Run(parent context.Context) {
 		if meteredProvider == "" && a.Provider != nil {
 			meteredProvider = normalizeProviderName(a.Provider.Name())
 		}
-		sessionID, aiSessionID := "", ""
+		sessionID, aiSessionID, ownerUserID, ownerOrgID := "", "", "", ""
 		if a.Session != nil {
 			sessionID = a.Session.ID
 			aiSessionID = a.Session.AISessionID
+			ownerUserID = a.Session.Owner.UserID
+			ownerOrgID = a.Session.Owner.OrgID
 		}
 		defer func() {
 			a.OnUsage(VoiceUsage{
@@ -182,14 +249,11 @@ func (a *Adapter) Run(parent context.Context) {
 				AISessionID: aiSessionID,
 				Provider:    meteredProvider,
 				Duration:    a.now().Sub(connectedAt),
+				OwnerUserID: ownerUserID,
+				OwnerOrgID:  ownerOrgID,
 			})
 		}()
 	}
-	defer func() {
-		if err := a.Provider.Close(); err != nil {
-			slog.Debug("voiceagent: provider close", "err", err)
-		}
-	}()
 	if transport == MediaTransportLiveKit {
 		bridge, err := a.MediaBridge.Start(ctx, MediaBridgeRequest{
 			SessionID: a.Session.ID,
@@ -197,15 +261,18 @@ func (a *Adapter) Run(parent context.Context) {
 			Provider:  a.Provider,
 		})
 		if err != nil {
-			a.sendError(ctx, "media_bridge_failed", err.Error())
+			a.sendFatalError(parent, "media_bridge_failed", "The voice media transport could not connect.")
 			return
 		}
 		a.mediaBridge = bridge
-		defer func() {
-			if err := bridge.Close(); err != nil {
-				slog.Debug("voiceagent: media bridge close", "err", err)
-			}
-		}()
+		defer a.closeMediaBridge()
+	}
+	connectTimer.Stop()
+	if ctx.Err() != nil {
+		if authorizationEnded() {
+			endReason = "authorization_expired"
+		}
+		return
 	}
 
 	// Report the backend and transport that actually serve this session on
@@ -235,6 +302,9 @@ func (a *Adapter) Run(parent context.Context) {
 	}
 
 	a.toolSem = make(chan struct{}, maxConcurrentBridgeToolCalls)
+	if duplex, ok := a.Provider.(live.ContinuousDuplexProvider); ok {
+		a.continuousDuplex = duplex.ContinuousDuplex()
+	}
 	a.idle = newIdleWatchdog(a.IdleTimeout)
 	defer a.idle.Stop()
 	var maxDuration <-chan time.Time
@@ -245,43 +315,67 @@ func (a *Adapter) Run(parent context.Context) {
 		defer maxTimer.Stop()
 	}
 
-	done := make(chan struct{}, 2)
+	a.receiveEpoch = 1
+	results := make(chan providerReceiveResult, 1)
+	done := make(chan struct{}, 3)
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
 	go func() { defer wg.Done(); defer a.guardPump("read", done); a.readPump(ctx, done) }()
-	go func() { defer wg.Done(); defer a.guardPump("write", done); a.writePump(ctx, done) }()
+	go func() { defer wg.Done(); defer a.guardPump("provider", done); a.providerReadPump(ctx, results) }()
+	go func() { defer wg.Done(); defer a.guardPump("write", done); a.writePump(ctx, done, results) }()
 
 	select {
 	case <-done:
 		// One of the pumps returned: a client disconnect, provider EOF,
-		// GoAway, or explicit MsgStop. The other pump exits naturally
+		// GoAway, or explicit MsgStop. The other pumps exit naturally
 		// when ctx cancels below.
+		if authorizationEnded() {
+			endReason = "authorization_expired"
+		} else if parent.Err() != nil {
+			endReason = "shutdown"
+		}
+	case <-ctx.Done():
+		if authorizationEnded() {
+			endReason = "authorization_expired"
+		} else {
+			endReason = "shutdown"
+		}
 	case <-a.idle.Fired():
 		slog.Info("voiceagent: session idle timeout reached; closing",
 			"session_id", a.Session.ID,
 			"timeout", a.IdleTimeout,
 		)
-		a.sendJSON(ctx, SessionEndFrame{
-			Type:             MsgSessionEnd,
-			EventFrameFields: a.eventFrameFields(nil, EventSessionEnd),
-			Reason:           "idle",
-		})
+		endReason = "idle"
 	case <-maxDuration:
 		slog.Info("voiceagent: session max duration reached; closing",
 			"session_id", a.Session.ID,
 			"max_duration", a.MaxDuration,
 		)
-		a.sendJSON(ctx, SessionEndFrame{
-			Type:             MsgSessionEnd,
-			EventFrameFields: a.eventFrameFields(nil, EventSessionEnd),
-			Reason:           "max_duration",
-		})
+		endReason = "max_duration"
 	}
 	cancel()
+	a.sendSessionEnd(context.WithoutCancel(parent), endReason)
+	// Close before joining pumps: providers whose send API has no context
+	// parameter can otherwise stay blocked on network writes after cancellation.
+	a.closeProvider()
+	a.closeMediaBridge()
+	a.closeSocket()
 	wg.Wait()
 	// Wait for in-flight server-side tool executions before the deferred
 	// provider Close runs; ctx is cancelled so they abort promptly.
 	a.toolWG.Wait()
+}
+
+func (a *Adapter) closeProvider() {
+	if a.Provider != nil {
+		a.providerClose.Do(func() { _ = a.Provider.Close() })
+	}
+}
+
+func (a *Adapter) closeMediaBridge() {
+	if a.mediaBridge != nil {
+		a.mediaClose.Do(func() { _ = a.mediaBridge.Close() })
+	}
 }
 
 func (a *Adapter) now() time.Time {
@@ -304,7 +398,6 @@ func (a *Adapter) guardPump(name string, done chan<- struct{}) {
 	slog.Error("voiceagent: session pump panic recovered",
 		"session_id", a.Session.ID,
 		"pump", name,
-		"err", rec,
 		"stack", string(debug.Stack()),
 	)
 	select {

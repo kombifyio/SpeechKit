@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { downsampleToInt16, openBrowserSession } from "./browser.js";
+import { downsampleToInt16, openBrowserSession, type BrowserSession } from "./browser.js";
 import { CLIENT_SAMPLE_RATE, SERVER_SAMPLE_RATE, type SessionTicket } from "./protocol.js";
 
 const ticket: SessionTicket = {
@@ -21,6 +21,10 @@ class FakeWebSocket {
     readonly protocols?: string | string[],
   ) {
     FakeWebSocket.instances.push(this);
+    queueMicrotask(() => {
+      this.emit("open");
+      this.emit("message", { data: JSON.stringify({ type: "state", state: "listening", event_type: "session_ready" }) });
+    });
   }
 
   send(data: unknown): void {
@@ -62,10 +66,11 @@ class FakeAudioContext {
   static withWorklet = false;
   sampleRate: number;
   currentTime = 0;
+  state = "running";
   destination = {};
   audioWorklet: { addModule: ReturnType<typeof vi.fn> } | undefined;
   scriptProcessors: FakeScriptProcessor[] = [];
-  sources: Array<{ start: ReturnType<typeof vi.fn>; connect: ReturnType<typeof vi.fn>; buffer: unknown }> = [];
+  sources: Array<{ start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn>; connect: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn>; buffer: unknown; onended: (() => void) | null }> = [];
   closed = false;
 
   constructor(options?: { sampleRate?: number }) {
@@ -101,7 +106,7 @@ class FakeAudioContext {
   }
 
   createBufferSource() {
-    const source = { start: vi.fn(), connect: vi.fn(), buffer: null as unknown };
+    const source = { start: vi.fn(), stop: vi.fn(), connect: vi.fn(), disconnect: vi.fn(), buffer: null as unknown, onended: null as (() => void) | null };
     this.sources.push(source);
     return source;
   }
@@ -109,6 +114,7 @@ class FakeAudioContext {
   async close(): Promise<void> {
     this.closed = true;
   }
+  resume = vi.fn(async () => undefined);
 }
 
 function fakeStream(): MediaStream & { tracks: Array<{ stop: ReturnType<typeof vi.fn> }> } {
@@ -202,7 +208,7 @@ describe("attachMicrophone capture pipeline", () => {
     const stream = fakeStream();
     const stop = handle.attachMicrophone(stream);
 
-    const captureContext = FakeAudioContext.created[0]!;
+    const captureContext = FakeAudioContext.created.at(-1)!;
     await vi.waitFor(() => {
       expect(captureContext.scriptProcessors[0]?.onaudioprocess).toBeTypeOf("function");
     });
@@ -281,6 +287,72 @@ describe("playChunk playback scheduling", () => {
 
     handle.close();
     expect(playbackContext.closed).toBe(true);
+  });
+
+  it("flushes local interruption immediately and mutes in-flight PCM until acknowledged", async () => {
+    stubBrowserGlobals();
+    let handle!: BrowserSession;
+    const onAudio = vi.fn((chunk: ArrayBuffer) => handle.playChunk(chunk));
+    handle = await openBrowserSession({ serverUrl: "https://speechkit.example", presetTicket: ticket, start: {}, hooks: { onAudio } });
+    const context = FakeAudioContext.created.at(-1)!;
+    const pcm = new Int16Array(2400).buffer;
+    handle.playChunk(pcm);
+    const oldSource = context.sources.at(-1)!;
+    handle.session.cancel();
+    expect(oldSource.stop).toHaveBeenCalled();
+    expect(oldSource.disconnect).toHaveBeenCalled();
+    handle.playChunk(pcm);
+    expect(context.sources.at(-1)).toBe(oldSource);
+    const socket = FakeWebSocket.instances.at(-1)!;
+    socket.emit("message", { data: pcm });
+    expect(onAudio).not.toHaveBeenCalled();
+    socket.emit("message", { data: JSON.stringify({ type: "interrupted" }) });
+    socket.emit("message", { data: pcm });
+    expect(context.sources.at(-1)?.start).toHaveBeenCalledWith(0);
+    expect(context.sources.at(-1)).not.toBe(oldSource);
+    expect(onAudio).toHaveBeenCalledWith(pcm);
+    handle.close();
+  });
+
+  it("bounds scheduled audio by duration and sources and releases media on overflow", async () => {
+    stubBrowserGlobals();
+    // Both ordinary long chunks and tiny source-flooding chunks have a
+    // finite playback budget; a peer close is not needed for cleanup.
+    for (const frames of [Array.from({ length: 3 }, () => new Int16Array(24_000)), Array.from({ length: 65 }, () => new Int16Array(2))]) {
+      const onError = vi.fn();
+      const handle = await openBrowserSession({ serverUrl: "https://speechkit.example", presetTicket: ticket, start: {}, hooks: { onError } });
+      const context = FakeAudioContext.created.at(-1)!;
+      const stream = fakeStream();
+      handle.attachMicrophone(stream);
+      for (const pcm of frames) handle.playChunk(pcm.buffer);
+      expect(onError.mock.calls[0]?.[0]).toMatchObject({ code: "voice_buffer_overflow" });
+      expect(stream.tracks[0]?.stop).toHaveBeenCalled();
+      expect(context.closed).toBe(true);
+      for (const source of context.sources) {
+        expect(source.stop).toHaveBeenCalled();
+        expect(source.disconnect).toHaveBeenCalled();
+      }
+      handle.playChunk(new Int16Array([1, 2]).buffer);
+      await expect(handle.resumeAudio()).rejects.toMatchObject({ code: "session_closed" });
+    }
+  });
+
+  it("resumes playback during the opening gesture and allows explicit resume after suspension", async () => {
+    stubBrowserGlobals();
+    const onError = vi.fn();
+    const opening = openBrowserSession({ serverUrl: "https://speechkit.example", presetTicket: ticket, start: {}, hooks: { onError } });
+    const context = FakeAudioContext.created.at(-1)!;
+    expect(context.resume).toHaveBeenCalled();
+    const handle = await opening;
+    context.resume.mockRejectedValueOnce(new Error("autoplay denied"));
+    await expect(handle.resumeAudio()).rejects.toMatchObject({ code: "audio_resume_required" });
+    await handle.resumeAudio();
+    context.state = "suspended";
+    handle.playChunk(new Int16Array([1, 2]).buffer);
+    expect(onError.mock.calls[0]?.[0]).toMatchObject({ code: "audio_resume_required" });
+    expect(context.closed).toBe(true);
+    expect(context.sources).toEqual([]);
+    handle.close();
   });
 });
 

@@ -1,11 +1,79 @@
 package pipeline
 
 import (
+	"bytes"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 )
+
+type recordingSubmitFunc func(speechkit.TranscriptionJob) error
+
+func (f recordingSubmitFunc) Submit(job speechkit.TranscriptionJob) error { return f(job) }
+
+func TestRecordingControllerRestartRetainsPendingAudio(t *testing.T) {
+	oldPCM := bytes.Repeat([]byte{'a'}, 6400)
+	newPCM := bytes.Repeat([]byte{'b'}, 6400)
+	oldEntered, oldRelease, oldDone := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	accepted := make(chan []byte, 1)
+	var release sync.Once
+	t.Cleanup(func() { release.Do(func() { close(oldRelease) }) })
+	var rejected atomic.Bool
+	submitter := recordingSubmitFunc(func(job speechkit.TranscriptionJob) error {
+		if bytes.Equal(job.PCM, oldPCM) {
+			close(oldEntered)
+			<-oldRelease
+			return nil
+		}
+		if rejected.CompareAndSwap(false, true) {
+			return ErrWorkerQueueFull
+		}
+		accepted <- append([]byte(nil), job.PCM...)
+		return nil
+	})
+	recorder := &fakeRecorder{}
+	collector := &fakeCollector{readySegments: []dictationSegment{{pcm: oldPCM}}}
+	controller := NewRecordingController(recorder, submitter, nil, func() speechkit.SegmentCollector { return collector })
+	start := func() {
+		t.Helper()
+		if err := controller.Start(speechkit.RecordingStartOptions{StreamSegments: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	start()
+	oldHandler := recorder.pcmHandler
+	go func() { defer close(oldDone); oldHandler([]byte("frame")) }()
+	select {
+	case <-oldEntered:
+	case <-time.After(time.Second):
+		t.Fatal("old recording did not reach the submitter")
+	}
+	if err := controller.Cancel(speechkit.RecordingCancelOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	collector = &fakeCollector{readySegments: []dictationSegment{{pcm: newPCM}}}
+	start()
+	recorder.pcmHandler([]byte("frame")) // The new segment remains pending while the worker is full.
+	release.Do(func() { close(oldRelease) })
+	select {
+	case <-oldDone:
+	case <-time.After(time.Second):
+		t.Fatal("old recording did not finish submitting")
+	}
+	recorder.pcmHandler([]byte("frame"))
+	select {
+	case pcm := <-accepted:
+		if !bytes.Equal(pcm, newPCM) {
+			t.Fatal("retry submitted audio from another recording")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("restarting discarded the new recording's pending audio")
+	}
+}
 
 func TestRecordingControllerStreamsReadySegmentsBeforeStop(t *testing.T) {
 	full := []byte(strings.Repeat("z", 6400))

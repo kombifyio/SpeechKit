@@ -126,6 +126,24 @@ not this APK starts from the public modules, not by copying `:app`.
    duplex wrong the way the Companion did. The engine opens no audio device;
    the host still owns capture and playback. See
    [android-duplex-turn-engine.md](android-duplex-turn-engine.md).
+   Hosts that receive audio and control events on one collector use
+   `PcmPlaybackQueue` for a separate playback coroutine. Its default backlog
+   is two seconds of S16 mono, including the chunk currently being written;
+   `offer` returns false on overflow so the host can terminate with a stable
+   failure code. Clear the queue and flush the player together on interruption,
+   and close the queue, cancel its consumer, and release the player on teardown.
+   The player retains its constructor and `play`/`flush`/`release` signatures.
+   Playback errors now throw `PcmPlaybackException` with a safe local code;
+   hosts must handle it. Flush and release stop and release the held track
+   before returning, and invalidate earlier waiting writes. Queue clearing also
+   cancels an already handed-off chunk before it can start another player cycle.
+   Voice Agent error frames carry an optional `fatal` flag (absent means false).
+   Fatal errors stop playback and end the session; `authorization_expired`
+   requires a fresh authenticated session, without renewal or replay.
+   `VoiceAgentSession.start` waits up to 20 seconds for a listening state with
+   `event_type=session_ready`; failure throws `VoiceAgentSetupException` before
+   the host opens capture. Microphone sends before that event fail closed.
+   Both exceptions retain only stable diagnostic codes.
 3. `:voice-ui-compose` never depends on `:net`. Session phases map onto
    `VoiceAuraState` only in `:ime` (`toAuraState()`).
 4. `:ime` and `:assistant` do not depend on each other. Keyboard dictation and
@@ -146,6 +164,17 @@ signature change does. Additive APIs are allowed in pre-1.0 patches.
 
 `:app` and `:heliboard` are not a published contract. Changing them is not an
 SDK break.
+
+The voice reliability slice removes the public-source
+`ImeVoiceAgentController.audio: Flow<ByteArray>` property and replaces it with
+`consumeAudio(flush, play)`. Both repository hosts and controller tests migrate
+to the cancelable, bounded `PcmPlaybackQueue` consumer; emitting from that
+queue's per-frame child coroutine into a Kotlin `flow` would violate the flow
+context invariant. `:ime` currently has no Maven publishing configuration and
+is absent from the published artifact list, but it remains a public source
+module: this removal is a source compatibility change and needs a release-plan
+callout. It does not establish binary compatibility for the published `:core`
+and `:net` artifacts; those retained signatures require their separate gate.
 
 `:voice-ui-compose` visual tokens are specified in
 `clients/typescript/packages/voice-ui/src/tokens/tokens.json`. Changing the

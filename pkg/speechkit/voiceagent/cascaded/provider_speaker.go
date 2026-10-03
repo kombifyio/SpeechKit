@@ -110,7 +110,7 @@ func (p *Provider) speakerStreamLoop(ctx context.Context, stream speaker.Speaker
 			// Transient stream failure (e.g. a dropped WebSocket). A multi-hour
 			// session must not lose diarization for good over a single blip, so
 			// reconnect with capped backoff and resume on a fresh stream.
-			logutil.Resolve(p.logger).Warn("cascaded: speaker stream receive failed; reconnecting", "err", err)
+			logutil.Resolve(p.logger).Warn("cascaded: speaker stream receive failed; reconnecting", "code", turnFailureCode(err))
 			next := p.reconnectSpeakerStream(ctx, stream)
 			if next == nil {
 				return
@@ -162,7 +162,7 @@ func (p *Provider) reconnectSpeakerStream(ctx context.Context, dead speaker.Spea
 		}
 		fresh, err := p.speakerStreamer.StartSpeakerStream(ctx, p.currentSpeakerOptions(), speakerStreamAudioFormat())
 		if err != nil {
-			logutil.Resolve(p.logger).Warn("cascaded: speaker stream reconnect attempt failed", "attempt", attempt, "err", err)
+			logutil.Resolve(p.logger).Warn("cascaded: speaker stream reconnect attempt failed", "attempt", attempt, "code", turnFailureCode(err))
 			backoff = min(backoff*2, speakerReconnectMaxBackoff)
 			continue
 		}

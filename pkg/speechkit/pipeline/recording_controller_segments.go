@@ -14,7 +14,7 @@ func (c *RecordingController) drainAndSubmitReadySegments(sessionID uint64, curr
 		return
 	}
 	segments := readyCollector.DrainReadySegments()
-	c.queueStreamSegments(sessionID, segments)
+	c.streamQueue.enqueue(sessionID, segments)
 	if _, err := c.flushPendingStreamSegments(sessionID, current, "dictation segment", time.Time{}); err != nil {
 		if errors.Is(err, ErrWorkerQueueFull) {
 			c.onLog("STT queue busy; dictation segment retained for retry", "warn")
@@ -24,40 +24,24 @@ func (c *RecordingController) drainAndSubmitReadySegments(sessionID uint64, curr
 	}
 }
 
-func (c *RecordingController) queueStreamSegments(sessionID uint64, segments []speechkit.AudioSegment) {
-	if c == nil || len(segments) == 0 {
-		return
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.sessionID != sessionID {
-		return
-	}
-	c.streamPending = append(c.streamPending, cloneAudioSegments(segments)...)
-}
-
 func (c *RecordingController) flushPendingStreamSegments(sessionID uint64, current speechkit.RecordingStartOptions, label string, retryUntil time.Time) (int, error) {
 	if c == nil {
 		return 0, nil
 	}
 	for {
-		c.mu.Lock()
-		if !c.streamFlush {
-			c.streamFlush = true
-			c.mu.Unlock()
+		acquired, active := c.streamQueue.beginFlush(sessionID)
+		if !active {
+			return 0, nil
+		}
+		if acquired {
 			break
 		}
-		c.mu.Unlock()
 		if retryUntil.IsZero() || !c.clockNow().Before(retryUntil) {
 			return 0, nil
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	defer func() {
-		c.mu.Lock()
-		c.streamFlush = false
-		c.mu.Unlock()
-	}()
+	defer c.streamQueue.endFlush(sessionID)
 
 	c.mu.Lock()
 	epoch := captureEpoch(current, c.startedAt)
@@ -65,37 +49,12 @@ func (c *RecordingController) flushPendingStreamSegments(sessionID uint64, curre
 
 	submitted := 0
 	for {
-		c.mu.Lock()
-		if c.sessionID != sessionID {
-			c.streamPending = nil
-			c.mu.Unlock()
+		segment, ok := c.streamQueue.next(sessionID, c.minPCMBytes)
+		if !ok {
 			return submitted, nil
 		}
-		if len(c.streamPending) == 0 {
-			c.mu.Unlock()
-			return submitted, nil
-		}
-		segment := cloneAudioSegments(c.streamPending[:1])[0]
-		c.mu.Unlock()
-
-		if len(segment.PCM) < c.minPCMBytes {
-			c.dropFirstPendingStreamSegment(sessionID)
-			continue
-		}
-
 		submission := submissionFromAudioSegment(segment, current, epoch, c.clockNow())
-		sessionActive := true
-		c.mu.Lock()
-		if c.sessionID == sessionID {
-			c.streamSegmentSeq++
-			submission.SessionID = sessionID
-			submission.SegmentID = c.streamSegmentSeq
-			submission.SegmentFinal = true
-		} else {
-			sessionActive = false
-		}
-		c.mu.Unlock()
-		if !sessionActive {
+		if !c.streamQueue.beginSubmission(sessionID, &submission) {
 			return submitted, nil
 		}
 		if err := c.submitter.Submit(speechkit.TranscriptionJob{
@@ -108,27 +67,9 @@ func (c *RecordingController) flushPendingStreamSegments(sessionID uint64, curre
 			}
 			return submitted, err
 		}
-		c.dropFirstPendingStreamSegment(sessionID)
+		c.streamQueue.acknowledge(sessionID)
 		submitted++
-		c.mu.Lock()
-		if c.sessionID == sessionID {
-			c.streamedCount++
-		}
-		c.mu.Unlock()
 		c.onLog(fmt.Sprintf("Queued %s: %.1fs audio", label, submission.DurationSecs), "info")
-	}
-}
-
-func (c *RecordingController) dropFirstPendingStreamSegment(sessionID uint64) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.sessionID != sessionID || len(c.streamPending) == 0 {
-		return
-	}
-	c.streamPending[0].PCM = nil
-	c.streamPending = c.streamPending[1:]
-	if len(c.streamPending) == 0 {
-		c.streamPending = nil
 	}
 }
 

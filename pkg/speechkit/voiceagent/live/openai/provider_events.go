@@ -63,7 +63,7 @@ func (p *Provider) parseEvent(data []byte) (*live.LiveMessage, bool, error) {
 		return nil, true, nil
 	case "session.updated":
 		p.markSessionReady()
-		return nil, true, nil
+		return live.NormalizeMessageEvents(&live.LiveMessage{EventType: live.LiveEventSessionReady}, env.Type), false, nil
 	case "input_audio_buffer.speech_started":
 		// User started speaking — used by the kernel state machine for
 		// barge-in / interruption detection.

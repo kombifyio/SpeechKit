@@ -257,11 +257,11 @@ func TestDeepgram_StartDictationStream_UsesRealtimeDictationQuery(t *testing.T) 
 	}
 	select {
 	case finalizePayload := <-gotFinalize:
-		if !strings.Contains(finalizePayload, "Finalize") {
-			t.Fatalf("finalize payload = %q", finalizePayload)
+		if !strings.Contains(finalizePayload, "CloseStream") {
+			t.Fatalf("finalize payload = %q, want CloseStream so the socket closes after the flush", finalizePayload)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("server did not receive Finalize")
+		t.Fatal("server did not receive CloseStream")
 	}
 	for _, want := range []string{
 		"interim_results=true",
@@ -338,6 +338,55 @@ func TestDeepgram_StartDictationStream_ConcatenatesUtteranceFinals(t *testing.T)
 	}
 	if !strings.Contains(final.Text, "Satz. Und") {
 		t.Fatalf("utterance = %q, want concatenated slices with a space", final.Text)
+	}
+}
+
+// Deepgram sends UtteranceEnd and SpeechStarted with the channel indices as
+// an array. Decoding them as a Results channel object killed the live stream
+// at the first pause, so long dictations lost everything after one sentence.
+func TestDeepgram_StartDictationStream_UtteranceEndCommitsAndKeepsStreaming(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Fatalf("accept: %v", err)
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "done")
+		for _, msg := range []string{
+			`{"type":"SpeechStarted","channel":[0],"timestamp":0.1}`,
+			`{"type":"Results","channel_index":[0,1],"is_final":true,"speech_final":false,"channel":{"alternatives":[{"transcript":"Erster Satz.","words":[]}]}}`,
+			`{"type":"UtteranceEnd","channel":[0,1],"last_word_end":1.2}`,
+			`{"type":"Results","channel_index":[0,1],"is_final":true,"speech_final":true,"channel":{"alternatives":[{"transcript":"Zweiter Satz.","words":[]}]}}`,
+		} {
+			if err := conn.Write(context.Background(), websocket.MessageText, []byte(msg)); err != nil {
+				t.Errorf("write: %v", err)
+			}
+		}
+		_, _, _ = conn.Read(context.Background())
+	}))
+	defer server.Close()
+
+	p := newTestDeepgramProvider(server.URL)
+	stream, err := p.StartDictationStream(context.Background(),
+		speechkit.DictationStreamOptions{InterimResults: true},
+		speaker.AudioFormat{Encoding: speaker.AudioEncodingLinear16, SampleRateHz: 16000, Channels: 1},
+	)
+	if err != nil {
+		t.Fatalf("StartDictationStream: %v", err)
+	}
+	defer stream.Close()
+
+	var finals []string
+	for len(finals) < 2 {
+		event, err := stream.Receive(context.Background())
+		if err != nil {
+			t.Fatalf("Receive after %q: %v", finals, err)
+		}
+		if event.IsFinal {
+			finals = append(finals, event.Text)
+		}
+	}
+	if finals[0] != "Erster Satz." || finals[1] != "Zweiter Satz." {
+		t.Fatalf("finals = %q, want both utterances committed separately", finals)
 	}
 }
 

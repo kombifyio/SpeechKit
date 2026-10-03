@@ -11,14 +11,17 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 )
 
 const (
-	VoiceAgentTargetHeader   = "X-Edge-Voice-Agent-Target"
-	VoiceAgentEndpointHeader = "X-Edge-Voice-Agent-Endpoint"
-	VoiceAgentLeaseHeader    = "X-Edge-Voice-Agent-Lease"
-	VoiceAgentHMACHeader     = "X-Edge-Voice-Agent-Hmac"
+	VoiceAgentTargetHeader              = "X-Edge-Voice-Agent-Target"
+	VoiceAgentEndpointHeader            = "X-Edge-Voice-Agent-Endpoint"
+	VoiceAgentLeaseHeader               = "X-Edge-Voice-Agent-Lease"
+	VoiceAgentHMACHeader                = "X-Edge-Voice-Agent-Hmac"
+	VoiceAgentCredentialExpiresAtHeader = "X-Edge-Voice-Agent-Credential-Expires-At"
 )
 
 var voiceAgentTargetPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$`)
@@ -27,9 +30,10 @@ var voiceAgentTargetPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,62}[a-
 // registered-agent session. Lease is secret and must never be logged or
 // serialized to a client.
 type VoiceAgentBinding struct {
-	TargetAgentID string
-	Endpoint      string
-	Lease         string
+	TargetAgentID       string
+	Endpoint            string
+	Lease               string
+	CredentialExpiresAt int64
 }
 
 type voiceAgentBindingCtxKey struct{}
@@ -50,7 +54,8 @@ func verifiedVoiceAgentBindingFromRequest(r *http.Request, id Identity, secret s
 	endpoint := strings.TrimSpace(r.Header.Get(VoiceAgentEndpointHeader))
 	lease := strings.TrimSpace(r.Header.Get(VoiceAgentLeaseHeader))
 	presented := strings.TrimSpace(r.Header.Get(VoiceAgentHMACHeader))
-	present := target != "" || endpoint != "" || lease != "" || presented != ""
+	expiry := strings.TrimSpace(r.Header.Get(VoiceAgentCredentialExpiresAtHeader))
+	present := target != "" || endpoint != "" || lease != "" || presented != "" || expiry != ""
 	if !present {
 		return VoiceAgentBinding{}, false, nil
 	}
@@ -65,11 +70,24 @@ func verifiedVoiceAgentBindingFromRequest(r *http.Request, id Identity, secret s
 		return VoiceAgentBinding{}, true, errors.New("invalid voice agent endpoint")
 	}
 	payload := strings.Join([]string{id.UserID, id.OrgID, target, endpoint, lease}, "\n")
+	var credentialExpiresAt int64
+	if expiry != "" {
+		credentialExpiresAt, err = strconv.ParseInt(expiry, 10, 64)
+		if err != nil || credentialExpiresAt <= 0 || strconv.FormatInt(credentialExpiresAt, 10) != expiry {
+			return VoiceAgentBinding{}, true, errors.New("invalid voice agent credential expiry")
+		}
+		// Optional sixth field preserves legacy bindings. This value can only
+		// narrow the signed lease lifetime; it never authorizes renewal.
+		payload += "\n" + expiry
+	}
 	mac := hmac.New(sha256.New, []byte(secret))
 	_, _ = mac.Write([]byte(payload))
 	want := hex.EncodeToString(mac.Sum(nil))
 	if !hmacEqual([]byte(presented), []byte(want)) {
 		return VoiceAgentBinding{}, true, errors.New("invalid voice agent binding signature")
 	}
-	return VoiceAgentBinding{TargetAgentID: target, Endpoint: endpoint, Lease: lease}, true, nil
+	if credentialExpiresAt > 0 && credentialExpiresAt <= time.Now().Unix() {
+		return VoiceAgentBinding{}, true, errors.New("voice agent credential expired")
+	}
+	return VoiceAgentBinding{TargetAgentID: target, Endpoint: endpoint, Lease: lease, CredentialExpiresAt: credentialExpiresAt}, true, nil
 }

@@ -27,8 +27,8 @@ func TestAdapter_CancelSuppressesCurrentReplyAndAcks(t *testing.T) {
 	readJSONFrame(t, env.conn, &stateMsg)
 
 	// Reply in flight: first chunk reaches the client.
-	provider.push(&LiveMessage{Audio: []byte{0xAA}})
-	if got := readBinaryFrame(t, env.conn); len(got) != 1 || got[0] != 0xAA {
+	provider.push(&LiveMessage{Audio: []byte{0xAA, 0x00}})
+	if got := readBinaryFrame(t, env.conn); len(got) != 2 || got[0] != 0xAA {
 		t.Fatalf("pre-cancel audio = %x, want aa", got)
 	}
 
@@ -67,7 +67,13 @@ func TestAdapter_CancelSuppressesCurrentReplyAndAcks(t *testing.T) {
 	// Remaining audio of the cancelled reply is dropped; its transcript still
 	// flows. If 0xBB leaked, the next frame would be binary and readEnvelope
 	// would fail.
-	provider.push(&LiveMessage{Audio: []byte{0xBB}})
+	// Native speech_started may repeat interruption before response.done.
+	// It must not clear suppression or relay audio attached to that event.
+	provider.push(&LiveMessage{Interrupted: true, Audio: []byte{0xBB, 0x00}})
+	if typeName, raw = readEnvelope(t, env.conn); typeName != MsgInterrupted {
+		t.Fatalf("provider interruption did not precede its audio: %s %s", typeName, raw)
+	}
+	provider.push(&LiveMessage{Audio: []byte{0xBB, 0x00}})
 	provider.push(&LiveMessage{OutputTranscript: "cancelled tail", OutputTranscriptDone: true})
 	typeName, raw = readEnvelope(t, env.conn)
 	if typeName != MsgOutputTranscript {
@@ -79,8 +85,8 @@ func TestAdapter_CancelSuppressesCurrentReplyAndAcks(t *testing.T) {
 	if typeName, raw = readEnvelope(t, env.conn); typeName != MsgEvent {
 		t.Fatalf("expected turn_end event, got %s body=%s", typeName, string(raw))
 	}
-	provider.push(&LiveMessage{Audio: []byte{0xCC}})
-	if got := readBinaryFrame(t, env.conn); len(got) != 1 || got[0] != 0xCC {
+	provider.push(&LiveMessage{Audio: []byte{0xCC, 0x00}})
+	if got := readBinaryFrame(t, env.conn); len(got) != 2 || got[0] != 0xCC {
 		t.Fatalf("post-turn audio = %x, want cc (suppression must end at turn boundary)", got)
 	}
 }
@@ -108,8 +114,8 @@ func TestAdapter_CancelWhileIdleAcksWithoutSuppressing(t *testing.T) {
 
 	// Nothing was playing: no provider cancel, and the NEXT reply is not
 	// muted by a stale suppression flag.
-	provider.push(&LiveMessage{Audio: []byte{0xDD}})
-	if got := readBinaryFrame(t, env.conn); len(got) != 1 || got[0] != 0xDD {
+	provider.push(&LiveMessage{Audio: []byte{0xDD, 0x00}})
+	if got := readBinaryFrame(t, env.conn); len(got) != 2 || got[0] != 0xDD {
 		t.Fatalf("post-idle-cancel audio = %x, want dd", got)
 	}
 	provider.mu.Lock()

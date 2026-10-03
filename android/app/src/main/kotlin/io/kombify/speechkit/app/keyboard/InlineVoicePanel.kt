@@ -520,7 +520,12 @@ class InlineVoicePanel(
                         // to the next composition. play() moves itself off this
                         // dispatcher, which is the keyboard's main thread.
                         LaunchedEffect(Unit) {
-                            panelAgent.audio.collect { pcm -> player.play(pcm) }
+                            try {
+                                panelAgent.consumeAudio(flush = player::flush) { player.play(it) }
+                            } finally {
+                                holding = false
+                                player.release()
+                            }
                         }
                         VoiceAgentPanelUi(
                             state = agentState,

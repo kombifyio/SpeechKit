@@ -17,6 +17,8 @@ import {
  * receive `string | ArrayBuffer | Buffer | Blob` from the wire.
  */
 export interface WireSocket {
+  /** Browser WebSocket and Node ws both expose queued outbound bytes. */
+  readonly bufferedAmount?: number;
   send(data: string | ArrayBufferLike | ArrayBufferView): void;
   close(code?: number, reason?: string): void;
   addEventListener(type: "open", listener: () => void): void;
@@ -27,9 +29,12 @@ export interface WireSocket {
    * `Buffer` (Node `ws` with `binary: true`) for audio chunks.
    */
   addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
+  /** Optional for custom shims; native browser/Node sockets remove owned listeners. */
+  removeEventListener?(type: string, listener: EventListener): void;
 }
 
-export type ToolHandler = (call: ToolCallFrame) => Promise<Record<string, unknown>> | Record<string, unknown>;
+export interface ToolContext { signal: AbortSignal }
+export type ToolHandler = (call: ToolCallFrame, context?: ToolContext) => Promise<Record<string, unknown>> | Record<string, unknown>;
 
 export interface SessionHooks {
   onState?(state: AgentState): void;
@@ -50,6 +55,8 @@ export interface SessionHooks {
 }
 
 export interface SessionOptions {
+  /** Cancels setup, active transport, and pending host tools. */
+  signal?: AbortSignal;
   /** Initial frame sent on `open`. */
   start: Omit<StartFrame, "type">;
   hooks?: SessionHooks;
@@ -72,26 +79,57 @@ export class VoiceAgentSession {
   private readonly tools: Record<string, ToolHandler>;
   private readonly start: Omit<StartFrame, "type">;
   private opened = false;
+  private terminal = false;
+  private listening = false;
+  private muted = false;
+  private toolEpoch = 0;
+  private pendingTools = 0;
+  private toolAbort = new AbortController();
+  private readonly signal: AbortSignal | undefined;
+  private readonly abort = () => this.finish("client", new VoiceAgentClientError("session_aborted"));
+  private setupTimer: ReturnType<typeof setTimeout>;
+  private resolveReady!: () => void;
+  private rejectReady!: (error: Error) => void;
+  /** Resolves only after listening + session_ready; rejects on setup failure. */
+  readonly ready: Promise<void>;
+  get isReady(): boolean { return this.listening && !this.terminal; }
+  get isClosed(): boolean { return this.terminal; }
+  get acceptsAudio(): boolean { return this.isReady && !this.muted; }
+  private readonly onOpen = () => {
+    if (this.terminal || this.opened) return;
+    clearTimeout(this.setupTimer);
+    this.setupTimer = setTimeout(() => this.fail("ws_setup_timeout"), 20_000);
+    (this.setupTimer as unknown as { unref?: () => void }).unref?.();
+    this.opened = true;
+    this.sendFrame({ type: "start", ...this.start });
+  };
+  private readonly onMessage = (event: { data: unknown }) => {
+    void this.handleMessage(event.data).catch(() => this.fail("host_callback_failed"));
+  };
+  private readonly onSocketError = () => this.fail("ws_failure");
+  private readonly onSocketClose = () => this.finish("closed");
 
   constructor(socket: WireSocket, options: SessionOptions) {
     this.socket = socket;
     this.hooks = options.hooks ?? {};
     this.tools = options.tools ?? {};
     this.start = options.start;
+    this.signal = options.signal;
+    this.ready = new Promise<void>((resolve, reject) => {
+      this.resolveReady = resolve;
+      this.rejectReady = reject;
+    });
+    // Direct constructor users need not await ready to use hooks safely.
+    void this.ready.catch(() => undefined);
+    this.setupTimer = setTimeout(() => this.fail("ws_upgrade_timeout"), 10_000);
+    (this.setupTimer as unknown as { unref?: () => void }).unref?.();
 
-    socket.addEventListener("open", () => {
-      this.opened = true;
-      this.sendFrame({ type: "start", ...this.start });
-    });
-    socket.addEventListener("message", (event) => void this.handleMessage(event.data));
-    socket.addEventListener("error", (event) => {
-      const err = event instanceof Error ? event : new Error("ws error");
-      this.hooks.onError?.(err);
-    });
-    socket.addEventListener("close", (event) => {
-      this.opened = false;
-      this.hooks.onClose?.(event.reason || `closed (${event.code})`);
-    });
+    socket.addEventListener("open", this.onOpen);
+    socket.addEventListener("message", this.onMessage);
+    socket.addEventListener("error", this.onSocketError);
+    socket.addEventListener("close", this.onSocketClose);
+    this.signal?.addEventListener("abort", this.abort, { once: true });
+    if (this.signal?.aborted) this.abort();
   }
 
   sendText(text: string): void {
@@ -99,7 +137,13 @@ export class VoiceAgentSession {
   }
 
   sendAudioChunk(pcm16: ArrayBuffer | ArrayBufferView): void {
-    this.socket.send(pcm16);
+    // Never retain or upload microphone bytes before provider readiness.
+    if (!this.isReady) return;
+    if (pcm16.byteLength === 0 || pcm16.byteLength % 2 !== 0) {
+      this.fail("invalid_audio");
+      return;
+    }
+    this.send(pcm16, pcm16.byteLength);
   }
 
   endAudio(): void {
@@ -113,11 +157,15 @@ export class VoiceAgentSession {
   /**
    * Tap-to-interrupt: stops the agent reply that is playing right now.
    * Idempotent and safe while idle. The server answers with an
-   * `interrupted` frame either way, so drop queued agent audio from
-   * {@link SessionHooks.onInterrupted} rather than from this call.
+   * `interrupted` frame either way. Playback is flushed immediately and
+   * in-flight downlink audio is muted until that acknowledgement.
    */
   cancel(): void {
-    this.sendFrame({ type: "cancel" });
+    if (this.terminal) return;
+    this.muted = true;
+    this.invalidateTools();
+    try { this.hooks.onInterrupted?.({ type: "interrupted" }); }
+    finally { this.sendFrame({ type: "cancel" }); }
   }
 
   advanceStep(reason?: string): void {
@@ -125,6 +173,7 @@ export class VoiceAgentSession {
   }
 
   close(): void {
+    if (this.terminal) return;
     if (this.opened) {
       try {
         this.sendFrame({ type: "stop" });
@@ -132,47 +181,120 @@ export class VoiceAgentSession {
         /* socket already closed */
       }
     }
-    this.socket.close();
+    this.finish("client");
+  }
+
+  /** Fail closed when a host media adapter cannot retain or play audio. */
+  fail(code: string): void {
+    this.finish("error", new VoiceAgentClientError(safeCode(code)));
+  }
+
+  private invalidateTools(): void {
+    this.toolEpoch++;
+    this.toolAbort.abort();
+    this.toolAbort = new AbortController();
+  }
+
+  private finish(reason: string, error?: Error | ErrorFrame): void {
+    if (this.terminal) return;
+    this.terminal = true;
+    this.opened = false;
+    this.listening = false;
+    clearTimeout(this.setupTimer);
+    this.signal?.removeEventListener("abort", this.abort);
+    for (const [type, listener] of [
+      ["open", this.onOpen], ["message", this.onMessage],
+      ["error", this.onSocketError], ["close", this.onSocketClose],
+    ] as const) {
+      try { this.socket.removeEventListener?.(type, listener as unknown as EventListener); } catch { /* custom shim */ }
+    }
+    this.invalidateTools();
+    this.toolAbort.abort();
+    this.rejectReady(error instanceof Error ? error : new VoiceAgentClientError(error?.code ?? "ws_setup_failed"));
+    try { this.socket.close(); } catch { /* transport is already unavailable */ }
+    // A host callback must never prevent the remaining terminal cleanup.
+    try { if (error) this.hooks.onError?.(error); } catch { /* host callback */ }
+    try { this.hooks.onClose?.(reason); } catch { /* host callback */ }
   }
 
   private sendFrame(frame: ClientFrame): void {
-    this.socket.send(JSON.stringify(frame));
+    if (this.terminal) return;
+    let text: string;
+    try { text = JSON.stringify(frame); }
+    catch { this.fail("invalid_control"); return; }
+    const bytes = new TextEncoder().encode(text).byteLength;
+    if (bytes > MAX_CONTROL_BYTES) { this.fail("voice_buffer_overflow"); return; }
+    this.send(text, bytes);
+  }
+
+  private send(data: string | ArrayBufferLike | ArrayBufferView, bytes: number): void {
+    if (this.terminal) return;
+    if (!this.opened) { this.fail("ws_not_ready"); return; }
+    if (bytes + (this.socket.bufferedAmount ?? 0) > MAX_OUTBOUND_BYTES) {
+      this.fail("voice_buffer_overflow");
+      return;
+    }
+    try { this.socket.send(data); }
+    catch { this.fail("ws_send_failed"); }
   }
 
   private async handleMessage(data: unknown): Promise<void> {
+    if (this.terminal) return;
     if (typeof data === "string") {
+      if (data.length > MAX_CONTROL_BYTES || new TextEncoder().encode(data).byteLength > MAX_CONTROL_BYTES) {
+        this.fail("voice_buffer_overflow"); return;
+      }
       let frame: ServerFrame;
       try {
         frame = JSON.parse(data) as ServerFrame;
-      } catch (err) {
-        this.hooks.onError?.(err as Error);
-        return;
+      } catch { this.fail("invalid_control"); return; }
+      if (!frame || typeof frame !== "object" || typeof frame.type !== "string") {
+        this.fail("invalid_control"); return;
       }
       await this.handleFrame(frame);
       return;
     }
     if (data instanceof ArrayBuffer) {
-      this.hooks.onAudio?.(data);
+      this.receiveAudio(data);
       return;
     }
     // Node `ws` delivers Buffer; convert to ArrayBuffer.
     if (typeof data === "object" && data !== null && "buffer" in data && ArrayBuffer.isView(data)) {
       const view = data as ArrayBufferView;
+      if (!this.acceptsAudio) return;
+      if (!view.byteLength || view.byteLength % 2 || view.byteLength > MAX_PLAYBACK_BYTES) {
+        this.fail("voice_buffer_overflow"); return;
+      }
       const ab = view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
-      this.hooks.onAudio?.(ab as ArrayBuffer);
+      this.receiveAudio(ab as ArrayBuffer);
     }
+  }
+
+  private receiveAudio(data: ArrayBuffer): void {
+    if (!this.acceptsAudio) return;
+    if (!data.byteLength || data.byteLength % 2 || data.byteLength > MAX_PLAYBACK_BYTES) {
+      this.fail("voice_buffer_overflow"); return;
+    }
+    this.hooks.onAudio?.(data);
   }
 
   private async handleFrame(frame: ServerFrame): Promise<void> {
     switch (frame.type) {
       case "state":
+        if (this.opened && frame.state === "listening" && frame.event_type === "session_ready" && !this.listening) {
+          this.listening = true;
+          clearTimeout(this.setupTimer);
+          this.resolveReady();
+        }
         this.hooks.onState?.(frame.state);
         return;
       case "input_transcript":
-        this.hooks.onUserTranscript?.(frame.text, frame.done);
+        if (typeof frame.text !== "string") { this.fail("invalid_control"); return; }
+        this.hooks.onUserTranscript?.(frame.text.slice(-MAX_TRANSCRIPT_CHARS), frame.done === true);
         return;
       case "output_transcript":
-        this.hooks.onAgentTranscript?.(frame.text, frame.done);
+        if (typeof frame.text !== "string") { this.fail("invalid_control"); return; }
+        this.hooks.onAgentTranscript?.(frame.text.slice(-MAX_TRANSCRIPT_CHARS), frame.done === true);
         return;
       case "tool_call":
         this.hooks.onToolCall?.(frame);
@@ -182,12 +304,18 @@ export class VoiceAgentSession {
         this.hooks.onEvent?.(frame);
         return;
       case "error":
-        this.hooks.onError?.(frame);
+        // The server owns messages/remediation; only the stable code is used
+        // for lifecycle decisions. Optional fatal defaults to false.
+        const error = { ...frame, code: safeCode(frame.code), fatal: frame.fatal === true };
+        if (error.fatal) this.finish(error.code === "auth_expired" ? "authorization_expired" : "error", error);
+        else this.hooks.onError?.(error);
         return;
       case "session_end":
-        this.hooks.onClose?.(frame.reason);
+        this.finish(safeReason(frame.reason));
         return;
       case "interrupted":
+        this.muted = false;
+        this.invalidateTools();
         this.hooks.onInterrupted?.(frame);
         return;
       case "sequence_step":
@@ -197,22 +325,28 @@ export class VoiceAgentSession {
   }
 
   private async dispatchTool(call: ToolCallFrame): Promise<void> {
-    const handler = this.tools[call.name];
+    if (!this.isReady) return;
+    if (typeof call.id !== "string" || typeof call.name !== "string") { this.fail("invalid_control"); return; }
+    if (this.pendingTools >= 8) { this.fail("voice_buffer_overflow"); return; }
+    const epoch = this.toolEpoch;
+    const signal = this.toolAbort.signal;
+    const handler = Object.hasOwn(this.tools, call.name) ? this.tools[call.name] : undefined;
     if (!handler) {
       this.sendFrame({
         type: "tool_response",
         id: call.id,
         name: call.name,
-        response: { error: `unknown tool: ${call.name}` },
+        response: { error: "unknown_tool" },
       });
       return;
     }
     let response: Record<string, unknown>;
+    this.pendingTools++;
     try {
-      response = (await handler(call)) ?? {};
-    } catch (err) {
-      response = { error: (err as Error).message };
-    }
+      response = (await handler(call, { signal })) ?? {};
+    } catch { response = { error: "tool_failed" }; }
+    finally { this.pendingTools--; }
+    if (this.terminal || signal.aborted || epoch !== this.toolEpoch) return;
     this.sendFrame({
       type: "tool_response",
       id: call.id,
@@ -223,6 +357,7 @@ export class VoiceAgentSession {
 }
 
 export interface MintSessionTicketOptions {
+  signal?: AbortSignal;
   serverUrl: string;
   token?: string;
   body?: Record<string, unknown>;
@@ -241,19 +376,71 @@ export interface MintSessionTicketOptions {
  * {@link openNodeSession} factories.
  */
 export async function mintSessionTicket(options: MintSessionTicketOptions): Promise<SessionTicket> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (options.token) headers["Authorization"] = `Bearer ${options.token}`;
-  const fetchImpl = options.fetch ?? fetch;
-  const base = options.serverUrl.replace(/\/+$/, "");
-  const response = await fetchImpl(`${base}${normalizeBasePath(options.basePath)}/voiceagent/sessions`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(options.body ?? {}),
-  });
-  if (!response.ok) {
-    throw new Error(`speechkit: mint session failed: HTTP ${response.status} ${await response.text()}`);
+  throwIfAborted(options.signal);
+  const mintAbort = new AbortController();
+  const abort = () => mintAbort.abort();
+  let expired = false;
+  const deadline = setTimeout(() => { expired = true; mintAbort.abort(); }, 15_000);
+  (deadline as unknown as { unref?: () => void }).unref?.();
+  options.signal?.addEventListener("abort", abort, { once: true });
+  try {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (options.token) headers["Authorization"] = `Bearer ${options.token}`;
+    const fetchImpl = options.fetch ?? fetch;
+    const base = trimTrailingSlashes(options.serverUrl);
+    throwIfAborted(options.signal);
+    const response = await abortable(fetchImpl(`${base}${normalizeBasePath(options.basePath)}/voiceagent/sessions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(options.body ?? {}),
+      signal: mintAbort.signal,
+    }), mintAbort.signal);
+    if (!response.ok) {
+      throw new VoiceAgentClientError("ticket_mint_failed", `speechkit: mint session failed: HTTP ${response.status}`);
+    }
+    const ticket = await abortable(response.json() as Promise<SessionTicket>, mintAbort.signal);
+    throwIfAborted(options.signal);
+    return ticket;
+  } catch (error) {
+    throwIfAborted(options.signal);
+    if (expired) throw new VoiceAgentClientError("ticket_mint_timeout");
+    if (error instanceof VoiceAgentClientError) throw error;
+    throw new VoiceAgentClientError("ticket_mint_failed");
+  } finally {
+    clearTimeout(deadline);
+    options.signal?.removeEventListener("abort", abort);
   }
-  return (await response.json()) as SessionTicket;
+}
+
+export const MAX_CONTROL_BYTES = 65_536;
+export const MAX_OUTBOUND_BYTES = 64_000; // Two seconds of 16 kHz S16 microphone audio.
+export const MAX_PLAYBACK_BYTES = 96_000; // Two seconds of 24 kHz S16 playback.
+const MAX_TRANSCRIPT_CHARS = 16_384;
+
+export class VoiceAgentClientError extends Error {
+  constructor(readonly code: string, message = code) { super(message); this.name = "VoiceAgentClientError"; }
+}
+
+function safeCode(code: unknown): string {
+  return typeof code === "string" && /^[a-z][a-z0-9_]{0,63}$/.test(code) ? code : "turn_failed";
+}
+function safeReason(reason: unknown): string {
+  return ["idle", "go_away", "client", "error", "shutdown", "max_duration", "authorization_expired"].includes(reason as string)
+    ? reason as string : "error";
+}
+export function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new VoiceAgentClientError("session_aborted");
+}
+/** Observes cancellation even when a custom fetch/import ignores its signal. */
+export function abortable<T>(work: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return work;
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => { cleanup(); reject(new VoiceAgentClientError("session_aborted")); };
+    const cleanup = () => signal.removeEventListener("abort", abort);
+    work.then(value => { cleanup(); resolve(value); }, error => { cleanup(); reject(error); });
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+  });
 }
 
 /**
@@ -264,7 +451,7 @@ export async function mintSessionTicket(options: MintSessionTicketOptions): Prom
  */
 export function deriveWsUrl(serverUrl: string, ticket: SessionTicket, basePath?: string): string {
   if (ticket.ws_url) return ticket.ws_url;
-  const wsBase = serverUrl.replace(/^http/, "ws").replace(/\/+$/, "");
+  const wsBase = trimTrailingSlashes(serverUrl.replace(/^http/, "ws"));
   return `${wsBase}${normalizeBasePath(basePath)}/voiceagent/sessions/${encodeURIComponent(ticket.session_id)}/ws`;
 }
 
@@ -277,9 +464,15 @@ export function ticketSubprotocol(ticket: SessionTicket): string {
   return ticket.ws_subprotocol ?? `${TICKET_SUBPROTOCOL_PREFIX}${ticket.ticket}`;
 }
 
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end--;
+  return value.slice(0, end);
+}
+
 function normalizeBasePath(basePath: string | undefined): string {
   const raw = (basePath ?? "/v1").trim();
   if (raw === "" || raw === "/") return "";
   const withLeading = raw.startsWith("/") ? raw : `/${raw}`;
-  return withLeading.replace(/\/+$/, "");
+  return trimTrailingSlashes(withLeading);
 }

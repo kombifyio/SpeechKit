@@ -34,4 +34,6 @@
     <string name="speechkit_ime_agent_phase_ended">انتهت</string>
     <string name="speechkit_ime_agent_error_provider_unavailable">لم يتم إعداد مزود الصوت هذا على الخادم</string>
     <string name="speechkit_ime_agent_error_no_server">يحتاج المساعد الصوتي إلى خادم SpeechKit مقترن</string>
+    <string name="speechkit_ime_agent_error_audio">تعذر متابعة الصوت</string>
+    <string name="speechkit_ime_agent_error_generic">فشل الاتصال الصوتي</string>
 </resources>

@@ -102,7 +102,11 @@ class SpeechKitVoiceImeService : InputMethodService() {
     override fun onCreateInputView(): View {
         // Fresh owners per input view: the framework may recreate the view
         // (config changes), and a destroyed lifecycle cannot be restarted.
-        windowOwner?.onDestroy()
+        if (windowOwner != null) {
+            agentController.stop()
+            agentPlayer.release()
+            windowOwner?.onDestroy()
+        }
         val owner = ServiceWindowOwner()
         windowOwner = owner
         // The owners must also sit on the IME window's decor view, not only on
@@ -134,7 +138,12 @@ class SpeechKitVoiceImeService : InputMethodService() {
                         // to the next composition. play() moves itself off this
                         // dispatcher, which is the IME window's main thread.
                         LaunchedEffect(Unit) {
-                            agentController.audio.collect { pcm -> agentPlayer.play(pcm) }
+                            try {
+                                agentController.consumeAudio(flush = agentPlayer::flush) { agentPlayer.play(it) }
+                            } finally {
+                                holding = false
+                                agentPlayer.release()
+                            }
                         }
                         VoiceAgentPanelUi(
                             state = agentState,
@@ -196,6 +205,8 @@ class SpeechKitVoiceImeService : InputMethodService() {
 
     override fun onFinishInputView(finishingInput: Boolean) {
         controller.hidePanel()
+        agentController.stop()
+        agentPlayer.release()
         windowOwner?.onPause()
         super.onFinishInputView(finishingInput)
     }
@@ -210,6 +221,8 @@ class SpeechKitVoiceImeService : InputMethodService() {
 
     override fun onDestroy() {
         controller.shutdown()
+        agentController.stop()
+        agentPlayer.release()
         windowOwner?.onDestroy()
         windowOwner = null
         serviceScope.cancel()

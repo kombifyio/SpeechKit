@@ -197,6 +197,8 @@ type ErrorFrame struct {
 	Type    string `json:"type"` // "error"
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	// Fatal means this session is ending; turn failures otherwise remain usable.
+	Fatal bool `json:"fatal,omitempty"`
 	// Remediation is a short, machine-friendly hint on how to unblock the
 	// refused capability. It is emitted for the codes ErrorRemediation
 	// covers; codes whose message already is the whole story omit it.
@@ -218,6 +220,7 @@ var errorRemediation = map[string]string{
 	"media_transport_unavailable": "configure the LiveKit media bridge, or use media_transport \"websocket\"",
 	"audio_transport_mismatch":    "send audio through the LiveKit room, not as binary WebSocket frames",
 	"tool_response_unsupported":   "drop tool_response frames for this provider",
+	"auth_expired":                "start a new voice session through the authenticated session endpoint",
 }
 
 // ErrorRemediation returns the remediation hint for a wire error code, or ""
@@ -228,7 +231,7 @@ func ErrorRemediation(code string) string { return errorRemediation[code] }
 type SessionEndFrame struct {
 	Type string `json:"type"` // "session_end"
 	EventFrameFields
-	Reason string `json:"reason"` // "idle" | "go_away" | "client" | "error" | "shutdown" | "max_duration"
+	Reason string `json:"reason"` // "idle" | "go_away" | "client" | "error" | "shutdown" | "max_duration" | "authorization_expired"
 }
 
 type PongFrame struct {

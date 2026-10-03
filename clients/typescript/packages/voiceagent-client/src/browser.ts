@@ -1,6 +1,9 @@
 import { CLIENT_SAMPLE_RATE, SERVER_SAMPLE_RATE, type SessionTicket } from "./protocol.js";
 import {
   VoiceAgentSession,
+  VoiceAgentClientError,
+  MAX_PLAYBACK_BYTES,
+  throwIfAborted,
   deriveWsUrl,
   mintSessionTicket,
   ticketSubprotocol,
@@ -61,6 +64,8 @@ export interface BrowserSession {
    * over the user.
    */
   flushPlayback(): void;
+  /** Call directly from a click/tap to resume a suspended speaker context. */
+  resumeAudio(): Promise<void>;
   close(): void;
 }
 
@@ -70,41 +75,90 @@ export interface BrowserSession {
  * returns a {@link BrowserSession} ready to attach mic + playback.
  */
 export async function openBrowserSession(options: BrowserOpenOptions): Promise<BrowserSession> {
-  const ticket =
-    options.presetTicket ??
-    (await mintSessionTicket({
-      serverUrl: options.serverUrl,
-      ...(options.token !== undefined ? { token: options.token } : {}),
-      ...(options.ticket !== undefined ? { body: options.ticket } : {}),
-      ...(options.basePath !== undefined ? { basePath: options.basePath } : {}),
-    }));
-  const url = options.resolveWsUrl
-    ? options.resolveWsUrl(ticket)
-    : deriveWsUrl(options.serverUrl, ticket, options.basePath);
-  const socket = new WebSocket(url, [ticketSubprotocol(ticket)]);
-  socket.binaryType = "arraybuffer";
-
-  const sessionOptions: SessionOptions = {
-    start: options.start,
-    ...(options.hooks !== undefined ? { hooks: options.hooks } : {}),
-    ...(options.tools !== undefined ? { tools: options.tools } : {}),
+  throwIfAborted(options.signal);
+  const captures = new Set<() => void>();
+  let session: VoiceAgentSession | undefined;
+  const playback = createPlayback(options.onPlaybackLevel, code => session?.fail(code));
+  // Invoke resume before minting awaits so a caller's click/tap gesture is
+  // still active. Autoplay denial can be retried via handle.resumeAudio().
+  if (typeof AudioContext === "function") void playback.resume().catch(() => undefined);
+  const cleanup = () => {
+    for (const stop of captures) { try { stop(); } catch { /* release other captures */ } }
+    captures.clear();
+    playback.dispose();
   };
-  const session = new VoiceAgentSession(socket, sessionOptions);
-  const playback = createPlayback(options.onPlaybackLevel);
+  try {
+    const ticket =
+      options.presetTicket ??
+      (await mintSessionTicket({
+        serverUrl: options.serverUrl,
+        ...(options.token !== undefined ? { token: options.token } : {}),
+        ...(options.ticket !== undefined ? { body: options.ticket } : {}),
+        ...(options.basePath !== undefined ? { basePath: options.basePath } : {}),
+        ...(options.signal !== undefined ? { signal: options.signal } : {}),
+      }));
+    throwIfAborted(options.signal);
+    const url = options.resolveWsUrl
+      ? options.resolveWsUrl(ticket)
+      : deriveWsUrl(options.serverUrl, ticket, options.basePath);
+    const socket = new WebSocket(url, [ticketSubprotocol(ticket)]);
+    socket.binaryType = "arraybuffer";
 
-  const handle: BrowserSession = {
-    session,
-    socket,
-    ticket,
-    attachMicrophone: (stream) => attachMicrophone(session, stream),
-    playChunk: (chunk) => playback.play(chunk),
-    flushPlayback: () => playback.flush(),
-    close: () => {
-      session.close();
-      playback.dispose();
-    },
-  };
-  return handle;
+    const sessionOptions: SessionOptions = {
+      start: options.start,
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
+      hooks: {
+        ...options.hooks,
+        onInterrupted: frame => {
+          playback.flush();
+          options.hooks?.onInterrupted?.(frame);
+        },
+        onClose: reason => {
+          cleanup();
+          options.hooks?.onClose?.(reason);
+        },
+      },
+      ...(options.tools !== undefined ? { tools: options.tools } : {}),
+    };
+    const activeSession = new VoiceAgentSession(socket, sessionOptions);
+    session = activeSession;
+
+    const handle: BrowserSession = {
+      session: activeSession,
+      socket,
+      ticket,
+      attachMicrophone: stream => {
+        if (activeSession.isClosed) {
+          stream.getTracks().forEach(track => track.stop());
+          return () => undefined;
+        }
+        let stopCapture: () => void;
+        try { stopCapture = attachMicrophone(activeSession, stream); }
+        catch {
+          stream.getTracks().forEach(track => { try { track.stop(); } catch { /* release other tracks */ } });
+          activeSession.fail("audio_capture_failed");
+          return () => undefined;
+        }
+        const stop = () => { captures.delete(stop); stopCapture(); };
+        captures.add(stop);
+        return stop;
+      },
+      playChunk: chunk => { if (activeSession.acceptsAudio) playback.play(chunk); },
+      flushPlayback: () => playback.flush(),
+      resumeAudio: () => playback.resume(),
+      close: () => {
+        cleanup();
+        activeSession.close();
+      },
+    };
+    await activeSession.ready;
+    if (activeSession.isClosed) throw new VoiceAgentClientError("ws_setup_failed");
+    return handle;
+  } catch (error) {
+    cleanup();
+    session?.close();
+    throw error instanceof VoiceAgentClientError ? error : new VoiceAgentClientError("ws_setup_failed");
+  }
 }
 
 /**
@@ -128,14 +182,28 @@ registerProcessor("speechkit-capture", class extends AudioWorkletProcessor {
 
 function attachMicrophone(session: VoiceAgentSession, stream: MediaStream): () => void {
   const audioContext = new AudioContext();
-  const source = audioContext.createMediaStreamSource(stream);
+  let source: MediaStreamAudioSourceNode;
+  try { source = audioContext.createMediaStreamSource(stream); }
+  catch {
+    try { void audioContext.close().catch(() => undefined); } catch { /* already closed */ }
+    throw new VoiceAgentClientError("audio_capture_failed");
+  }
   const sourceRate = audioContext.sampleRate;
   let leftover: Float32Array | null = null;
   let stopped = false;
   let disposeGraph: (() => void) | null = null;
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    try { disposeGraph?.(); } catch { /* continue releasing capture */ }
+    disposeGraph = null;
+    try { source.disconnect(); } catch { /* already disconnected */ }
+    try { void audioContext.close().catch(() => undefined); } catch { /* already closed */ }
+    stream.getTracks().forEach(track => { try { track.stop(); } catch { /* release other tracks */ } });
+  };
 
   const push = (channelData: Float32Array): void => {
-    if (stopped) return;
+    if (stopped || session.isClosed) return;
     const merged = leftover ? concatFloat32(leftover, channelData) : new Float32Array(channelData);
     const { pcm16, remaining } = downsampleToInt16(merged, sourceRate, CLIENT_SAMPLE_RATE);
     leftover = remaining;
@@ -147,22 +215,17 @@ function attachMicrophone(session: VoiceAgentSession, stream: MediaStream): () =
   // Worklet setup is async; the returned stop function tears down
   // whichever graph finished wiring up.
   void (async () => {
-    const graph = await createCaptureGraph(audioContext, source, push);
+    await audioContext.resume();
+    if (stopped) return;
+    const graph = await createCaptureGraph(audioContext, source, push, () => stopped);
     if (stopped) {
       graph.dispose();
       return;
     }
     disposeGraph = graph.dispose;
-  })();
+  })().catch(() => { stop(); if (!session.isClosed) session.fail("audio_capture_failed"); });
 
-  return () => {
-    stopped = true;
-    disposeGraph?.();
-    disposeGraph = null;
-    source.disconnect();
-    void audioContext.close();
-    stream.getTracks().forEach((track) => track.stop());
-  };
+  return stop;
 }
 
 interface CaptureGraph {
@@ -173,6 +236,7 @@ async function createCaptureGraph(
   audioContext: AudioContext,
   source: MediaStreamAudioSourceNode,
   push: (channelData: Float32Array) => void,
+  stopped: () => boolean,
 ): Promise<CaptureGraph> {
   // Connect through a muted sink so the graph stays alive; otherwise
   // some browsers garbage-collect it after a few hundred ms.
@@ -189,6 +253,7 @@ async function createCaptureGraph(
       } finally {
         URL.revokeObjectURL(moduleUrl);
       }
+      if (stopped()) { sink.disconnect(); return { dispose: () => undefined }; }
       const worklet = new AudioWorkletNode(audioContext, "speechkit-capture", {
         numberOfInputs: 1,
         numberOfOutputs: 1,
@@ -209,6 +274,8 @@ async function createCaptureGraph(
       // ScriptProcessor path below.
     }
   }
+
+  if (stopped()) { sink.disconnect(); return { dispose: () => undefined }; }
 
   // Fallback: ScriptProcessorNode is deprecated but universally
   // available.
@@ -283,12 +350,16 @@ interface Playback {
   play(chunk: ArrayBuffer): void;
   flush(): void;
   dispose(): void;
+  resume(): Promise<void>;
 }
 
-function createPlayback(onLevel?: (level: number) => void): Playback {
+function createPlayback(onLevel: ((level: number) => void) | undefined, onFailure: (code: string) => void): Playback {
   let context: AudioContext | null = null;
   let nextStartTime = 0;
-  const active = new Set<AudioBufferSourceNode>();
+  const active = new Map<AudioBufferSourceNode, number>();
+  let bufferedBytes = 0;
+  let disposed = false;
+  const emitLevel = (level: number) => { try { onLevel?.(level); } catch { /* advisory host callback */ } };
 
   function ensureContext(): AudioContext {
     if (!context) {
@@ -299,52 +370,71 @@ function createPlayback(onLevel?: (level: number) => void): Playback {
   }
 
   return {
+    async resume() {
+      if (disposed) throw new VoiceAgentClientError("session_closed");
+      try { await ensureContext().resume(); }
+      catch { throw new VoiceAgentClientError("audio_resume_required"); }
+    },
     play(chunk) {
-      const ctx = ensureContext();
-      const samples = new Int16Array(chunk);
-      const buffer = ctx.createBuffer(1, samples.length, SERVER_SAMPLE_RATE);
-      const channel = buffer.getChannelData(0);
-      let sumSquares = 0;
-      for (let i = 0; i < samples.length; i++) {
-        const value = (samples[i] ?? 0) / 0x7fff;
-        channel[i] = value;
-        sumSquares += value * value;
+      if (disposed) return;
+      if (!chunk.byteLength || chunk.byteLength % 2 || bufferedBytes + chunk.byteLength > MAX_PLAYBACK_BYTES || active.size >= 64) {
+        onFailure("voice_buffer_overflow"); return;
       }
-      onLevel?.(Math.min(1, Math.sqrt(sumSquares / Math.max(1, samples.length)) * 3));
-      const source = ctx.createBufferSource();
-      source.buffer = buffer;
-      source.connect(ctx.destination);
-      active.add(source);
-      source.onended = () => {
-        active.delete(source);
-        if (active.size === 0) onLevel?.(0);
-      };
-      const startAt = Math.max(ctx.currentTime, nextStartTime);
-      source.start(startAt);
-      nextStartTime = startAt + buffer.duration;
+      try {
+        const ctx = ensureContext();
+        if (ctx.state !== "running") { onFailure("audio_resume_required"); return; }
+        const samples = new Int16Array(chunk);
+        const buffer = ctx.createBuffer(1, samples.length, SERVER_SAMPLE_RATE);
+        const channel = buffer.getChannelData(0);
+        let sumSquares = 0;
+        for (let i = 0; i < samples.length; i++) {
+          const value = (samples[i] ?? 0) / 0x7fff;
+          channel[i] = value;
+          sumSquares += value * value;
+        }
+        emitLevel(Math.min(1, Math.sqrt(sumSquares / Math.max(1, samples.length)) * 3));
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+        active.set(source, chunk.byteLength);
+        bufferedBytes += chunk.byteLength;
+        source.onended = () => {
+          bufferedBytes -= active.get(source) ?? 0;
+          active.delete(source);
+          source.disconnect();
+          if (active.size === 0) emitLevel(0);
+        };
+        const startAt = Math.max(ctx.currentTime, nextStartTime);
+        source.start(startAt);
+        nextStartTime = startAt + buffer.duration;
+      } catch { this.flush(); onFailure("audio_playback_failed"); }
     },
     flush() {
-      for (const source of active) {
+      for (const source of active.keys()) {
         source.onended = null;
         try {
           source.stop();
         } catch {
           /* already stopped */
         }
+        try { source.disconnect(); } catch { /* already disconnected */ }
       }
       active.clear();
+      bufferedBytes = 0;
       if (context) nextStartTime = context.currentTime;
-      onLevel?.(0);
+      emitLevel(0);
     },
     dispose() {
+      if (disposed) return;
+      disposed = true;
       this.flush();
       if (context) {
-        void context.close();
+        try { void context.close().catch(() => undefined); } catch { /* already closed */ }
         context = null;
       }
     },
   };
 }
 
-export type { SessionHooks } from "./session.js";
-export { VoiceAgentSession } from "./session.js";
+export type { SessionHooks, ToolContext } from "./session.js";
+export { VoiceAgentSession, VoiceAgentClientError } from "./session.js";

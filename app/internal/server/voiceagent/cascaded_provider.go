@@ -91,6 +91,7 @@ func (p *CascadedProvider) Receive(ctx context.Context) (*LiveMessage, error) {
 		return &LiveMessage{ErrorCode: msg.ErrorCode, ErrorMessage: msg.ErrorMessage}, nil
 	}
 	out := &LiveMessage{
+		Done:                   msg.Done,
 		Audio:                  msg.Audio,
 		InputTranscript:        msg.InputTranscript,
 		InputTranscriptDone:    msg.InputTranscriptDone,

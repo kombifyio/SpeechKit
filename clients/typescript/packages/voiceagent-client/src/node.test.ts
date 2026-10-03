@@ -21,6 +21,10 @@ class FakeNodeSocket {
     readonly protocols?: string | string[],
   ) {
     FakeNodeSocket.instances.push(this);
+    queueMicrotask(() => {
+      this.emit("open");
+      this.emit("message", { data: JSON.stringify({ type: "state", state: "listening", event_type: "session_ready" }) });
+    });
   }
 
   send(data: unknown): void {

@@ -69,9 +69,10 @@ type VoicePrefs struct {
 // session mint to the ticket-authenticated WebSocket. Lease and endpoint are
 // memory-only and are never included in tickets, API responses, or logs.
 type VoiceAgentBinding struct {
-	TargetAgentID string
-	Endpoint      string
-	Lease         string
+	TargetAgentID       string
+	Endpoint            string
+	Lease               string
+	CredentialExpiresAt int64
 }
 
 // Options configures a SessionManager.

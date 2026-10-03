@@ -23,6 +23,8 @@ import android.os.SystemClock
 import io.kombify.speechkit.R
 import io.kombify.speechkit.BuildConfig
 import io.kombify.speechkit.audio.MicAudioCapture
+import io.kombify.speechkit.audio.PcmPlaybackQueue
+import io.kombify.speechkit.audio.PcmPlaybackException
 import io.kombify.speechkit.audio.PcmStreamPlayer
 import io.kombify.speechkit.coinstall.voiceagent.v1.IVoiceAgentCallback
 import io.kombify.speechkit.coinstall.voiceagent.v1.IVoiceAgentService
@@ -33,8 +35,11 @@ import io.kombify.speechkit.net.CreateVoiceAgentSessionResponse
 import io.kombify.speechkit.net.VoiceAgentAudio
 import io.kombify.speechkit.net.VoiceAgentEvent
 import io.kombify.speechkit.net.VoiceAgentSession
+import io.kombify.speechkit.net.VoiceAgentSetupException
 import io.kombify.speechkit.net.VoiceAgentStartFrame
 import io.kombify.speechkit.net.VoiceAgentWsClient
+import io.kombify.speechkit.net.safeVoiceAgentCode
+import io.kombify.speechkit.net.voiceAgentFatalEndReason
 import io.kombify.speechkit.log.VoiceLog
 import io.kombify.speechkit.turn.TurnEngine
 import io.kombify.speechkit.turn.TurnEvent
@@ -75,6 +80,8 @@ class CoinstallVoiceAgentService : Service() {
         var live: VoiceAgentSession? = null
         var work: Job? = null
         var capture: Job? = null
+        var playback: Job? = null
+        val audio = PcmPlaybackQueue(VoiceAgentAudio.SERVER_SAMPLE_RATE)
         var focus: AudioFocusRequest? = null
         var engineEndedTurn = false
         var uplinkBytes = 0L
@@ -159,7 +166,7 @@ class CoinstallVoiceAgentService : Service() {
             if (!attested(uid)) return
             scope.launch {
                 active?.takeIf { it.uid == uid && it.id == sessionId }?.let {
-                    it.player.flush(); it.engine.notePlaybackStopped(); it.live?.cancelReply()
+                    stopPlayback(it); it.live?.cancelReply()
                 }
             }
         }
@@ -243,9 +250,28 @@ class CoinstallVoiceAgentService : Service() {
                 val live = VoiceAgentWsClient().connect(CreateVoiceAgentSessionResponse(
                     sessionId = request.sessionId, wsUrl = request.wsUrl, ticket = request.ticket))
                 run.live = live
-                live.start(VoiceAgentStartFrame(locale = request.locale.takeIf { LOCALE.matches(it) }))
                 notify(run) { it.onState(run.id, VoiceAgentContract.STATE_CONNECTING) }
                 if (run.ended) return@launch
+                live.start(VoiceAgentStartFrame(locale = request.locale.takeIf { LOCALE.matches(it) }))
+                if (run.ended) return@launch
+                run.playback = launch {
+                    try {
+                        run.audio.consume { pcm ->
+                            if (!run.ended) {
+                                run.engine.notePlaybackFrame(pcm, VoiceAgentAudio.SERVER_SAMPLE_RATE)
+                                run.player.play(pcm)
+                                if (!run.ended) run.playbackBytes += pcm.size
+                            }
+                        }
+                    } catch (cancelled: CancellationException) { throw cancelled
+                    } catch (failure: PcmPlaybackException) {
+                        notify(run) { it.onError(run.id, failure.code, "", true) }
+                        finish(run, "playback_failed")
+                    } catch (_: Exception) {
+                        notify(run) { it.onError(run.id, "playback_device_failed", "", true) }
+                        finish(run, "playback_failed")
+                    }
+                }
                 run.capture = launch {
                     try {
                     val file = request.audioSource
@@ -287,18 +313,27 @@ class CoinstallVoiceAgentService : Service() {
                             notify(run) { it.onTranscript(run.id, if (event.input) VoiceAgentContract.ROLE_USER else VoiceAgentContract.ROLE_AGENT, event.text.takeLast(4000), event.done) }
                         }
                         is VoiceAgentEvent.Audio -> {
-                            run.engine.notePlaybackFrame(event.pcm, VoiceAgentAudio.SERVER_SAMPLE_RATE)
-                            run.player.play(event.pcm)
-                            run.playbackBytes += event.pcm.size
+                            if (!run.audio.offer(event.pcm)) {
+                                notify(run) { it.onError(run.id, VoiceAgentWsClient.OVERFLOW_CODE, "", true) }
+                                finish(run, "playback_overflow")
+                            }
                         }
-                        VoiceAgentEvent.Interrupted -> { run.player.flush(); run.engine.notePlaybackStopped() }
-                        is VoiceAgentEvent.Failure -> notify(run) { it.onError(run.id, VoiceAgentContract.ERROR_SERVER, "", false) }
+                        VoiceAgentEvent.Interrupted -> stopPlayback(run)
+                        is VoiceAgentEvent.Failure -> {
+                            val code = safeVoiceAgentCode(event.code, VoiceAgentContract.ERROR_SERVER)
+                            val terminal = event.fatal || code in TRANSPORT_FAILURES
+                            notify(run) { it.onError(run.id, code, "", terminal) }
+                            if (terminal) finish(run, if (event.fatal) voiceAgentFatalEndReason(code) else "transport_failed")
+                        }
                         is VoiceAgentEvent.Closed -> finish(run, event.reason)
                         is VoiceAgentEvent.ToolCall -> Unit // The registered agent runtime owns tool execution.
                     }
                 }
                 finish(run, "closed")
             } catch (cancelled: CancellationException) { throw cancelled
+            } catch (failure: VoiceAgentSetupException) {
+                notify(run) { it.onError(run.id, failure.code, "", true) }
+                finish(run, voiceAgentFatalEndReason(failure.code))
             } catch (_: Throwable) {
                 notify(run) { it.onError(run.id, VoiceAgentContract.ERROR_TRANSPORT, "", true) }
                 finish(run, "server_error")
@@ -314,14 +349,18 @@ class CoinstallVoiceAgentService : Service() {
             it.expiry?.cancel()
             it.intent.cancel()
         }
-        VoiceLog.i(VoiceLog.AGENT, "coinstall_end reason=${reason.take(64)} uplink_bytes=${run.uplinkBytes} playback_bytes=${run.playbackBytes}")
+        val safeReason = safeVoiceAgentCode(reason, "closed")
+        VoiceLog.i(VoiceLog.AGENT, "coinstall_end uplink_bytes=${run.uplinkBytes} playback_bytes=${run.playbackBytes}")
         run.capture?.cancel()
         runCatching { run.source?.close() }
+        stopPlayback(run)
+        run.audio.close()
+        run.playback?.cancel()
         run.player.release()
         run.focus?.let { audioManager.abandonAudioFocusRequest(it) }
         run.live?.let { live -> scope.launch { runCatching { live.close() } } }
         run.work?.cancel()
-        runCatching { run.callback.onEnded(run.id, reason.take(64)) }
+        runCatching { run.callback.onEnded(run.id, safeReason) }
         runCatching { run.callback.asBinder().unlinkToDeath(run.death, 0) }
         if (active === run) {
             active = null
@@ -329,6 +368,12 @@ class CoinstallVoiceAgentService : Service() {
             if (lastStartId != 0) stopSelfResult(lastStartId)
         }
     }
+    private fun stopPlayback(run: Running) {
+        run.audio.clear()
+        run.player.flush()
+        run.engine.notePlaybackStopped()
+    }
+
     private fun notify(run: Running, send: (IVoiceAgentCallback) -> Unit) {
         if (!run.ended) try { send(run.callback) } catch (_: Throwable) { finish(run, "client") }
     }
@@ -383,6 +428,8 @@ class CoinstallVoiceAgentService : Service() {
         private val LOCALE = Regex("^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
         private const val CHANNEL = "companion-voice"
         private const val VOICE_NOTIFICATION = 8101
+        private val TRANSPORT_FAILURES = setOf(VoiceAgentWsClient.FAILURE_CODE,
+            VoiceAgentWsClient.SEND_FAILURE_CODE, VoiceAgentWsClient.OVERFLOW_CODE)
         private const val MAX_SOURCE_BYTES = 16000 * 2 * 120 + 44
         private const val START_ACTION = "io.kombify.speechkit.voiceagent.v1.START"
         private const val PREPARE_TIMEOUT_MS = 15000L

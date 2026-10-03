@@ -378,17 +378,24 @@ func TestConnectAndReceiveAgainstVoiceLiveServer(t *testing.T) {
 
 	msg, err := p.Receive(ctx)
 	if err != nil {
+		t.Fatalf("Receive readiness: %v", err)
+	}
+	if msg.EventType != live.LiveEventSessionReady {
+		t.Fatalf("ready message = %+v, want session readiness", msg)
+	}
+	msg, err = p.Receive(ctx)
+	if err != nil {
 		t.Fatalf("Receive audio: %v", err)
 	}
 	if msg.EventType != live.LiveEventOutputAudio || string(msg.Audio) != string(wantAudio) {
-		t.Fatalf("first message = %+v, want output audio % x", msg, wantAudio)
+		t.Fatalf("audio message = %+v, want output audio % x", msg, wantAudio)
 	}
 	msg, err = p.Receive(ctx)
 	if err != nil {
 		t.Fatalf("Receive turn end: %v", err)
 	}
 	if msg.EventType != live.LiveEventTurnEnd || !msg.Done {
-		t.Fatalf("second message = %+v, want turn end", msg)
+		t.Fatalf("turn-end message = %+v, want turn end", msg)
 	}
 	select {
 	case err := <-serverErrs:

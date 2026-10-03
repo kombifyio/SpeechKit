@@ -34,4 +34,6 @@
     <string name="speechkit_ime_agent_phase_ended">Finalizado</string>
     <string name="speechkit_ime_agent_error_provider_unavailable">Este proveedor de voz no está configurado en el servidor</string>
     <string name="speechkit_ime_agent_error_no_server">El asistente de voz necesita un servidor SpeechKit vinculado</string>
+    <string name="speechkit_ime_agent_error_audio">No se pudo continuar con el audio de voz</string>
+    <string name="speechkit_ime_agent_error_generic">La conexión de voz falló</string>
 </resources>

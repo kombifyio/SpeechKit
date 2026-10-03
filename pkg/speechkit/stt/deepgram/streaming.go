@@ -272,8 +272,8 @@ func (s *deepgramSpeakerStream) Receive(ctx context.Context) (*speaker.SpeakerFr
 		if typ != websocket.MessageText {
 			continue
 		}
-		var event deepgramStreamingResponse
-		if err := json.Unmarshal(payload, &event); err != nil {
+		event, err := decodeDeepgramStreamMessage(payload)
+		if err != nil {
 			return nil, fmt.Errorf("deepgram speaker stream parse: %w", err)
 		}
 		frame := event.speakerFrame(s.provider, s.model, s.sequence.Add(1), time.Since(s.openedAt).Milliseconds())
@@ -298,8 +298,13 @@ func (s *deepgramDictationStream) SendPCM(ctx context.Context, pcm []byte) error
 	return s.conn.Write(ctx, websocket.MessageBinary, pcm)
 }
 
+// Finalize asks Deepgram to flush and end the session. CloseStream returns the
+// trailing results and then closes the socket, so Receive surfaces the last
+// utterance and then io.EOF. Deepgram's Finalize message flushes but keeps the
+// socket open, which left the stop path waiting out its drain timeout and
+// dropped a trailing is_final fragment that never got its speech_final.
 func (s *deepgramDictationStream) Finalize(ctx context.Context) error {
-	return s.conn.Write(ctx, websocket.MessageText, []byte(`{"type":"Finalize"}`))
+	return s.conn.Write(ctx, websocket.MessageText, []byte(`{"type":"CloseStream"}`))
 }
 
 func (s *deepgramDictationStream) Receive(ctx context.Context) (speechkit.DictationStreamEvent, error) {
@@ -317,17 +322,18 @@ func (s *deepgramDictationStream) Receive(ctx context.Context) (speechkit.Dictat
 		if typ != websocket.MessageText {
 			continue
 		}
-		var event deepgramStreamingResponse
-		if err := json.Unmarshal(payload, &event); err != nil {
+		event, err := decodeDeepgramStreamMessage(payload)
+		if err != nil {
 			return speechkit.DictationStreamEvent{}, fmt.Errorf("deepgram dictation stream parse: %w", err)
 		}
-		switch strings.ToLower(strings.TrimSpace(event.Type)) {
+		switch strings.ToLower(event.Type) {
 		case "utteranceend":
 			if ev, ok := s.drainPending(); ok {
 				return ev, nil
 			}
 			continue
-		case "speechstarted", "metadata":
+		case "", "results":
+		default:
 			continue
 		}
 		frame := event.dictationEvent(s.provider, s.model, s.language, s.sessionID, s.sequence.Add(1), time.Since(s.openedAt).Milliseconds())
@@ -406,6 +412,27 @@ type deepgramStreamingResponse struct {
 	IsFinal     bool            `json:"is_final"`
 	SpeechFinal bool            `json:"speech_final"`
 	Channel     deepgramChannel `json:"channel"`
+}
+
+// decodeDeepgramStreamMessage decodes one Listen message. Only Results carry a
+// channel object; UtteranceEnd and SpeechStarted send the channel indices as
+// an array ("channel":[0,1]), so for every other type only the type is read.
+func decodeDeepgramStreamMessage(payload []byte) (deepgramStreamingResponse, error) {
+	var envelope struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(payload, &envelope); err != nil {
+		return deepgramStreamingResponse{}, err
+	}
+	if kind := strings.TrimSpace(envelope.Type); kind != "" && !strings.EqualFold(kind, "Results") {
+		return deepgramStreamingResponse{Type: kind}, nil
+	}
+	var event deepgramStreamingResponse
+	if err := json.Unmarshal(payload, &event); err != nil {
+		return deepgramStreamingResponse{}, err
+	}
+	event.Type = strings.TrimSpace(event.Type)
+	return event, nil
 }
 
 func (r deepgramStreamingResponse) speakerFrame(provider, model string, sequence, latencyMs int64) speaker.SpeakerFrame {

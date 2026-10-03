@@ -1,29 +1,32 @@
 package io.kombify.speechkit.ime
 
 import io.kombify.speechkit.audio.AudioCapture
+import io.kombify.speechkit.audio.PcmPlaybackException
 import io.kombify.speechkit.domain.ConnectionProfile
 import io.kombify.speechkit.net.VoiceAgentController
 import io.kombify.speechkit.net.VoiceAgentEvent
 import io.kombify.speechkit.net.VoiceAgentSessionDriver
 import io.kombify.speechkit.net.VoiceAgentStartFrame
 import io.kombify.speechkit.net.VoiceAgentUiState
+import io.kombify.speechkit.net.VoiceAgentSetupException
+import io.kombify.speechkit.net.VoiceAgentWsClient
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.launch
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.io.ByteArrayOutputStream
@@ -178,23 +181,25 @@ class ImeVoiceAgentControllerTest {
         assertTrue(driver.endTurnCalls == 1)
         assertEquals("hello there", ime.state.value.agentText)
         assertEquals(
-            byteArrayOf(9, 8, 7).toList(),
-            ime.audio.first().toList(),
+            byteArrayOf(9, 8, 7, 6).toList(),
+            consumeFirstAudio(ime).toList(),
         )
         ime.stop()
         advanceUntilIdle()
         assertFalse(ime.isLive)
     }
 
-    private class FakeDriver : VoiceAgentSessionDriver {
+    private class FakeDriver(private val startFailure: Throwable? = null) : VoiceAgentSessionDriver {
         val sentAudio = ByteArrayOutputStream()
         var endTurnCalls = 0
         var startedProvider: String? = null
+        var stopped = false
         private val events = Channel<VoiceAgentEvent>(Channel.UNLIMITED)
         private val _state = MutableStateFlow(VoiceAgentUiState())
         override val state: StateFlow<VoiceAgentUiState> = _state.asStateFlow()
 
         override suspend fun start(options: VoiceAgentStartFrame): Flow<VoiceAgentEvent> {
+            startFailure?.let { throw it }
             startedProvider = options.provider
             _state.value = VoiceAgentUiState(phase = VoiceAgentUiState.Phase.Listening)
             return events.receiveAsFlow()
@@ -218,13 +223,16 @@ class ImeVoiceAgentControllerTest {
         override suspend fun endTurn() {
             endTurnCalls += 1
             events.send(VoiceAgentEvent.Transcript(input = false, text = "hello there", done = true))
-            events.send(VoiceAgentEvent.Audio(byteArrayOf(9, 8, 7)))
+            events.send(VoiceAgentEvent.Audio(byteArrayOf(9, 8, 7, 6)))
             events.send(VoiceAgentEvent.State("speaking"))
         }
 
         override suspend fun stop() {
+            stopped = true
             events.close()
         }
+
+        suspend fun audio(pcm: ByteArray) { events.send(VoiceAgentEvent.Audio(pcm)) }
     }
 
     // A missing server and a dead server produced the same blank panel; the
@@ -240,16 +248,69 @@ class ImeVoiceAgentControllerTest {
         assertEquals(VoiceAgentUiState.Phase.Inactive, ime.state.value.phase)
     }
 
-    // Barge-in drops what is queued behind the speaker. Nothing was ever
-    // queued here, so the drop has to be a no-op rather than leave a frame
-    // behind for the next conversation to play.
     @Test
-    fun `a controller that never spoke queues no agent audio`() = runTest(
-        StandardTestDispatcher(),
-    ) {
-        val ime = controller(this, RecordingGate(granted = true))
-        ime.discardPendingAudio()
-        assertNull(withTimeoutOrNull(1_000) { ime.audio.first() })
+    fun `remote setup failures retain their code instead of claiming no server`() = runTest(StandardTestDispatcher()) {
+        listOf(VoiceAgentWsClient.SETUP_TIMEOUT_CODE, "auth_expired", "provider_unavailable").forEach { code ->
+            val driver = FakeDriver(VoiceAgentSetupException(code))
+            val ime = ImeVoiceAgentController(this, { driver }, silentCapture, RecordingGate(true))
+            ime.start()
+            advanceUntilIdle()
+            assertEquals(code, ime.state.value.errorCode)
+            assertEquals(VoiceAgentUiState.Phase.Ended, ime.state.value.phase)
+            assertFalse(ime.isLive)
+            assertTrue(driver.stopped)
+        }
+    }
+
+    @Test
+    fun `playback capacity includes the active frame and stops instead of losing audio`() = runTest(StandardTestDispatcher()) {
+        val driver = FakeDriver()
+        val ime = ImeVoiceAgentController(this, { driver }, silentCapture, RecordingGate(true))
+        val started = CompletableDeferred<Unit>()
+        val blocked = CompletableDeferred<Unit>()
+        var flushed = false
+        backgroundScope.launch { ime.consumeAudio(flush = { flushed = true }) {
+            started.complete(Unit)
+            blocked.await()
+        } }
+        ime.start()
+        runCurrent()
+        driver.audio(ByteArray(48_000))
+        runCurrent()
+        started.await()
+        driver.audio(ByteArray(48_000))
+        driver.audio(ByteArray(480))
+        runCurrent()
+        assertEquals(VoiceAgentWsClient.OVERFLOW_CODE, ime.state.value.errorCode)
+        assertFalse(ime.isLive)
+        assertTrue(driver.stopped)
+        assertTrue(flushed)
+    }
+
+    @Test
+    fun `playback driver failure is a terminal outcome with resource cleanup`() = runTest(StandardTestDispatcher()) {
+        val driver = FakeDriver()
+        val ime = ImeVoiceAgentController(this, { driver }, silentCapture, RecordingGate(true))
+        var released = false
+        val consumer = backgroundScope.launch { ime.consumeAudio(flush = { released = true }) {
+            throw PcmPlaybackException("playback_write_failed")
+        } }
+        ime.start()
+        runCurrent()
+        driver.audio(ByteArray(480))
+        consumer.join()
+        runCurrent()
+        assertEquals("playback_write_failed", ime.state.value.errorCode)
+        assertEquals(VoiceAgentUiState.Phase.Ended, ime.state.value.phase)
+        assertFalse(ime.isLive)
+        assertTrue(driver.stopped)
+        assertTrue(released)
+    }
+
+    private suspend fun TestScope.consumeFirstAudio(ime: ImeVoiceAgentController): ByteArray {
+        val played = CompletableDeferred<ByteArray>()
+        val consumer = backgroundScope.launch { ime.consumeAudio { played.complete(it) } }
+        return try { played.await() } finally { consumer.cancel() }
     }
 
     private fun AudioCapture(frames: () -> Flow<ByteArray>): AudioCapture =

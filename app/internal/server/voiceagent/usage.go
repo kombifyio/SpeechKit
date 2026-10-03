@@ -21,6 +21,10 @@ type VoiceUsage struct {
 	AISessionID string
 	Provider    string
 	Duration    time.Duration
+	// Retained from the authenticated session owner, never from the expired
+	// bridge credential or a client-controlled usage payload.
+	OwnerUserID string
+	OwnerOrgID  string
 }
 
 type UsageReporter interface {
@@ -40,11 +44,20 @@ func NewHTTPUsageReporter(endpoint string) *HTTPUsageReporter {
 }
 
 func (r *HTTPUsageReporter) Report(ctx context.Context, credential string, usage VoiceUsage) error {
-	if r == nil || strings.TrimSpace(r.Endpoint) == "" {
-		return errors.New("voiceagent usage endpoint is not configured")
-	}
 	if strings.TrimSpace(credential) == "" {
 		return errors.New("voiceagent usage credential is missing")
+	}
+	return r.report(ctx, usage, func(req *http.Request) error {
+		req.Header.Set("Authorization", "Bearer "+credential)
+		return nil
+	}, false)
+}
+
+// report shares the ledger event and retry semantics across legacy bearer and
+// hosted service credentials. A retry never creates a second usage event.
+func (r *HTTPUsageReporter) report(ctx context.Context, usage VoiceUsage, authorize func(*http.Request) error, forbidRedirects bool) error {
+	if r == nil || strings.TrimSpace(r.Endpoint) == "" {
+		return errors.New("voiceagent usage endpoint is not configured")
 	}
 	if usage.Duration <= 0 || strings.TrimSpace(usage.SessionID) == "" {
 		return errors.New("voiceagent usage is invalid")
@@ -69,13 +82,22 @@ func (r *HTTPUsageReporter) Report(ctx context.Context, credential string, usage
 	if client == nil {
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
+	if forbidRedirects {
+		// Custom service-auth headers are not stripped by Go's default
+		// cross-origin redirect policy. Never forward the hosted JWT elsewhere.
+		isolated := *client
+		isolated.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		client = &isolated
+	}
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.Endpoint, bytes.NewReader(payload))
 		if err != nil {
 			return fmt.Errorf("create voiceagent usage request: %w", err)
 		}
-		req.Header.Set("Authorization", "Bearer "+credential)
+		if err := authorize(req); err != nil {
+			return err
+		}
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := client.Do(req)
 		if err != nil {

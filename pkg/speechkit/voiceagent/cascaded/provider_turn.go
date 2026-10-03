@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -48,6 +49,9 @@ func (p *Provider) processorLoop(parent context.Context) {
 }
 
 func (p *Provider) processOneTurn(ctx context.Context) {
+	if ctx.Err() != nil {
+		return
+	}
 	p.mu.Lock()
 	if len(p.buffer) == 0 {
 		p.mu.Unlock()
@@ -63,12 +67,18 @@ func (p *Provider) processOneTurn(ctx context.Context) {
 		select {
 		case p.messages <- m:
 		case <-p.closedCh:
+		case <-ctx.Done():
 		}
 	}
 
 	sttResult, err := p.stt.Route(ctx, pcm, duration, stt.TranscribeOpts{Language: p.locale, Speaker: p.speaker})
 	if err != nil {
-		p.emitError("stt_failed", err.Error())
+		if ctx.Err() == nil {
+			p.emitError("stt_failed")
+		}
+		return
+	}
+	if ctx.Err() != nil {
 		return
 	}
 	if sttResult == nil || strings.TrimSpace(sttResult.Text) == "" {
@@ -77,8 +87,8 @@ func (p *Provider) processOneTurn(ctx context.Context) {
 	}
 	emit(inputTranscriptMessage(sttResult))
 
-	if err := p.runTurn(ctx, sttResult.Text, true); err != nil {
-		p.emitError(turnFailureCode(err), err.Error())
+	if err := p.runTurn(ctx, sttResult.Text, true); err != nil && ctx.Err() == nil {
+		p.emitError(turnFailureCode(err))
 	}
 }
 
@@ -125,12 +135,27 @@ func inputTranscriptMessageFromSpeakerFrame(frame *speaker.SpeakerFrame) *Messag
 	return msg
 }
 
-func (p *Provider) runTurn(ctx context.Context, userText string, skipInputTranscript bool) error {
+func (p *Provider) runTurn(ctx context.Context, userText string, skipInputTranscript bool) (turnErr error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	defer func() {
+		if turnErr != nil || ctx.Err() != nil {
+			return
+		}
+		select {
+		case p.messages <- &Message{Done: true}:
+		case <-p.closedCh:
+		case <-ctx.Done():
+		}
+	}()
 	if !skipInputTranscript {
 		select {
 		case p.messages <- &Message{InputTranscript: userText, InputTranscriptDone: true}:
 		case <-p.closedCh:
 			return nil
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
 
@@ -147,6 +172,9 @@ func (p *Provider) runTurn(ctx context.Context, userText string, skipInputTransc
 	if err != nil {
 		return fmt.Errorf("agent: %w", err)
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	responseText := strings.TrimSpace(out.Text)
 	if responseText == "" {
 		return nil
@@ -157,6 +185,8 @@ func (p *Provider) runTurn(ctx context.Context, userText string, skipInputTransc
 	case p.messages <- &Message{OutputTranscript: responseText, OutputTranscriptDone: true}:
 	case <-p.closedCh:
 		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 
 	if p.tts == nil {
@@ -171,12 +201,17 @@ func (p *Provider) runTurn(ctx context.Context, userText string, skipInputTransc
 	if err != nil {
 		return fmt.Errorf("tts: %w", err)
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if ttsResult != nil && len(ttsResult.Audio) > 0 {
 		for _, frag := range ChunkAudio(ttsResult.Audio, 8192) {
 			select {
 			case p.messages <- &Message{Audio: frag}:
 			case <-p.closedCh:
 				return nil
+			case <-ctx.Done():
+				return ctx.Err()
 			}
 		}
 	}
@@ -192,6 +227,9 @@ func (p *Provider) currentInstructionSnapshot() (locale, voice, systemPrompt str
 func (p *Provider) appendHistory(user, assistant string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.sessionCtx != nil && p.sessionCtx.Err() != nil {
+		return
+	}
 	p.history = append(p.history, conversationTurn{User: user, Assistant: assistant})
 	if len(p.history) > p.cfg.HistoryTurns {
 		p.history = p.history[len(p.history)-p.cfg.HistoryTurns:]
@@ -206,10 +244,11 @@ func (p *Provider) renderHistorySnapshot() string {
 
 // emitError reports a failed turn as an error message, never as transcript
 // text: "[turn_failed] ..." used to reach clients as the agent's reply.
-func (p *Provider) emitError(code, message string) {
-	logutil.Resolve(p.logger).Warn("cascaded: emit error", "code", code, "err", message)
+func (p *Provider) emitError(code string) {
+	code = SafeFailureCode(code)
+	logutil.Resolve(p.logger).Warn("cascaded: emit error", "code", code)
 	select {
-	case p.messages <- &Message{ErrorCode: code, ErrorMessage: message}:
+	case p.messages <- &Message{ErrorCode: code, ErrorMessage: FailureMessage(code)}:
 	case <-p.closedCh:
 	}
 }
@@ -217,10 +256,14 @@ func (p *Provider) emitError(code, message string) {
 // turnFailureCode is the agent's typed reason for a failed turn, or
 // "turn_failed" when it names none.
 func turnFailureCode(err error) string {
+	var timeout net.Error
+	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &timeout) && timeout.Timeout()) {
+		return "turn_timeout"
+	}
 	var coded CodedError
 	if errors.As(err, &coded) {
 		if code := strings.TrimSpace(coded.Code()); code != "" {
-			return code
+			return SafeFailureCode(code)
 		}
 	}
 	return "turn_failed"

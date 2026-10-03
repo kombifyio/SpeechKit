@@ -40,12 +40,10 @@ func (c *RecordingController) Start(opts speechkit.RecordingStartOptions) error 
 	}
 	c.current = opts
 	c.collector = nil
-	c.streamedCount = 0
-	c.streamSegmentSeq = 0
-	c.streamPending = nil
-	c.streamFlush = false
 	c.sessionID++
 	sessionID = c.sessionID
+	c.streamQueue.reset(sessionID)
+	c.capturedPCMBytes = 0
 
 	if c.segmenterFactory != nil {
 		collector = c.segmenterFactory()
@@ -65,6 +63,7 @@ func (c *RecordingController) Start(opts speechkit.RecordingStartOptions) error 
 				c.mu.Unlock()
 				return
 			}
+			c.capturedPCMBytes += len(pcm)
 			activeCollector := c.collector
 			current := c.current
 			nativeStream := c.nativeStream
@@ -152,6 +151,7 @@ func (c *RecordingController) Start(opts speechkit.RecordingStartOptions) error 
 			if c.sessionID == sessionID && c.recording && !c.stopping {
 				opts.StreamSegments = false
 				c.current.StreamSegments = false
+				nativeStream.captureOffsetBytes = c.capturedPCMBytes
 				c.nativeStream = nativeStream
 				adopted = true
 			}

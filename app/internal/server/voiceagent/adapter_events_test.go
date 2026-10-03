@@ -156,11 +156,11 @@ func TestAdapter_StandaloneProviderEventRelayedToClient(t *testing.T) {
 	}
 
 	provider.push(&LiveMessage{
-		Audio:            []byte{0xCC},
+		Audio:            []byte{0xCC, 0x00},
 		Done:             true,
 		ProviderMetadata: map[string]any{"provider_event": "fake.audio.done"},
 	})
-	if got := readBinaryFrame(t, env.conn); len(got) != 1 || got[0] != 0xCC {
+	if got := readBinaryFrame(t, env.conn); len(got) != 2 || got[0] != 0xCC {
 		t.Fatalf("audio frame = %x, want cc", got)
 	}
 	typeName, raw = readEnvelope(t, env.conn)

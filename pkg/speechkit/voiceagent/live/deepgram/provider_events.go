@@ -61,7 +61,9 @@ func (p *Provider) parseEvent(data []byte) (*live.LiveMessage, bool, error) {
 		return nil, false, fmt.Errorf("deepgram agent: decode event: %w", err)
 	}
 	switch env.Type {
-	case "Welcome", "SettingsApplied", "AgentThinking", "AgentStartedSpeaking",
+	case "SettingsApplied":
+		return live.NormalizeMessageEvents(&live.LiveMessage{EventType: live.LiveEventSessionReady}, env.Type), false, nil
+	case "Welcome", "AgentThinking", "AgentStartedSpeaking",
 		"PromptUpdated", "SpeakUpdated", "ThinkUpdated", "History", "InjectionRefused":
 		return nil, true, nil
 	case "Warning":

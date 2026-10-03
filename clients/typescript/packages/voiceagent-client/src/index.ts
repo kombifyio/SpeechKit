@@ -5,6 +5,7 @@ export * from "./browser.js";
 export * from "./protocol.js";
 export {
   VoiceAgentSession,
+  VoiceAgentClientError,
   deriveWsUrl,
   mintSessionTicket,
   ticketSubprotocol,
@@ -12,5 +13,6 @@ export {
   type SessionHooks,
   type SessionOptions,
   type ToolHandler,
+  type ToolContext,
   type WireSocket,
 } from "./session.js";

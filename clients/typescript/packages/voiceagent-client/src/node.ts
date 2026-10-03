@@ -4,6 +4,9 @@
 import type { SessionTicket } from "./protocol.js";
 import {
   VoiceAgentSession,
+  VoiceAgentClientError,
+  abortable,
+  throwIfAborted,
   deriveWsUrl,
   mintSessionTicket,
   ticketSubprotocol,
@@ -57,6 +60,7 @@ export interface NodeSession {
  * `hooks.onAudio` for incoming chunks.
  */
 export async function openNodeSession(options: NodeOpenOptions): Promise<NodeSession> {
+  throwIfAborted(options.signal);
   const ticket =
     options.presetTicket ??
     (await mintSessionTicket({
@@ -65,19 +69,26 @@ export async function openNodeSession(options: NodeOpenOptions): Promise<NodeSes
       ...(options.ticket !== undefined ? { body: options.ticket } : {}),
       ...(options.basePath !== undefined ? { basePath: options.basePath } : {}),
       ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
     }));
   const url = options.resolveWsUrl
     ? options.resolveWsUrl(ticket)
     : deriveWsUrl(options.serverUrl, ticket, options.basePath);
-  const Impl = options.WebSocketImpl ?? (await loadWsImpl());
-  const socket = new Impl(url, [ticketSubprotocol(ticket)]);
+  const Impl = options.WebSocketImpl ?? (await abortable(loadWsImpl(), options.signal));
+  throwIfAborted(options.signal);
+  let socket: WireSocket;
+  try { socket = new Impl(url, [ticketSubprotocol(ticket)]); }
+  catch { throw new VoiceAgentClientError("ws_setup_failed"); }
 
   const sessionOptions: SessionOptions = {
     start: options.start,
+    ...(options.signal !== undefined ? { signal: options.signal } : {}),
     ...(options.hooks !== undefined ? { hooks: options.hooks } : {}),
     ...(options.tools !== undefined ? { tools: options.tools } : {}),
   };
   const session = new VoiceAgentSession(socket, sessionOptions);
+  await session.ready;
+  if (session.isClosed) throw new VoiceAgentClientError("ws_setup_failed");
   return {
     session,
     socket,
@@ -95,13 +106,12 @@ async function loadWsImpl(): Promise<WSConstructor> {
       throw new Error("ws import returned no constructor");
     }
     return ctor;
-  } catch (err) {
+  } catch {
     throw new Error(
-      "@kombifyio/speechkit-voiceagent-client/node requires the `ws` package. Install it with `npm install ws`. Original: " +
-        (err as Error).message,
+      "@kombifyio/speechkit-voiceagent-client/node requires the `ws` package. Install it with `npm install ws`.",
     );
   }
 }
 
-export { VoiceAgentSession } from "./session.js";
-export type { SessionHooks, SessionOptions, ToolHandler, WireSocket } from "./session.js";
+export { VoiceAgentSession, VoiceAgentClientError } from "./session.js";
+export type { SessionHooks, SessionOptions, ToolHandler, ToolContext, WireSocket } from "./session.js";

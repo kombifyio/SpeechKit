@@ -1,20 +1,24 @@
 package io.kombify.speechkit.ime
 
 import io.kombify.speechkit.audio.AudioCapture
+import io.kombify.speechkit.audio.PcmPlaybackException
+import io.kombify.speechkit.audio.PcmPlaybackQueue
 import io.kombify.speechkit.log.VoiceLog
 import io.kombify.speechkit.net.VoiceAgentEvent
 import io.kombify.speechkit.net.VoiceAgentSessionDriver
 import io.kombify.speechkit.net.VoiceAgentStartFrame
 import io.kombify.speechkit.net.VoiceAgentUiState
+import io.kombify.speechkit.net.VoiceAgentAudio
+import io.kombify.speechkit.net.VoiceAgentSetupException
+import io.kombify.speechkit.net.VoiceAgentWsClient
+import io.kombify.speechkit.net.safeVoiceAgentCode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -41,34 +45,14 @@ class ImeVoiceAgentController(
     private val _state = MutableStateFlow(VoiceAgentUiState())
     val state: StateFlow<VoiceAgentUiState> = _state.asStateFlow()
 
-    /**
-     * Agent audio for the host to play, in arrival order; the controller never
-     * plays it itself.
-     *
-     * A queue and not a `StateFlow<ByteArray?>`: a StateFlow conflates, so
-     * every frame that arrived before the host had observed the previous one
-     * was dropped without a trace and the answer reached the speaker with
-     * holes in it.
-     *
-     * Unbounded, because the producer is the same single collector that feeds
-     * [state]: back-pressure here suspends that collector, so phase changes,
-     * transcript text and Interrupted/Error/Closed would all queue behind the
-     * loudspeaker and then arrive in a burst. A bound does not buy memory
-     * safety either — the socket's own queue upstream is already unlimited and
-     * fed with `trySend` from OkHttp's callback thread, so a bound here only
-     * relocates the backlog. And it fills in normal use: the server
-     * synthesises faster than real time, so a player draining at exactly real
-     * time still fills any bounded queue part way into an ordinary
-     * multi-sentence answer. Nothing is dropped silently to pay for that; the
-     * queue is emptied only by [discardPendingAudio], on barge-in, on [stop]
-     * and before a new conversation opens.
-     */
-    private val _audio = Channel<ByteArray>(Channel.UNLIMITED)
-    val audio: Flow<ByteArray> = _audio.receiveAsFlow()
+    // Controls never wait for the loudspeaker. The shared bound includes active playback.
+    private val playback = PcmPlaybackQueue(VoiceAgentAudio.SERVER_SAMPLE_RATE)
+    private var playbackFlush: (() -> Unit)? = null
 
     private var controller: VoiceAgentSessionDriver? = null
     private var eventsJob: Job? = null
     private var captureJob: Job? = null
+    private var ready = false
 
     // The permission answer comes back asynchronously through a trampoline
     // activity, so the provider the user picked before the dialog appeared has
@@ -77,6 +61,24 @@ class ImeVoiceAgentController(
     private var pendingProvider: String? = null
 
     val isLive: Boolean get() = controller != null
+
+    /** One host consumer; playback runs in the queue's cancelable per-frame lifetime. */
+    suspend fun consumeAudio(flush: () -> Unit = {}, play: suspend (ByteArray) -> Unit) {
+        playbackFlush = flush
+        try {
+            playback.consume(play)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: PcmPlaybackException) {
+            fail(safeVoiceAgentCode(failure.code, "playback_failed"), "Voice playback failed")
+        } finally {
+            if (playbackFlush === flush) {
+                playbackFlush = null
+                stop()
+                flush()
+            }
+        }
+    }
 
     /**
      * Opens a conversation on [provider] — one of the realtime backend names
@@ -122,13 +124,16 @@ class ImeVoiceAgentController(
     /** Streams the microphone while the user holds the talk control. */
     fun beginTurn() {
         val live = controller ?: return
+        if (!ready) return
         captureJob?.cancel()
         captureJob = scope.launch {
             runCatching {
                 audioCapture.frames().collect { frame -> live.sendAudio(frame) }
             }.onFailure { error ->
                 if (error is CancellationException) throw error
-                VoiceLog.e(VoiceLog.AUDIO, "ime voice agent capture failed", error)
+                if (controller !== live) return@launch
+                VoiceLog.e(VoiceLog.AUDIO, "ime voice agent capture failed")
+                fail("capture_failed", "Voice capture failed")
             }
         }
     }
@@ -143,6 +148,7 @@ class ImeVoiceAgentController(
 
     /** Ends the conversation and releases the socket. */
     fun stop() {
+        ready = false
         captureJob?.cancel()
         captureJob = null
         eventsJob?.cancel()
@@ -165,18 +171,17 @@ class ImeVoiceAgentController(
     }
 
     /**
-     * Throws away agent speech that has been received but not yet played.
-     *
-     * Barge-in has two halves: the host cuts what the speaker is already
-     * reading out, and this cuts what is queued behind it. Flushing the track
-     * alone would only pause the abandoned answer, because the queue would
-     * feed it straight back in.
+     * Cancels active and queued speech, then flushes the registered host player.
      */
     fun discardPendingAudio() {
-        var dropped = _audio.tryReceive()
-        while (dropped.isSuccess) {
-            dropped = _audio.tryReceive()
-        }
+        playback.clear()
+        playbackFlush?.invoke()
+    }
+
+    private fun fail(code: String, message: String) {
+        _state.value = _state.value.copy(phase = VoiceAgentUiState.Phase.Ended,
+            error = message, errorCode = code)
+        stop()
     }
 
     private fun open(provider: String?) {
@@ -187,13 +192,24 @@ class ImeVoiceAgentController(
         _state.value = VoiceAgentUiState(phase = VoiceAgentUiState.Phase.Connecting)
         val live = controllerFactory()
         controller = live
-        eventsJob = scope.launch {
+        ready = false
+        val collecting = scope.launch(start = CoroutineStart.LAZY) {
             runCatching {
                 val events = live.start(VoiceAgentStartFrame(provider = provider))
+                if (controller !== live) return@launch
+                ready = true
                 events.collect { event ->
+                    if (controller !== live) return@collect
                     live.accept(event)
                     _state.value = live.state.value
-                    if (event is VoiceAgentEvent.Audio) _audio.send(event.pcm)
+                    when (event) {
+                        is VoiceAgentEvent.Audio -> if (!playback.offer(event.pcm))
+                            fail(VoiceAgentWsClient.OVERFLOW_CODE, "Voice playback capacity exceeded")
+                        VoiceAgentEvent.Interrupted -> discardPendingAudio()
+                        is VoiceAgentEvent.Closed -> stop()
+                        is VoiceAgentEvent.Failure -> if (event.fatal) stop()
+                        else -> Unit
+                    }
                 }
             }.onFailure { error ->
                 // Ending a conversation cancels this job, and a cancellation is
@@ -203,8 +219,10 @@ class ImeVoiceAgentController(
                 // keeps the coroutine's cancellation contract, which
                 // runCatching would otherwise swallow.
                 if (error is CancellationException) throw error
-                VoiceLog.e(VoiceLog.AGENT, "ime conversation failed", error)
-                val noServer = error is IllegalStateException
+                if (controller !== live) return@launch
+                VoiceLog.e(VoiceLog.AGENT, "ime conversation failed")
+                val setup = error as? VoiceAgentSetupException
+                val noServer = setup == null && error is IllegalStateException
                 _state.value = _state.value.copy(
                     // Nothing finished: a missing server is a setup gap, not
                     // the end of a conversation. "Ended" reads as "Beendet".
@@ -213,19 +231,23 @@ class ImeVoiceAgentController(
                     } else {
                         VoiceAgentUiState.Phase.Ended
                     },
-                    error = error.message,
+                    error = if (noServer) "Voice Agent needs a configured server" else "Voice conversation failed",
                     // A profile without a server throws before a single frame
                     // moves; with no code the panel could only show the raw
                     // exception text, which reads like a server outage.
-                    errorCode = if (noServer) {
+                    errorCode = if (setup != null) {
+                        safeVoiceAgentCode(setup.code, VoiceAgentWsClient.SETUP_FAILURE_CODE)
+                    } else if (noServer) {
                         ERROR_NO_SERVER
                     } else {
-                        _state.value.errorCode
+                        "voice_session_failed"
                     },
                 )
                 stop()
             }
         }
+        eventsJob = collecting
+        collecting.start()
     }
 
     companion object {

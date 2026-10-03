@@ -18,7 +18,9 @@ var (
 )
 
 const (
-	speakingSettleDelay = 900 * time.Millisecond
+	// DefaultSpeakingSettleDelay is the existing output-cadence grace for
+	// continuous-duplex providers whose protocol has no turn-done event.
+	DefaultSpeakingSettleDelay = 900 * time.Millisecond
 	// DefaultStopCloseTimeout bounds how long Stop waits for provider.Close.
 	// Deepgram/AssemblyAI Close has no timeout of its own; holding the
 	// session mutex across an unbounded close wedged every caller, including
@@ -429,7 +431,7 @@ func (s *Session) receiveLoop(ctx context.Context) {
 	}
 	scheduleSpeakingSettle := func() {
 		stopSpeakingSettleTimer()
-		speakingSettleTimer = time.AfterFunc(speakingSettleDelay, func() {
+		speakingSettleTimer = time.AfterFunc(DefaultSpeakingSettleDelay, func() {
 			// Speaking means the audio stopped without a Done. Processing
 			// means a text-only turn whose transcript end only armed this
 			// timer (see handleLiveMessage). Both fall back to Listening.
@@ -512,7 +514,7 @@ func (s *Session) handleLiveMessage(ctx context.Context, msg *LiveMessage, sched
 		// 2026-07-09. Arm the settle timer as a fallback instead: if audio
 		// follows, the speaking path takes over and Done/AgentAudioDone ends
 		// the turn; if nothing follows (a text-only turn) the timer returns
-		// to Listening after settleDelay.
+		// to Listening after DefaultSpeakingSettleDelay.
 		scheduleSpeakingSettle()
 	}
 	return true

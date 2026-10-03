@@ -115,6 +115,8 @@ fun VoiceAgentPanelUi(
             Button(
                 onClick = { onHoldChange(!holding) },
                 modifier = Modifier.fillMaxWidth(),
+                enabled = state.phase != VoiceAgentUiState.Phase.Connecting &&
+                    state.phase != VoiceAgentUiState.Phase.Inactive && state.phase != VoiceAgentUiState.Phase.Ended,
             ) {
                 Text(
                     stringResource(
@@ -174,6 +176,13 @@ private fun agentErrorLabel(code: String?, message: String?): String = when (cod
 
     ImeVoiceAgentController.ERROR_MIC_DENIED ->
         stringResource(R.string.speechkit_ime_error_mic_denied)
+
+    "playback_failed", "playback_frame_invalid", "playback_device_failed", "playback_write_failed",
+    "playback_stalled", "capture_failed", "voice_buffer_overflow" ->
+        stringResource(R.string.speechkit_ime_agent_error_audio)
+
+    "voice_session_failed", "ws_setup_timeout", "ws_setup_failed", "ws_failure", "ws_send_failed", "ws_not_ready" ->
+        stringResource(R.string.speechkit_ime_agent_error_generic)
 
     else -> message.orEmpty()
 }

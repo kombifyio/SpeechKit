@@ -34,4 +34,6 @@
     <string name="speechkit_ime_agent_phase_ended">समाप्त</string>
     <string name="speechkit_ime_agent_error_provider_unavailable">यह वॉइस प्रदाता सर्वर पर कॉन्फ़िगर नहीं है</string>
     <string name="speechkit_ime_agent_error_no_server">वॉइस असिस्टेंट को पेयर किए गए SpeechKit सर्वर की आवश्यकता है</string>
+    <string name="speechkit_ime_agent_error_audio">वॉइस ऑडियो जारी नहीं रखा जा सका</string>
+    <string name="speechkit_ime_agent_error_generic">वॉइस कनेक्शन विफल हो गया</string>
 </resources>

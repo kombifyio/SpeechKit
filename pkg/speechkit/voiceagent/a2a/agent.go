@@ -51,6 +51,9 @@ type Config struct {
 	SessionID string
 	// HTTPClient sends the turns; nil uses a client with a 60 s timeout.
 	HTTPClient *http.Client
+	// TurnTimeout bounds the complete request and streamed answer, including
+	// custom HTTP clients. Zero uses 60 seconds. Turns are never replayed.
+	TurnTimeout time.Duration
 	// Headers optionally mints per-turn headers; nil adds none.
 	Headers HeaderProvider
 }
@@ -64,6 +67,7 @@ type Agent struct {
 	sessionID     string
 	client        *http.Client
 	headers       HeaderProvider
+	turnTimeout   time.Duration
 }
 
 // New validates config and returns an [Agent]. It fails when Endpoint is
@@ -84,12 +88,17 @@ func New(config Config) (*Agent, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 60 * time.Second}
 	}
+	turnTimeout := config.TurnTimeout
+	if turnTimeout <= 0 {
+		turnTimeout = 60 * time.Second
+	}
 	return &Agent{
 		endpoint:      endpoint,
 		targetAgentID: strings.TrimSpace(config.TargetAgentID),
 		sessionID:     strings.TrimSpace(config.SessionID),
 		client:        client,
 		headers:       config.Headers,
+		turnTimeout:   turnTimeout,
 	}, nil
 }
 
@@ -101,6 +110,8 @@ func New(config Config) (*Agent, error) {
 // parts is an error. Streamed answers concatenate the
 // text of every result event.
 func (a *Agent) Run(ctx context.Context, input cascaded.AgentInput) (cascaded.AgentOutput, error) {
+	ctx, cancel := context.WithTimeout(ctx, a.turnTimeout)
+	defer cancel()
 	utterance := strings.TrimSpace(input.Utterance)
 	if utterance == "" {
 		return cascaded.AgentOutput{}, errors.New("speechkit a2a: utterance is required")
@@ -140,7 +151,12 @@ func (a *Agent) Run(ctx context.Context, input cascaded.AgentInput) (cascaded.Ag
 	if a.headers != nil {
 		headers, headerErr := a.headers(ctx, RequestContext{TargetAgentID: a.targetAgentID, SessionID: a.sessionID, RequestBody: append([]byte(nil), body...)})
 		if headerErr != nil {
-			return cascaded.AgentOutput{}, fmt.Errorf("speechkit a2a: authorize turn: %w", headerErr)
+			code := "permission_denied"
+			var coded cascaded.CodedError
+			if errors.As(headerErr, &coded) {
+				code = cascaded.SafeFailureCode(coded.Code())
+			}
+			return cascaded.AgentOutput{}, &TurnError{code: code}
 		}
 		for key, values := range headers {
 			for _, value := range values {
@@ -150,16 +166,39 @@ func (a *Agent) Run(ctx context.Context, input cascaded.AgentInput) (cascaded.Ag
 	}
 	response, err := a.client.Do(req)
 	if err != nil {
-		return cascaded.AgentOutput{}, fmt.Errorf("speechkit a2a: send turn: %w", err)
+		if ctx.Err() != nil {
+			return cascaded.AgentOutput{}, ctx.Err()
+		}
+		return cascaded.AgentOutput{}, &TurnError{code: "provider_unavailable"}
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		detail, _ := io.ReadAll(io.LimitReader(response.Body, maxErrorBody))
-		return cascaded.AgentOutput{}, fmt.Errorf("speechkit a2a: turn denied with HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(detail)))
+		var detail any
+		_ = json.NewDecoder(io.LimitReader(response.Body, maxErrorBody)).Decode(&detail)
+		code := rpcErrorCode(detail)
+		if code == "turn_failed" {
+			switch response.StatusCode {
+			case http.StatusUnauthorized:
+				code = "auth_required"
+			case http.StatusForbidden:
+				code = "permission_denied"
+			case http.StatusTooManyRequests:
+				code = "rate_limited"
+			default:
+				code = "provider_failed"
+			}
+		}
+		return cascaded.AgentOutput{}, &TurnError{code: code}
 	}
 
 	text, err := readAnswer(response)
 	if err != nil {
+		if ctx.Err() != nil {
+			return cascaded.AgentOutput{}, ctx.Err()
+		}
+		return cascaded.AgentOutput{}, err
+	}
+	if err := ctx.Err(); err != nil {
 		return cascaded.AgentOutput{}, err
 	}
 	return cascaded.AgentOutput{Text: text, Action: "display"}, nil
@@ -184,9 +223,15 @@ func readAnswer(response *http.Response) (string, error) {
 	}
 	var envelope any
 	if err := json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(&envelope); err != nil {
-		return "", fmt.Errorf("speechkit a2a: decode response: %w", err)
+		return "", &TurnError{code: "provider_failed"}
+	}
+	if rpcError(envelope) {
+		return "", &TurnError{code: rpcErrorCode(envelope)}
 	}
 	if text := strings.TrimSpace(answerText(envelope)); text != "" {
+		if len(text) > 128<<10 {
+			return "", &TurnError{code: "provider_failed"}
+		}
 		return text, nil
 	}
 	return "", errors.New("speechkit a2a: agent returned no text answer")
@@ -196,9 +241,12 @@ func readAnswer(response *http.Response) (string, error) {
 // token deltas, so whitespace at a delta's edge belongs to the answer and is
 // trimmed only from the joined text.
 func readSSEAnswer(reader io.Reader) (string, error) {
-	scanner := bufio.NewScanner(reader)
+	// Bound the whole response, including metadata and ignored events, not
+	// only individual lines. An extra byte distinguishes truncation from EOF.
+	limited := &io.LimitedReader{R: reader, N: (4 << 20) + 1}
+	scanner := bufio.NewScanner(limited)
 	scanner.Buffer(make([]byte, 64*1024), 4<<20)
-	var answers []string
+	var answers strings.Builder
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data:") {
@@ -214,14 +262,17 @@ func readSSEAnswer(reader io.Reader) (string, error) {
 				return "", &TurnError{code: rpcErrorCode(envelope)}
 			}
 			if text := answerText(envelope); text != "" {
-				answers = append(answers, text)
+				if answers.Len()+len(text) > 128<<10 {
+					return "", &TurnError{code: "provider_failed"}
+				}
+				answers.WriteString(text)
 			}
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("speechkit a2a: read stream: %w", err)
+	if err := scanner.Err(); err != nil || limited.N == 0 {
+		return "", &TurnError{code: "provider_failed"}
 	}
-	answer := strings.TrimSpace(strings.Join(answers, ""))
+	answer := strings.TrimSpace(answers.String())
 	if answer == "" {
 		return "", errors.New("speechkit a2a: agent returned no text answer")
 	}
@@ -229,21 +280,16 @@ func readSSEAnswer(reader io.Reader) (string, error) {
 }
 
 // TurnError is a streamed turn the agent answered with a JSON-RPC error.
-// It implements [cascaded.CodedError]: Code is the agent's typed reason from
-// error.data.code (for example "quota_exhausted" for used-up AI credits), or
-// "" when the agent named none.
+// It implements [cascaded.CodedError] with an allowlisted public outcome.
 type TurnError struct {
 	code string
 }
 
-// Code is the agent's typed reason, or "".
+// Code is the safe public outcome.
 func (e *TurnError) Code() string { return e.code }
 
 func (e *TurnError) Error() string {
-	if e.code == "" {
-		return "speechkit a2a: agent turn failed"
-	}
-	return "speechkit a2a: agent turn failed: " + e.code
+	return cascaded.FailureMessage(e.code)
 }
 
 // rpcErrorCode reads the typed reason a JSON-RPC error carries in
@@ -253,24 +299,10 @@ func rpcErrorCode(value any) string {
 	errorValue, _ := root["error"].(map[string]any)
 	data, _ := errorValue["data"].(map[string]any)
 	code, _ := data["code"].(string)
-	if !machineCode(code) {
-		return ""
+	if code == "" {
+		code, _ = errorValue["code"].(string)
 	}
-	return code
-}
-
-// machineCode accepts only a short snake_case identifier, so nothing but a
-// stable code from the agent reaches clients.
-func machineCode(value string) bool {
-	if value == "" || len(value) > 64 {
-		return false
-	}
-	for _, r := range value {
-		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' {
-			return false
-		}
-	}
-	return true
+	return cascaded.SafeFailureCode(code)
 }
 
 var _ cascaded.CodedError = (*TurnError)(nil)

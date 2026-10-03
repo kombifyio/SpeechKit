@@ -73,6 +73,7 @@ func (p *LiveProvider) Receive(ctx context.Context) (*live.LiveMessage, error) {
 		return nil, nil
 	}
 	return live.NormalizeMessageEvents(&live.LiveMessage{
+		Done:                   msg.Done,
 		Audio:                  msg.Audio,
 		InputTranscript:        msg.InputTranscript,
 		InputTranscriptDone:    msg.InputTranscriptDone,
