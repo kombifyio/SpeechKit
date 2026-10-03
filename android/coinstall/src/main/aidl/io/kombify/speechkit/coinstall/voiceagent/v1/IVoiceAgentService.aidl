@@ -4,6 +4,7 @@ package io.kombify.speechkit.coinstall.voiceagent.v1;
 import io.kombify.speechkit.coinstall.voiceagent.v1.IVoiceAgentCallback;
 import io.kombify.speechkit.coinstall.voiceagent.v1.VoiceAgentCapability;
 import io.kombify.speechkit.coinstall.voiceagent.v1.VoiceAgentSessionRequest;
+import android.app.PendingIntent;
 
 /**
  * speechkit.coinstall.voiceagent.v1: the Companion hands a hosted Voice Agent
@@ -29,4 +30,12 @@ interface IVoiceAgentService {
     void stopSession(String sessionId);
     /** Cuts the current reply without replacing the account-bound hosted session. */
     void interruptSession(String sessionId);
+
+    /**
+     * Version 2: reserves an attested request without opening audio. The visible
+     * caller sends this immutable, one-shot foreground-service intent. Tickets
+     * remain in the callee's memory; stopSession also cancels a reservation.
+     * A rejected request returns null and receives the usual terminal callback.
+     */
+    @nullable PendingIntent prepareSession(in VoiceAgentSessionRequest request, in IVoiceAgentCallback callback);
 }

@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -11,12 +12,14 @@ import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.net.Uri
 import android.os.Binder
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.ParcelFileDescriptor
+import android.os.SystemClock
 import io.kombify.speechkit.R
 import io.kombify.speechkit.BuildConfig
 import io.kombify.speechkit.audio.MicAudioCapture
@@ -39,6 +42,7 @@ import java.net.URI
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -48,6 +52,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
 /** One attested, ticket-only media handoff. The Companion continues to own account and chat. */
@@ -56,6 +61,13 @@ class CoinstallVoiceAgentService : Service() {
     private lateinit var identity: VoiceAgentCallerIdentity
     private lateinit var audioManager: AudioManager
     private var active: Running? = null
+    private var pending: Prepared? = null
+    private var lastStartId = 0
+
+    private class Prepared(
+        val run: Running, val request: VoiceAgentSessionRequest,
+        val identity: Uri, val intent: PendingIntent, val deadline: Long,
+    ) { var expiry: Job? = null }
 
     private class Running(val uid: Int, val id: String, val callback: IVoiceAgentCallback, val source: ParcelFileDescriptor?) {
         val player = PcmStreamPlayer(VoiceAgentAudio.SERVER_SAMPLE_RATE)
@@ -94,31 +106,53 @@ class CoinstallVoiceAgentService : Service() {
         }
         override fun startSession(request: VoiceAgentSessionRequest, callback: IVoiceAgentCallback) {
             val uid = Binder.getCallingUid()
-            if (!attested(uid)) {
-                reject(callback, request.sessionId, VoiceAgentContract.ERROR_CALLER_NOT_ATTESTED)
-                request.audioSource?.close()
-                return
-            }
-            if (!validTicket(request)) {
-                reject(callback, request.sessionId, VoiceAgentContract.ERROR_TICKET_INVALID)
-                request.audioSource?.close()
-                return
-            }
-            if (request.audioSource == null && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                reject(callback, request.sessionId, VoiceAgentContract.ERROR_MICROPHONE_PERMISSION)
-                return
-            }
+            if (!admit(uid, request, callback)) return
             scope.launch {
-                if (active != null) {
+                if (active != null || pending != null) {
                     reject(callback, request.sessionId, VoiceAgentContract.ERROR_SESSION_BUSY)
                     request.audioSource?.close()
-                } else begin(uid, request, callback)
+                } else newRun(uid, request, callback)?.let { begin(it, request) }
+            }
+        }
+        override fun prepareSession(request: VoiceAgentSessionRequest, callback: IVoiceAgentCallback): PendingIntent? {
+            // Capture Binder identity before dispatching to the single lifecycle owner.
+            val uid = Binder.getCallingUid()
+            if (!admit(uid, request, callback)) return null
+            return runBlocking(Dispatchers.Main.immediate) {
+                if (active != null || pending != null) {
+                    reject(callback, request.sessionId, VoiceAgentContract.ERROR_SESSION_BUSY)
+                    request.audioSource?.close()
+                    return@runBlocking null
+                }
+                val run = newRun(uid, request, callback) ?: return@runBlocking null
+                try {
+                    val nonce = Uri.Builder().scheme("speechkit-voice-start").authority(packageName)
+                        .appendPath(UUID.randomUUID().toString()).build()
+                    val intent = PendingIntent.getForegroundService(this@CoinstallVoiceAgentService, 0,
+                        Intent(this@CoinstallVoiceAgentService, CoinstallVoiceAgentService::class.java)
+                            .setAction(START_ACTION).setData(nonce),
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_ONE_SHOT)
+                    val reservation = Prepared(run, request, nonce, intent, SystemClock.elapsedRealtime() + PREPARE_TIMEOUT_MS)
+                    pending = reservation
+                    reservation.expiry = scope.launch {
+                        delay(PREPARE_TIMEOUT_MS)
+                        if (pending === reservation) finish(run, "expired")
+                    }
+                    intent
+                } catch (_: Throwable) {
+                    notify(run) { it.onError(run.id, VoiceAgentContract.ERROR_TRANSPORT, "", true) }
+                    finish(run, "server_error")
+                    null
+                }
             }
         }
         override fun stopSession(sessionId: String) {
             val uid = Binder.getCallingUid()
             if (!attested(uid)) return
-            scope.launch { active?.takeIf { it.uid == uid && it.id == sessionId }?.let { finish(it, "client") } }
+            scope.launch {
+                val run = active ?: pending?.run
+                run?.takeIf { it.uid == uid && it.id == sessionId }?.let { finish(it, "client") }
+            }
         }
         override fun interruptSession(sessionId: String) {
             val uid = Binder.getCallingUid()
@@ -131,20 +165,71 @@ class CoinstallVoiceAgentService : Service() {
         }
     }
     override fun onBind(intent: Intent): IBinder? = binder.takeIf { intent.action == VoiceAgentContract.BIND_ACTION }
-    override fun onUnbind(intent: Intent): Boolean { active?.let { finish(it, "client") }; return false }
-    override fun onDestroy() { active?.let { finish(it, "client") }; scope.cancel(); super.onDestroy() }
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
+        val reservation = pending
+        if (reservation == null || intent?.action != START_ACTION || intent.data != reservation.identity) {
+            if (active == null) stopSelfResult(startId)
+            return START_NOT_STICKY
+        }
+        pending = null
+        reservation.expiry?.cancel()
+        reservation.intent.cancel()
+        val run = reservation.run
+        active = run
+        if (run.ended || SystemClock.elapsedRealtime() >= reservation.deadline || !validTicket(reservation.request)) {
+            finish(run, "expired")
+            return START_NOT_STICKY
+        }
+        try {
+            // Android grants while-in-use eligibility to this visible-caller start.
+            // Promote synchronously, before any socket or capture work is launched.
+            startAudioNotification(microphone = reservation.request.audioSource == null)
+            begin(run, reservation.request, foregroundStarted = true)
+        } catch (_: Throwable) {
+            notify(run) { it.onError(run.id, VoiceAgentContract.ERROR_TRANSPORT, "", true) }
+            finish(run, "server_error")
+        }
+        return START_NOT_STICKY
+    }
+    override fun onUnbind(intent: Intent): Boolean {
+        (active ?: pending?.run)?.let { finish(it, "client") }
+        return false
+    }
+    override fun onDestroy() {
+        (active ?: pending?.run)?.let { finish(it, "client") }
+        scope.cancel(); super.onDestroy()
+    }
     private fun attested(uid: Int): Boolean = Build.VERSION.SDK_INT >= 28 && identity.attested(uid)
 
-    private fun begin(uid: Int, request: VoiceAgentSessionRequest, callback: IVoiceAgentCallback) {
+    private fun admit(uid: Int, request: VoiceAgentSessionRequest, callback: IVoiceAgentCallback): Boolean {
+        val error = when {
+            !attested(uid) -> VoiceAgentContract.ERROR_CALLER_NOT_ATTESTED
+            !validTicket(request) -> VoiceAgentContract.ERROR_TICKET_INVALID
+            request.audioSource == null && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED ->
+                VoiceAgentContract.ERROR_MICROPHONE_PERMISSION
+            else -> null
+        }
+        if (error == null) return true
+        reject(callback, request.sessionId, error)
+        request.audioSource?.close()
+        return false
+    }
+    private fun newRun(uid: Int, request: VoiceAgentSessionRequest, callback: IVoiceAgentCallback): Running? {
         val run = Running(uid, request.sessionId, callback, request.audioSource)
         run.death = IBinder.DeathRecipient { scope.launch { finish(run, "client") } }
-        try { callback.asBinder().linkToDeath(run.death, 0) } catch (_: Throwable) { request.audioSource?.close(); return }
+        try { callback.asBinder().linkToDeath(run.death, 0) } catch (_: Throwable) {
+            request.audioSource?.close(); run.player.release(); return null
+        }
+        return run
+    }
+    private fun begin(run: Running, request: VoiceAgentSessionRequest, foregroundStarted: Boolean = false) {
         if (run.ended) return
         active = run
         run.work = scope.launch(start = CoroutineStart.LAZY) {
             if (run.ended) return@launch
             try {
-                startAudioNotification(microphone = request.audioSource == null)
+                if (!foregroundStarted) startAudioNotification(microphone = request.audioSource == null)
                 val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
                     .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
@@ -224,6 +309,11 @@ class CoinstallVoiceAgentService : Service() {
     private fun finish(run: Running, reason: String) {
         if (run.ended) return
         run.ended = true
+        pending?.takeIf { it.run === run }?.let {
+            pending = null
+            it.expiry?.cancel()
+            it.intent.cancel()
+        }
         VoiceLog.i(VoiceLog.AGENT, "coinstall_end reason=${reason.take(64)} uplink_bytes=${run.uplinkBytes} playback_bytes=${run.playbackBytes}")
         run.capture?.cancel()
         runCatching { run.source?.close() }
@@ -233,8 +323,11 @@ class CoinstallVoiceAgentService : Service() {
         run.work?.cancel()
         runCatching { run.callback.onEnded(run.id, reason.take(64)) }
         runCatching { run.callback.asBinder().unlinkToDeath(run.death, 0) }
-        if (active === run) active = null
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        if (active === run) {
+            active = null
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            if (lastStartId != 0) stopSelfResult(lastStartId)
+        }
     }
     private fun notify(run: Running, send: (IVoiceAgentCallback) -> Unit) {
         if (!run.ended) try { send(run.callback) } catch (_: Throwable) { finish(run, "client") }
@@ -291,5 +384,7 @@ class CoinstallVoiceAgentService : Service() {
         private const val CHANNEL = "companion-voice"
         private const val VOICE_NOTIFICATION = 8101
         private const val MAX_SOURCE_BYTES = 16000 * 2 * 120 + 44
+        private const val START_ACTION = "io.kombify.speechkit.voiceagent.v1.START"
+        private const val PREPARE_TIMEOUT_MS = 15000L
     }
 }
