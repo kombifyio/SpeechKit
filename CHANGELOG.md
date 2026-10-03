@@ -9,6 +9,21 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.75.1](https://github.com/kombifyio/SpeechKit/compare/v0.75.0...v0.75.1) (2026-10-03)
+
+### Highlights
+
+* **One dictation, one entry:** A live (streaming) dictation is saved as a single Library entry with the whole text, instead of one entry per pause, so it can be copied in one go.
+* **Hold-to-talk inserts on release:** With hold-to-talk, the provider still transcribes while you speak, and the text is inserted once when you release the hotkey. Mid-dictation pastes no longer have to force the held hotkey keys up.
+* **Blocked insertion recovers:** If the target window refuses a live insertion, SpeechKit holds the rest of the dictation and inserts it once when the recording ends.
+
+
+
+### Bug Fixes
+
+* **dictation:** one history entry per live dictation; hold-to-talk inserts on release ([#736](https://github.com/kombifyio/SpeechKit/issues/736)) ([cc6383c](https://github.com/kombifyio/SpeechKit/commit/cc6383c055b6457262df412ef2451f8057a27eb9))
+* **test:** make bundle-path and installer-binding tests pass on Windows ([#734](https://github.com/kombifyio/SpeechKit/issues/734)) ([cd99e6d](https://github.com/kombifyio/SpeechKit/commit/cd99e6dc7f49db0dcd8fe931dee8c6a41da7bc3e))
+
 ## [0.75.0](https://github.com/kombifyio/SpeechKit/compare/f78a55815bf3e5f96ba4b1262aab303f7200efc6...ea738fa16d6ade7b012c3591376332f341be790f) (2026-10-03)
 
 ### Highlights

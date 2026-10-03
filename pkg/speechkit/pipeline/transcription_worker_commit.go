@@ -103,6 +103,7 @@ func (w *TranscriptionWorker) HandleDictationStreamEvent(ctx context.Context, ev
 		Submission: submission,
 		Target:     opts.Target,
 	}
+	w.live.open(transcript.SessionID)
 	w.onState("processing", speechkit.DefaultProcessingMessage)
 	segmentKey := transcriptSegmentKey(job.Submission)
 	if !w.ledger.Begin(segmentKey) {
@@ -203,22 +204,29 @@ func (w *TranscriptionWorker) commitFinalTranscript(ctx context.Context, job spe
 	finalization := speechkit.NewTranscriptionFinalization(transcript, nil,
 		w.output != nil && deliverableAsOutput(job.Submission), w.runner.store != nil)
 	w.onFinalization(job, transcript, finalization)
+	session := w.liveSessionFor(job, transcript)
 	if finalization.Output == speechkit.OutputRequested {
 		deliverStarted := time.Now()
 		inject := transcript
 		inject.Text = w.prefixLiveInject(transcript.SessionID, transcript.Text)
-		err := w.output.Deliver(ctx, inject, job.Target)
+		err := w.deliverLive(ctx, session, job, transcript, inject)
 		finalization = finalization.WithOutputResult(err)
 		w.onFinalization(job, transcript, finalization)
-		if err != nil {
-			w.onLog(outputNotConfirmedMessage(err), "warn")
+		if !errors.Is(err, errLiveOutputHeld) {
+			if err != nil {
+				w.onLog(outputNotConfirmedMessage(err), "warn")
+			}
+			w.onLog(fmt.Sprintf("STT timing: output_delivery=%dms", time.Since(deliverStarted).Milliseconds()), "info")
 		}
-		w.onLog(fmt.Sprintf("STT timing: output_delivery=%dms", time.Since(deliverStarted).Milliseconds()), "info")
 	}
 	if !job.QuickNote {
 		w.onTranscriptCommitted(transcript, false)
 		w.onState(finalizationState(finalization, transcript.Text))
-		w.persistTranscriptionAsync(ctx, job, transcript, finalization)
+		if session != nil {
+			w.persistLiveSessionAsync(ctx, session, job, transcript, finalization)
+		} else {
+			w.persistTranscriptionAsync(ctx, job, transcript, finalization)
+		}
 	}
 	return true
 }

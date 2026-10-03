@@ -228,7 +228,11 @@ func (c *RecordingController) uncommittedStreamAudio(r *dictationStreamRuntime, 
 	return tail, offsetMs
 }
 
-func (c *RecordingController) stopNativeDictationStream(runtime *dictationStreamRuntime) int64 {
+// stopNativeDictationStream drains and closes a stream. cancelled drops what
+// a session-mode sink still holds: a cancelled hold-to-talk capture must not
+// insert its text. Other grouping modes flush as before, because their
+// grouped finals belong to text the user already saw being inserted.
+func (c *RecordingController) stopNativeDictationStream(runtime *dictationStreamRuntime, cancelled bool) int64 {
 	if runtime == nil {
 		return 0
 	}
@@ -249,7 +253,9 @@ func (c *RecordingController) stopNativeDictationStream(runtime *dictationStream
 		runtime.cutShort.Store(true)
 		runtime.cancel()
 	}
-	if flusher, ok := runtime.sink.(LiveCommitFlusher); ok {
+	if grouped, ok := runtime.sink.(*liveCommitSink); ok && cancelled && grouped.policy.Mode == LiveCommitSession {
+		grouped.discard()
+	} else if flusher, ok := runtime.sink.(LiveCommitFlusher); ok {
 		if err := flusher.FlushLiveCommit(context.Background()); err != nil {
 			c.onLog(fmt.Sprintf("Provider-stream live-commit flush warning: %v", err), "warn")
 		}
@@ -260,6 +266,21 @@ func (c *RecordingController) stopNativeDictationStream(runtime *dictationStream
 	// exit so the counts below are final.
 	waitForChannel(runtime.receiverDone, time.Second)
 	return runtime.finalCount.Load()
+}
+
+// finishNativeDictationStream stops a session the user ended and tells the
+// sink, so output it held back while the microphone was open is delivered
+// now (see [speechkit.DictationStreamSessionEnder]). Cancel stops a stream
+// without this step.
+func (c *RecordingController) finishNativeDictationStream(runtime *dictationStreamRuntime) int64 {
+	finals := c.stopNativeDictationStream(runtime, false)
+	if runtime == nil {
+		return finals
+	}
+	if ender, ok := runtime.sink.(speechkit.DictationStreamSessionEnder); ok {
+		ender.EndDictationStreamSession(context.Background(), runtime.sessionID, runtime.sinkOpts)
+	}
+	return finals
 }
 
 func waitForChannel(done <-chan struct{}, timeout time.Duration) bool {

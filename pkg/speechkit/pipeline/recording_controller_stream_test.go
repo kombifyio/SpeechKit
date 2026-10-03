@@ -206,3 +206,26 @@ func TestRecordingControllerProviderStreamStartFailureFallsBackToSegmentBatch(t 
 		t.Fatalf("Stop() error = %v", err)
 	}
 }
+
+// Hold-to-talk holds its finals until release; cancelling the capture (a mode
+// switch) must drop them instead of inserting text the user abandoned.
+func TestRecordingControllerCancelDropsHeldSessionFinals(t *testing.T) {
+	recorder := &fakeRecorder{stopPCM: []byte(strings.Repeat("z", 6400))}
+	provider := &fakeDictationStreamProvider{
+		stream: newFakeDictationStream(speechkit.DictationStreamEvent{Text: "abandoned", IsFinal: true, SegmentID: 1}),
+	}
+	sink := &fakeDictationStreamSink{}
+	controller := NewRecordingController(recorder, &fakeSubmitter{}, &fakeObserver{}, nil)
+	controller.SetDictationStream(provider, sink)
+
+	if err := controller.Start(speechkit.RecordingStartOptions{Target: "editor", ProviderStream: true, LiveCommitMode: LiveCommitSession}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	recorder.pcmHandler([]byte("frame"))
+	if err := controller.Cancel(speechkit.RecordingCancelOptions{}); err != nil {
+		t.Fatalf("Cancel() error = %v", err)
+	}
+	if finals := sink.finalEvents(); len(finals) != 0 {
+		t.Fatalf("finals after cancel = %#v, want none", finals)
+	}
+}

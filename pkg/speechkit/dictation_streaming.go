@@ -73,6 +73,15 @@ type DictationStreamSink interface {
 	HandleDictationStreamEvent(ctx context.Context, event DictationStreamEvent, opts DictationStreamSinkOptions) error
 }
 
+// DictationStreamSessionEnder is an optional [DictationStreamSink] extension.
+// The recording controller calls it once when the user stops a
+// provider-native session, after the stream drained and every final reached
+// the sink, so a sink that held output back while the microphone was open
+// can deliver it. A cancelled recording does not end its session this way.
+type DictationStreamSessionEnder interface {
+	EndDictationStreamSession(ctx context.Context, sessionID uint64, opts DictationStreamSinkOptions)
+}
+
 // DictationStreamSinkOptions carries host metadata needed to commit final
 // provider-stream events through the same path as batch transcription.
 type DictationStreamSinkOptions struct {

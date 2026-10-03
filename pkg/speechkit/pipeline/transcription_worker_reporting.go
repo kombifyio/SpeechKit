@@ -52,21 +52,26 @@ func (w *TranscriptionWorker) persistTranscriptionAsync(parent context.Context, 
 
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 15*time.Second)
 		defer cancel()
-
-		latencyMs := transcript.Duration.Milliseconds()
-		if err := w.runner.store.SaveTranscription(ctx, transcript.Text, transcript.Language, transcript.Provider, transcript.Model, durationMs, latencyMs, persistableAudio(submission)); err != nil {
-			w.onFinalization(job, transcript, finalization.WithPersistenceResult(err))
-			w.onLog("Transcription history could not be saved", "warn")
-			return
-		}
-		w.onFinalization(job, transcript, finalization.WithPersistenceResult(nil))
-
-		w.runner.notifyCommit(speechkit.Completion{
-			Transcript:             transcript,
-			TranscriptionPersisted: true,
-			AudioDurationMs:        durationMs,
-		})
+		w.saveTranscription(ctx, job, transcript, finalization, durationMs)
 	}()
+}
+
+// saveTranscription stores one transcript as its own history entry and
+// reports the result.
+func (w *TranscriptionWorker) saveTranscription(ctx context.Context, job speechkit.TranscriptionJob, transcript speechkit.Transcript, finalization speechkit.TranscriptionFinalization, durationMs int64) {
+	latencyMs := transcript.Duration.Milliseconds()
+	if err := w.runner.store.SaveTranscription(ctx, transcript.Text, transcript.Language, transcript.Provider, transcript.Model, durationMs, latencyMs, persistableAudio(job.Submission)); err != nil {
+		w.onFinalization(job, transcript, finalization.WithPersistenceResult(err))
+		w.onLog("Transcription history could not be saved", "warn")
+		return
+	}
+	w.onFinalization(job, transcript, finalization.WithPersistenceResult(nil))
+
+	w.runner.notifyCommit(speechkit.Completion{
+		Transcript:             transcript,
+		TranscriptionPersisted: true,
+		AudioDurationMs:        durationMs,
+	})
 }
 
 func transcriptionTimeoutForDuration(base time.Duration, durationSecs float64) time.Duration {

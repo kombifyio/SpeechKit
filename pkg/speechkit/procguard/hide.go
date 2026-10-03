@@ -1,7 +1,7 @@
 package procguard
 
 import (
-	"path/filepath"
+	"path"
 	"sync/atomic"
 )
 
@@ -31,18 +31,19 @@ func SubprocessPriorityLowered() bool {
 // (…/SpeechKit.app/Contents/MacOS/SpeechKit) to the bundle's
 // Contents/Helpers directory. It returns "" for a binary that does not live
 // in a bundle, such as a `go build` output or a test binary. It is a pure
-// path computation and behaves the same on every platform.
+// path computation on slash-separated macOS paths and behaves the same on
+// every platform.
 func BundleHelpersDir(exe string) string {
 	if exe == "" {
 		return ""
 	}
-	macOSDir := filepath.Dir(exe)
-	if filepath.Base(macOSDir) != "MacOS" {
+	macOSDir := path.Dir(exe)
+	if path.Base(macOSDir) != "MacOS" {
 		return ""
 	}
-	contents := filepath.Dir(macOSDir)
-	if filepath.Base(contents) != "Contents" {
+	contents := path.Dir(macOSDir)
+	if path.Base(contents) != "Contents" {
 		return ""
 	}
-	return filepath.Join(contents, "Helpers")
+	return path.Join(contents, "Helpers")
 }

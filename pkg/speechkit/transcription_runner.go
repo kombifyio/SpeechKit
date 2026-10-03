@@ -122,6 +122,17 @@ type TranscriptionStore interface {
 	SaveTranscription(ctx context.Context, text, language, provider, model string, durationMs, latencyMs int64, audioData []byte) error
 }
 
+// TranscriptionSessionStore is an optional [TranscriptionStore] extension. A
+// provider-native live dictation commits several finals per recording; a
+// store that implements it keeps them as one history entry, created with the
+// first final and rewritten with the joined text as each later one arrives.
+// CreateTranscription returns an error wrapping [errors.ErrUnsupported] when
+// the backing store cannot do this; callers then save each final on its own.
+type TranscriptionSessionStore interface {
+	CreateTranscription(ctx context.Context, text, language, provider, model string, durationMs, latencyMs int64, audioData []byte) (int64, error)
+	UpdateTranscriptionText(ctx context.Context, id int64, text string, durationMs, latencyMs int64) error
+}
+
 // Persistence combines [QuickNoteStore] and [TranscriptionStore].
 type Persistence interface {
 	QuickNoteStore

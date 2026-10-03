@@ -69,6 +69,9 @@ type TranscriptionWorker struct {
 	liveInjectMu      sync.Mutex
 	liveInjectSession uint64
 	liveInjectTail    string
+
+	// live is a pointer so the worker stays comparable (public API).
+	live *liveSessions
 }
 
 // NewTranscriptionWorker validates cfg and builds a worker that is not yet
@@ -92,6 +95,7 @@ func NewTranscriptionWorker(cfg TranscriptionWorkerConfig) (*TranscriptionWorker
 	}
 
 	return &TranscriptionWorker{
+		live:                   &liveSessions{},
 		timeout:                cfg.Timeout,
 		runner:                 cfg.Runner,
 		output:                 cfg.Output,

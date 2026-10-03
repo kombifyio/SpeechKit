@@ -19,6 +19,10 @@ const (
 	// LiveCommitPassage waits for about two sentences (or a longer pause) so
 	// live field injection reads as prose rather than breath-sized fragments.
 	LiveCommitPassage = "passage"
+	// LiveCommitSession holds every final until the recording stops and
+	// commits the whole dictation once, like a full-capture dictation, while
+	// the provider still transcribes live.
+	LiveCommitSession = "session"
 )
 
 const (
@@ -46,6 +50,8 @@ func NormalizeLiveCommitPolicy(mode string) LiveCommitPolicy {
 		return LiveCommitPolicy{Mode: LiveCommitPhrase, MinSentences: liveCommitPhraseMin, Hold: liveCommitPhraseHold}
 	case LiveCommitPassage:
 		return LiveCommitPolicy{Mode: LiveCommitPassage, MinSentences: liveCommitPassageMin, Hold: liveCommitPassageHold}
+	case LiveCommitSession:
+		return LiveCommitPolicy{Mode: LiveCommitSession}
 	default:
 		return LiveCommitPolicy{}
 	}
@@ -115,7 +121,29 @@ func (s *liveCommitSink) FlushLiveCommit(ctx context.Context) error {
 	return s.inner.HandleDictationStreamEvent(ctx, out, opts)
 }
 
+// EndDictationStreamSession forwards the end of a session to the wrapped
+// sink; Stop flushes the grouped finals first.
+func (s *liveCommitSink) EndDictationStreamSession(ctx context.Context, sessionID uint64, opts speechkit.DictationStreamSinkOptions) {
+	if ender, ok := s.inner.(speechkit.DictationStreamSessionEnder); ok {
+		ender.EndDictationStreamSession(ctx, sessionID, opts)
+	}
+}
+
+// discard drops grouped finals without committing them.
+func (s *liveCommitSink) discard() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.timer != nil {
+		s.timer.Stop()
+		s.timer = nil
+	}
+	s.parts = nil
+}
+
 func (s *liveCommitSink) readyLocked() bool {
+	if s.policy.Mode == LiveCommitSession {
+		return false
+	}
 	minSentences := s.policy.MinSentences
 	if minSentences <= 0 {
 		minSentences = 1

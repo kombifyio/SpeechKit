@@ -92,3 +92,33 @@ func (s *recordingDictationSink) count() int {
 	defer s.mu.Unlock()
 	return len(s.events)
 }
+
+// Hold-to-talk keeps the hotkey modifiers down for the whole capture, so its
+// live finals wait for the release and reach the field as one insertion.
+func TestLiveCommitSessionHoldsEveryFinalUntilStop(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		inner := &recordingDictationSink{}
+		sink := wrapLiveCommitSink(inner, LiveCommitSession)
+		ctx := context.Background()
+		opts := speechkit.DictationStreamSinkOptions{Language: "de"}
+		for _, text := range []string{"Erster Satz.", "Zweiter Satz.", "Dritter Satz."} {
+			if err := sink.HandleDictationStreamEvent(ctx, speechkit.DictationStreamEvent{Text: text, IsFinal: true, SessionID: 1}, opts); err != nil {
+				t.Fatalf("final %q: %v", text, err)
+			}
+		}
+		time.Sleep(time.Minute)
+		synctest.Wait()
+		if got := inner.count(); got != 0 {
+			t.Fatalf("session mode committed %d events before stop", got)
+		}
+
+		if err := sink.(LiveCommitFlusher).FlushLiveCommit(ctx); err != nil {
+			t.Fatalf("flush: %v", err)
+		}
+		inner.mu.Lock()
+		defer inner.mu.Unlock()
+		if len(inner.events) != 1 || inner.events[0].Text != "Erster Satz. Zweiter Satz. Dritter Satz." {
+			t.Fatalf("events at stop = %#v, want one final with the whole dictation", inner.events)
+		}
+	})
+}

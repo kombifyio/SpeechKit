@@ -116,7 +116,7 @@ func (c *RecordingController) Start(opts speechkit.RecordingStartOptions) error 
 		}
 		c.mu.Unlock()
 		if nativeStream != nil {
-			c.stopNativeDictationStream(nativeStream)
+			c.stopNativeDictationStream(nativeStream, true)
 		}
 		c.clearPCMHandlers()
 		c.onLog(fmt.Sprintf("Capture error: %v", err), "error")

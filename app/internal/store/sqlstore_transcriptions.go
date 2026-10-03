@@ -21,9 +21,51 @@ func (s *sqlStore) SaveTranscriptionWithAudio(ctx context.Context, text, languag
 }
 
 func (s *sqlStore) SaveTranscriptionWithAudioAndSpeakers(ctx context.Context, text, language, provider, model string, durationMs, latencyMs int64, audio AudioAssetInput, speakers *speaker.DiarizationResult) error {
+	_, err := s.insertTranscription(ctx, text, language, provider, model, durationMs, latencyMs, audio, speakers)
+	return err
+}
+
+// CreateTranscription saves a transcription like SaveTranscription and
+// returns its ID, so a live dictation can extend the same entry with
+// UpdateTranscriptionText as later finals arrive.
+func (s *sqlStore) CreateTranscription(ctx context.Context, text, language, provider, model string, durationMs, latencyMs int64, audioData []byte) (int64, error) {
+	return s.insertTranscription(ctx, text, language, provider, model, durationMs, latencyMs, audioAssetInputFromBytes(audioData), nil)
+}
+
+// UpdateTranscriptionText replaces the text, word count, duration and latency
+// of an existing transcription in the current scope.
+func (s *sqlStore) UpdateTranscriptionText(ctx context.Context, id int64, text string, durationMs, latencyMs int64) error {
 	scopeID, err := s.scopeID(ctx)
 	if err != nil {
 		return fmt.Errorf("%s: resolve scope: %w", s.dialect.name, err)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("%s: begin tx: %w", s.dialect.name, err)
+	}
+	defer tx.Rollback() //nolint:errcheck // rollback after commit is harmless
+	result, err := tx.ExecContext(ctx, s.dialect.rebind(
+		`UPDATE transcriptions SET text = ?, word_count = ?, duration_ms = ?, latency_ms = ? WHERE id = ? AND scope_id = ?`),
+		text, countWords(text), durationMs, latencyMs, id, scopeID)
+	if err != nil {
+		return fmt.Errorf("update transcription: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return fmt.Errorf("transcription %d not found", id)
+	}
+	if err := refreshStoreStats(ctx, tx, s.dialect, scopeID); err != nil {
+		return fmt.Errorf("refresh stats: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transcription update: %w", err)
+	}
+	return nil
+}
+
+func (s *sqlStore) insertTranscription(ctx context.Context, text, language, provider, model string, durationMs, latencyMs int64, audio AudioAssetInput, speakers *speaker.DiarizationResult) (int64, error) {
+	scopeID, err := s.scopeID(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("%s: resolve scope: %w", s.dialect.name, err)
 	}
 	audio = normalizeAudioAssetInput(audio)
 	if audio.DurationMs > 0 {
@@ -31,7 +73,7 @@ func (s *sqlStore) SaveTranscriptionWithAudioAndSpeakers(ctx context.Context, te
 	}
 	audioPath, err := s.persistAudio(audio, "")
 	if err != nil {
-		return fmt.Errorf("%s: persist transcription audio: %w", s.dialect.name, err)
+		return 0, fmt.Errorf("%s: persist transcription audio: %w", s.dialect.name, err)
 	}
 	committed := false
 	defer func() { s.discardUncommittedAudio(audioPath, committed) }()
@@ -40,13 +82,13 @@ func (s *sqlStore) SaveTranscriptionWithAudioAndSpeakers(ctx context.Context, te
 	}
 	speakerJSON, err := marshalSpeakerJSON(speakers)
 	if err != nil {
-		return fmt.Errorf("marshal speaker metadata: %w", err)
+		return 0, fmt.Errorf("marshal speaker metadata: %w", err)
 	}
 	owner, _ := RecordOwnerFromContext(ctx)
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("%s: begin tx: %w", s.dialect.name, err)
+		return 0, fmt.Errorf("%s: begin tx: %w", s.dialect.name, err)
 	}
 	defer tx.Rollback() //nolint:errcheck // rollback after commit is harmless
 
@@ -57,23 +99,23 @@ func (s *sqlStore) SaveTranscriptionWithAudioAndSpeakers(ctx context.Context, te
 		countWords(text), speakerJSON, owner.UserID, owner.OrgID, owner.Source,
 	)
 	if err != nil {
-		return fmt.Errorf("insert: %w", err)
+		return 0, fmt.Errorf("insert: %w", err)
 	}
 	if audioPath != "" {
 		if err := recordScopedAudioAsset(ctx, tx, s.dialect.name, scopeID, "transcription", id, audioPath, durationMs); err != nil {
-			return fmt.Errorf("record audio asset: %w", err)
+			return 0, fmt.Errorf("record audio asset: %w", err)
 		}
 	}
 	if err := refreshStoreStats(ctx, tx, s.dialect, scopeID); err != nil {
-		return fmt.Errorf("refresh stats: %w", err)
+		return 0, fmt.Errorf("refresh stats: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit transcription: %w", err)
+		return 0, fmt.Errorf("commit transcription: %w", err)
 	}
 	committed = true
 
 	s.scheduleMaintenance() //nolint:contextcheck // maintenance goroutines must not be bound to request context
-	return nil
+	return id, nil
 }
 
 // transcriptionSelectSQL is the shared projection + audio-asset join used by

@@ -57,6 +57,15 @@ type TranscriptionPinStore interface {
 	PinTranscription(ctx context.Context, id int64, pinned bool) error
 }
 
+// TranscriptionSessionWriter is an optional extension for stores that can
+// keep one live dictation as one history entry: CreateTranscription returns
+// the new entry's ID and UpdateTranscriptionText rewrites it as later finals
+// of the same recording arrive.
+type TranscriptionSessionWriter interface {
+	CreateTranscription(ctx context.Context, text, language, provider, model string, durationMs, latencyMs int64, audioData []byte) (int64, error)
+	UpdateTranscriptionText(ctx context.Context, id int64, text string, durationMs, latencyMs int64) error
+}
+
 // UserDictionaryStore is an optional extension for stores that persist
 // user-specific dictation terms outside config.toml.
 type UserDictionaryStore interface {

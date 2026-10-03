@@ -117,7 +117,8 @@ type RecordingStartOptions struct {
 	DictationStreamOptions DictationStreamOptions
 	// LiveCommitMode groups provider-finals before field injection.
 	// Empty keeps immediate commit (tests and hosts that do not opt in).
-	// Desktop dictation defaults to LiveCommitPassage.
+	// Desktop dictation defaults to LiveCommitPassage; hold-to-talk uses
+	// LiveCommitSession, which inserts the whole dictation once on release.
 	LiveCommitMode string
 	// IdleTimeout, when greater than zero AND the underlying collector
 	// implements [IdleObserver], arms a watcher that calls
