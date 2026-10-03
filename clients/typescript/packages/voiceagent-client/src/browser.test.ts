@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { downsampleToInt16, openBrowserSession, type BrowserSession } from "./browser.js";
+import { downsampleToInt16, openBrowserSession, type BrowserOpenOptions, type BrowserSession, type BrowserSocket } from "./browser.js";
+import { VoiceAgentClientError } from "./session.js";
 import { CLIENT_SAMPLE_RATE, SERVER_SAMPLE_RATE, type SessionTicket } from "./protocol.js";
 
 const ticket: SessionTicket = {
@@ -14,14 +15,17 @@ class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
   binaryType = "blob";
   sent: unknown[] = [];
+  closed = false;
   readonly listeners = new Map<string, Array<(event: unknown) => void>>();
 
   constructor(
     readonly url: string,
     readonly protocols?: string | string[],
+    automaticReady = true,
   ) {
     FakeWebSocket.instances.push(this);
     queueMicrotask(() => {
+      if (!automaticReady) return;
       this.emit("open");
       this.emit("message", { data: JSON.stringify({ type: "state", state: "listening", event_type: "session_ready" }) });
     });
@@ -31,7 +35,7 @@ class FakeWebSocket {
     this.sent.push(data);
   }
 
-  close(): void {}
+  close(): void { this.closed = true; }
 
   addEventListener(type: string, listener: (event: unknown) => void): void {
     const bucket = this.listeners.get(type) ?? [];
@@ -129,6 +133,7 @@ afterEach(() => {
   FakeAudioContext.created = [];
   FakeAudioContext.withWorklet = false;
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 function stubBrowserGlobals(): void {
@@ -137,13 +142,121 @@ function stubBrowserGlobals(): void {
 }
 
 describe("openBrowserSession", () => {
-  it("opens the server ws_url with the ticket subprotocol", async () => {
-    stubBrowserGlobals();
+  it("enforces host resource budgets while releasing injected capture and prepared playback", async () => {
+    vi.useFakeTimers();
+    const playback = { play: vi.fn(), flush: vi.fn(), resume: vi.fn(async () => undefined), dispose: vi.fn() };
+    // The same public opener must enforce each phase without native globals.
+    for (const upgraded of [false, true]) {
+      const socket = new FakeWebSocket(ticket.ws_url!, [], false);
+      const opening = openBrowserSession({
+        serverUrl: "https://speechkit.example",
+        presetTicket: ticket,
+        start: {},
+        createWebSocket: () => socket as unknown as BrowserSocket,
+        playback,
+        connectTimeoutMs: 100,
+        readyTimeoutMs: 200,
+      });
+      const failure = expect(opening).rejects.toBeInstanceOf(VoiceAgentClientError);
+      if (upgraded) socket.emit("open");
+      await vi.advanceTimersByTimeAsync(upgraded ? 200 : 100);
+      await failure;
+      expect(socket.closed).toBe(true);
+    }
+    vi.useRealTimers();
+    const setupAbort = new AbortController();
+    const pendingSocket = new FakeWebSocket(ticket.ws_url!, [], false);
+    let backendStopped = false;
+    pendingSocket.send = data => {
+      pendingSocket.sent.push(data);
+      if (typeof data === "string" && JSON.parse(data).type === "stop") backendStopped = true;
+    };
+    const pending = openBrowserSession({
+      serverUrl: "https://speechkit.example",
+      presetTicket: ticket,
+      start: {},
+      signal: setupAbort.signal,
+      createWebSocket: () => pendingSocket as unknown as BrowserSocket,
+      playback,
+    });
+    const abortedSetup = expect(pending).rejects.toMatchObject({ code: "session_aborted" });
+    pendingSocket.emit("open");
+    setupAbort.abort();
+    await abortedSetup;
+    expect(backendStopped).toBe(true);
+    expect(pendingSocket.closed).toBe(true);
+
+    const failedSocket = new FakeWebSocket(ticket.ws_url!, [], false);
+    let terminalDenial: string | undefined;
+    const disconnected = openBrowserSession({
+      serverUrl: "https://speechkit.example",
+      presetTicket: ticket,
+      start: {},
+      createWebSocket: () => failedSocket as unknown as BrowserSocket,
+      playback,
+      hooks: { onError: error => { if (error instanceof VoiceAgentClientError) terminalDenial = error.code; } },
+    });
+    const connectionFailure = expect(disconnected).rejects.toMatchObject({ code: "ws_closed" });
+    failedSocket.emit("open");
+    failedSocket.emit("close", { code: 1006, reason: "private peer detail" });
+    await connectionFailure;
+    expect(terminalDenial).toBe("ws_closed");
+    expect(failedSocket.closed).toBe(true);
+
+    const socket = new FakeWebSocket(ticket.ws_url!);
+    const capture = new FakeAudioContext();
+    const stream = fakeStream();
+    const onError = vi.fn();
     const handle = await openBrowserSession({
       serverUrl: "https://speechkit.example",
       presetTicket: ticket,
-      start: { persona_id: "helper" },
+      start: {},
+      createWebSocket: () => socket as unknown as BrowserSocket,
+      createAudioContext: () => capture as unknown as AudioContext,
+      playback,
+      maxOutboundBytes: 512,
+      hooks: { onError },
     });
+    handle.attachMicrophone(stream);
+    await vi.waitFor(() => {
+      const process = capture.scriptProcessors[0]?.onaudioprocess;
+      if (!process) throw new Error("capture has not started");
+      process({ inputBuffer: { getChannelData: () => new Float32Array(4096).fill(0.25) } });
+      expect(handle.session.isClosed).toBe(true);
+    });
+    expect(onError.mock.calls[0]?.[0]).toBeInstanceOf(VoiceAgentClientError);
+    expect(capture.closed).toBe(true);
+    expect(stream.tracks[0]!.stop).toHaveBeenCalled();
+    expect(playback.dispose).toHaveBeenCalled();
+
+    const abort = new AbortController();
+    const cancelledCapture = new FakeAudioContext();
+    const cancelledStream = fakeStream();
+    const cancelled = await openBrowserSession({
+      serverUrl: "https://speechkit.example",
+      presetTicket: ticket,
+      start: {},
+      signal: abort.signal,
+      createWebSocket: () => new FakeWebSocket(ticket.ws_url!) as unknown as BrowserSocket,
+      createAudioContext: () => {
+        abort.abort();
+        return cancelledCapture as unknown as AudioContext;
+      },
+      playback,
+    });
+    cancelled.attachMicrophone(cancelledStream);
+    expect(cancelledCapture.closed).toBe(true);
+    expect(cancelledStream.tracks[0]!.stop).toHaveBeenCalled();
+  });
+
+  it("opens the server ws_url with the ticket subprotocol", async () => {
+    stubBrowserGlobals();
+    const options: BrowserOpenOptions = {
+      serverUrl: "https://speechkit.example",
+      presetTicket: ticket,
+      start: { persona_id: "helper" },
+    };
+    const handle: BrowserSession = await openBrowserSession(options);
     const socket = FakeWebSocket.instances[0]!;
     expect(socket.url).toBe(ticket.ws_url);
     expect(socket.protocols).toEqual(["ticket.tkt-1"]);

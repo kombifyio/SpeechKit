@@ -44,6 +44,17 @@ Pass an `AbortSignal` to cancel pending minting, setup, and the active session.
 Tool handlers also receive `{ signal }` as their second argument; late results
 after cancellation, interruption, or termination are never sent.
 
+Hosts may override `connectTimeoutMs`, `readyTimeoutMs`, and `maxOutboundBytes`
+on either opener or `VoiceAgentSession`. Values must be finite and positive;
+deadlines may be at most 2,147,483,647 ms and the outbound budget at most
+960,000 bytes (30 seconds of microphone PCM). Invalid values keep the defaults
+and fractional values are rounded down. Browser hosts can inject `createWebSocket` and
+`createAudioContext` for their existing device adapters. A `playback` adapter
+can carry a context resumed in an earlier user gesture, avoiding another
+speaker context when authentication happens before opening. It implements
+`play`, `flush`, `resume`, and `dispose`; cleanup calls `dispose` once, so a
+host that owns the underlying player can implement disposal as a flush.
+
 Call `openBrowserSession` directly from a click/tap to resume playback during
 that gesture. If the browser suspends audio later, call `resumeAudio()` from a
 new click/tap. `session.cancel()` flushes scheduled playback synchronously and
@@ -54,8 +65,9 @@ Attempting playback while the context is suspended ends the session with
 `audio_resume_required`; resume audio before supplying playback chunks.
 
 Outbound WebSocket buffering is limited to 64,000 bytes (two seconds of
-microphone PCM); control frames are limited to 64 KiB and transcript callbacks
-retain at most the last 16,384 characters per frame. Browser playback retains
+microphone PCM); control frames are limited to 64 KiB. Transcript callbacks
+forward the complete delta within that wire limit, preserving prefixes and turn
+content; hosts that accumulate turns should bound their own retained text. Browser playback retains
 at most 96,000 PCM bytes (two seconds) and 64 scheduled sources. Exceeding a
 media/control budget terminates with `voice_buffer_overflow`. Error frames
 without `fatal: true` remain recoverable; fatal `auth_expired` terminates with

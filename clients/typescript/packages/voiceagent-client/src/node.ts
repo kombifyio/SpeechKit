@@ -82,6 +82,9 @@ export async function openNodeSession(options: NodeOpenOptions): Promise<NodeSes
 
   const sessionOptions: SessionOptions = {
     start: options.start,
+    ...(options.connectTimeoutMs !== undefined ? { connectTimeoutMs: options.connectTimeoutMs } : {}),
+    ...(options.readyTimeoutMs !== undefined ? { readyTimeoutMs: options.readyTimeoutMs } : {}),
+    ...(options.maxOutboundBytes !== undefined ? { maxOutboundBytes: options.maxOutboundBytes } : {}),
     ...(options.signal !== undefined ? { signal: options.signal } : {}),
     ...(options.hooks !== undefined ? { hooks: options.hooks } : {}),
     ...(options.tools !== undefined ? { tools: options.tools } : {}),

@@ -8,9 +8,14 @@ import {
   mintSessionTicket,
   ticketSubprotocol,
   type SessionOptions,
+  type WireSocket,
 } from "./session.js";
 
-export interface BrowserOpenOptions extends SessionOptions {
+export interface BrowserSocket extends WireSocket {
+  binaryType: string;
+}
+
+export interface BrowserOpenOptions<TSocket extends BrowserSocket = WebSocket> extends SessionOptions {
   serverUrl: string;
   token?: string;
   /**
@@ -32,6 +37,12 @@ export interface BrowserOpenOptions extends SessionOptions {
    * either way.
    */
   resolveWsUrl?: (ticket: SessionTicket) => string;
+  /** Host socket factory; native WebSocket is used by default. */
+  createWebSocket?: (url: string, protocols: string[]) => TSocket;
+  /** Host audio context factory, shared by default capture and playback. */
+  createAudioContext?: () => AudioContext;
+  /** Prepared host playback adapter. Session cleanup calls dispose once. */
+  playback?: BrowserPlayback;
   /**
    * Optional level tap for chunks scheduled via {@link BrowserSession.playChunk}:
    * called with the RMS (0..1) of each chunk before it is scheduled, and with
@@ -40,9 +51,9 @@ export interface BrowserOpenOptions extends SessionOptions {
   onPlaybackLevel?: (level: number) => void;
 }
 
-export interface BrowserSession {
+export interface BrowserSession<TSocket extends BrowserSocket = WebSocket> {
   session: VoiceAgentSession;
-  socket: WebSocket;
+  socket: TSocket;
   ticket: SessionTicket;
   /**
    * Wire a captured MediaStream into the session. Resamples the input to
@@ -74,20 +85,24 @@ export interface BrowserSession {
  * WebSocket authenticated via the `ticket.<ticket>` subprotocol, and
  * returns a {@link BrowserSession} ready to attach mic + playback.
  */
-export async function openBrowserSession(options: BrowserOpenOptions): Promise<BrowserSession> {
+export function openBrowserSession<TSocket extends BrowserSocket = WebSocket>(options: BrowserOpenOptions<TSocket>): Promise<BrowserSession<TSocket>>;
+export async function openBrowserSession(options: BrowserOpenOptions<BrowserSocket>): Promise<BrowserSession<BrowserSocket>> {
   throwIfAborted(options.signal);
   const captures = new Set<() => void>();
   let session: VoiceAgentSession | undefined;
-  const playback = createPlayback(options.onPlaybackLevel, code => session?.fail(code));
-  // Invoke resume before minting awaits so a caller's click/tap gesture is
-  // still active. Autoplay denial can be retried via handle.resumeAudio().
-  if (typeof AudioContext === "function") void playback.resume().catch(() => undefined);
+  const playback = options.playback ?? createPlayback(options.onPlaybackLevel, code => session?.fail(code), options.createAudioContext);
+  let cleaned = false;
   const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
     for (const stop of captures) { try { stop(); } catch { /* release other captures */ } }
     captures.clear();
-    playback.dispose();
+    try { playback.dispose(); } catch { /* host adapter must not prevent session cleanup */ }
   };
   try {
+    // Invoke resume before minting awaits so the initiating gesture is active.
+    // A host can supply playback prepared before its own authentication awaits.
+    if (options.playback || options.createAudioContext || typeof AudioContext === "function") void playback.resume().catch(() => undefined);
     const ticket =
       options.presetTicket ??
       (await mintSessionTicket({
@@ -101,11 +116,16 @@ export async function openBrowserSession(options: BrowserOpenOptions): Promise<B
     const url = options.resolveWsUrl
       ? options.resolveWsUrl(ticket)
       : deriveWsUrl(options.serverUrl, ticket, options.basePath);
-    const socket = new WebSocket(url, [ticketSubprotocol(ticket)]);
+    const socket = options.createWebSocket
+      ? options.createWebSocket(url, [ticketSubprotocol(ticket)])
+      : new WebSocket(url, [ticketSubprotocol(ticket)]);
     socket.binaryType = "arraybuffer";
 
     const sessionOptions: SessionOptions = {
       start: options.start,
+      ...(options.connectTimeoutMs !== undefined ? { connectTimeoutMs: options.connectTimeoutMs } : {}),
+      ...(options.readyTimeoutMs !== undefined ? { readyTimeoutMs: options.readyTimeoutMs } : {}),
+      ...(options.maxOutboundBytes !== undefined ? { maxOutboundBytes: options.maxOutboundBytes } : {}),
       ...(options.signal !== undefined ? { signal: options.signal } : {}),
       hooks: {
         ...options.hooks,
@@ -123,7 +143,7 @@ export async function openBrowserSession(options: BrowserOpenOptions): Promise<B
     const activeSession = new VoiceAgentSession(socket, sessionOptions);
     session = activeSession;
 
-    const handle: BrowserSession = {
+    const handle: BrowserSession<BrowserSocket> = {
       session: activeSession,
       socket,
       ticket,
@@ -133,10 +153,16 @@ export async function openBrowserSession(options: BrowserOpenOptions): Promise<B
           return () => undefined;
         }
         let stopCapture: () => void;
-        try { stopCapture = attachMicrophone(activeSession, stream); }
+        try { stopCapture = attachMicrophone(activeSession, stream, options.createAudioContext); }
         catch {
           stream.getTracks().forEach(track => { try { track.stop(); } catch { /* release other tracks */ } });
           activeSession.fail("audio_capture_failed");
+          return () => undefined;
+        }
+        // A host factory can cancel synchronously while creating its context.
+        // Terminal cleanup may have run before this capture was registered.
+        if (activeSession.isClosed) {
+          stopCapture();
           return () => undefined;
         }
         const stop = () => { captures.delete(stop); stopCapture(); };
@@ -180,8 +206,8 @@ registerProcessor("speechkit-capture", class extends AudioWorkletProcessor {
 });
 `;
 
-function attachMicrophone(session: VoiceAgentSession, stream: MediaStream): () => void {
-  const audioContext = new AudioContext();
+function attachMicrophone(session: VoiceAgentSession, stream: MediaStream, createAudioContext?: () => AudioContext): () => void {
+  const audioContext = createAudioContext ? createAudioContext() : new AudioContext();
   let source: MediaStreamAudioSourceNode;
   try { source = audioContext.createMediaStreamSource(stream); }
   catch {
@@ -346,14 +372,14 @@ function clampInt16(value: number): number {
   return Math.round(value);
 }
 
-interface Playback {
+export interface BrowserPlayback {
   play(chunk: ArrayBuffer): void;
   flush(): void;
   dispose(): void;
   resume(): Promise<void>;
 }
 
-function createPlayback(onLevel: ((level: number) => void) | undefined, onFailure: (code: string) => void): Playback {
+function createPlayback(onLevel: ((level: number) => void) | undefined, onFailure: (code: string) => void, createAudioContext?: () => AudioContext): BrowserPlayback {
   let context: AudioContext | null = null;
   let nextStartTime = 0;
   const active = new Map<AudioBufferSourceNode, number>();
@@ -363,7 +389,7 @@ function createPlayback(onLevel: ((level: number) => void) | undefined, onFailur
 
   function ensureContext(): AudioContext {
     if (!context) {
-      context = new AudioContext({ sampleRate: SERVER_SAMPLE_RATE });
+      context = createAudioContext ? createAudioContext() : new AudioContext({ sampleRate: SERVER_SAMPLE_RATE });
       nextStartTime = context.currentTime;
     }
     return context;

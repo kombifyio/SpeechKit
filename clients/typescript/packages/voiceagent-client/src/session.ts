@@ -57,6 +57,12 @@ export interface SessionHooks {
 export interface SessionOptions {
   /** Cancels setup, active transport, and pending host tools. */
   signal?: AbortSignal;
+  /** Socket upgrade deadline in milliseconds; defaults to 10 seconds. */
+  connectTimeoutMs?: number;
+  /** Provider readiness deadline after upgrade; defaults to 20 seconds. */
+  readyTimeoutMs?: number;
+  /** Maximum queued outbound bytes, including the next frame; defaults to 64,000, capped at 960,000. */
+  maxOutboundBytes?: number;
   /** Initial frame sent on `open`. */
   start: Omit<StartFrame, "type">;
   hooks?: SessionHooks;
@@ -86,7 +92,13 @@ export class VoiceAgentSession {
   private pendingTools = 0;
   private toolAbort = new AbortController();
   private readonly signal: AbortSignal | undefined;
-  private readonly abort = () => this.finish("client", new VoiceAgentClientError("session_aborted"));
+  private readonly readyTimeoutMs: number;
+  private readonly maxOutboundBytes: number;
+  private readonly abort = () => {
+    if (this.terminal) return;
+    this.sendStop();
+    this.finish("client", new VoiceAgentClientError("session_aborted"));
+  };
   private setupTimer: ReturnType<typeof setTimeout>;
   private resolveReady!: () => void;
   private rejectReady!: (error: Error) => void;
@@ -98,7 +110,7 @@ export class VoiceAgentSession {
   private readonly onOpen = () => {
     if (this.terminal || this.opened) return;
     clearTimeout(this.setupTimer);
-    this.setupTimer = setTimeout(() => this.fail("ws_setup_timeout"), 20_000);
+    this.setupTimer = setTimeout(() => this.fail("ws_setup_timeout"), this.readyTimeoutMs);
     (this.setupTimer as unknown as { unref?: () => void }).unref?.();
     this.opened = true;
     this.sendFrame({ type: "start", ...this.start });
@@ -107,7 +119,10 @@ export class VoiceAgentSession {
     void this.handleMessage(event.data).catch(() => this.fail("host_callback_failed"));
   };
   private readonly onSocketError = () => this.fail("ws_failure");
-  private readonly onSocketClose = () => this.finish("closed");
+  private readonly onSocketClose = (event?: { code: number; reason: string }) => {
+    if (typeof event?.code === "number" && event.code !== 1000 && event.code !== 1001) this.fail("ws_closed");
+    else this.finish("closed");
+  };
 
   constructor(socket: WireSocket, options: SessionOptions) {
     this.socket = socket;
@@ -115,13 +130,15 @@ export class VoiceAgentSession {
     this.tools = options.tools ?? {};
     this.start = options.start;
     this.signal = options.signal;
+    this.readyTimeoutMs = positiveLimit(options.readyTimeoutMs, 20_000);
+    this.maxOutboundBytes = positiveLimit(options.maxOutboundBytes, MAX_OUTBOUND_BYTES, 960_000);
     this.ready = new Promise<void>((resolve, reject) => {
       this.resolveReady = resolve;
       this.rejectReady = reject;
     });
     // Direct constructor users need not await ready to use hooks safely.
     void this.ready.catch(() => undefined);
-    this.setupTimer = setTimeout(() => this.fail("ws_upgrade_timeout"), 10_000);
+    this.setupTimer = setTimeout(() => this.fail("ws_upgrade_timeout"), positiveLimit(options.connectTimeoutMs, 10_000));
     (this.setupTimer as unknown as { unref?: () => void }).unref?.();
 
     socket.addEventListener("open", this.onOpen);
@@ -174,14 +191,15 @@ export class VoiceAgentSession {
 
   close(): void {
     if (this.terminal) return;
-    if (this.opened) {
-      try {
-        this.sendFrame({ type: "stop" });
-      } catch {
-        /* socket already closed */
-      }
-    }
+    this.sendStop();
     this.finish("client");
+  }
+
+  private sendStop(): void {
+    if (!this.opened || this.terminal) return;
+    const stop = JSON.stringify({ type: "stop" });
+    if (stop.length + (this.socket.bufferedAmount ?? 0) > this.maxOutboundBytes) return;
+    try { this.socket.send(stop); } catch { /* terminal cleanup never retries */ }
   }
 
   /** Fail closed when a host media adapter cannot retain or play audio. */
@@ -230,7 +248,7 @@ export class VoiceAgentSession {
   private send(data: string | ArrayBufferLike | ArrayBufferView, bytes: number): void {
     if (this.terminal) return;
     if (!this.opened) { this.fail("ws_not_ready"); return; }
-    if (bytes + (this.socket.bufferedAmount ?? 0) > MAX_OUTBOUND_BYTES) {
+    if (bytes + (this.socket.bufferedAmount ?? 0) > this.maxOutboundBytes) {
       this.fail("voice_buffer_overflow");
       return;
     }
@@ -290,11 +308,11 @@ export class VoiceAgentSession {
         return;
       case "input_transcript":
         if (typeof frame.text !== "string") { this.fail("invalid_control"); return; }
-        this.hooks.onUserTranscript?.(frame.text.slice(-MAX_TRANSCRIPT_CHARS), frame.done === true);
+        this.hooks.onUserTranscript?.(frame.text, frame.done === true);
         return;
       case "output_transcript":
         if (typeof frame.text !== "string") { this.fail("invalid_control"); return; }
-        this.hooks.onAgentTranscript?.(frame.text.slice(-MAX_TRANSCRIPT_CHARS), frame.done === true);
+        this.hooks.onAgentTranscript?.(frame.text, frame.done === true);
         return;
       case "tool_call":
         this.hooks.onToolCall?.(frame);
@@ -415,10 +433,15 @@ export async function mintSessionTicket(options: MintSessionTicketOptions): Prom
 export const MAX_CONTROL_BYTES = 65_536;
 export const MAX_OUTBOUND_BYTES = 64_000; // Two seconds of 16 kHz S16 microphone audio.
 export const MAX_PLAYBACK_BYTES = 96_000; // Two seconds of 24 kHz S16 playback.
-const MAX_TRANSCRIPT_CHARS = 16_384;
 
 export class VoiceAgentClientError extends Error {
   constructor(readonly code: string, message = code) { super(message); this.name = "VoiceAgentClientError"; }
+}
+
+/** Invalid or overflowing host budgets retain the bounded default. */
+function positiveLimit(value: number | undefined, fallback: number, maximum = 2_147_483_647): number {
+  return value !== undefined && Number.isFinite(value) && value >= 1 && value <= maximum
+    ? Math.floor(value) : fallback;
 }
 
 function safeCode(code: unknown): string {

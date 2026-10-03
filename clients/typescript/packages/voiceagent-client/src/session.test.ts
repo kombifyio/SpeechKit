@@ -335,13 +335,13 @@ describe("VoiceAgentSession reliability", () => {
     expect(onError.mock.calls[0]?.[0]).toMatchObject({ code: "voice_buffer_overflow" });
   });
 
-  it("bounds transcript callbacks and rejects oversized wire controls", () => {
+  it("preserves complete valid transcript deltas and rejects oversized wire controls", () => {
     const onAgentTranscript = vi.fn();
     const onError = vi.fn();
     const { socket } = openSession({ onAgentTranscript, onError });
-    const text = "old context ".repeat(2_000) + "latest reply";
+    const text = "[turn_failed] " + "provider detail ".repeat(2_000) + "latest reply";
     socket.emit("message", { data: JSON.stringify({ type: "output_transcript", text, done: true }) });
-    expect(onAgentTranscript.mock.calls[0]?.[0]).toBe(text.slice(-16_384));
+    expect(onAgentTranscript.mock.calls[0]?.[0]).toBe(text);
     socket.emit("message", { data: " ".repeat(65_537) });
     expect(socket.closed).toBe(true);
     expect(onError.mock.calls[0]?.[0]).toMatchObject({ code: "voice_buffer_overflow" });
