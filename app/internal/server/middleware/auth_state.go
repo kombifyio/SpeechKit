@@ -93,6 +93,19 @@ func (s *AuthState) EdgeSecret() string {
 	return strings.TrimSpace(os.Getenv(strings.TrimSpace(envName)))
 }
 
+// EdgeKeys returns the accepted edge envelope keys: the edge secret under
+// EDGE_AUTH_KEY_ID (default "primary") and, when set, its "_NEXT" rotation
+// slot under EDGE_AUTH_KEY_ID_NEXT (default "next").
+func (s *AuthState) EdgeKeys() []EdgeKey {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	envName := strings.TrimSpace(s.edgeSecretEnv)
+	s.mu.RUnlock()
+	return edgeKeysFromEnv(os.Getenv(envName), envName)
+}
+
 func (s *AuthState) AdminUsername() string {
 	if s == nil {
 		return ""

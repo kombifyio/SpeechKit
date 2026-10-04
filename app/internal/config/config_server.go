@@ -78,6 +78,9 @@ type ServerConfig struct {
 	// public beta deployments should set a finite budget because realtime
 	// sessions are cost-correlated with wall-clock duration.
 	VoiceAgentMaxSessionSec int `toml:"voiceagent_max_session_sec"`
+	// RequireVoiceBudget preserves local-only sessions by default; hosted
+	// sessions require a signed, reserved Voice quota before issuing media.
+	RequireVoiceBudget bool `toml:"require_voice_budget"`
 	// WSReadLimitBytes caps the per-frame size the Voice Agent WebSocket
 	// will read from a client. Zero or negative defaults to 64 KiB,
 	// which leaves ample headroom over real PCM chunk sizes (well under

@@ -347,6 +347,14 @@ components:
             `openai`, `deepgram`, `assemblyai`, `cascaded`. Empty uses the
             server's configured default. An unknown or unconfigured provider
             is rejected at start with a `provider_unavailable` error.
+        media_provider:
+          type: string
+          enum: [assemblyai, deepgram]
+          description: |
+            Native conversational media for a host-authorized registered
+            agent with reserved Voice quota. Every reasoning turn uses that
+            agent's signed A2A context, durable session, tools and approvals.
+            Empty preserves the existing registered-agent transport.
         media_transport:
           type: string
           enum: [websocket, livekit]

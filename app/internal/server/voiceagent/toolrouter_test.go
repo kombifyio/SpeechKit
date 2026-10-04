@@ -317,3 +317,26 @@ func TestAdapter_ToolRouterUnhandledExecuteYieldsErrorResponse(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+func TestAdapter_SelfToolProviderSkipsToolBridge(t *testing.T) {
+	provider := newFakeProvider()
+	provider.ownTools = true
+	router := &fakeToolRouter{defs: nil}
+	env := startAdapterEnvWithToolRouter(t, provider, &fakeResolver{}, router)
+	sendStart(t, env.conn, StartFrame{})
+
+	// Every frame before the session reaches its ready state must not be the
+	// bridge-unavailable event.
+	readFrameUntil(t, env.conn, 3*time.Second, func(frame map[string]any) bool {
+		if frame["type"] == MsgEvent && frame["event_type"] == EventToolBridgeUnavailable {
+			t.Fatal("remote-agent session emitted tool_bridge_unavailable")
+		}
+		return frame["type"] == MsgState
+	})
+	router.mu.Lock()
+	requested := len(router.defsSeen)
+	router.mu.Unlock()
+	if requested != 0 {
+		t.Fatal("remote-agent session requested the tool manifest")
+	}
+}

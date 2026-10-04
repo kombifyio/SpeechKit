@@ -69,7 +69,7 @@ func (i *LiveKitTokenIssuer) Enabled() bool {
 	return i != nil && strings.TrimSpace(i.URL) != ""
 }
 
-func (i *LiveKitTokenIssuer) IssueJoinToken(_ context.Context, sessionID string, owner Identity) (LiveKitJoinInfo, error) {
+func (i *LiveKitTokenIssuer) IssueJoinToken(ctx context.Context, sessionID string, owner Identity) (LiveKitJoinInfo, error) {
 	if i == nil || !i.Enabled() {
 		return LiveKitJoinInfo{}, errors.New("voiceagent: LiveKit token issuer is disabled")
 	}
@@ -92,6 +92,12 @@ func (i *LiveKitTokenIssuer) IssueJoinToken(_ context.Context, sessionID string,
 		ttl = defaultLiveKitTokenTTL
 	}
 	expires := now.Add(ttl)
+	if deadline, ok := ctx.Deadline(); ok && deadline.Before(expires) {
+		expires = deadline
+	}
+	if ctx.Err() != nil || !now.Before(expires) {
+		return LiveKitJoinInfo{}, errors.New("voiceagent: LiveKit admission expired")
+	}
 	room := i.roomName(sessionID)
 	identity := liveKitParticipantIdentity(sessionID, owner.UserID)
 	metadata, err := json.Marshal(map[string]string{

@@ -30,6 +30,10 @@ func serverPublicPaths() []string {
 
 func serverPublicRoutes() []middleware.PublicRoute {
 	routes := []middleware.PublicRoute{
+		// Provider callbacks carry a session-only credential checked by the
+		// native voice handler, never the operator or owner's bearer token.
+		{PathPrefix: "/v1/voiceagent/sessions/", PathSuffix: "/llm/chat/completions", Methods: []string{http.MethodPost}},
+		{PathPrefix: "/api/v1/voiceagent/sessions/", PathSuffix: "/llm/chat/completions", Methods: []string{http.MethodPost}},
 		{
 			PathPrefix: "/v1/voiceagent/sessions/",
 			PathSuffix: "/ws",

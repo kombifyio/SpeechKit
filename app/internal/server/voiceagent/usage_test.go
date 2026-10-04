@@ -29,10 +29,11 @@ func TestHTTPUsageReporterSendsIdempotentConnectedMinutes(t *testing.T) {
 
 	reporter := NewHTTPUsageReporter(server.URL)
 	err := reporter.Report(context.Background(), "session-token", VoiceUsage{
-		SessionID:   "session-123",
-		AISessionID: "ai-session-456",
-		Provider:    "kombify-agent",
-		Duration:    90 * time.Second,
+		SessionID:     "session-123",
+		AISessionID:   "ai-session-456",
+		Provider:      "kombify-agent",
+		Duration:      90 * time.Second,
+		ReservationID: "reservation-123",
 	})
 	if err != nil {
 		t.Fatalf("report usage: %v", err)
@@ -47,6 +48,12 @@ func TestHTTPUsageReporterSendsIdempotentConnectedMinutes(t *testing.T) {
 	}
 	if event["metric"] != "audio_minutes" || event["value"] != 1.5 {
 		t.Fatalf("metered event = %#v", event)
+	}
+	if got["reservation_id"] != "reservation-123" {
+		t.Fatal("receipt did not settle its reserved quota")
+	}
+	if err := reporter.Report(context.Background(), "session-token", VoiceUsage{SessionID: "session-123", ReservationID: "reservation-123"}); err != nil {
+		t.Fatalf("trusted zero settlement failed: %v", err)
 	}
 }
 
@@ -83,6 +90,20 @@ func TestAdapterMetersOnlyProviderConnectedSessions(t *testing.T) {
 	case usage := <-failedEnv.usage:
 		t.Fatalf("failed provider emitted usage: %#v", usage)
 	case <-failedEnv.done:
+	}
+	reservedFailure := newFakeProvider()
+	reservedFailure.connectErr = errors.New("provider unavailable")
+	reservedEnv := startAdapterEnv(t, 0, reservedFailure, &fakeResolver{}, "reserved-failure")
+	if err := reservedEnv.conn.Write(context.Background(), websocket.MessageText, start); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case usage := <-reservedEnv.usage:
+		if usage.ReservationID != "reserved-failure" || usage.Duration != 0 || usage.OwnerUserID != "u1" {
+			t.Fatalf("failed reserved connection did not settle trusted zero: %+v", usage)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("failed reserved connection retained its hold without a final receipt")
 	}
 }
 

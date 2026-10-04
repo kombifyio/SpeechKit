@@ -17,6 +17,8 @@ func (authorizationExpired) Code() string  { return "auth_expired" }
 
 var errAuthorizationExpired error = authorizationExpired{}
 
+var errVoiceBudgetExpired = errors.New("voiceagent: reserved Voice quota expired")
+
 // These claims only shorten the lifetime of a binding already authenticated
 // by the edge middleware. This is not token verification or grant issuance;
 // Gateway remains the authority for signature, audience, scope and revocation.

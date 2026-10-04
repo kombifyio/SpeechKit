@@ -2,8 +2,9 @@ package io.kombify.speechkit.coinstall.voiceagent.v1
 
 /** Wire constants for `speechkit.coinstall.voiceagent.v1`. Both apps compile this. */
 object VoiceAgentContract {
-    const val VERSION: Int = 2
+    const val VERSION: Int = 3
     const val VISIBLE_START_VERSION: Int = 2
+    const val MEDIA_PROVIDER_VERSION: Int = 3
     const val BIND_ACTION: String = "io.kombify.speechkit.voiceagent.v1.BIND"
 
     /** SpeechKit app ids that may host the service (store and oss flavors). */
@@ -28,4 +29,10 @@ object VoiceAgentContract {
     const val ERROR_TRANSPORT = "transport_failed"
     const val ERROR_TURN_FAILED = "turn_failed"
     const val ERROR_SERVER = "server_error"
+    const val ERROR_MEDIA_PROVIDER_UNAVAILABLE = "media_provider_unavailable"
+
+    /** Explicit native selection must never be silently dropped by an older callee. */
+    fun supportsMediaProvider(version: Int, mediaProvider: String?): Boolean =
+        mediaProvider.isNullOrEmpty() ||
+            (version >= MEDIA_PROVIDER_VERSION && mediaProvider in setOf("assemblyai", "deepgram"))
 }

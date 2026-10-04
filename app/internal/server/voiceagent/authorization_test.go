@@ -42,7 +42,7 @@ func startReliabilityAdapter(t *testing.T, provider LiveProviderAdapter, session
 }
 
 func TestRegisteredSessionEndsAtEarliestAuthorizationExpiry(t *testing.T) {
-	for _, first := range []string{"lease", "jwt", "issuer opaque", "issuer cannot extend", "lease before start"} {
+	for _, first := range []string{"lease", "jwt", "issuer opaque", "issuer cannot extend", "lease before start", "generic budget", "registered budget", "budget before start"} {
 		t.Run(first, func(t *testing.T) {
 			expiry := time.Now().Add(2 * time.Second).Unix()
 			leaseExpiry, jwtExpiry, issuerExpiry := expiry+600, expiry+600, int64(0)
@@ -66,9 +66,21 @@ func TestRegisteredSessionEndsAtEarliestAuthorizationExpiry(t *testing.T) {
 			session.VoiceAgentBinding.TargetAgentID = "test-agent"
 			session.VoiceAgentBinding.Lease = boundTestToken(leaseExpiry)
 			session.VoiceAgentBinding.CredentialExpiresAt = issuerExpiry
+			budget := strings.Contains(first, "budget")
+			if budget {
+				session.VoiceBudget.ReservationID = "budget-reservation"
+				session.VoiceBudget.ExpiresAt = expiry
+				if first != "registered budget" {
+					session.VoiceAgentBinding.TargetAgentID = ""
+				}
+			}
 			provider := newFakeProvider()
 			conn, done := startReliabilityAdapter(t, provider, session, 0)
-			beforeStart := first == "lease before start"
+			beforeStart := first == "lease before start" || first == "budget before start"
+			failureCode, endReason := "auth_expired", "authorization_expired"
+			if budget {
+				failureCode, endReason = "voice_budget_exhausted", "voice_budget_exhausted"
+			}
 			if !beforeStart {
 				sendStart(t, conn, StartFrame{})
 				var ready StateFrame
@@ -86,7 +98,7 @@ func TestRegisteredSessionEndsAtEarliestAuthorizationExpiry(t *testing.T) {
 				kind, data, err := conn.Read(endCtx)
 				var failure ErrorFrame
 				if err != nil || kind != websocket.MessageText || json.Unmarshal(data, &failure) != nil ||
-					!failure.Fatal || failure.Code != "auth_expired" {
+					!failure.Fatal || failure.Code != failureCode {
 					t.Fatalf("pre-start expiry did not deliver fatal authorization failure: frame=%+v err=%v", failure, err)
 				}
 			}
@@ -94,7 +106,7 @@ func TestRegisteredSessionEndsAtEarliestAuthorizationExpiry(t *testing.T) {
 			if err != nil || kind != websocket.MessageText || json.Unmarshal(data, &end) != nil {
 				t.Fatalf("read authorization expiry: kind=%v err=%v", kind, err)
 			}
-			if end.Type != MsgSessionEnd || end.Reason != "authorization_expired" {
+			if end.Type != MsgSessionEnd || end.Reason != endReason {
 				t.Fatalf("expiry did not end session: %+v", end)
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -118,7 +130,7 @@ func TestRegisteredSessionEndsAtEarliestAuthorizationExpiry(t *testing.T) {
 				t.Fatal("expired session retained provider")
 			}
 			_, err = registeredAgentHeaders(LiveConfigFrame{CapabilityLease: boundTestToken(leaseExpiry), OboSubjectToken: token, CredentialExpiresAt: issuerExpiry}, "secret")(context.Background(), a2a.RequestContext{})
-			if err == nil {
+			if !budget && err == nil {
 				t.Fatal("expired binding admitted a later agent turn")
 			}
 		})

@@ -36,7 +36,6 @@ import io.kombify.speechkit.net.VoiceAgentAudio
 import io.kombify.speechkit.net.VoiceAgentEvent
 import io.kombify.speechkit.net.VoiceAgentSession
 import io.kombify.speechkit.net.VoiceAgentSetupException
-import io.kombify.speechkit.net.VoiceAgentStartFrame
 import io.kombify.speechkit.net.VoiceAgentWsClient
 import io.kombify.speechkit.net.safeVoiceAgentCode
 import io.kombify.speechkit.net.voiceAgentFatalEndReason
@@ -212,6 +211,8 @@ class CoinstallVoiceAgentService : Service() {
     private fun admit(uid: Int, request: VoiceAgentSessionRequest, callback: IVoiceAgentCallback): Boolean {
         val error = when {
             !attested(uid) -> VoiceAgentContract.ERROR_CALLER_NOT_ATTESTED
+            !VoiceAgentContract.supportsMediaProvider(VoiceAgentContract.VERSION, request.mediaProvider) ->
+                VoiceAgentContract.ERROR_MEDIA_PROVIDER_UNAVAILABLE
             !validTicket(request) -> VoiceAgentContract.ERROR_TICKET_INVALID
             request.audioSource == null && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED ->
                 VoiceAgentContract.ERROR_MICROPHONE_PERMISSION
@@ -252,7 +253,7 @@ class CoinstallVoiceAgentService : Service() {
                 run.live = live
                 notify(run) { it.onState(run.id, VoiceAgentContract.STATE_CONNECTING) }
                 if (run.ended) return@launch
-                live.start(VoiceAgentStartFrame(locale = request.locale.takeIf { LOCALE.matches(it) }))
+                live.start(request.voiceAgentStartOptions())
                 if (run.ended) return@launch
                 run.playback = launch {
                     try {

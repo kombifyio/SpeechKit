@@ -37,6 +37,13 @@ type LiveInstructionUpdater interface {
 	UpdateInstructions(ctx context.Context, cfg LiveConfigFrame) error
 }
 
+// LiveSelfToolProvider is implemented by providers that run their own tools
+// (for example a remote agent that owns tool execution). The adapter skips the
+// server tool bridge for them: no manifest fetch and no bridge events.
+type LiveSelfToolProvider interface {
+	HandlesOwnTools() bool
+}
+
 // LiveToolResponder is implemented by providers that accept host-side tool
 // results from the client.
 type LiveToolResponder interface {
@@ -51,6 +58,12 @@ type LiveToolResponder interface {
 // suppressing downlink audio until the current turn ends (see MsgCancel).
 type LiveResponseCanceller interface {
 	CancelResponse() error
+}
+
+// LivePendingResponse exposes a registered request before media begins. The
+// adapter uses the same CancelResponse port without muting a future idle reply.
+type LivePendingResponse interface {
+	ResponsePending() bool
 }
 
 // LiveConfigFrame is the subset of configuration the adapter derives from a
@@ -73,7 +86,12 @@ type LiveConfigFrame struct {
 	StepExitCriteria   string
 	StepMaxTurns       int
 
-	Model string
+	Model            string
+	StoredAgentID    string             `json:"-"`
+	NativeLLMBaseURL string             `json:"-"`
+	NativeLLMToken   string             `json:"-"`
+	NativeLLMModel   string             `json:"-"`
+	NativeConsent    NativeVoiceConsent `json:"-"`
 	// FallbackModel is forwarded to providers that support same-provider
 	// fallback (when a provider supports a same-provider retry after the primary
 	// connect fails). Empty disables the fallback.

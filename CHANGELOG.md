@@ -9,6 +9,44 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.75.5](https://github.com/kombifyio/SpeechKit/compare/v0.75.4...v0.75.5) (2026-10-04)
+
+### Highlights
+
+- Registered-agent Voice sessions can select native AssemblyAI or Deepgram media while preserving the registered agent's conversation, tools and authorization. Provider-supplied instructions and tools cannot replace that authority.
+- Native sessions recheck the owner's current cloud-processing consent before provider setup and throughout the conversation. AssemblyAI additionally requires explicit consent for provider recording; revocation or an unavailable authority stops the session.
+- Interruptions and client cancellation stop pending registered-agent work, including before the first audio response. Retried callbacks retain consumed turn identity to prevent repeating agent effects.
+- The Android SDK carries the selected media provider through direct and coinstalled sessions. Explicit native selection requires coinstall contract version 3; older clients may continue omitting this choice.
+- The public source export includes the complete native session runtime and consent reader. Linux checks exercise cancellation, signed consent admission and the exported server, MCP and CLI builds. Provider audio and device acceptance remain separate release checks.
+
+
+
+### Bug Fixes
+
+* **release:** include native registered Voice scope in 0.75.5 ([#767](https://github.com/kombifyio/SpeechKit/issues/767)) ([5d150c5](https://github.com/kombifyio/SpeechKit/commit/5d150c5f59909f1e76935fbaad4ae94241499ea8))
+* **server:** verify a signed, replay-guarded edge envelope ([#757](https://github.com/kombifyio/SpeechKit/issues/757)) ([6f3ace1](https://github.com/kombifyio/SpeechKit/commit/6f3ace15df8d0ebf7711876bd6cfdb8c667c6882))
+* **voiceagent:** skip the tool bridge for remote-agent sessions ([#759](https://github.com/kombifyio/SpeechKit/issues/759)) ([764ea81](https://github.com/kombifyio/SpeechKit/commit/764ea81694598cfb19e52630bcf357c6c0fb8bca))
+
+## [0.75.4](https://github.com/kombifyio/SpeechKit/compare/v0.75.3...v0.75.4) (2026-10-04)
+
+### Highlights
+
+- Hosted Voice sessions require a signed reservation from the separate Voice minutes quota before issuing a media ticket or connecting a provider. The reserved deadline bounds the session.
+- Reservations for sessions that never start settle through trusted zero-usage receipts, including failed admission and abandoned pending tickets. Connected sessions retain their actual connected-time accounting.
+
+
+
+### Features
+
+* **quality-gate:** move the sandbox Worker to Sandbox SDK 1.0 on ctx.container ([#744](https://github.com/kombifyio/SpeechKit/issues/744)) ([f0f3144](https://github.com/kombifyio/SpeechKit/commit/f0f3144ab5acfa573fd07bbb3740b13bd94a32f4))
+
+
+### Bug Fixes
+
+* **delivery:** repin the release pipeline and its runtime to the rate-limit fix ([#749](https://github.com/kombifyio/SpeechKit/issues/749)) ([ba6ce1e](https://github.com/kombifyio/SpeechKit/commit/ba6ce1efbe46ca460971238b7cfd25a8f3707c70))
+* **voice:** document settlement context and quota release scope ([#753](https://github.com/kombifyio/SpeechKit/issues/753)) ([5a551db](https://github.com/kombifyio/SpeechKit/commit/5a551db3c4c200652d82bc553a09771098b67ac3))
+* **voice:** settle reservations when pending admission closes ([#752](https://github.com/kombifyio/SpeechKit/issues/752)) ([d5440ab](https://github.com/kombifyio/SpeechKit/commit/d5440ab63ae977f5bc159c8acc7a818196950db6))
+
 ## [0.75.3](https://github.com/kombifyio/SpeechKit/compare/v0.75.2...v0.75.3) (2026-10-04)
 
 

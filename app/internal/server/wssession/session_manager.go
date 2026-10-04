@@ -24,7 +24,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -34,12 +33,13 @@ import (
 
 // Common errors reported by the session manager.
 var (
-	ErrSessionNotFound       = errors.New("ws session: session not found")
-	ErrSessionAlreadyActive  = errors.New("ws session: session already has an active WS connection")
-	ErrSessionExpired        = errors.New("ws session: session ticket expired")
-	ErrInvalidTicket         = errors.New("ws session: ticket signature or payload invalid")
-	ErrGlobalLimitExceeded   = errors.New("ws session: global session limit exceeded")
-	ErrIdentityLimitExceeded = errors.New("ws session: per-identity session limit exceeded")
+	ErrSessionNotFound        = errors.New("ws session: session not found")
+	ErrSessionAlreadyActive   = errors.New("ws session: session already has an active WS connection")
+	ErrSessionExpired         = errors.New("ws session: session ticket expired")
+	ErrInvalidTicket          = errors.New("ws session: ticket signature or payload invalid")
+	ErrGlobalLimitExceeded    = errors.New("ws session: global session limit exceeded")
+	ErrIdentityLimitExceeded  = errors.New("ws session: per-identity session limit exceeded")
+	ErrVoiceBudgetUnavailable = errors.New("ws session: voice budget expired or already claimed")
 )
 
 // Identity is the caller's resolved identity from the auth middleware.
@@ -69,10 +69,21 @@ type VoicePrefs struct {
 // session mint to the ticket-authenticated WebSocket. Lease and endpoint are
 // memory-only and are never included in tickets, API responses, or logs.
 type VoiceAgentBinding struct {
-	TargetAgentID       string
-	Endpoint            string
-	Lease               string
-	CredentialExpiresAt int64
+	TargetAgentID                string
+	Endpoint                     string
+	Lease                        string
+	CredentialExpiresAt          int64
+	ConsentVerified              bool
+	CloudProcessing              bool
+	VoiceAgentRecording          bool
+	VoiceAgentRecordingUpdatedAt string
+}
+
+// VoiceBudget is retained from the authenticated edge decision, never a
+// client start frame. An absolute deadline cannot restart with a transport.
+type VoiceBudget struct {
+	ReservationID string
+	ExpiresAt     int64
 }
 
 // Options configures a SessionManager.
@@ -96,10 +107,11 @@ type Options struct {
 
 // SessionManager tracks active WebSocket sessions for one server surface.
 type SessionManager struct {
-	mu       sync.RWMutex
-	sessions map[string]*ManagedSession
-	byUser   map[string]int
-	opts     Options
+	mu                sync.RWMutex
+	sessions          map[string]*ManagedSession
+	byUser            map[string]int
+	opts              Options
+	voiceBudgetClaims map[string]int64
 }
 
 // SessionStats reports current session occupancy and configured capacity.
@@ -143,6 +155,32 @@ type ManagedSession struct {
 	VoicePrefs VoicePrefs
 
 	VoiceAgentBinding VoiceAgentBinding
+	VoiceBudget       VoiceBudget
+	pendingFinalizer  func(*ManagedSession)
+	pendingTimer      *time.Timer
+}
+
+// ClaimVoiceBudget consumes the admission once, including failed creates.
+// This matches the hosted single-instance topology; the Cloud ledger owns
+// durable holds, which are never released by this process-local replay guard.
+func (m *SessionManager) claimVoiceBudgetLocked(budget VoiceBudget) error {
+	now := m.opts.Clock().Unix()
+	if budget.ReservationID == "" || budget.ExpiresAt <= now {
+		return ErrVoiceBudgetUnavailable
+	}
+	if m.voiceBudgetClaims == nil {
+		m.voiceBudgetClaims = make(map[string]int64)
+	}
+	for id, expiry := range m.voiceBudgetClaims {
+		if expiry <= now {
+			delete(m.voiceBudgetClaims, id)
+		}
+	}
+	if _, claimed := m.voiceBudgetClaims[budget.ReservationID]; claimed {
+		return ErrVoiceBudgetUnavailable
+	}
+	m.voiceBudgetClaims[budget.ReservationID] = budget.ExpiresAt
+	return nil
 }
 
 // State captures the session's manager-level lifecycle. The Framework kernel
@@ -198,34 +236,67 @@ func (m *SessionManager) Create(owner Identity) (*ManagedSession, string, error)
 // conversation. Binding inside the manager lock keeps List/Get snapshots from
 // observing an unbound intermediate record.
 func (m *SessionManager) CreateWithAISession(owner Identity, aiSessionID string) (*ManagedSession, string, error) {
+	return m.createWithVoiceBudget(owner, aiSessionID, VoiceBudget{}, nil)
+}
+
+// CreateWithVoiceBudget keeps claim, owner and finalization under the same
+// lock as Attach. A failed create has a stable receipt ID but admits no media.
+func (m *SessionManager) CreateWithVoiceBudget(owner Identity, aiSessionID string, budget VoiceBudget, finalize func(*ManagedSession)) (*ManagedSession, string, error) {
+	return m.createWithVoiceBudget(owner, aiSessionID, budget, finalize)
+}
+
+func (m *SessionManager) createWithVoiceBudget(owner Identity, aiSessionID string, budget VoiceBudget, finalize func(*ManagedSession)) (*ManagedSession, string, error) {
 	if strings.TrimSpace(owner.UserID) == "" {
 		return nil, "", errors.New("ws session: owner.UserID must not be empty")
 	}
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	var receipts []*ManagedSession
+	defer func() {
+		m.mu.Unlock()
+		for _, receipt := range receipts {
+			receipt.pendingFinalizer(receipt)
+		}
+	}()
 
 	// Reap abandoned pending sessions first so they cannot pin concurrency
 	// slots against this create (fixes the 409 brick after repeated
 	// mint-without-attach flows, e.g. batch-fallback clients or crashes).
-	m.sweepExpiredPendingLocked()
+	receipts = m.sweepExpiredPendingLocked()
+	if budget.ReservationID != "" {
+		if err := m.claimVoiceBudgetLocked(budget); err != nil {
+			return nil, "", err
+		}
+	}
+	now := m.opts.Clock().UTC()
+	session := &ManagedSession{
+		ID: uuid.NewString(), AISessionID: strings.TrimSpace(aiSessionID), Owner: owner,
+		CreatedAt: now, State: StatePendingWS, VoiceBudget: budget, pendingFinalizer: finalize,
+	}
+	failedCreate := func() {
+		if budget.ReservationID != "" && finalize != nil {
+			session.State = StateClosed
+			receipts = append(receipts, session)
+		}
+	}
 
 	if len(m.sessions) >= m.opts.MaxGlobalSessions {
+		failedCreate()
 		return nil, "", ErrGlobalLimitExceeded
 	}
 	if m.byUser[owner.UserID] >= m.opts.MaxPerIdentitySessions {
+		failedCreate()
 		return nil, "", ErrIdentityLimitExceeded
 	}
 
-	now := m.opts.Clock().UTC()
-	session := &ManagedSession{
-		ID:          uuid.NewString(),
-		AISessionID: strings.TrimSpace(aiSessionID),
-		Owner:       owner,
-		CreatedAt:   now,
-		State:       StatePendingWS,
-	}
 	m.sessions[session.ID] = session
 	m.byUser[owner.UserID]++
+	if budget.ReservationID != "" {
+		delay := m.opts.TicketTTL
+		if remaining := time.Unix(budget.ExpiresAt, 0).Sub(now); remaining < delay {
+			delay = remaining
+		}
+		session.pendingTimer = time.AfterFunc(delay, func() { m.closePending(session.ID) })
+	}
 
 	ticket := m.mintTicket(session.ID, now.Add(m.opts.TicketTTL))
 	return session, ticket, nil
@@ -284,7 +355,13 @@ func (m *SessionManager) Stats(userID string) SessionStats {
 // session is already attached to another WS client or has been closed.
 func (m *SessionManager) Attach(id string) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	var receipt *ManagedSession
+	defer func() {
+		m.mu.Unlock()
+		if receipt != nil {
+			receipt.pendingFinalizer(receipt)
+		}
+	}()
 	s, ok := m.sessions[id]
 	if !ok {
 		return ErrSessionNotFound
@@ -295,23 +372,62 @@ func (m *SessionManager) Attach(id string) error {
 	if s.HasWSClient {
 		return ErrSessionAlreadyActive
 	}
+	if s.VoiceBudget.ReservationID != "" && (s.VoiceBudget.ExpiresAt <= m.opts.Clock().Unix() || !m.opts.Clock().Before(s.CreatedAt.Add(m.opts.TicketTTL))) {
+		receipt = m.removeLocked(s)
+		return ErrSessionExpired
+	}
 	s.HasWSClient = true
 	s.State = StateActive
+	if s.pendingTimer != nil {
+		s.pendingTimer.Stop()
+	}
 	return nil
 }
 
 // Remove closes and removes the session. Safe to call multiple times.
 func (m *SessionManager) Remove(id string) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	s, ok := m.sessions[id]
 	if !ok {
+		m.mu.Unlock()
 		return
 	}
+	receipt := m.removeLocked(s)
+	m.mu.Unlock()
+	if receipt != nil {
+		receipt.pendingFinalizer(receipt)
+	}
+}
+
+func (m *SessionManager) closePending(id string) {
+	m.mu.Lock()
+	s := m.sessions[id]
+	var receipt *ManagedSession
+	if s != nil && s.State == StatePendingWS && !s.HasWSClient {
+		receipt = m.removeLocked(s)
+	}
+	m.mu.Unlock()
+	if receipt != nil {
+		receipt.pendingFinalizer(receipt)
+	}
+}
+
+func (m *SessionManager) removeLocked(s *ManagedSession) *ManagedSession {
+	var receipt *ManagedSession
+	if s.State == StatePendingWS && !s.HasWSClient && s.VoiceBudget.ReservationID != "" && s.pendingFinalizer != nil {
+		// Only immutable admission fields belong in a pending receipt. The
+		// HTTP minter may still be filling preference/credential overlays.
+		receipt = &ManagedSession{ID: s.ID, AISessionID: s.AISessionID, Owner: s.Owner,
+			VoiceBudget: s.VoiceBudget, State: StateClosed, pendingFinalizer: s.pendingFinalizer}
+	}
+	s.pendingFinalizer = nil
+	if s.pendingTimer != nil {
+		s.pendingTimer.Stop()
+	}
 	s.State = StateClosed
-	delete(m.sessions, id)
+	delete(m.sessions, s.ID)
 	m.decrementUserLocked(s.Owner.UserID)
-	slog.Debug("ws session: session removed", "session_id", id, "user_id", s.Owner.UserID) // #nosec G706 -- slog writes session identifiers as structured attributes, not interpolated log text.
+	return receipt
 }
 
 // sweepExpiredPendingLocked reaps sessions that were minted but never
@@ -320,18 +436,18 @@ func (m *SessionManager) Remove(id string) {
 // every abandoned session-create (client crash, network drop after mint,
 // batch-only fallback) permanently consumes a per-identity slot. Caller must
 // hold m.mu.
-func (m *SessionManager) sweepExpiredPendingLocked() {
+func (m *SessionManager) sweepExpiredPendingLocked() []*ManagedSession {
+	var receipts []*ManagedSession
 	cutoff := m.opts.Clock().UTC().Add(-m.opts.TicketTTL)
-	for id, s := range m.sessions {
+	for _, s := range m.sessions {
 		if s.State != StatePendingWS || !s.CreatedAt.Before(cutoff) {
 			continue
 		}
-		s.State = StateClosed
-		delete(m.sessions, id)
-		m.decrementUserLocked(s.Owner.UserID)
-		slog.Debug("ws session: expired pending session reaped",
-			"session_id", id, "user_id", s.Owner.UserID) // #nosec G706 -- structured attributes, not interpolated log text.
+		if receipt := m.removeLocked(s); receipt != nil {
+			receipts = append(receipts, receipt)
+		}
 	}
+	return receipts
 }
 
 // decrementUserLocked lowers the per-identity counter and drops the map entry

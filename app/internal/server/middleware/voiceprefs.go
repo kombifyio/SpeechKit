@@ -21,7 +21,7 @@ import (
 // pref headers at all and the server's own configuration stays authoritative.
 //
 // Trust model (mirrors the Gateway resolver, speechkit-prefs.ts): the
-// existing identity HMAC (X-Edge-Auth-Hmac) signs only the identity fields,
+// identity envelope (auth_edge_envelope.go) signs only the identity fields,
 // so the preference headers carry their OWN versioned HMAC over the same
 // shared edge secret, bound to the verified caller identity and a timestamp:
 //

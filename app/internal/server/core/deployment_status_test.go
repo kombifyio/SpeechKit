@@ -3,14 +3,12 @@
 package core
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kombifyio/SpeechKit/app/internal/config"
 	"github.com/kombifyio/SpeechKit/app/internal/server/middleware"
@@ -142,17 +140,7 @@ func TestDeploymentStatusRejectsNonAdminEdgeIdentity(t *testing.T) {
 }
 
 func setEdgeAuth(req *http.Request, userID, orgID, plan, role string) {
-	req.Header.Set("X-Edge-User-Id", userID)
-	req.Header.Set("X-Edge-Org-Id", orgID)
-	req.Header.Set("X-Edge-Plan", plan)
-	req.Header.Set("X-Edge-Role", role)
-	mac := hmac.New(sha256.New, []byte("edge-secret"))
-	mac.Write([]byte(userID))
-	mac.Write([]byte{'\n'})
-	mac.Write([]byte(orgID))
-	mac.Write([]byte{'\n'})
-	mac.Write([]byte(plan))
-	mac.Write([]byte{'\n'})
-	mac.Write([]byte(role))
-	req.Header.Set("X-Edge-Auth-Hmac", hex.EncodeToString(mac.Sum(nil)))
+	if err := middleware.SignEdgeEnvelope(req, middleware.EdgeKey{ID: "primary", Secret: "edge-secret"}, middleware.Identity{UserID: userID, OrgID: orgID, Plan: plan, Role: role}, time.Now()); err != nil {
+		panic(err)
+	}
 }

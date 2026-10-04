@@ -18,11 +18,12 @@ const (
 	// var. Minimum viable auth; suitable for same-network service-to-service
 	// calls (e.g. an upstream service calling SpeechKit over a private network).
 	AuthModeBearer AuthMode = "bearer"
-	// AuthModeEdgeHMAC trusts HMAC-signed headers from a known edge
-	// (Cloudflare Worker / reverse proxy). The actual user identity comes
-	// from the edge. Expected header set:
-	//   X-Edge-Auth-Hmac, X-Edge-User-Id, X-Edge-Org-Id, X-Edge-Plan,
-	//   and optional X-Edge-Role. Role is covered by the HMAC when present.
+	// AuthModeEdgeHMAC trusts a signed edge envelope from a known edge
+	// (edge worker / reverse proxy). The actual user identity comes from
+	// the edge: X-Edge-User-Id, X-Edge-Org-Id, X-Edge-Plan and optional
+	// X-Edge-Role, signed with key id, timestamp, nonce, method and path
+	// (see auth_edge_envelope.go). The legacy X-Edge-Auth-Hmac signature is
+	// accepted only while LegacyEdgeHMACProvider allows it.
 	AuthModeEdgeHMAC AuthMode = "edge_hmac"
 	// AuthModeBearerOrEdge accepts either credential format; handy when a
 	// single deployment serves both internal services (bearer) and
@@ -93,6 +94,15 @@ type AuthOptions struct {
 	// Empty uses the default. The header is only honoured on identities
 	// whose Source is "edge_hmac"; its value is never logged.
 	OboSubjectTokenHeader string
+	// EdgeKeysProvider returns the accepted edge envelope keys. Nil derives
+	// them from the edge secret (key id from EDGE_AUTH_KEY_ID, default
+	// "primary") plus the "<edge secret env>_NEXT" rotation slot (key id
+	// from EDGE_AUTH_KEY_ID_NEXT, default "next").
+	EdgeKeysProvider func() []EdgeKey
+	// LegacyEdgeHMACProvider reports whether the legacy X-Edge-Auth-Hmac
+	// signature is still accepted next to the signed edge envelope. Nil
+	// keeps it accepted for the migration window.
+	LegacyEdgeHMACProvider func() bool
 }
 
 type PublicRoute struct {

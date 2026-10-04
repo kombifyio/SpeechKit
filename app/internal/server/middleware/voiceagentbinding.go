@@ -30,10 +30,14 @@ var voiceAgentTargetPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,62}[a-
 // registered-agent session. Lease is secret and must never be logged or
 // serialized to a client.
 type VoiceAgentBinding struct {
-	TargetAgentID       string
-	Endpoint            string
-	Lease               string
-	CredentialExpiresAt int64
+	TargetAgentID                string
+	Endpoint                     string
+	Lease                        string
+	CredentialExpiresAt          int64
+	ConsentVerified              bool
+	CloudProcessing              bool
+	VoiceAgentRecording          bool
+	VoiceAgentRecordingUpdatedAt string
 }
 
 type voiceAgentBindingCtxKey struct{}
@@ -89,5 +93,36 @@ func verifiedVoiceAgentBindingFromRequest(r *http.Request, id Identity, secret s
 	if credentialExpiresAt > 0 && credentialExpiresAt <= time.Now().Unix() {
 		return VoiceAgentBinding{}, true, errors.New("voice agent credential expired")
 	}
-	return VoiceAgentBinding{TargetAgentID: target, Endpoint: endpoint, Lease: lease, CredentialExpiresAt: credentialExpiresAt}, true, nil
+	binding := VoiceAgentBinding{TargetAgentID: target, Endpoint: endpoint, Lease: lease, CredentialExpiresAt: credentialExpiresAt}
+	if err := verifyVoiceConsentSnapshot(r, id, &binding, secret); err != nil {
+		return VoiceAgentBinding{}, true, err
+	}
+	return binding, true, nil
+}
+
+func verifyVoiceConsentSnapshot(r *http.Request, id Identity, binding *VoiceAgentBinding, secret string) error {
+	cloud := r.Header.Get("X-Edge-Voice-Consent-Cloud-Processing")
+	recording := r.Header.Get("X-Edge-Voice-Consent-Voice-Agent-Recording")
+	stamp := r.Header.Get("X-Edge-Voice-Consent-Voice-Agent-Recording-Updated-At")
+	presented := r.Header.Get("X-Edge-Voice-Consent-Hmac")
+	if cloud == "" && recording == "" && stamp == "" && presented == "" {
+		return nil // Legacy registered pipeline remains compatible; native denies absence.
+	}
+	if (cloud != "0" && cloud != "1") || (recording != "0" && recording != "1") || binding.CredentialExpiresAt <= 0 || presented == "" {
+		return errors.New("incomplete voice consent decision")
+	}
+	if recording == "1" {
+		when, err := time.Parse(time.RFC3339Nano, stamp)
+		if err != nil || when.After(time.Now()) {
+			return errors.New("invalid voice recording consent stamp")
+		}
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(strings.Join([]string{id.UserID, id.OrgID, binding.TargetAgentID, binding.Lease, strconv.FormatInt(binding.CredentialExpiresAt, 10), cloud, recording, stamp}, "\n")))
+	if !hmacEqual([]byte(presented), []byte(hex.EncodeToString(mac.Sum(nil)))) {
+		return errors.New("invalid voice consent signature")
+	}
+	binding.ConsentVerified, binding.CloudProcessing = true, cloud == "1"
+	binding.VoiceAgentRecording, binding.VoiceAgentRecordingUpdatedAt = recording == "1", stamp
+	return nil
 }

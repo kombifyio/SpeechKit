@@ -389,17 +389,35 @@ the operator-managed SpeechKit origin, with the token resolved from
 that edge should translate its own auth into SpeechKit's trusted `X-Edge-*`
 HMAC identity headers before forwarding to the origin.
 
-For `edge_hmac`, the edge signs the exact string
-`user_id + "\n" + org_id + "\n" + plan + "\n" + role` with the shared secret
-from `EDGE_AUTH_SECRET`. `role` may be empty, but the trailing newline remains
-part of the signature base.
+For `edge_hmac`, the edge forwards the caller identity in `X-Edge-User-Id`,
+`X-Edge-Org-Id`, `X-Edge-Plan` and optional `X-Edge-Role`, and signs it as an
+envelope bound to the request:
 
-Optionally, the edge may also send `X-Edge-Auth-Ts` (Unix seconds) and append
-the timestamp to the signed string as a fifth field
-(`... + "\n" + ts`). When present, the server rejects requests whose timestamp
-deviates more than 5 minutes from server time, bounding replay of a captured
-header. The timestamp is backward compatible: an edge that omits `X-Edge-Auth-Ts`
-keeps using the four-field signature above.
+| Header | Meaning |
+| --- | --- |
+| `X-Edge-Auth-Key-Id` | Id of the signing key: `EDGE_AUTH_KEY_ID` (default `primary`) for `EDGE_AUTH_SECRET`, `EDGE_AUTH_KEY_ID_NEXT` (default `next`) for the rotation secret `EDGE_AUTH_SECRET_NEXT` |
+| `X-Edge-Auth-Ts` | Signing time in Unix seconds |
+| `X-Edge-Auth-Nonce` | Unique value per request, at most 128 characters |
+| `X-Edge-Auth-Signed-Path` | Escaped path plus query exactly as the server receives it |
+| `X-Edge-Auth-Signature` | `v2=` + base64url (unpadded) HMAC-SHA256 of the payload below |
+
+```
+speechkit.edge_auth.v2 \n key_id \n METHOD \n signed_path \n user_id \n org_id \n plan \n role \n ts \n nonce
+```
+
+(`role` may be empty; its line stays in the payload.) The server rejects an
+unknown key id, a timestamp more than 5 minutes from server time, a signed
+path or method other than the request's, and any nonce it has already
+accepted inside that window. The nonce memory is per server process, so
+replicas behind one edge need sticky routing or a single instance for the
+replay guarantee. The request body is not covered.
+`middleware.SignEdgeEnvelope` is the reference signer.
+
+The earlier `X-Edge-Auth-Hmac` signature (hex HMAC-SHA256 of
+`user_id \n org_id \n plan \n role \n ts`) binds no key id, request or nonce
+and is deprecated. The server still accepts it, with a fresh `X-Edge-Auth-Ts`,
+until `SPEECHKIT_EDGE_AUTH_LEGACY_HMAC=off`; a request that carries
+`X-Edge-Auth-Signature` is judged on the envelope alone.
 
 ### Edge-resolved user voice preferences
 
@@ -415,9 +433,8 @@ An edge that manages per-user voice preferences (contract
 | `x-speechkit-pref-ts` | Unix-seconds timestamp of the preference signature |
 | `x-speechkit-pref-signature` | `v1=<hex>` HMAC covering the preference set |
 
-The identity HMAC above is unchanged; the preference headers carry their own
-versioned signature with the same shared secret so deployed verifiers keep
-working. The edge signs
+The preference headers carry their own versioned signature with the same
+shared secret, independent of the identity envelope. The edge signs
 
 ```
 v1 \n user_id \n org_id \n ts \n stt-primary \n stt-secondary \n va-provider \n va-persona
@@ -426,9 +443,9 @@ v1 \n user_id \n org_id \n ts \n stt-primary \n stt-secondary \n va-provider \n 
 (absent values sign as empty strings; when the caller has no stored
 preferences, no pref header is sent at all). The server honours the
 preference headers only when the request's identity was established via a
-verified edge HMAC (`edge_hmac`, or the edge half of `bearer_or_edge`) AND
-this signature verifies against that identity within the same 5-minute
-replay window as `X-Edge-Auth-Ts`. A missing or invalid preference signature
+verified edge envelope (`edge_hmac`, or the edge half of `bearer_or_edge`)
+AND this signature verifies against that identity within the same 5-minute
+window as `X-Edge-Auth-Ts`. A missing or invalid preference signature
 degrades to "no preference" — it never fails the request, because
 preferences are an overlay, not an authorization input. Values are
 provider/persona names only — never keys or credentials.

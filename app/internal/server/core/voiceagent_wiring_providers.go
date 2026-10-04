@@ -6,8 +6,12 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/kombifyio/SpeechKit/app/internal/config"
 	vsserver "github.com/kombifyio/SpeechKit/app/internal/server/voiceagent"
@@ -18,6 +22,36 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openai"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openailive"
 )
+
+func buildNativeVoiceConsentReader() vsserver.NativeConsentReader {
+	reader := vsserver.NativeConsentHTTPReader{
+		Endpoint: "https://api.kombify.io/v1/speechkit/voiceagent/session-authority",
+		Authorize: func(req *http.Request, cfg vsserver.LiveConfigFrame) error {
+			secret := strings.TrimSpace(os.Getenv("SERVICE_AUTH_SECRET"))
+			now := time.Now().Unix()
+			if secret == "" || cfg.OwnerUserID == "" || cfg.AgentTargetID == "" || cfg.CapabilityLease == "" || cfg.CredentialExpiresAt <= now {
+				return errors.New("voiceagent: current consent service binding is unavailable")
+			}
+			owner := map[string]string{"sub": cfg.OwnerUserID}
+			if cfg.OwnerOrgID != "" && cfg.OwnerOrgID != "default" {
+				owner["org_id"] = cfg.OwnerOrgID
+			}
+			claims := jwt.MapClaims{
+				"iss": "kombify-speechkit-server", "svc": "speechkit-server", "aud": "kombify-gateway",
+				"scope": "speechkit.voice_consent.read", "iat": now, "exp": min(now+60, cfg.CredentialExpiresAt),
+				"on_behalf_of": owner, "target_agent_id": cfg.AgentTargetID, "session_expires_at": cfg.CredentialExpiresAt,
+			}
+			token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
+			if err != nil {
+				return errors.New("voiceagent: current consent service credential could not be issued")
+			}
+			req.Header.Set("X-Kombify-Service-Auth", token)
+			req.Header.Set("X-Kombify-Capability-Lease", cfg.CapabilityLease)
+			return nil
+		},
+	}
+	return reader.Read
+}
 
 func mapKernelLiveMessage(msg *live.LiveMessage) *vsserver.LiveMessage {
 	if msg == nil {
@@ -279,6 +313,7 @@ func (b *assemblyAILiveBridge) Connect(ctx context.Context, cfg vsserver.LiveCon
 		return errors.New("voiceagent: no AssemblyAI API key configured for this deployment")
 	}
 	liveCfg := live.LiveConfig{
+		StoredAgentID:    cfg.StoredAgentID,
 		Provider:         ProviderAssemblyAI,
 		ProfileID:        "realtime.assemblyai.voice-agent",
 		Model:            cfg.Model,
@@ -466,6 +501,9 @@ type deepgramLiveBridge struct {
 }
 
 func (b *deepgramLiveBridge) Connect(ctx context.Context, cfg vsserver.LiveConfigFrame) error {
+	if cfg.NativeLLMBaseURL != "" {
+		b.inner.ConfigureThink("open_ai", cfg.NativeLLMModel, strings.TrimRight(cfg.NativeLLMBaseURL, "/")+"/chat/completions", cfg.NativeLLMToken)
+	}
 	if cfg.APIKey == "" {
 		return errors.New("voiceagent: no Deepgram API key configured for this deployment")
 	}

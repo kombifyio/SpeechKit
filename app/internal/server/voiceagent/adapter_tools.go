@@ -12,9 +12,13 @@ import (
 // mergeBridgeTools asks the session tool router for definitions (bounded by
 // bridgeDefinitionsTimeout) and merges them into cfg.Tools. Failure or an
 // empty manifest degrades to tool-less and surfaces an informational event
-// frame; the session always proceeds.
+// frame; the session always proceeds. Providers that run their own tools
+// (LiveSelfToolProvider) skip the bridge entirely.
 func (a *Adapter) mergeBridgeTools(ctx context.Context, cfg *LiveConfigFrame) {
 	if a.ToolRouter == nil {
+		return
+	}
+	if self, ok := a.Provider.(LiveSelfToolProvider); ok && self.HandlesOwnTools() {
 		return
 	}
 	defsCtx, cancel := context.WithTimeout(ctx, bridgeDefinitionsTimeout)

@@ -839,6 +839,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/voiceagent/sessions/{id}/llm/chat/completions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stream a native media provider's bound registered-agent turn
+         * @description Dedicated provider callback, not an owner chat-completions API. Requires
+         *     an active session-only callback credential. Request body is limited to
+         *     128 KiB and one JSON value. Latest user speech must match a native final
+         *     transcript. Vendor model/history/system/tools cannot select authority.
+         *     Duplicate or concurrent admitted turns fail closed before execution.
+         */
+        post: operations["completeNativeRegisteredVoiceTurn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/voiceagent/sessions/{id}/livekit-token": {
         parameters: {
             query?: never;
@@ -3674,6 +3698,67 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Error"];
                 };
+            };
+        };
+    };
+    completeNativeRegisteredVoiceTurn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @constant */
+                    stream: true;
+                    messages: {
+                        role: string;
+                        content: string;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description OpenAI-compatible chat.completion.chunk SSE, then DONE on success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Invalid or oversized request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid, expired or closed session callback */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No matching final transcript, concurrent turn or replay */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Registered agent turn failed before response streaming */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

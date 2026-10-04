@@ -37,6 +37,7 @@ type Adapter struct {
 	Providers       map[string]ProviderFactory
 	DefaultProvider string
 	Persona         PersonaResolver
+	native          *nativeVoiceSessions
 	// MediaBridge starts an optional LiveKit media bridge for sessions that
 	// keep this WebSocket as control transport and move audio through LiveKit.
 	MediaBridge MediaBridgeFactory
@@ -119,9 +120,45 @@ func (a *Adapter) Run(parent context.Context) {
 	a.stopAdmission = cancel
 	defer cancel()
 	endReason := "error"
+	var connectedAt time.Time
+	// Reserved sessions settle through a trusted final receipt even when
+	// provider admission fails. Local sessions meter only successful connects.
+	defer func() {
+		if a.OnUsage == nil || a.Session == nil || (connectedAt.IsZero() && a.Session.VoiceBudget.ReservationID == "") {
+			return
+		}
+		endedAt := a.now()
+		if expiry := a.Session.VoiceBudget.ExpiresAt; expiry > 0 && endedAt.After(time.Unix(expiry, 0)) {
+			endedAt = time.Unix(expiry, 0)
+		}
+		duration := time.Duration(0)
+		if !connectedAt.IsZero() && endedAt.After(connectedAt) {
+			duration = endedAt.Sub(connectedAt)
+		}
+		provider := ""
+		if a.Provider != nil {
+			provider = normalizeProviderName(a.Provider.Name())
+		}
+		a.OnUsage(VoiceUsage{SessionID: a.Session.ID, AISessionID: a.Session.AISessionID, Provider: provider,
+			Duration: duration, OwnerUserID: a.Session.Owner.UserID, OwnerOrgID: a.Session.Owner.OrgID,
+			ReservationID: a.Session.VoiceBudget.ReservationID})
+	}()
 	defer func() {
 		a.sendSessionEnd(context.WithoutCancel(parent), endReason)
 	}()
+	var budgetExpiry time.Time
+	if a.Session != nil && a.Session.VoiceBudget.ReservationID != "" {
+		budgetExpiry = time.Unix(a.Session.VoiceBudget.ExpiresAt, 0)
+		if !time.Now().Before(budgetExpiry) {
+			a.sendFatalError(parent, "voice_budget_exhausted", "Reserve new Voice quota before starting voice media.")
+			endReason = "voice_budget_exhausted"
+			return
+		}
+		var deadlineCancel context.CancelFunc
+		ctx, deadlineCancel = context.WithDeadlineCause(ctx, budgetExpiry, errVoiceBudgetExpired)
+		defer deadlineCancel()
+	}
+	budgetEnded := func() bool { return !budgetExpiry.IsZero() && !time.Now().Before(budgetExpiry) }
 	var authorizationExpiry time.Time
 	if a.Session != nil && a.Session.VoiceAgentBinding.TargetAgentID != "" {
 		var err error
@@ -142,7 +179,10 @@ func (a *Adapter) Run(parent context.Context) {
 
 	start, err := a.waitForStart(ctx)
 	if err != nil || ctx.Err() != nil || authorizationEnded() {
-		if authorizationEnded() {
+		if budgetEnded() {
+			endReason = "voice_budget_exhausted"
+			a.sendFatalError(parent, "voice_budget_exhausted", "Reserve new Voice quota before starting voice media.")
+		} else if authorizationEnded() {
 			endReason = "authorization_expired"
 			a.sendFatalError(parent, "auth_expired", "Start a new authorized voice session.")
 		} else if ctx.Err() != nil {
@@ -162,12 +202,24 @@ func (a *Adapter) Run(parent context.Context) {
 	// (falling back to the server default) so backends are switchable per
 	// session without a redeploy.
 	if a.Provider == nil {
-		provider, resolved, err := a.selectProvider(start.Provider)
+		requested := start.Provider
+		mediaProvider := normalizeProviderName(start.MediaProvider)
+		if mediaProvider != "" {
+			if a.Session == nil || a.Session.VoiceAgentBinding.TargetAgentID == "" || a.Session.VoiceBudget.ReservationID == "" || (mediaProvider != "assemblyai" && mediaProvider != "deepgram") || a.native == nil {
+				a.sendFatalError(ctx, "native_voice_binding_required", "Reserve Voice quota and bind a registered agent before selecting native voice media.")
+				return
+			}
+			requested = mediaProvider
+		}
+		provider, resolved, err := a.selectProvider(requested)
 		if err != nil {
 			a.sendFatalError(ctx, "provider_unavailable", "The selected voice provider is unavailable.")
 			return
 		}
 		a.Provider = provider
+		if mediaProvider != "" {
+			a.Provider = &registeredNativeProvider{LiveProviderAdapter: provider, sessions: a.native, provider: mediaProvider}
+		}
 		// Normalise so the persona resolver (which picks the API key + model
 		// per provider) and the sequence runner see the resolved backend.
 		start.Provider = resolved
@@ -200,6 +252,7 @@ func (a *Adapter) Run(parent context.Context) {
 		cfg.AgentEndpoint = binding.Endpoint
 		cfg.CapabilityLease = binding.Lease
 		cfg.CredentialExpiresAt = binding.CredentialExpiresAt
+		cfg.NativeConsent = NativeVoiceConsent{Verified: binding.ConsentVerified, CloudProcessing: binding.CloudProcessing, RecordingAllowed: binding.VoiceAgentRecording, RecordingUpdatedAt: binding.VoiceAgentRecordingUpdatedAt, ExpiresAt: binding.CredentialExpiresAt}
 		cfg.VoiceSessionID = a.Session.ID
 		cfg.AISessionID = a.Session.AISessionID
 		cfg.OwnerUserID = a.Session.Owner.UserID
@@ -219,41 +272,33 @@ func (a *Adapter) Run(parent context.Context) {
 	// success preserves the context used by provider background work.
 	connectTimer := time.AfterFunc(connectTimeout, cancel)
 	defer connectTimer.Stop()
+	if ctx.Err() != nil {
+		if budgetEnded() {
+			endReason = "voice_budget_exhausted"
+			a.sendFatalError(parent, "voice_budget_exhausted", "Reserve new Voice quota before starting voice media.")
+		} else if authorizationEnded() {
+			endReason = "authorization_expired"
+			a.sendFatalError(parent, "auth_expired", "Start a new authorized voice session.")
+		}
+		return
+	}
 	if err := a.Provider.Connect(ctx, cfg); err != nil {
 		cancel()
 		a.closeProvider()
-		if authorizationEnded() {
+		if budgetEnded() {
+			endReason = "voice_budget_exhausted"
+			a.sendFatalError(parent, "voice_budget_exhausted", "Reserve new Voice quota before starting voice media.")
+		} else if authorizationEnded() {
 			endReason = "authorization_expired"
 			a.sendFatalError(parent, "auth_expired", "Start a new authorized voice session.")
+		} else if errors.Is(err, errNativeConsentDenied) {
+			a.sendFatalError(parent, "voice_consent_required", "Review cloud voice and recording consent in voice settings before starting a new session.")
 		} else {
 			a.sendFatalError(parent, "provider_connect_failed", "The voice provider could not connect.")
 		}
 		return
 	}
-	connectedAt := a.now()
-	if a.OnUsage != nil {
-		meteredProvider := normalizeProviderName(start.Provider)
-		if meteredProvider == "" && a.Provider != nil {
-			meteredProvider = normalizeProviderName(a.Provider.Name())
-		}
-		sessionID, aiSessionID, ownerUserID, ownerOrgID := "", "", "", ""
-		if a.Session != nil {
-			sessionID = a.Session.ID
-			aiSessionID = a.Session.AISessionID
-			ownerUserID = a.Session.Owner.UserID
-			ownerOrgID = a.Session.Owner.OrgID
-		}
-		defer func() {
-			a.OnUsage(VoiceUsage{
-				SessionID:   sessionID,
-				AISessionID: aiSessionID,
-				Provider:    meteredProvider,
-				Duration:    a.now().Sub(connectedAt),
-				OwnerUserID: ownerUserID,
-				OwnerOrgID:  ownerOrgID,
-			})
-		}()
-	}
+	connectedAt = a.now()
 	if transport == MediaTransportLiveKit {
 		bridge, err := a.MediaBridge.Start(ctx, MediaBridgeRequest{
 			SessionID: a.Session.ID,
@@ -269,7 +314,9 @@ func (a *Adapter) Run(parent context.Context) {
 	}
 	connectTimer.Stop()
 	if ctx.Err() != nil {
-		if authorizationEnded() {
+		if budgetEnded() {
+			endReason = "voice_budget_exhausted"
+		} else if authorizationEnded() {
 			endReason = "authorization_expired"
 		}
 		return
@@ -329,13 +376,17 @@ func (a *Adapter) Run(parent context.Context) {
 		// One of the pumps returned: a client disconnect, provider EOF,
 		// GoAway, or explicit MsgStop. The other pumps exit naturally
 		// when ctx cancels below.
-		if authorizationEnded() {
+		if budgetEnded() {
+			endReason = "voice_budget_exhausted"
+		} else if authorizationEnded() {
 			endReason = "authorization_expired"
 		} else if parent.Err() != nil {
 			endReason = "shutdown"
 		}
 	case <-ctx.Done():
-		if authorizationEnded() {
+		if budgetEnded() {
+			endReason = "voice_budget_exhausted"
+		} else if authorizationEnded() {
 			endReason = "authorization_expired"
 		} else {
 			endReason = "shutdown"

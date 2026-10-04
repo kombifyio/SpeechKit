@@ -3,6 +3,7 @@
 package voiceagent
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -81,6 +82,8 @@ func (h *Handler) itemHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
+	case subresource == "llm/chat/completions" && r.Method == http.MethodPost:
+		h.native.serveCallback(w, r, sessionID)
 	case subresource == "ws" && r.Method == http.MethodGet:
 		h.upgradeWS(w, r, sessionID)
 	case subresource == "livekit-token" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
@@ -162,13 +165,17 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusForbidden, "voice_agent_binding_mismatch", "registered agent request does not match the edge-authorized target")
 		return
 	}
-
-	session, ticket, err := h.manager.CreateWithAISession(Identity{
+	budget := wssession.VoiceBudget(middleware.VoiceBudgetFromContext(r.Context()))
+	if h.requireVoiceBudget && (id.Source != "edge_hmac" || budget.ReservationID == "") {
+		httpx.WriteError(w, http.StatusForbidden, "voice_budget_required", "Reserve Voice quota before starting a voice session.")
+		return
+	}
+	session, ticket, err := h.manager.CreateWithVoiceBudget(Identity{
 		UserID: id.UserID,
 		OrgID:  id.OrgID,
 		Plan:   id.Plan,
 		Role:   id.Role,
-	}, input.AISessionID)
+	}, input.AISessionID, budget, h.reportUnstartedSession)
 	if err == nil {
 		// Capture the optional per-session tool-bridge credential the edge
 		// forwarded with this request. The middleware only attaches it when
@@ -186,6 +193,8 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		switch {
+		case errors.Is(err, wssession.ErrVoiceBudgetUnavailable):
+			httpx.WriteError(w, http.StatusForbidden, "voice_budget_unavailable", "Reserve new Voice quota before starting a voice session.")
 		case errors.Is(err, ErrIdentityLimitExceeded):
 			httpx.WriteError(w, http.StatusConflict, "per_user_limit_exceeded", err.Error())
 		case errors.Is(err, ErrGlobalLimitExceeded):
@@ -201,7 +210,7 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 	expires := h.manager.TicketExpiresAt().Format(time.RFC3339)
 	var liveKit *LiveKitJoinInfo
 	if h.liveKit != nil && h.liveKit.Enabled() {
-		info, err := h.liveKit.IssueJoinToken(r.Context(), session.ID, session.Owner)
+		info, err := h.issueSessionLiveKitToken(r.Context(), session)
 		if err != nil {
 			h.manager.Remove(session.ID)
 			httpx.WriteError(w, http.StatusServiceUnavailable, "livekit_token_unavailable", err.Error())
@@ -285,7 +294,7 @@ func (h *Handler) liveKitToken(w http.ResponseWriter, r *http.Request, sessionID
 		httpx.WriteError(w, http.StatusForbidden, "forbidden", "you do not own this session")
 		return
 	}
-	info, err := h.liveKit.IssueJoinToken(r.Context(), sessionID, s.Owner)
+	info, err := h.issueSessionLiveKitToken(r.Context(), s)
 	if err != nil {
 		httpx.WriteError(w, http.StatusServiceUnavailable, "livekit_token_unavailable", err.Error())
 		return
@@ -293,4 +302,16 @@ func (h *Handler) liveKitToken(w http.ResponseWriter, r *http.Request, sessionID
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(info)
+}
+
+func (h *Handler) issueSessionLiveKitToken(ctx context.Context, session *ManagedSession) (LiveKitJoinInfo, error) {
+	if h.requireVoiceBudget && session.VoiceBudget.ReservationID == "" {
+		return LiveKitJoinInfo{}, errors.New("voiceagent: Voice quota reservation is required")
+	}
+	if session.VoiceBudget.ReservationID != "" {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, time.Unix(session.VoiceBudget.ExpiresAt, 0))
+		defer cancel()
+	}
+	return h.liveKit.IssueJoinToken(ctx, session.ID, session.Owner)
 }

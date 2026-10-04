@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-func verify(mode AuthMode, r *http.Request, bearerToken, edgeSecret, bearerRole string, requireAuth bool) (Identity, bool) {
+func verify(mode AuthMode, r *http.Request, bearerToken string, edge func(*http.Request) (Identity, bool), bearerRole string, requireAuth bool) (Identity, bool) {
 	switch mode {
 	case AuthModeNone:
 		// Fail-closed defence-in-depth: when the operator bound the server
@@ -28,12 +28,12 @@ func verify(mode AuthMode, r *http.Request, bearerToken, edgeSecret, bearerRole 
 	case AuthModeBearer:
 		return verifyBearer(r, bearerToken, bearerRole)
 	case AuthModeEdgeHMAC:
-		return verifyEdgeHMAC(r, edgeSecret)
+		return edge(r)
 	case AuthModeBearerOrEdge:
 		if id, ok := verifyBearer(r, bearerToken, bearerRole); ok {
 			return id, true
 		}
-		return verifyEdgeHMAC(r, edgeSecret)
+		return edge(r)
 	default:
 		return Identity{}, false
 	}

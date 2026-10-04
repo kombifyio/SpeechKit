@@ -23,12 +23,9 @@ func setVoicePrefHeaders(req *http.Request) {
 
 func signEdgeHeaders(t *testing.T, req *http.Request, secret string) {
 	t.Helper()
-	req.Header.Set("X-Edge-User-Id", "user-42")
-	req.Header.Set("X-Edge-Org-Id", "org-kombify")
-	req.Header.Set("X-Edge-Plan", "pro")
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte("user-42\norg-kombify\npro\n"))
-	req.Header.Set("X-Edge-Auth-Hmac", hex.EncodeToString(mac.Sum(nil)))
+	if err := SignEdgeEnvelope(req, EdgeKey{ID: "primary", Secret: secret}, Identity{UserID: "user-42", OrgID: "org-kombify", Plan: "pro"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // signVoicePrefHeaders mints the dedicated pref-overlay signature over the

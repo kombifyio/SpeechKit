@@ -53,6 +53,7 @@ type HandlerOptions struct {
 	// MaxSessionDuration terminates a session after this wall-clock duration
 	// even if it remains active. Zero disables the hard cap.
 	MaxSessionDuration time.Duration
+	RequireVoiceBudget bool
 	Store              store.Store
 	LiveKit            *LiveKitTokenIssuer
 	MediaBridge        MediaBridgeFactory
@@ -63,8 +64,14 @@ type HandlerOptions struct {
 	// session (voice-agent tool bridge). Nil disables server-side tool
 	// execution; all provider tool calls pass through to the client as
 	// before.
-	ToolRouter SessionToolRouter
-	Usage      UsageReporter
+	ToolRouter    SessionToolRouter
+	Usage         UsageReporter
+	AssemblyAIKey string
+	// RegisteredAgentSigningSecret supplies the operator's existing delegation
+	// signer. Native registered sessions fail closed when it is unavailable.
+	RegisteredAgentSigningSecret func() string
+	// NativeConsentReader checks current owner consent through trusted authority.
+	NativeConsentReader NativeConsentReader
 }
 
 // Handler exposes both the HTTP session-creation endpoint and the WS
@@ -78,6 +85,7 @@ type Handler struct {
 	allowedOrigins     []string
 	idleTimeout        time.Duration
 	maxSessionDuration time.Duration
+	requireVoiceBudget bool
 	store              store.Store
 	liveKit            *LiveKitTokenIssuer
 	mediaBridge        MediaBridgeFactory
@@ -85,6 +93,7 @@ type Handler struct {
 	trustedProxies     httpx.TrustedProxies
 	toolRouter         SessionToolRouter
 	usage              UsageReporter
+	native             *nativeVoiceSessions
 }
 
 // New constructs a handler. All options except MaxAllowedClockSkew are
@@ -148,6 +157,7 @@ func New(opts HandlerOptions) (*Handler, error) {
 		allowedOrigins:     normalizeAllowedOrigins(opts.AllowedOrigins),
 		idleTimeout:        idle,
 		maxSessionDuration: maxSessionDuration,
+		requireVoiceBudget: opts.RequireVoiceBudget,
 		store:              opts.Store,
 		liveKit:            opts.LiveKit,
 		mediaBridge:        mediaBridge,
@@ -155,6 +165,7 @@ func New(opts HandlerOptions) (*Handler, error) {
 		trustedProxies:     trustedProxies,
 		toolRouter:         opts.ToolRouter,
 		usage:              opts.Usage,
+		native:             newNativeVoiceSessions(opts.PublicURL, opts.Store, opts.AssemblyAIKey, opts.RegisteredAgentSigningSecret, opts.NativeConsentReader),
 	}, nil
 }
 

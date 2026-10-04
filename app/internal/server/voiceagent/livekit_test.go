@@ -7,7 +7,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -172,19 +171,7 @@ func decodeAndVerifyLiveKitToken(t *testing.T, token, secret string) map[string]
 }
 
 func setEdgeAuthHeaders(req *http.Request, secret string, id Identity) {
-	req.Header.Set("X-Edge-User-Id", id.UserID)
-	req.Header.Set("X-Edge-Org-Id", id.OrgID)
-	req.Header.Set("X-Edge-Plan", id.Plan)
-	if id.Role != "" {
-		req.Header.Set("X-Edge-Role", id.Role)
+	if err := middleware.SignEdgeEnvelope(req, middleware.EdgeKey{ID: "primary", Secret: secret}, middleware.Identity{UserID: id.UserID, OrgID: id.OrgID, Plan: id.Plan, Role: id.Role}, time.Now()); err != nil {
+		panic(err)
 	}
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(id.UserID))
-	mac.Write([]byte{'\n'})
-	mac.Write([]byte(id.OrgID))
-	mac.Write([]byte{'\n'})
-	mac.Write([]byte(id.Plan))
-	mac.Write([]byte{'\n'})
-	mac.Write([]byte(id.Role))
-	req.Header.Set("X-Edge-Auth-Hmac", hex.EncodeToString(mac.Sum(nil)))
 }

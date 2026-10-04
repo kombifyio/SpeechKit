@@ -89,6 +89,10 @@ type StartFrame struct {
 	// provider_unavailable error. This is what lets a tester switch backends
 	// per session ("laufend wechseln") without a server redeploy.
 	Provider string `json:"provider,omitempty"`
+	// MediaProvider selects native AssemblyAI or Deepgram conversation media
+	// for a registered-agent binding. Reasoning/tools stay with that agent.
+	// Empty retains the existing registered-agent transport for older clients.
+	MediaProvider string `json:"media_provider,omitempty"`
 	// MediaTransport selects where microphone and model audio move. Empty
 	// defaults to "websocket" for existing clients. "livekit" keeps this
 	// WebSocket as the control channel and moves audio through LiveKit tracks.

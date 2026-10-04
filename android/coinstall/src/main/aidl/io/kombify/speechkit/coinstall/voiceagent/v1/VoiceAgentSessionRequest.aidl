@@ -19,4 +19,6 @@ parcelable VoiceAgentSessionRequest {
      * acceptance and audio forwarding; null means microphone capture.
      */
     @nullable ParcelFileDescriptor audioSource;
+    /** Optional assemblyai/deepgram native media; requires contract version 3. Null preserves legacy transport. */
+    @nullable String mediaProvider;
 }

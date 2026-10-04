@@ -59,6 +59,8 @@ export interface StartFrame {
    * rejected at start with a provider_unavailable error.
    */
   provider?: string;
+  /** Native media backend for an authorized registered-agent voice session. */
+  media_provider?: "assemblyai" | "deepgram";
   /**
    * Where microphone and model audio move. `websocket` (default) keeps the
    * v1 binary-frame audio path; `livekit` keeps this WebSocket as the

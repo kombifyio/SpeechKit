@@ -130,7 +130,11 @@ func (a *Adapter) handleCancel(ctx context.Context) {
 		EventFrameFields: fields,
 	})
 	a.writeMu.Unlock()
-	if active {
+	pending := false
+	if response, ok := a.Provider.(LivePendingResponse); ok {
+		pending = response.ResponsePending()
+	}
+	if active || pending {
 		if canceller, ok := a.Provider.(LiveResponseCanceller); ok {
 			if err := canceller.CancelResponse(); err != nil {
 				slog.Warn("voiceagent: provider response cancel failed; suppressing downlink until turn end",

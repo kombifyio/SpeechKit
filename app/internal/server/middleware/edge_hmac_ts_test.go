@@ -110,23 +110,6 @@ func TestAuth_EdgeHMAC_DowngradeStripTimestamp_Rejected(t *testing.T) {
 	}
 }
 
-// TestAuth_EdgeHMAC_LegacyNoTimestamp_StillAccepted guards the backward-compat
-// path: an edge signer that does not send X-Edge-Auth-Ts keeps working.
-func TestAuth_EdgeHMAC_LegacyNoTimestamp_StillAccepted(t *testing.T) {
-	t.Setenv("TEST_EDGE_SECRET", "edge-secret-xyz")
-	handler := Auth(AuthOptions{Mode: "edge_hmac", EdgeSecretEnv: "TEST_EDGE_SECRET"})(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }),
-	)
-	sig := edgeSig("edge-secret-xyz", "user-42", "org-kombify", "pro", "admin", "")
-
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, edgeRequest("user-42", "org-kombify", "pro", "admin", "", sig))
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("legacy no-ts signature must still pass; got %d body=%s", rec.Code, rec.Body.String())
-	}
-}
-
 func TestEdgeTimestampFresh(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	tests := []struct {

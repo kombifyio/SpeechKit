@@ -30,36 +30,41 @@ class VoiceAgentProviderSelectionTest {
 
     @Test
     fun `the requested provider reaches the start frame`() {
-        val received = AtomicReference<String>()
-        val started = CountDownLatch(1)
-        val server = agentServer { socket, text ->
-            received.set(text)
-            started.countDown()
-            socket.send("""{"type":"state","state":"listening","event_type":"session_ready"}""")
-        }
-        val controller = VoiceAgentController(
-            ConnectionProfile.Server(server.url("/").toString()),
-        )
-        try {
-            runBlocking {
-                withTimeout(5_000) { controller.start(VoiceAgentStartFrame(provider = "assemblyai")) }
+        for (media in listOf(null, "assemblyai", "deepgram")) {
+            val received = AtomicReference<String>()
+            val started = CountDownLatch(1)
+            val server = agentServer { socket, text ->
+                received.set(text)
+                started.countDown()
+                socket.send("""{"type":"state","state":"listening","event_type":"session_ready"}""")
             }
-            check(started.await(10, TimeUnit.SECONDS)) { "no start frame reached the server" }
+            val controller = VoiceAgentController(
+                ConnectionProfile.Server(server.url("/").toString()),
+            )
+            try {
+                runBlocking {
+                    withTimeout(5_000) {
+                        controller.start(VoiceAgentStartFrame(provider = "kombify-agent", mediaProvider = media))
+                    }
+                }
+                check(started.await(10, TimeUnit.SECONDS)) { "no start frame reached the server" }
 
-            val start = startAdapter.fromJson(received.get())
-            assertEquals(VoiceAgentMsg.START, start?.type)
-            assertEquals("assemblyai", start?.provider)
+                val start = startAdapter.fromJson(received.get())
+                assertEquals(VoiceAgentMsg.START, start?.type)
+                assertEquals("kombify-agent", start?.provider)
+                assertEquals(media, start?.mediaProvider)
 
-            // The ticket rides in the subprotocol, never in the URL — a mint
-            // request and an upgrade request, in that order.
-            server.takeRequest(10, TimeUnit.SECONDS)
-            val upgrade = server.takeRequest(10, TimeUnit.SECONDS)
-            assertEquals("ticket.t-1", upgrade?.getHeader("Sec-WebSocket-Protocol"))
-        } finally {
-            runCatching { runBlocking { withTimeout(5_000) { controller.stop() } } }
-            // MockWebServer.shutdown() races the WebSocket close handshake;
-            // teardown hygiene, not part of the contract under test.
-            runCatching { server.shutdown() }
+                // The ticket rides in the subprotocol, never in the URL — a mint
+                // request and an upgrade request, in that order.
+                server.takeRequest(10, TimeUnit.SECONDS)
+                val upgrade = server.takeRequest(10, TimeUnit.SECONDS)
+                assertEquals("ticket.t-1", upgrade?.getHeader("Sec-WebSocket-Protocol"))
+            } finally {
+                runCatching { runBlocking { withTimeout(5_000) { controller.stop() } } }
+                // MockWebServer.shutdown() races the WebSocket close handshake;
+                // teardown hygiene, not part of the contract under test.
+                runCatching { server.shutdown() }
+            }
         }
     }
 

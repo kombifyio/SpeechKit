@@ -34,6 +34,7 @@ type fakeProvider struct {
 	streamEndCalls int
 	cancelCalls    int
 	liveKitSupport bool
+	ownTools       bool
 	closed         bool
 }
 
@@ -106,6 +107,8 @@ func (p *fakeProvider) Close() error {
 	return nil
 }
 func (p *fakeProvider) Name() string { return "fake" }
+
+func (p *fakeProvider) HandlesOwnTools() bool { return p.ownTools }
 func (p *fakeProvider) SupportsLiveKitTransport() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -148,7 +151,7 @@ func (r *fakeResolver) ResolveStep(_ StartFrame, stepIndex int) (LiveConfigFrame
 type adapterTestEnv struct {
 	srv           *httptest.Server
 	conn          *websocket.Conn
-	provider      *fakeProvider
+	provider      LiveProviderAdapter
 	resolver      *fakeResolver
 	bridgeFactory *fakeMediaBridgeFactory
 	done          chan struct{}
@@ -156,12 +159,12 @@ type adapterTestEnv struct {
 	idle          time.Duration
 }
 
-func startAdapterEnv(t *testing.T, idle time.Duration, provider *fakeProvider, resolver *fakeResolver) *adapterTestEnv {
+func startAdapterEnv(t *testing.T, idle time.Duration, provider LiveProviderAdapter, resolver *fakeResolver, reservation ...string) *adapterTestEnv {
 	t.Helper()
-	return startAdapterEnvWithBridge(t, idle, provider, resolver, nil)
+	return startAdapterEnvWithBridge(t, idle, provider, resolver, nil, reservation...)
 }
 
-func startAdapterEnvWithBridge(t *testing.T, idle time.Duration, provider *fakeProvider, resolver *fakeResolver, bridgeFactory *fakeMediaBridgeFactory) *adapterTestEnv {
+func startAdapterEnvWithBridge(t *testing.T, idle time.Duration, provider LiveProviderAdapter, resolver *fakeResolver, bridgeFactory *fakeMediaBridgeFactory, reservation ...string) *adapterTestEnv {
 	t.Helper()
 	env := &adapterTestEnv{
 		provider:      provider,
@@ -192,6 +195,10 @@ func startAdapterEnvWithBridge(t *testing.T, idle time.Duration, provider *fakeP
 			MediaBridge: bridgeFactory,
 			OnUsage:     func(usage VoiceUsage) { env.usage <- usage },
 			OnClose:     func() { close(env.done) },
+		}
+		if len(reservation) > 0 {
+			adapter.Session.VoiceBudget.ReservationID = reservation[0]
+			adapter.Session.VoiceBudget.ExpiresAt = time.Now().Add(time.Minute).Unix()
 		}
 		adapter.Run(r.Context())
 	})))

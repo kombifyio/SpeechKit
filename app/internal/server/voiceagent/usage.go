@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -17,10 +18,11 @@ import (
 // clock only after the realtime provider accepts the session and stops it when
 // the adapter terminates.
 type VoiceUsage struct {
-	SessionID   string
-	AISessionID string
-	Provider    string
-	Duration    time.Duration
+	SessionID     string
+	AISessionID   string
+	Provider      string
+	Duration      time.Duration
+	ReservationID string
 	// Retained from the authenticated session owner, never from the expired
 	// bridge credential or a client-controlled usage payload.
 	OwnerUserID string
@@ -29,6 +31,29 @@ type VoiceUsage struct {
 
 type UsageReporter interface {
 	Report(context.Context, string, VoiceUsage) error
+}
+
+func (h *Handler) reportUnstartedSession(session *ManagedSession) {
+	if session.VoiceBudget.ReservationID == "" {
+		return
+	}
+	h.reportVoiceUsage("", VoiceUsage{
+		SessionID: session.ID, AISessionID: session.AISessionID, ReservationID: session.VoiceBudget.ReservationID,
+		OwnerUserID: session.Owner.UserID, OwnerOrgID: session.Owner.OrgID,
+	})
+}
+
+func (h *Handler) reportVoiceUsage(credential string, usage VoiceUsage) {
+	if h.usage == nil {
+		return
+	}
+	// Teardown may outlive the request/credential. The existing hosted service
+	// reporter signs a fresh, bounded owner-specific accounting request.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := h.usage.Report(ctx, credential, usage); err != nil {
+		slog.Warn("voiceagent: usage report failed", "session_id", usage.SessionID, "code", "usage_report_failed") // #nosec G706 -- session ID is a structured attribute; upstream details may contain credentials.
+	}
 }
 
 type HTTPUsageReporter struct {
@@ -59,10 +84,10 @@ func (r *HTTPUsageReporter) report(ctx context.Context, usage VoiceUsage, author
 	if r == nil || strings.TrimSpace(r.Endpoint) == "" {
 		return errors.New("voiceagent usage endpoint is not configured")
 	}
-	if usage.Duration <= 0 || strings.TrimSpace(usage.SessionID) == "" {
+	if usage.Duration < 0 || (usage.Duration == 0 && usage.ReservationID == "") || strings.TrimSpace(usage.SessionID) == "" {
 		return errors.New("voiceagent usage is invalid")
 	}
-	payload, err := json.Marshal(map[string]any{
+	event := map[string]any{
 		"tool": "SPEECHKIT",
 		"events": []map[string]any{{
 			"event_id": "voice-session:" + usage.SessionID + ":connected",
@@ -74,7 +99,11 @@ func (r *HTTPUsageReporter) report(ctx context.Context, usage VoiceUsage, author
 				"provider":      usage.Provider,
 			},
 		}},
-	})
+	}
+	if usage.ReservationID != "" {
+		event["reservation_id"] = usage.ReservationID
+	}
+	payload, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("encode voiceagent usage: %w", err)
 	}

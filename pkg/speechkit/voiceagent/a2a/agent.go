@@ -88,6 +88,10 @@ func New(config Config) (*Agent, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 60 * time.Second}
 	}
+	// Delegated headers authorize one bound endpoint. A redirect must not
+	// forward them to another endpoint, even with a host-injected HTTP client.
+	safeClient := *client
+	safeClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	turnTimeout := config.TurnTimeout
 	if turnTimeout <= 0 {
 		turnTimeout = 60 * time.Second
@@ -96,7 +100,7 @@ func New(config Config) (*Agent, error) {
 		endpoint:      endpoint,
 		targetAgentID: strings.TrimSpace(config.TargetAgentID),
 		sessionID:     strings.TrimSpace(config.SessionID),
-		client:        client,
+		client:        &safeClient,
 		headers:       config.Headers,
 		turnTimeout:   turnTimeout,
 	}, nil
@@ -110,6 +114,19 @@ func New(config Config) (*Agent, error) {
 // parts is an error. Streamed answers concatenate the
 // text of every result event.
 func (a *Agent) Run(ctx context.Context, input cascaded.AgentInput) (cascaded.AgentOutput, error) {
+	return a.Stream(ctx, input, nil)
+}
+
+// Stream sends the same authorized turn as Run and emits each answer delta as
+// it arrives. Returning an error from emit aborts the request without replay.
+func (a *Agent) Stream(ctx context.Context, input cascaded.AgentInput, emit func(string) error) (cascaded.AgentOutput, error) {
+	return a.StreamTurn(ctx, input, "", emit)
+}
+
+// StreamTurn supplies the host's canonical native final-transcript identity.
+// Empty keeps the historical generated request identity. The host must bind
+// turnID to one observed final utterance and never replay uncertain execution.
+func (a *Agent) StreamTurn(ctx context.Context, input cascaded.AgentInput, turnID string, emit func(string) error) (cascaded.AgentOutput, error) {
 	ctx, cancel := context.WithTimeout(ctx, a.turnTimeout)
 	defer cancel()
 	utterance := strings.TrimSpace(input.Utterance)
@@ -117,6 +134,9 @@ func (a *Agent) Run(ctx context.Context, input cascaded.AgentInput) (cascaded.Ag
 		return cascaded.AgentOutput{}, errors.New("speechkit a2a: utterance is required")
 	}
 	requestID := "speechkit-" + fmt.Sprint(time.Now().UnixNano())
+	if turnID != "" {
+		requestID = turnID
+	}
 	wire := map[string]any{
 		"jsonrpc": "2.0",
 		"id":      requestID,
@@ -191,7 +211,7 @@ func (a *Agent) Run(ctx context.Context, input cascaded.AgentInput) (cascaded.Ag
 		return cascaded.AgentOutput{}, &TurnError{code: code}
 	}
 
-	text, err := readAnswer(response)
+	text, err := readAnswerStream(response, emit)
 	if err != nil {
 		if ctx.Err() != nil {
 			return cascaded.AgentOutput{}, ctx.Err()
@@ -217,9 +237,9 @@ func validateEndpoint(raw string) (string, error) {
 	return parsed.String(), nil
 }
 
-func readAnswer(response *http.Response) (string, error) {
+func readAnswerStream(response *http.Response, emit func(string) error) (string, error) {
 	if strings.Contains(strings.ToLower(response.Header.Get("content-type")), "text/event-stream") {
-		return readSSEAnswer(response.Body)
+		return readSSEAnswerStream(response.Body, emit)
 	}
 	var envelope any
 	if err := json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(&envelope); err != nil {
@@ -232,15 +252,20 @@ func readAnswer(response *http.Response) (string, error) {
 		if len(text) > 128<<10 {
 			return "", &TurnError{code: "provider_failed"}
 		}
+		if emit != nil {
+			if err := emit(text); err != nil {
+				return "", err
+			}
+		}
 		return text, nil
 	}
 	return "", errors.New("speechkit a2a: agent returned no text answer")
 }
 
-// readSSEAnswer joins the text of every streamed result event. Events carry
+// readSSEAnswerStream joins the text of every streamed result event. Events carry
 // token deltas, so whitespace at a delta's edge belongs to the answer and is
 // trimmed only from the joined text.
-func readSSEAnswer(reader io.Reader) (string, error) {
+func readSSEAnswerStream(reader io.Reader, emit func(string) error) (string, error) {
 	// Bound the whole response, including metadata and ignored events, not
 	// only individual lines. An extra byte distinguishes truncation from EOF.
 	limited := &io.LimitedReader{R: reader, N: (4 << 20) + 1}
@@ -266,6 +291,11 @@ func readSSEAnswer(reader io.Reader) (string, error) {
 					return "", &TurnError{code: "provider_failed"}
 				}
 				answers.WriteString(text)
+				if emit != nil {
+					if err := emit(text); err != nil {
+						return "", err
+					}
+				}
 			}
 		}
 	}

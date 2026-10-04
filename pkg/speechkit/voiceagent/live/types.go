@@ -264,6 +264,10 @@ type LiveConfig struct {
 	Provider  string // e.g. "deepgram", "assemblyai", "openai", "google"
 	ProfileID string // e.g. "realtime.openai.gpt-realtime-2"
 	Model     string // provider-specific realtime model id
+	// StoredAgentID binds an AssemblyAI stored agent prepared by the host.
+	// It is mutually exclusive with inline session configuration. The host
+	// owns provisioning, authorization and durable deletion/reconciliation.
+	StoredAgentID string
 	// FallbackModel is tried when the primary Model's Connect fails. Empty
 	// disables the fallback. Typical pairing in 2026: a preview model as
 	// Model + the last GA model as FallbackModel, so transient preview

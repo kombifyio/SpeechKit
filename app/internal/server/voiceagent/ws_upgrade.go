@@ -3,11 +3,9 @@
 package voiceagent
 
 import (
-	"context"
 	"errors"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/kombifyio/SpeechKit/app/internal/server/httpx"
 	"github.com/kombifyio/SpeechKit/app/internal/server/wssession"
@@ -50,6 +48,8 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 	}
 	if err := h.manager.Attach(sessionID); err != nil {
 		switch {
+		case errors.Is(err, ErrSessionExpired):
+			httpx.WriteError(w, http.StatusGone, "voice_budget_unavailable", "Reserve new Voice quota before starting voice media.")
 		case errors.Is(err, ErrSessionAlreadyActive):
 			httpx.WriteError(w, http.StatusConflict, "already_active", err.Error())
 		default:
@@ -70,6 +70,9 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 	}
 	conn, err := websocket.Accept(w, r, acceptOpts)
 	if err != nil {
+		// Attach won admission, but Accept failed before an Adapter or provider
+		// could run. This handler alone can prove a trusted zero settlement.
+		h.reportUnstartedSession(session) //nolint:contextcheck // Settlement must outlive the failed HTTP upgrade; the reporter uses a bounded service context.
 		h.manager.Remove(sessionID)
 		slog.Warn("voiceagent: WS upgrade failed", "session_id", sessionID, "err", err) // #nosec G706 -- slog writes request/session values as structured attributes, not interpolated log text.
 		return
@@ -82,22 +85,14 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 		Providers:       h.providers,
 		DefaultProvider: h.defaultProvider,
 		Persona:         h.persona,
+		native:          h.native,
 		MediaBridge:     h.mediaBridge,
 		IdleTimeout:     h.idleTimeout,
 		MaxDuration:     h.maxSessionDuration,
 		ToolRouter:      h.toolRouter,
 		//nolint:contextcheck // OnUsage has no context parameter and runs after the request context is done
 		OnUsage: func(usage VoiceUsage) {
-			if h.usage == nil {
-				return
-			}
-			// Usage is reported as the session ends, when the request context is
-			// already done, so this deliberately uses a fresh bounded context.
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := h.usage.Report(ctx, session.BridgeCredential, usage); err != nil {
-				slog.Warn("voiceagent: usage report failed", "session_id", session.ID, "code", "usage_report_failed") // #nosec G706 -- session ID is a structured attribute; upstream details may contain credentials.
-			}
+			h.reportVoiceUsage(session.BridgeCredential, usage)
 		},
 		OnClose: func() {
 			h.manager.Remove(sessionID)

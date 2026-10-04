@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -89,4 +90,63 @@ func bindingHMAC(secret string, id Identity, target, endpoint, lease string) str
 	mac := hmac.New(sha256.New, []byte(secret))
 	_, _ = mac.Write([]byte(id.UserID + "\n" + id.OrgID + "\n" + target + "\n" + endpoint + "\n" + lease))
 	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// Sensitive admission boundary: an altered consent snapshot cannot become a
+// retained native grant through otherwise valid edge authentication.
+func TestAuthVoiceConsentSnapshotRequiresBoundSignature(t *testing.T) {
+	t.Setenv("TEST_EDGE_SECRET", "edge-secret")
+	for _, field := range []string{"valid", "cloud", "recording", "stamp", "owner", "lease"} {
+		t.Run(field, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, "/v1/voiceagent/sessions", nil)
+			signEdgeHeaders(t, request, "edge-secret")
+			id := Identity{UserID: "user-42", OrgID: "org-kombify"}
+			expiry := strconv.FormatInt(time.Now().Add(time.Minute).Unix(), 10)
+			stamp := time.Now().Add(-time.Minute).UTC().Format(time.RFC3339Nano)
+			target, endpoint, lease := "registered-agent", "https://api.kombify.io/a2a/agents/registered-agent", "bound-lease"
+			request.Header.Set(VoiceAgentTargetHeader, target)
+			request.Header.Set(VoiceAgentEndpointHeader, endpoint)
+			request.Header.Set(VoiceAgentLeaseHeader, lease)
+			request.Header.Set(VoiceAgentCredentialExpiresAtHeader, expiry)
+			sign := func(payload string) string {
+				mac := hmac.New(sha256.New, []byte("edge-secret"))
+				_, _ = mac.Write([]byte(payload))
+				return hex.EncodeToString(mac.Sum(nil))
+			}
+			request.Header.Set(VoiceAgentHMACHeader, sign(strings.Join([]string{id.UserID, id.OrgID, target, endpoint, lease, expiry}, "\n")))
+			request.Header.Set("X-Edge-Voice-Consent-Cloud-Processing", "1")
+			request.Header.Set("X-Edge-Voice-Consent-Voice-Agent-Recording", "1")
+			request.Header.Set("X-Edge-Voice-Consent-Voice-Agent-Recording-Updated-At", stamp)
+			signedOwner, signedLease := id.UserID, lease
+			if field == "owner" {
+				signedOwner = "other-owner"
+			}
+			if field == "lease" {
+				signedLease = "other-lease"
+			}
+			request.Header.Set("X-Edge-Voice-Consent-Hmac", sign(strings.Join([]string{signedOwner, id.OrgID, target, signedLease, expiry, "1", "1", stamp}, "\n")))
+			switch field {
+			case "cloud":
+				request.Header.Set("X-Edge-Voice-Consent-Cloud-Processing", "0")
+			case "recording":
+				request.Header.Set("X-Edge-Voice-Consent-Voice-Agent-Recording", "0")
+			case "stamp":
+				request.Header.Set("X-Edge-Voice-Consent-Voice-Agent-Recording-Updated-At", time.Now().Add(-time.Hour).UTC().Format(time.RFC3339Nano))
+			}
+			served := false
+			handler := Auth(AuthOptions{Mode: "edge_hmac", EdgeSecretEnv: "TEST_EDGE_SECRET"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				served = true
+				binding := VoiceAgentBindingFromContext(r.Context())
+				if !binding.ConsentVerified || !binding.CloudProcessing || !binding.VoiceAgentRecording || binding.VoiceAgentRecordingUpdatedAt != stamp {
+					t.Error("trusted snapshot was not retained")
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, request)
+			if served != (field == "valid") || (field != "valid" && recorder.Code != http.StatusUnauthorized) {
+				t.Fatalf("tampered consent admitted: served=%v status=%d", served, recorder.Code)
+			}
+		})
+	}
 }

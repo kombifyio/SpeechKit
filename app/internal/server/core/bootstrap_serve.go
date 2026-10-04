@@ -232,6 +232,10 @@ func serverMiddlewareChain(ctx context.Context, cfg *config.Config, app *App) (f
 			ModeProvider:        app.AuthState.Mode,
 			BearerTokenProvider: app.AuthState.BearerToken,
 			EdgeSecretProvider:  app.AuthState.EdgeSecret,
+			EdgeKeysProvider:    app.AuthState.EdgeKeys,
+			// The legacy edge HMAC stays accepted until the edge sends only
+			// the signed envelope; SPEECHKIT_EDGE_AUTH_LEGACY_HMAC=off ends it.
+			LegacyEdgeHMACProvider: config.ServerEdgeLegacyHMACEnabled,
 			AdminUsernameProvider: func() string {
 				if app.Cfg == nil || !app.Cfg.Server.AdminAuthEnabled {
 					return ""

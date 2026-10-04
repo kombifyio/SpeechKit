@@ -117,7 +117,10 @@ func (a *Adapter) waitForStart(ctx context.Context) (StartFrame, error) {
 	stop := context.AfterFunc(readCtx, func() {
 		defer close(finished)
 		reason := "error"
-		if errors.Is(context.Cause(readCtx), errAuthorizationExpired) {
+		if errors.Is(context.Cause(readCtx), errVoiceBudgetExpired) {
+			reason = "voice_budget_exhausted"
+			a.sendFatalError(context.WithoutCancel(ctx), "voice_budget_exhausted", "Reserve new Voice quota before starting voice media.")
+		} else if errors.Is(context.Cause(readCtx), errAuthorizationExpired) {
 			reason = "authorization_expired"
 			a.sendFatalError(context.WithoutCancel(ctx), "auth_expired", "Start a new authorized voice session.")
 		} else if ctx.Err() != nil {

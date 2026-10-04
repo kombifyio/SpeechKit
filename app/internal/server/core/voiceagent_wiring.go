@@ -127,15 +127,21 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 		TrustedProxyCIDRs:  cfg.Server.TrustedProxyCIDRs,
 		IdleTimeout:        idleTimeout,
 		MaxSessionDuration: maxSessionDuration,
+		RequireVoiceBudget: cfg.Server.RequireVoiceBudget,
 		Store:              app.Store,
 		LiveKit:            buildLiveKitIssuer(cfg, app),
 		ReadLimit:          cfg.Server.WSReadLimitBytes,
 		ToolRouter:         buildVoiceAgentToolRouter(cfg),
 		Usage:              usageReporter,
+		AssemblyAIKey:      resolveRealtimeAPIKey(cfg, ProviderAssemblyAI),
+
+		RegisteredAgentSigningSecret: func() string { return os.Getenv("KOMBIFY_A2A_DELEGATION_SIGNING_SECRET") },
+		NativeConsentReader:          buildNativeVoiceConsentReader(),
 	})
 	if err != nil {
 		return nil, status, err
 	}
+	h.StartNativeCleanup(ctx)
 	return h, status, nil
 }
 

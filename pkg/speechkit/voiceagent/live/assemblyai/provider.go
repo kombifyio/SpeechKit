@@ -1,7 +1,8 @@
 // Package assemblyai adapts the AssemblyAI Voice Agent WebSocket API
 // (wss://agents.assemblyai.com/v1/ws) to [live.LiveProvider]. It needs an
 // AssemblyAI API key in the [live.LiveConfig]; the LLM behind the agent is
-// chosen server-side, so cfg.Model is not sent.
+// configured inline or bound through cfg.StoredAgentID. The host can configure
+// a stored agent with its own OpenAI-compatible streaming LLM endpoint.
 //
 // Stability: Beta — API-checked; may change with a changelog callout.
 package assemblyai
@@ -373,10 +374,15 @@ func (p *Provider) parseEvent(data []byte) (*live.LiveMessage, bool, error) {
 		return live.NormalizeMessageEvents(&live.LiveMessage{EventType: live.LiveEventInputPartial, InputTranscript: ev.Text}, env.Type), false, nil
 	case "transcript.user":
 		var ev struct {
-			Text string `json:"text"`
+			Text   string `json:"text"`
+			ItemID string `json:"item_id"`
 		}
 		_ = json.Unmarshal(data, &ev)
-		return live.NormalizeMessageEvents(&live.LiveMessage{EventType: live.LiveEventInputFinal, InputTranscript: ev.Text, InputTranscriptDone: true}, env.Type), false, nil
+		message := live.NormalizeMessageEvents(&live.LiveMessage{EventType: live.LiveEventInputFinal, InputTranscript: ev.Text, InputTranscriptDone: true}, env.Type)
+		if ev.ItemID != "" {
+			message.ProviderMetadata["item_id"] = ev.ItemID
+		}
+		return message, false, nil
 	case "reply.audio":
 		var ev struct {
 			Data string `json:"data"`
@@ -460,17 +466,13 @@ func (p *Provider) snapshotSessionID() string {
 
 // assemblyAISessionUpdate builds the session.update payload.
 //
-// Note on LLM/model selection: the AssemblyAI Voice Agents WS API
-// (agents.assemblyai.com) does NOT accept an inline model/LLM field in the
-// session config — verified against the events reference
-// (https://www.assemblyai.com/docs/voice-agents/voice-agent-api/events-reference,
-// 2026-08-28: session supports agent_id, system_prompt, greeting, input.*,
-// output.*, tools only; the LLM behind the agent is chosen server-side or via
-// a stored agent referenced by agent_id). cfg.Model is therefore intentionally
-// not sent here. The [providers.assemblyai].llm_gateway_* models select LLMs
-// on AssemblyAI's separate OpenAI-compatible LLM Gateway used by the Genkit
-// flows (assist/summary/agent), not by this realtime session.
+// Custom LLMs are configured by the host on a stored agent using the Agents
+// REST API. A stored-agent binding sends only agent_id, as required by the
+// mutually exclusive stored/inline WebSocket contract.
 func assemblyAISessionUpdate(cfg live.LiveConfig) map[string]any {
+	if id := strings.TrimSpace(cfg.StoredAgentID); id != "" {
+		return map[string]any{"type": "session.update", "session": map[string]any{"agent_id": id}}
+	}
 	resolved := live.ResolveLiveOptions("assemblyai", "realtime.assemblyai.voice-agent", cfg, nil, nil)
 	input := map[string]any{
 		"format": map[string]any{"encoding": "audio/pcm"},

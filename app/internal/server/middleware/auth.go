@@ -29,6 +29,9 @@ type authRuntime struct {
 	modeProvider              func() string
 	bearerTokenProvider       func() string
 	edgeSecretProvider        func() string
+	edgeKeysProvider          func() []EdgeKey
+	legacyEdgeHMACProvider    func() bool
+	edgeReplay                *edgeReplayGuard
 	bearerRoleProvider        func() string
 	adminUsernameProvider     func() string
 	adminPasswordHashProvider func() string
@@ -57,6 +60,15 @@ func newAuthRuntime(opts AuthOptions) authRuntime {
 	if edgeSecretProvider == nil {
 		envName := strings.TrimSpace(opts.EdgeSecretEnv)
 		edgeSecretProvider = func() string { return strings.TrimSpace(os.Getenv(envName)) }
+	}
+	edgeKeysProvider := opts.EdgeKeysProvider
+	if edgeKeysProvider == nil {
+		secretEnv := strings.TrimSpace(opts.EdgeSecretEnv)
+		edgeKeysProvider = func() []EdgeKey { return edgeKeysFromEnv(edgeSecretProvider(), secretEnv) }
+	}
+	legacyEdgeHMACProvider := opts.LegacyEdgeHMACProvider
+	if legacyEdgeHMACProvider == nil {
+		legacyEdgeHMACProvider = func() bool { return true }
 	}
 	bearerRoleProvider := opts.BearerRoleProvider
 	if bearerRoleProvider == nil {
@@ -100,6 +112,9 @@ func newAuthRuntime(opts AuthOptions) authRuntime {
 		modeProvider:              modeProvider,
 		bearerTokenProvider:       bearerTokenProvider,
 		edgeSecretProvider:        edgeSecretProvider,
+		edgeKeysProvider:          edgeKeysProvider,
+		legacyEdgeHMACProvider:    legacyEdgeHMACProvider,
+		edgeReplay:                newEdgeReplayGuard(edgeReplayGuardCapacity),
 		bearerRoleProvider:        bearerRoleProvider,
 		adminUsernameProvider:     adminUsernameProvider,
 		adminPasswordHashProvider: adminPasswordHashProvider,
@@ -193,13 +208,26 @@ func (a authRuntime) authenticateConfiguredMode(r *http.Request) (Identity, bool
 		mode,
 		r,
 		strings.TrimSpace(a.bearerTokenProvider()),
-		strings.TrimSpace(a.edgeSecretProvider()),
+		a.verifyEdge,
 		strings.TrimSpace(a.bearerRoleProvider()),
 		a.opts.RequireAuthenticatedMode,
 	); ok {
 		return id, true
 	}
 	return verifySmoke(r, strings.TrimSpace(a.smokeTokenProvider()))
+}
+
+// verifyEdge authenticates an edge-forwarded identity. A request that carries
+// the signed envelope is judged on it alone; the legacy HMAC is consulted only
+// for requests without one, and only while the legacy flag is on.
+func (a authRuntime) verifyEdge(r *http.Request) (Identity, bool) {
+	if hasEdgeEnvelope(r) {
+		return verifyEdgeEnvelope(r, a.edgeKeysProvider(), a.edgeReplay, time.Now())
+	}
+	if !a.legacyEdgeHMACProvider() {
+		return Identity{}, false
+	}
+	return verifyEdgeHMAC(r, strings.TrimSpace(a.edgeSecretProvider()))
 }
 
 func (a authRuntime) serveAuthenticated(next http.Handler, w http.ResponseWriter, r *http.Request, id Identity) {
@@ -213,6 +241,14 @@ func (a authRuntime) serveAuthenticated(next http.Handler, w http.ResponseWriter
 	// smoke, none, oidc) cannot inject a credential through this header.
 	// The value is a secret: context-only, never logged.
 	if id.Source == "edge_hmac" {
+		budget, present, err := verifiedVoiceBudgetFromRequest(r, id, strings.TrimSpace(a.edgeSecretProvider()))
+		if err != nil {
+			writeAuthError(w)
+			return
+		}
+		if present {
+			ctx = context.WithValue(ctx, voiceBudgetCtxKey{}, budget)
+		}
 		header := strings.TrimSpace(a.opts.OboSubjectTokenHeader)
 		if header == "" {
 			header = EdgeOboSubjectTokenHeader

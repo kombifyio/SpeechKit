@@ -1456,6 +1456,51 @@ paths:
                     $ref: '#/components/schemas/VoiceAgentSessionMetrics'
         '401': { $ref: '#/components/responses/Unauthenticated' }
 
+  /v1/voiceagent/sessions/{id}/llm/chat/completions:
+    post:
+      operationId: completeNativeRegisteredVoiceTurn
+      x-kombify-mcp: false
+      summary: Stream a native media provider's bound registered-agent turn
+      description: |
+        Dedicated provider callback, not an owner chat-completions API. Requires
+        an active session-only callback credential. Request body is limited to
+        128 KiB and one JSON value. Latest user speech must match a native final
+        transcript. Vendor model/history/system/tools cannot select authority.
+        Duplicate or concurrent admitted turns fail closed before execution.
+      security: [{ voiceCallback: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stream, messages]
+              properties:
+                stream: { type: boolean, const: true }
+                messages:
+                  type: array
+                  items:
+                    type: object
+                    required: [role, content]
+                    properties:
+                      role: { type: string }
+                      content: { type: string }
+      responses:
+        '200':
+          description: OpenAI-compatible chat.completion.chunk SSE, then DONE on success
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '400': { description: Invalid or oversized request }
+        '401': { description: 'Invalid, expired or closed session callback' }
+        '409': { description: 'No matching final transcript, concurrent turn or replay' }
+        '502': { description: Registered agent turn failed before response streaming }
+
   /v1/voiceagent/sessions/{id}/livekit-token:
     get:
       operationId: refreshVoiceAgentLiveKitToken
@@ -1953,6 +1998,10 @@ paths:
 # ── Components ──────────────────────────────────────────────────────────────
 components:
   securitySchemes:
+    voiceCallback:
+      type: http
+      scheme: bearer
+      description: Memory-only native-provider callback credential bound to one active voice session.
     bearer:
       type: http
       scheme: bearer
@@ -1964,20 +2013,22 @@ components:
     edgeHmac:
       type: apiKey
       in: header
-      name: X-Edge-Auth-Hmac
+      name: X-Edge-Auth-Signature
       description: |
-        HMAC-SHA256 of `userID + "\n" + orgID + "\n" + plan + "\n" + role` using
-        `$EDGE_AUTH_SECRET`. Must be sent alongside `X-Edge-User-Id`,
-        `X-Edge-Org-Id`, `X-Edge-Plan`, and optional `X-Edge-Role`. Used
-        when fronted by a Cloudflare Worker / reverse proxy that has
-        already validated a user JWT.
+        Signed edge envelope, `v2=` + base64url HMAC-SHA256 under the key
+        named by `X-Edge-Auth-Key-Id`, over
+        `"speechkit.edge_auth.v2" LF keyID LF METHOD LF signedPath LF userID
+        LF orgID LF plan LF role LF ts LF nonce`. Sent with `X-Edge-User-Id`,
+        `X-Edge-Org-Id`, `X-Edge-Plan`, optional `X-Edge-Role`,
+        `X-Edge-Auth-Key-Id`, `X-Edge-Auth-Ts`, `X-Edge-Auth-Nonce` and
+        `X-Edge-Auth-Signed-Path`. The server rejects unknown key ids,
+        timestamps more than 5 minutes from server time, a path or method
+        other than the signed one, and reused nonces. Used when fronted by an
+        edge worker or reverse proxy that has already validated a user JWT.
 
-        Optional replay protection: when the edge also sends `X-Edge-Auth-Ts`
-        (Unix seconds), the timestamp is appended to the signed string as a
-        fifth field (`... + "\n" + ts`) and the server rejects requests whose
-        timestamp is more than 5 minutes from server time. The header is
-        optional and backward compatible — an edge that omits it uses the
-        legacy four-field signature.
+        The deprecated `X-Edge-Auth-Hmac` signature (no key id, request
+        binding or nonce) is accepted only with a fresh `X-Edge-Auth-Ts` and
+        only until `SPEECHKIT_EDGE_AUTH_LEGACY_HMAC=off`.
 
   parameters:
     SessionID:

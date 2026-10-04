@@ -243,3 +243,7 @@ func (p *RegisteredAgentProvider) Close() error {
 	return inner.Close()
 }
 func (p *RegisteredAgentProvider) Name() string { return "kombify-agent" }
+
+// HandlesOwnTools reports that the remote agent runs its own tools, so the
+// server tool bridge is not used for this provider.
+func (p *RegisteredAgentProvider) HandlesOwnTools() bool { return true }

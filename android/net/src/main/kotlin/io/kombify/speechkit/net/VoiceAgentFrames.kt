@@ -158,6 +158,8 @@ data class VoiceAgentStartFrame(
     @Json(name = "role_id") val roleId: String? = null,
     @Json(name = "sequence_id") val sequenceId: String? = null,
     val provider: String? = null,
+    /** Native conversational media for a host-bound registered agent; null preserves omission. */
+    @Json(name = "media_provider") val mediaProvider: String? = null,
     @Json(name = "media_transport") val mediaTransport: String? = null,
     val voice: String? = null,
     val locale: String? = null,

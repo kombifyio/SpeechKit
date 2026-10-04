@@ -34,6 +34,9 @@ func (a *Adapter) writeJSONLocked(ctx context.Context, v any) {
 		if failure.Code == "auth_expired" {
 			a.failureEndReason = "authorization_expired"
 		}
+		if failure.Code == "voice_budget_exhausted" {
+			a.failureEndReason = "voice_budget_exhausted"
+		}
 		// Hold the write lock through the error frame so Run's concurrent
 		// terminal frame cannot overtake it. Cancel admission before any I/O.
 		if a.stopAdmission != nil {
