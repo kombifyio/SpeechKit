@@ -31,7 +31,8 @@ type toolBridgeSessionMeta struct {
 	touched   time.Time
 }
 
-const toolBridgeSessionMetaTTL = 2 * time.Hour
+// Keep locale/persona metadata throughout the four-hour hosted session window.
+const toolBridgeSessionMetaTTL = 6 * time.Hour
 
 func (r *toolBridgeRouter) Definitions(ctx context.Context, session *vsserver.ManagedSession, cfg vsserver.LiveConfigFrame) []vsserver.ToolDefinitionFrame {
 	if session == nil || strings.TrimSpace(session.BridgeCredential) == "" {

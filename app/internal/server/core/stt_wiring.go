@@ -190,6 +190,15 @@ func buildSTTRouter(cfg *config.Config) (*stt.Router, []namedProvider, []string)
 			OnProviderSelected:   routerCfg.OnProviderSelected,
 		}
 	}
+	// Registered-agent Voice shares this router without a per-turn STT
+	// override. Honor the configured primary and fallback before the remaining
+	// providers, just as the Dictation handler does for its default selection.
+	for _, profileID := range []string{cfg.ModelSelection.Dictate.FallbackProfileID, cfg.ModelSelection.Dictate.PrimaryProfileID} {
+		name := stt.ProviderNameFromProfileID(profileID)
+		if provider := r.Cloud(name); provider != nil {
+			r.PreferCloud(name, provider)
+		}
+	}
 
 	var providers []namedProvider
 	for _, p := range r.Providers() {

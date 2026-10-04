@@ -3,13 +3,62 @@
 package core
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/app/internal/config"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/assemblyai"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/openaicompat"
 )
+
+// Regression: Voice's shared router used OpenAI before the configured managed
+// STT primary/fallback. Exercise routed effects; provider fakes avoid vendor I/O.
+func TestBuildSTTRouterRoutesConfiguredManagedSTT(t *testing.T) {
+	t.Setenv("DEEPGRAM_API_KEY", "deepgram-key")
+	t.Setenv("ASSEMBLYAI_API_KEY", "assembly-key")
+	t.Setenv("OPENAI_API_KEY", "openai-key")
+	cfg := &config.Config{}
+	cfg.Routing.Strategy = "cloud-only"
+	cfg.Providers.Deepgram.Enabled = true
+	cfg.Providers.Deepgram.APIKeyEnv = "DEEPGRAM_API_KEY"
+	cfg.Providers.AssemblyAI.Enabled = true
+	cfg.Providers.AssemblyAI.APIKeyEnv = "ASSEMBLYAI_API_KEY"
+	cfg.Providers.OpenAI.Enabled = true
+	cfg.Providers.OpenAI.APIKeyEnv = "OPENAI_API_KEY"
+	cfg.ModelSelection.Dictate.PrimaryProfileID = "stt.deepgram.nova-3"
+	cfg.ModelSelection.Dictate.FallbackProfileID = "stt.assemblyai.universal"
+	router, _, _ := buildSTTRouter(cfg)
+	deepgram := &managedSTTProbe{name: "deepgram"}
+	for _, provider := range []*managedSTTProbe{deepgram, {name: "assemblyai"}, {name: "openai"}} {
+		router.SetCloud(provider.name, provider)
+	}
+	result, err := router.Route(context.Background(), nil, 1, stt.TranscribeOpts{})
+	if err != nil || result.Provider != "deepgram" {
+		t.Fatalf("default routed result = %v, error = %v; want configured primary", result, err)
+	}
+	deepgram.err = errors.New("provider unavailable")
+	result, err = router.Route(context.Background(), nil, 1, stt.TranscribeOpts{})
+	if err != nil || result.Provider != "assemblyai" {
+		t.Fatalf("fallback routed result = %v, error = %v; want configured fallback", result, err)
+	}
+}
+
+type managedSTTProbe struct {
+	name string
+	err  error
+}
+
+func (p *managedSTTProbe) Name() string                 { return p.name }
+func (p *managedSTTProbe) Health(context.Context) error { return nil }
+func (p *managedSTTProbe) Transcribe(context.Context, []byte, stt.TranscribeOpts) (*stt.Result, error) {
+	if p.err != nil {
+		return nil, p.err
+	}
+	return &stt.Result{Text: "fixture", Provider: p.name}, nil
+}
 
 // Google Cloud STT needs its own credential: the Gemini GOOGLE_AI_API_KEY
 // alone must not register it, a dedicated STT key must.

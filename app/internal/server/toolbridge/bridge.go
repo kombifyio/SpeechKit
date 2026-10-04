@@ -49,8 +49,9 @@ const (
 	// maxResponseBytes caps how much of a bridge response body is read.
 	maxResponseBytes = 1 << 20 // 1 MiB
 	// sessionStateTTL is how long an idle per-session call counter survives
-	// before lazy purging; comfortably above any voice session duration.
-	sessionStateTTL = 2 * time.Hour
+	// before lazy purging; retain budgets beyond the four-hour hosted session
+	// ceiling, including setup and shutdown time.
+	sessionStateTTL = 6 * time.Hour
 )
 
 // Options configures a Bridge.
