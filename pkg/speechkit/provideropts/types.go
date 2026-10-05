@@ -410,6 +410,29 @@ func (m ProviderOptionManifest) SupportByID() map[OptionID]OptionSupport {
 	return out
 }
 
+// RecognitionBiasOption selects the implemented channel for dictionary hints.
+// Keyterms take precedence over transcript-style prompts. Unsupported,
+// unimplemented and provider-default rows cannot carry request hints.
+// Adapters may supply a manifest for their concrete model and transport.
+func (m ProviderOptionManifest) RecognitionBiasOption() OptionID {
+	support := m.SupportByID()
+	for _, id := range []OptionID{OptionKeyterms, OptionPromptHint} {
+		opt, ok := support[id]
+		if !ok || !opt.Implemented {
+			continue
+		}
+		switch opt.Status {
+		case SupportNative, SupportDerived, SupportEmulated:
+			return id
+		case SupportUnsupported, SupportProviderDefault:
+			continue
+		default:
+			continue
+		}
+	}
+	return ""
+}
+
 // Value returns the raw resolved value for id, or nil when the option was
 // not resolved.
 func (e EffectiveOptions) Value(id OptionID) any {

@@ -162,6 +162,11 @@ export class SpeechKitClient {
     if (options.language) form.append("language", options.language);
     if (options.model) form.append("model", options.model);
     if (options.prompt) form.append("prompt", options.prompt);
+    if (options.provider_profile_id) form.append("provider_profile_id", options.provider_profile_id);
+    if (options.keyterms?.length) form.append("keyterms", options.keyterms.join(","));
+    if (options.vocabulary_hints) form.append("vocabulary_hints", JSON.stringify(options.vocabulary_hints));
+    if (options.options) form.append("options", JSON.stringify(options.options));
+    if (options.provider_options) form.append("provider_options", JSON.stringify(options.provider_options));
     return this.requestRaw<TranscribeResponse>("POST", this.v1("/dictation/transcribe"), form, overrides);
   }
 

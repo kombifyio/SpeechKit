@@ -1875,6 +1875,18 @@ export interface components {
             language?: string;
             model?: string;
             prompt?: string;
+            keyterms?: string[];
+            vocabulary_hints?: components["schemas"]["RecognitionHints"];
+            /** @description Provider-neutral recognition option values. */
+            options?: {
+                [key: string]: unknown;
+            };
+            /** @description Recognition overrides keyed by provider ID. */
+            provider_options?: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
             /**
              * @description Optional explicit STT provider-profile pin for this request
              *     (ops parity with the streaming `start` frame), e.g.
@@ -1895,6 +1907,11 @@ export interface components {
             conversation_context?: string[];
             speaker?: components["schemas"]["SpeakerOptions"];
             speaker_options?: components["schemas"]["SpeakerOptions"];
+        };
+        /** @description Dictionary-derived guidance resolved separately from explicit hints; vocabulary_bias=false suppresses it. */
+        RecognitionHints: {
+            prompt?: string;
+            keyterms?: string[];
         };
         DictateResponse: {
             text: string;
@@ -3446,6 +3463,14 @@ export interface operations {
                      *     `stt.deepgram.nova-3`), same semantics as the JSON field.
                      */
                     provider_profile_id?: string;
+                    /** @description Comma-separated explicit recognition terms. */
+                    keyterms?: string;
+                    /** @description JSON RecognitionHints; suppressed when vocabulary bias is disabled. */
+                    vocabulary_hints?: string;
+                    /** @description JSON provider-neutral recognition option values. */
+                    options?: string;
+                    /** @description JSON recognition overrides keyed by provider ID. */
+                    provider_options?: string;
                 };
                 "application/json": components["schemas"]["DictateJSONRequest"];
             };

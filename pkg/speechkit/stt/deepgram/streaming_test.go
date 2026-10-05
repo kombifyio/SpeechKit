@@ -3,6 +3,7 @@ package deepgram
 import (
 	"context"
 	"encoding/json"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"net/http"
 	"net/http/httptest"
@@ -231,6 +232,10 @@ func TestDeepgram_StartDictationStream_UsesRealtimeDictationQuery(t *testing.T) 
 			InterimResults: true,
 			EndpointingMs:  250,
 			Keyterms:       []string{"Kombify"},
+			RequestOptions: provideropts.Values{
+				provideropts.OptionPunctuation: false, provideropts.OptionSmartFormat: false,
+				provideropts.OptionDictation: true, provideropts.OptionFillerWords: true, provideropts.OptionNumerals: true,
+			},
 		},
 		speaker.AudioFormat{Encoding: speaker.AudioEncodingLinear16, SampleRateHz: 16000, Channels: 1},
 	)
@@ -265,6 +270,7 @@ func TestDeepgram_StartDictationStream_UsesRealtimeDictationQuery(t *testing.T) 
 	}
 	for _, want := range []string{
 		"interim_results=true",
+		"punctuate=false", "dictation=true", "filler_words=true", "numerals=true",
 		// The stream was started with Language "de"; a provider-level
 		// "multi" must not outrank it.
 		"language=de",
@@ -279,6 +285,9 @@ func TestDeepgram_StartDictationStream_UsesRealtimeDictationQuery(t *testing.T) 
 		if !strings.Contains(gotQuery, want) {
 			t.Fatalf("query = %q, want %q", gotQuery, want)
 		}
+	}
+	if strings.Contains(gotQuery, "smart_format=true") {
+		t.Fatal("live request ignored formatting opt-out")
 	}
 	if strings.Contains(gotQuery, "diarize=true") {
 		t.Fatalf("dictation stream must not force diarization: %q", gotQuery)

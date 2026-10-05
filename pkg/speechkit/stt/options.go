@@ -46,8 +46,8 @@ type ResolvedTranscribeOptions struct {
 // provider's STT option manifest (an empty manifest when none is registered;
 // profileID is only stamped on the result). Precedence, lowest to highest:
 // providerDefaults, opts.Options, providerOverrides merged with
-// opts.ProviderOptions, then the request's own Language, Prompt, Keyterms and
-// diarization wish. Options the manifest does not support are kept but
+// opts.ProviderOptions, then opts.RequestOptions and the request's own
+// Language, Prompt, Keyterms and diarization wish. Unsupported options are kept but
 // reported at debug level; Prompt and Keyterms fall back to the raw request
 // values when resolution leaves them empty.
 func ResolveTranscribeOptions(provider, profileID string, opts TranscribeOpts, providerDefaults, providerOverrides provideropts.Values) ResolvedTranscribeOptions {
@@ -60,6 +60,14 @@ func ResolveTranscribeOptions(provider, profileID string, opts TranscribeOpts, p
 			Modality: provideropts.ModalitySTT,
 		}
 	}
+	return ResolveTranscribeOptionsWithManifest(manifest, profileID, opts, providerDefaults, providerOverrides)
+}
+
+// ResolveTranscribeOptionsWithManifest resolves recognition settings using the
+// adapter's definition for its concrete model and transport. Custom providers
+// use this boundary without modifying built-in manifests or host code. Native
+// serialization and provider limits remain the adapter's responsibility.
+func ResolveTranscribeOptionsWithManifest(manifest provideropts.ProviderOptionManifest, profileID string, opts TranscribeOpts, providerDefaults, providerOverrides provideropts.Values) ResolvedTranscribeOptions {
 	// Dictionary bias is a default, never a provider override: explicit opt-outs
 	// in global or provider configuration must win.
 	if opts.VocabularyHints.Prompt != "" || len(opts.VocabularyHints.Keyterms) > 0 {
@@ -126,12 +134,14 @@ func ResolveTranscribeOptions(provider, profileID string, opts TranscribeOpts, p
 	// Explicit request/context hints retain precedence; dictionary words augment
 	// native terms only when the provider supports them and bias is enabled.
 	if resolved.UseVocabularyKeyterms {
-		support := manifest.SupportByID()
-		if opt, ok := support[provideropts.OptionPromptHint]; ok && opt.Status != provideropts.SupportUnsupported && resolved.Prompt == "" {
-			resolved.Prompt = opts.VocabularyHints.Prompt
-		}
-		if opt, ok := support[provideropts.OptionKeyterms]; ok && opt.Status != provideropts.SupportUnsupported {
+		switch manifest.RecognitionBiasOption() {
+		case provideropts.OptionKeyterms:
 			resolved.Keyterms = mergeRecognitionTerms(resolved.Keyterms, opts.VocabularyHints.Keyterms)
+		case provideropts.OptionPromptHint:
+			if resolved.Prompt == "" {
+				resolved.Prompt = opts.VocabularyHints.Prompt
+			}
+		default:
 		}
 	}
 	return resolved

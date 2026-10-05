@@ -1,3 +1,5 @@
+import type { components } from "./generated/openapi.js";
+
 // Wire types for the SpeechKit Server v1 API. The generated types live in
 // ./generated/openapi.ts (`pnpm run gen:types`, from docs/server/openapi.v1.yaml;
 // CI fails on drift) and are re-exported from the package root as `components`,
@@ -14,11 +16,13 @@ export interface Status {
   version?: string;
 }
 
-export interface TranscribeOptions {
-  language?: string;
-  model?: string;
-  prompt?: string;
-}
+export type RecognitionHints = components["schemas"]["RecognitionHints"];
+
+export interface TranscribeOptions extends Pick<
+  components["schemas"]["DictateJSONRequest"],
+  "language" | "model" | "prompt" | "provider_profile_id" | "keyterms" |
+  "vocabulary_hints" | "options" | "provider_options"
+> {}
 
 export interface TranscribeResponse {
   text: string;

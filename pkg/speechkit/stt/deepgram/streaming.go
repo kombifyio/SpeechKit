@@ -197,22 +197,23 @@ func (p *Provider) deepgramDictationStreamingEndpoint(model, language string, op
 	default:
 		return "", fmt.Errorf("deepgram dictation streaming endpoint: unsupported scheme %q", u.Scheme)
 	}
+	resolved := p.resolveOptions(model, stt.TranscribeOptionsFromStream(opts).ForProvider(p.Name()))
 	q := u.Query()
 	q.Set("model", model)
-	q.Set("punctuate", "true")
+	q.Set("punctuate", strconv.FormatBool(resolved.Punctuation))
 	if opts.InterimResults {
 		q.Set("interim_results", "true")
 	}
-	if p.SmartFormat {
+	if resolved.SmartFormat {
 		q.Set("smart_format", "true")
 	}
-	if p.Dictation {
+	if resolved.Dictation {
 		q.Set("dictation", "true")
 	}
-	if p.FillerWords {
+	if resolved.FillerWords {
 		q.Set("filler_words", "true")
 	}
-	if p.Numerals {
+	if resolved.Numerals {
 		q.Set("numerals", "true")
 	}
 	if opts.Diarization {
@@ -238,7 +239,6 @@ func (p *Provider) deepgramDictationStreamingEndpoint(model, language string, op
 	}
 	// Dictionary opt-outs were resolved before opening the stream; explicit
 	// request keyterms still follow the provider's vocabulary switch.
-	resolved := p.resolveOptions(model, stt.TranscribeOptionsFromStream(opts).ForProvider(p.Name()))
 	p.applyVocabularyBias(q, model, opts.Keyterms, resolved.UseVocabularyKeyterms)
 	applyDeepgramNoStore(q, resolved.NoStore || p.NoStore)
 	u.RawQuery = q.Encode()

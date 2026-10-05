@@ -118,6 +118,16 @@ shipped providers do; accept loopback only when the host explicitly opts in
 (the contract suite drives an `httptest` server, so your constructor needs a
 way to relax that for tests).
 
+For dictionary and provider option support, define the channels your concrete
+model and transport serialize and call `stt.ResolveTranscribeOptionsWithManifest`.
+Use `customize.BuildProviderBiasForManifest` to preview that same definition;
+native streams convert their options through `TranscribeOptionsFromStream` and
+`ApplyResolvedDictationStreamOptions`. The supplied manifest needs no global
+registration or host special case. The shipped generic multipart adapter uses
+`provideropts.OpenAICompatibleSTTManifest` and exposes its model-aware
+`TranscribeManifest`. See [provider recognition definitions](recognition-options.md)
+for precedence, native destinations, limits and unsupported channels.
+
 ## 2. Run the conformance suite
 
 Put the test in an external package (`package acme_test`) — the contract

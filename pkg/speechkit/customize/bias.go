@@ -102,6 +102,22 @@ func BuildProviderBiasForModality(words []Word, modality string) ProviderBias {
 	if modality == "" {
 		modality = provideropts.ModalitySTT
 	}
+	var manifests []provideropts.ProviderOptionManifest
+	for _, manifest := range provideropts.DefaultManifests() {
+		if manifest.Modality == modality {
+			manifests = append(manifests, manifest)
+		}
+	}
+	return buildProviderBias(words, manifests)
+}
+
+// BuildProviderBiasForManifest previews the dictionary channel an adapter's
+// concrete model/transport manifest selects, including custom providers.
+func BuildProviderBiasForManifest(words []Word, manifest provideropts.ProviderOptionManifest) ProviderBias {
+	return buildProviderBias(words, []provideropts.ProviderOptionManifest{manifest})
+}
+
+func buildProviderBias(words []Word, manifests []provideropts.ProviderOptionManifest) ProviderBias {
 	keyterms := BuildKeyterms(words)
 	prompt := BuildPrompt(words)
 	bias := ProviderBias{
@@ -112,37 +128,29 @@ func BuildProviderBiasForModality(words []Word, modality string) ProviderBias {
 	if len(keyterms) == 0 && prompt == "" {
 		return bias
 	}
-	for _, manifest := range provideropts.DefaultManifests() {
-		if manifest.Modality != modality {
-			continue
-		}
+	for _, manifest := range manifests {
 		support := manifest.SupportByID()
 		values := provideropts.Values{}
 		strategy := ""
-		if opt, ok := support[provideropts.OptionKeyterms]; ok && optionCanCarryBias(opt) && len(keyterms) > 0 {
-			if vocab, ok := support[provideropts.OptionVocabularyBias]; !ok || optionCanCarryBias(vocab) {
-				values[provideropts.OptionVocabularyBias] = true
-			}
+		switch channel := manifest.RecognitionBiasOption(); channel {
+		case provideropts.OptionKeyterms:
 			values[provideropts.OptionKeyterms] = append([]string(nil), keyterms...)
-			strategy = string(opt.Status)
-		} else if opt, ok := support[provideropts.OptionPromptHint]; ok && optionCanCarryBias(opt) && prompt != "" {
-			if vocab, ok := support[provideropts.OptionVocabularyBias]; ok && optionCanCarryBias(vocab) {
-				values[provideropts.OptionVocabularyBias] = true
-			}
+			strategy = string(support[channel].Status)
+		case provideropts.OptionPromptHint:
 			values[provideropts.OptionPromptHint] = prompt
-			strategy = string(opt.Status)
-		}
-		if len(values) == 0 {
+			strategy = string(support[channel].Status)
+		default:
 			continue
 		}
+		values[provideropts.OptionVocabularyBias] = true
 		bias.ByProvider[manifest.Provider] = values
 		bias.Preview = append(bias.Preview, ProviderBiasPreview{
 			Provider: manifest.Provider,
 			Modality: manifest.Modality,
 			Strategy: strategy,
 			Native:   strategy == string(provideropts.SupportNative),
-			Keyterms: append([]string(nil), keyterms...),
-			Prompt:   prompt,
+			Keyterms: values.StringList(provideropts.OptionKeyterms),
+			Prompt:   values.String(provideropts.OptionPromptHint),
 		})
 	}
 	return bias
@@ -168,10 +176,6 @@ func CanonicalTerms(words []Word) []string {
 		terms = append(terms, term)
 	}
 	return terms
-}
-
-func optionCanCarryBias(opt provideropts.OptionSupport) bool {
-	return opt.Status != "" && opt.Status != provideropts.SupportUnsupported
 }
 
 // DictionaryEntry is the compatibility projection of a stored vocabulary rule.

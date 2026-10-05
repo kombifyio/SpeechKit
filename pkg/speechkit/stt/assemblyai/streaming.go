@@ -74,7 +74,10 @@ func (p *Provider) StartSpeakerStream(ctx context.Context, opts speaker.Options,
 // closes the socket (Receive then returns io.EOF), which matches SpeechKit's
 // one-provider-stream-per-segment model.
 func (p *Provider) StartDictationStream(ctx context.Context, opts speechkit.DictationStreamOptions, format speaker.AudioFormat) (speechkit.DictationStream, error) {
-	opts = stt.ResolveDictationStreamOptions(p.Name(), "stt.assemblyai.universal", opts, provideropts.Values{provideropts.OptionVocabularyBias: true}, nil)
+	resolved := stt.ResolveTranscribeOptions(p.Name(), "stt.assemblyai.universal", stt.TranscribeOptionsFromStream(opts).ForProvider(p.Name()), provideropts.Values{provideropts.OptionVocabularyBias: true}, nil)
+	opts = stt.ApplyResolvedDictationStreamOptions(opts, resolved)
+	// Native realtime context uses the same precedence as batch prompting.
+	opts.PromptHint = stt.FirstNonEmptyTrimmed(resolved.ContextPrompt, resolved.Prompt)
 	format = format.Normalized()
 	// Rejected before the dial: the v3 realtime API has no channel parameter,
 	// so a stereo socket is decoded as mono — the interleaved L,R,L,R frames

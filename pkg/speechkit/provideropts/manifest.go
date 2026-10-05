@@ -28,6 +28,7 @@ func DefaultManifests() []ProviderOptionManifest {
 		// is what the resolver looks up; it has no catalog profile of its own.
 		openAISTTManifest("vps", "Self-hosted whisper-server", nil, "https://github.com/ggerganov/whisper.cpp"),
 		googleSTTManifest(),
+		azureSpeechSTTManifest(),
 		geminiTranscribeSTTManifest(),
 		assemblyAISTTManifest(),
 		openRouterSTTManifest(),
@@ -92,10 +93,6 @@ func deepgramSTTManifest() ProviderOptionManifest {
 	})
 }
 
-// openAISTTManifest describes the shared OpenAI-multipart transcription adapter.
-// Every provider built on it — OpenAI, Groq, Ollama, the self-hosted
-// whisper-server — posts the same four fields (file, language, model, prompt)
-// and decodes only the text field back, so they share one capability statement.
 // openAIDirectSTTManifest is the OpenAI API's own transcription manifest:
 // gpt-transcribe adds native keywords and candidate languages on top of the
 // shared OpenAI-compatible request shape.
@@ -109,6 +106,14 @@ func openAIDirectSTTManifest() ProviderOptionManifest {
 	}
 	m.Options = append(m.Options, native(OptionLanguageHints, TypeStringList, "Candidate languages", "languages", evidence))
 	return m
+}
+
+// OpenAICompatibleSTTManifest describes the shipped generic multipart adapter's
+// language and prompt serialization under a host's provider identity. It does
+// not assert native keyword support; concrete models may supply their own
+// definition to ResolveTranscribeOptionsWithManifest.
+func OpenAICompatibleSTTManifest(provider string) ProviderOptionManifest {
+	return openAISTTManifest(provider, provider, nil, "https://platform.openai.com/docs/guides/speech-to-text")
 }
 
 func openAISTTManifest(provider, label string, profileIDs []string, evidence string) ProviderOptionManifest {
@@ -136,6 +141,7 @@ func geminiTranscribeSTTManifest() ProviderOptionManifest {
 			"Multilanguage: OMIT the field. language_codes only steers recognition; left out, Gemini Transcribe detects the language itself, so an unpinned session sends none."),
 		derived(OptionDetectLanguage, TypeBool, "Detect language", "Omit language_codes so the model detects the language.", evidence),
 		native(OptionLanguageHints, TypeStringList, "Candidate languages", "transcription_config.language_codes", evidence),
+		native(OptionVocabularyBias, TypeBool, "Use custom vocabulary", "transcription_config.custom_vocabulary", evidence),
 		native(OptionKeyterms, TypeStringList, "Custom vocabulary", "transcription_config.custom_vocabulary", evidence),
 		unsupported(OptionPromptHint, TypeString, "Prompt hint", "Gemini Transcribe takes custom vocabulary, not a free-text prompt."),
 		unsupported(OptionSpeakerDiarization, TypeBool, "Speaker diarization", "The adapter runs smart mode, which does not return speaker annotations."),
@@ -155,6 +161,20 @@ func googleSTTManifest() ProviderOptionManifest {
 		native(OptionTimestamps, TypeBool, "Word timestamps", "enableWordTimeOffsets", "https://docs.cloud.google.com/speech-to-text/docs/reference/rest/v1/RecognitionConfig"),
 		unsupported(OptionSmartFormat, TypeBool, "Smart format", "Google STT v1 does not expose a Deepgram-style smart_format switch."),
 		unsupported(OptionEndpointingMs, TypeInt, "Endpointing", "Batch recognition has no server endpointing control."),
+	})
+}
+
+func azureSpeechSTTManifest() ProviderOptionManifest {
+	const evidence = "https://learn.microsoft.com/azure/ai-services/speech-service/mai-transcribe"
+	return manifest("foundry", "Azure Speech (Foundry)", ModalitySTT, []string{"stt.foundry.mai-transcribe-2"}, []OptionSupport{
+		languageOption("locales", evidence, "The fast-transcription adapter sends a short locale only when one is pinned; multilanguage omits locales."),
+		derived(OptionDetectLanguage, TypeBool, "Detect language", "Omit locales so the model detects the language.", evidence),
+		native(OptionVocabularyBias, TypeBool, "Use phrase hints", "phraseList.phrases", evidence),
+		native(OptionKeyterms, TypeStringList, "Phrase hints", "phraseList.phrases", evidence),
+		native(OptionSpeakerDiarization, TypeBool, "Speaker diarization", "diarization.enabled", evidence),
+		unsupported(OptionPromptHint, TypeString, "Prompt hint", "The fast-transcription adapter sends phraseList, not a free-text prompt."),
+		unsupported(OptionTimestamps, TypeBool, "Timestamps", "The adapter configures none/segment/word through its Timestamps field, not this boolean option."),
+		unsupported(OptionEndpointingMs, TypeInt, "Endpointing", "The fast-transcription adapter serves batch requests only."),
 	})
 }
 

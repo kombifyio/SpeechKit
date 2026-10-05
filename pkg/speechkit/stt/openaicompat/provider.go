@@ -14,12 +14,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
@@ -153,7 +154,8 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 	if err != nil {
 		return nil, fmt.Errorf("%s endpoint: %w", p.name, err)
 	}
-	resolved := stt.ResolveTranscribeOptions(p.name, "", opts, provideropts.Values{
+	model := stt.FirstNonEmptyTrimmed(opts.Model, p.Model)
+	resolved := stt.ResolveTranscribeOptionsWithManifest(p.TranscribeManifest(model), "", opts, provideropts.Values{
 		provideropts.OptionLanguage: "de",
 	}, nil)
 
@@ -174,10 +176,6 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 		}
 	}
 
-	model := p.Model
-	if opts.Model != "" {
-		model = opts.Model
-	}
 	if err := writer.WriteField("model", model); err != nil {
 		return nil, fmt.Errorf("write model field: %w", err)
 	}
@@ -240,6 +238,21 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 		Provider: p.Name(),
 		Model:    model,
 	}, nil
+}
+
+// TranscribeManifest returns the batch recognition definition for model, or
+// the configured model when empty. Older OpenAI transcription models use the
+// prompt channel because this adapter only sends keywords/languages to the
+// gpt-transcribe family. Hosts can preview this same manifest with customize.
+func (p *Provider) TranscribeManifest(model string) provideropts.ProviderOptionManifest {
+	if p.name == "openai" && acceptsGPTTranscribeFields(stt.FirstNonEmptyTrimmed(model, p.Model)) {
+		if manifest, ok := provideropts.FindManifest(p.name, provideropts.ModalitySTT); ok {
+			return manifest
+		}
+	}
+	// Identity alone cannot select another adapter's native wire shape:
+	// generic routes, including Foundry, serialize the multipart prompt.
+	return provideropts.OpenAICompatibleSTTManifest(p.name)
 }
 
 // acceptsGPTTranscribeFields reports whether an OpenAI model takes the

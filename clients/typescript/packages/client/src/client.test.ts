@@ -109,7 +109,12 @@ describe("SpeechKitClient requests", () => {
     const client = new SpeechKitClient({ baseUrl: "http://localhost:8080", fetch: impl });
     const result = await client.transcribe(new Blob(["audio-bytes"]), {
       filename: "clip.wav",
-      language: "en",
+      language: "multi",
+      provider_profile_id: "stt.deepgram.nova-3",
+      keyterms: ["ToolHive", "StackKits"],
+      vocabulary_hints: { keyterms: ["kombify"] },
+      options: { vocabulary_bias: false },
+      provider_options: { deepgram: { no_store: true } },
     });
     expect(result.text).toBe("hello world");
     expect(requests[0]?.method).toBe("POST");
@@ -117,7 +122,12 @@ describe("SpeechKitClient requests", () => {
     const form = requests[0]?.body as FormData;
     expect(form).toBeInstanceOf(FormData);
     expect((form.get("audio") as File).name).toBe("clip.wav");
-    expect(form.get("language")).toBe("en");
+    expect(form.get("language")).toBe("multi");
+    expect(form.get("provider_profile_id")).toBe("stt.deepgram.nova-3");
+    expect((form.get("keyterms") as string).split(",")).toEqual(["ToolHive", "StackKits"]);
+    expect(JSON.parse(form.get("vocabulary_hints") as string)).toEqual({ keyterms: ["kombify"] });
+    expect(JSON.parse(form.get("options") as string)).toEqual({ vocabulary_bias: false });
+    expect(JSON.parse(form.get("provider_options") as string)).toEqual({ deepgram: { no_store: true } });
     expect(form.get("model")).toBeNull();
   });
 

@@ -8,6 +8,7 @@ export {
   type ModelVariant,
   type ModeContract,
   type ProviderProfile,
+  type RecognitionHints,
   type ReadinessAction,
   type ReadinessArtifact,
   type ReadinessRequirement,

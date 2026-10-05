@@ -14,6 +14,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
@@ -86,7 +87,8 @@ func TestAssemblyAI_StartDictationStream_QueryAndTurnMapping(t *testing.T) {
 		InterimResults: true,
 		EndpointingMs:  700,
 		Keyterms:       []string{"Kombify", strings.Repeat("x", 60)},
-		PromptHint:     "Homelab context; non-technical speaker.",
+		PromptHint:     "Legacy prompt fallback.",
+		RequestOptions: provideropts.Values{provideropts.OptionContextPrompt: "Homelab context; non-technical speaker."},
 	}, speaker.AudioFormat{Encoding: speaker.AudioEncodingLinear16, SampleRateHz: 16000, Channels: 1})
 	if err != nil {
 		t.Fatalf("StartDictationStream: %v", err)

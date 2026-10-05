@@ -46,6 +46,12 @@ explicit request option overrides retain their precedence. Providers select
 native keyterms or prompt hints according to their capability manifest, so a
 dictionary remains recognition guidance, not a guarantee of a particular word.
 
+The manifest's implemented channel selector is shared by vocabulary previews
+and runtime resolution. Concrete adapters can supply their model/transport
+definition through `ResolveTranscribeOptionsWithManifest`; see
+[provider recognition definitions](sdk/recognition-options.md) for native wire
+destinations, limits and custom-provider integration.
+
 ```go
 request := stt.TranscribeOpts{Language: "multi"}.WithVocabulary(words)
 batch, err := router.Transcribe(ctx, audio, request)
