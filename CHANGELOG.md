@@ -9,6 +9,21 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.76.4](https://github.com/kombifyio/SpeechKit/compare/v0.76.3...v0.76.4) (2026-10-05)
+
+### Highlights
+
+- **Keep the complete dictation**: Recording now starts while the speech provider connects, drains pending audio when you stop, and recovers missing stream audio from the captured recording.
+- **Use your Words across dictation modes**: Dictionary hints, multilingual settings and explicit recognition options follow the same shared path in batch, native streaming, HTTP and WebSocket consumers.
+- **Extend provider support consistently**: SDK adapters can declare recognition capabilities for their actual model and transport. Dictionary previews and requests share those definitions, including supported prompt and keyterm channels.
+- **Review retained recordings**: Live dictation can keep its complete source audio and duration under your existing recording retention settings.
+
+
+
+### Release documentation
+
+* **release:** explain complete dictation reliability update ([#802](https://github.com/kombifyio/SpeechKit/issues/802)) ([417e701](https://github.com/kombifyio/SpeechKit/commit/417e701698add797d2bb032a5a11644f288a379c))
+
 ## [0.76.3](https://github.com/kombifyio/SpeechKit/compare/v0.76.2...v0.76.3) (2026-10-05)
 
 
