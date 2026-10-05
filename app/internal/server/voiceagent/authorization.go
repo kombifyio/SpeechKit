@@ -19,6 +19,20 @@ var errAuthorizationExpired error = authorizationExpired{}
 
 var errVoiceBudgetExpired = errors.New("voiceagent: reserved Voice quota expired")
 
+func voiceAuthorizationExpiry(cfg LiveConfigFrame) (time.Time, error) {
+	if cfg.DirectEndpoint == nil {
+		return registeredAuthorizationExpiry(cfg.CapabilityLease, cfg.OboSubjectToken, cfg.CredentialExpiresAt)
+	}
+	if cfg.EndpointBinding == "" || cfg.EndpointSignature == "" || cfg.OboSubjectToken == "" || cfg.CredentialExpiresAt <= time.Now().Unix() {
+		return time.Time{}, errAuthorizationExpired
+	}
+	expiry := time.Unix(cfg.CredentialExpiresAt, 0)
+	if tokenExpiry, err := boundTokenExpiry(cfg.OboSubjectToken); err == nil {
+		expiry = minTime(expiry, tokenExpiry)
+	}
+	return expiry, nil
+}
+
 // These claims only shorten the lifetime of a binding already authenticated
 // by the edge middleware. This is not token verification or grant issuance;
 // Gateway remains the authority for signature, audience, scope and revocation.

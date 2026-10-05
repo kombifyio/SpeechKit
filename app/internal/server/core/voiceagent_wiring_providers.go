@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -29,7 +30,7 @@ func buildNativeVoiceConsentReader() vsserver.NativeConsentReader {
 		Authorize: func(req *http.Request, cfg vsserver.LiveConfigFrame) error {
 			secret := strings.TrimSpace(os.Getenv("SERVICE_AUTH_SECRET"))
 			now := time.Now().Unix()
-			if secret == "" || cfg.OwnerUserID == "" || cfg.AgentTargetID == "" || cfg.CapabilityLease == "" || cfg.CredentialExpiresAt <= now {
+			if secret == "" || cfg.OwnerUserID == "" || (cfg.DirectEndpoint == nil && (cfg.AgentTargetID == "" || cfg.CapabilityLease == "")) || cfg.CredentialExpiresAt <= now {
 				return errors.New("voiceagent: current consent service binding is unavailable")
 			}
 			owner := map[string]string{"sub": cfg.OwnerUserID}
@@ -41,6 +42,10 @@ func buildNativeVoiceConsentReader() vsserver.NativeConsentReader {
 				"scope": "speechkit.voice_consent.read", "iat": now, "exp": min(now+60, cfg.CredentialExpiresAt),
 				"on_behalf_of": owner, "target_agent_id": cfg.AgentTargetID, "session_expires_at": cfg.CredentialExpiresAt,
 			}
+			if cfg.DirectEndpoint != nil {
+				claims["voice_endpoint_binding"], claims["voice_endpoint_signature"] = cfg.EndpointBinding, cfg.EndpointSignature
+				delete(claims, "target_agent_id")
+			}
 			token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
 			if err != nil {
 				return errors.New("voiceagent: current consent service credential could not be issued")
@@ -50,7 +55,18 @@ func buildNativeVoiceConsentReader() vsserver.NativeConsentReader {
 			return nil
 		},
 	}
-	return reader.Read
+	return func(ctx context.Context, cfg vsserver.LiveConfigFrame) (vsserver.NativeVoiceConsent, error) {
+		current := reader
+		if cfg.DirectEndpoint != nil {
+			endpoint, err := url.Parse(cfg.AgentEndpoint)
+			if err != nil || endpoint.Scheme != "https" || endpoint.Host == "" || endpoint.Path != "/v1/ai/responses" {
+				return vsserver.NativeVoiceConsent{}, errors.New("voiceagent: trusted endpoint origin unavailable")
+			}
+			endpoint.Path = "/v1/speechkit/voiceagent/session-authority"
+			current.Endpoint = endpoint.String()
+		}
+		return current.Read(ctx, cfg)
+	}
 }
 
 func mapKernelLiveMessage(msg *live.LiveMessage) *vsserver.LiveMessage {
@@ -313,17 +329,18 @@ func (b *assemblyAILiveBridge) Connect(ctx context.Context, cfg vsserver.LiveCon
 		return errors.New("voiceagent: no AssemblyAI API key configured for this deployment")
 	}
 	liveCfg := live.LiveConfig{
-		StoredAgentID:    cfg.StoredAgentID,
-		Provider:         ProviderAssemblyAI,
-		ProfileID:        "realtime.assemblyai.voice-agent",
-		Model:            cfg.Model,
-		FallbackModel:    cfg.FallbackModel,
-		APIKey:           cfg.APIKey,
-		Voice:            cfg.Voice,
-		FrameworkPrompt:  cfg.SystemPrompt,
-		RefinementPrompt: cfg.RefinementPrompt,
-		Locale:           cfg.Locale,
-		Speaker:          cfg.Speaker,
+		StoredAgentID:     cfg.StoredAgentID,
+		TranscriptionMode: live.TranscriptionMode(cfg.TranscriptionMode),
+		Provider:          ProviderAssemblyAI,
+		ProfileID:         "realtime.assemblyai.voice-agent",
+		Model:             cfg.Model,
+		FallbackModel:     cfg.FallbackModel,
+		APIKey:            cfg.APIKey,
+		Voice:             cfg.Voice,
+		FrameworkPrompt:   cfg.SystemPrompt,
+		RefinementPrompt:  cfg.RefinementPrompt,
+		Locale:            cfg.Locale,
+		Speaker:           cfg.Speaker,
 		Policies: live.LivePolicies{
 			EnableInputAudioTranscription:  true,
 			EnableOutputAudioTranscription: true,

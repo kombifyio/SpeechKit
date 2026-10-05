@@ -61,6 +61,8 @@ export interface StartFrame {
   provider?: string;
   /** Native media backend for an authorized registered-agent voice session. */
   media_provider?: "assemblyai" | "deepgram";
+  /** AssemblyAI native speech recognition profile; unsupported by other providers. */
+  transcription_mode?: "balanced" | "min_latency" | "max_accuracy";
   /**
    * Where microphone and model audio move. `websocket` (default) keeps the
    * v1 binary-frame audio path; `livekit` keeps this WebSocket as the

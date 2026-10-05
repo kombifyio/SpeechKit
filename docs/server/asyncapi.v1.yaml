@@ -368,6 +368,10 @@ components:
             providers. v1 LiveKit media is limited to providers that advertise
             LiveKit support; cascaded providers stay on WebSocket audio until
             explicit transcoding is added.
+        transcription_mode:
+          type: string
+          enum: [balanced, min_latency, max_accuracy]
+          description: AssemblyAI native speech recognition speed versus accuracy. Other providers reject an explicit mode.
         voice: { type: string }
         locale: { type: string }
         model: { type: string }

@@ -39,3 +39,30 @@ func TestStoredAgentCreateCannotForwardCredentialsThroughRedirect(t *testing.T) 
 		t.Fatal("provider redirect crossed credential custody boundary")
 	}
 }
+
+// Sensitive provider boundary: the native profile reaches the stored agent
+// unchanged, and an unsupported value cannot cause a provider create.
+func TestStoredAgentTranscriptionProfileBeforeProviderCreate(t *testing.T) {
+	for _, mode := range []live.TranscriptionMode{"", live.TranscriptionBalanced, live.TranscriptionMinLatency, live.TranscriptionMaxAccuracy, "invented-fast-model"} {
+		t.Run(string(mode), func(t *testing.T) {
+			created := false
+			client := &http.Client{Transport: agentsRESTFixture(func(r *http.Request) (*http.Response, error) {
+				var body struct {
+					Input struct {
+						Mode live.TranscriptionMode `json:"transcription_mode"`
+					} `json:"input"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Input.Mode != mode {
+					t.Fatal("native recognition profile changed before provider create")
+				}
+				created = true
+				return &http.Response{StatusCode: http.StatusCreated, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":"owned-profile-agent"}`))}, nil
+			})}
+			_, err := (Agents{APIKey: "provider-key", HTTPClient: client}).Create(context.Background(), "owned-profile", live.LiveConfig{TranscriptionMode: mode},
+				CustomLLM{BaseURL: "https://callback.example/llm", Model: "bound-agent", APIKey: "scoped-callback"})
+			if mode.Valid() && (err != nil || !created) || !mode.Valid() && (err == nil || created) {
+				t.Fatalf("provider effect did not respect the supported profile: created=%v err=%v", created, err)
+			}
+		})
+	}
+}

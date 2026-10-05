@@ -9,6 +9,21 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.75.8](https://github.com/kombifyio/SpeechKit/compare/v0.75.7...v0.75.8) (2026-10-05)
+
+
+### Features
+
+* **voice:** forward native AssemblyAI transcription profiles ([#783](https://github.com/kombifyio/SpeechKit/issues/783)) ([79431e1](https://github.com/kombifyio/SpeechKit/commit/79431e1366d65db7acdc968a67a8b37a7cf8da67))
+* **voice:** retain signed floating endpoint conversations ([#782](https://github.com/kombifyio/SpeechKit/issues/782)) ([969b74e](https://github.com/kombifyio/SpeechKit/commit/969b74ee0b625a046eb97b29856a2b32cdd338eb))
+* **voice:** stream direct endpoint conversations through native media ([#777](https://github.com/kombifyio/SpeechKit/issues/777)) ([cd6f7c1](https://github.com/kombifyio/SpeechKit/commit/cd6f7c17a4b2543c4025eb10c06d081abf0b13d0))
+
+
+### Bug Fixes
+
+* **export:** separate hosted endpoint signer from standalone builds ([#779](https://github.com/kombifyio/SpeechKit/issues/779)) ([e9f217f](https://github.com/kombifyio/SpeechKit/commit/e9f217f52d3a8bed3211e3e9c8bd6910eb70d1a0))
+* **voice:** restrict Deepgram language hints to multilingual Flux ([#780](https://github.com/kombifyio/SpeechKit/issues/780)) ([60e66d5](https://github.com/kombifyio/SpeechKit/commit/60e66d592db7ff53818e45f2e93e939b96433597))
+
 ## [0.75.7](https://github.com/kombifyio/SpeechKit/compare/v0.75.6...v0.75.7) (2026-10-05)
 
 

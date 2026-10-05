@@ -66,6 +66,9 @@ func (p *Provider) SessionCapabilities() live.SessionCapabilities {
 // before returning. It fails with [live.ErrMissingAPIKey] when the key is
 // empty and with the server's session.error when the session is rejected.
 func (p *Provider) Connect(ctx context.Context, cfg live.LiveConfig) error {
+	if !cfg.TranscriptionMode.Valid() {
+		return errors.New("assemblyai agent: unsupported transcription mode")
+	}
 	if strings.TrimSpace(cfg.APIKey) == "" {
 		return fmt.Errorf("assemblyai agent: %w", live.ErrMissingAPIKey)
 	}
@@ -476,6 +479,9 @@ func assemblyAISessionUpdate(cfg live.LiveConfig) map[string]any {
 	resolved := live.ResolveLiveOptions("assemblyai", "realtime.assemblyai.voice-agent", cfg, nil, nil)
 	input := map[string]any{
 		"format": map[string]any{"encoding": "audio/pcm"},
+	}
+	if cfg.TranscriptionMode != "" {
+		input["transcription_mode"] = cfg.TranscriptionMode
 	}
 	session := map[string]any{
 		"input": input,

@@ -70,6 +70,9 @@ func (a Agents) request(ctx context.Context, method, path string, body any) (*ht
 
 // Create provisions one stored configuration without retrying an uncertain mutation.
 func (a Agents) Create(ctx context.Context, name string, cfg live.LiveConfig, llm CustomLLM) (StoredAgent, error) {
+	if !cfg.TranscriptionMode.Valid() {
+		return StoredAgent{}, errors.New("assemblyai agent: unsupported transcription mode")
+	}
 	parsed, err := url.Parse(llm.BaseURL)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || strings.TrimSpace(llm.Model) == "" || strings.TrimSpace(llm.APIKey) == "" || strings.TrimSpace(name) == "" {
 		return StoredAgent{}, errors.New("assemblyai agent: complete HTTPS custom LLM binding is required")

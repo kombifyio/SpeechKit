@@ -17,6 +17,10 @@ import (
 // Sensitive boundary: native providers can submit a turn only to the bound
 // registered session, and a retried callback cannot repeat privileged effects.
 func TestNativeCallbackKeepsRegisteredAuthorityAndNeverReplays(t *testing.T) {
+	var absent *Agent
+	if _, err := NewOpenAIHandler(context.Background(), absent, strings.Repeat("x", 32), time.Now().Add(time.Minute), "en"); err == nil {
+		t.Fatal("typed nil registered agent admitted a callback")
+	}
 	var executions atomic.Int32
 	finish := make(chan struct{})
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

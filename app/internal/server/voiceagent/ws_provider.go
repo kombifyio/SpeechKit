@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/responses"
 )
 
 // ProviderFactory builds a Framework kernel voice-agent provider on demand.
@@ -86,12 +87,13 @@ type LiveConfigFrame struct {
 	StepExitCriteria   string
 	StepMaxTurns       int
 
-	Model            string
-	StoredAgentID    string             `json:"-"`
-	NativeLLMBaseURL string             `json:"-"`
-	NativeLLMToken   string             `json:"-"`
-	NativeLLMModel   string             `json:"-"`
-	NativeConsent    NativeVoiceConsent `json:"-"`
+	Model             string
+	TranscriptionMode string
+	StoredAgentID     string             `json:"-"`
+	NativeLLMBaseURL  string             `json:"-"`
+	NativeLLMToken    string             `json:"-"`
+	NativeLLMModel    string             `json:"-"`
+	NativeConsent     NativeVoiceConsent `json:"-"`
 	// FallbackModel is forwarded to providers that support same-provider
 	// fallback (when a provider supports a same-provider retry after the primary
 	// connect fails). Empty disables the fallback.
@@ -130,7 +132,10 @@ type LiveConfigFrame struct {
 	OwnerPlan           string
 	// OboSubjectToken is the short-lived delegated AI session credential
 	// captured at mint time. It is never the owner's raw login JWT.
-	OboSubjectToken string
+	OboSubjectToken   string
+	DirectEndpoint    *responses.Context
+	EndpointBinding   string
+	EndpointSignature string
 }
 
 // LiveMessage is the subset of pkg/speechkit/voiceagent/live.LiveMessage the

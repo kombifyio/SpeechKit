@@ -268,6 +268,9 @@ type LiveConfig struct {
 	// It is mutually exclusive with inline session configuration. The host
 	// owns provisioning, authorization and durable deletion/reconciliation.
 	StoredAgentID string
+	// TranscriptionMode selects AssemblyAI native speed versus accuracy.
+	// Empty preserves the provider default; other providers do not map it.
+	TranscriptionMode TranscriptionMode
 	// FallbackModel is tried when the primary Model's Connect fails. Empty
 	// disables the fallback. Typical pairing in 2026: a preview model as
 	// Model + the last GA model as FallbackModel, so transient preview

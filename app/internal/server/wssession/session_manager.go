@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/responses"
 )
 
 // Common errors reported by the session manager.
@@ -78,6 +79,10 @@ type VoiceAgentBinding struct {
 	CloudProcessing              bool
 	VoiceAgentRecording          bool
 	VoiceAgentRecordingUpdatedAt string
+	EndpointBinding              string
+	EndpointSignature            string
+	RequestDigest                string
+	DirectEndpoint               *responses.Context
 }
 
 // VoiceBudget is retained from the authenticated edge decision, never a

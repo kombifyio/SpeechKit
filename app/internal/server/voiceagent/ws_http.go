@@ -3,8 +3,11 @@
 package voiceagent
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -18,6 +21,7 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/server/storageauth"
 	"github.com/kombifyio/SpeechKit/app/internal/server/wssession"
 	"github.com/kombifyio/SpeechKit/app/internal/store"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/responses"
 )
 
 // ── HTTP endpoints ──────────────────────────────────────────────────────────
@@ -33,9 +37,10 @@ type createSessionResponse struct {
 }
 
 type createSessionRequest struct {
-	AISessionID   string `json:"ai_session_id,omitempty"`
-	Provider      string `json:"provider,omitempty"`
-	TargetAgentID string `json:"target_agent_id,omitempty"`
+	AISessionID    string             `json:"ai_session_id,omitempty"`
+	Provider       string             `json:"provider,omitempty"`
+	TargetAgentID  string             `json:"target_agent_id,omitempty"`
+	DirectEndpoint *responses.Context `json:"direct_endpoint,omitempty"`
 }
 
 type listSessionsResponse struct {
@@ -150,8 +155,15 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input createSessionRequest
+	var requestBytes []byte
 	if r.Body != nil {
-		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
+		var err error
+		requestBytes, err = io.ReadAll(http.MaxBytesReader(w, r.Body, 192<<10))
+		if err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_request", "Voice context is too large")
+			return
+		}
+		decoder := json.NewDecoder(bytes.NewReader(requestBytes))
 		if err := decoder.Decode(&input); err != nil && !errors.Is(err, io.EOF) {
 			httpx.WriteError(w, http.StatusBadRequest, "invalid_request", "request body must be valid JSON")
 			return
@@ -161,6 +173,18 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 	input.Provider = normalizeProviderName(input.Provider)
 	input.TargetAgentID = strings.TrimSpace(input.TargetAgentID)
 	binding := middleware.VoiceAgentBindingFromContext(r.Context())
+	if binding.DirectEndpoint != nil || input.DirectEndpoint != nil || input.Provider == "kombify-endpoint" {
+		digest := sha256.Sum256(requestBytes)
+		if binding.DirectEndpoint == nil || input.DirectEndpoint == nil || input.Provider != "kombify-endpoint" || input.AISessionID != "" || input.TargetAgentID != "" ||
+			hex.EncodeToString(digest[:]) != binding.RequestDigest || input.DirectEndpoint.Connection != binding.DirectEndpoint.Connection || input.DirectEndpoint.Surface != binding.DirectEndpoint.Surface ||
+			input.DirectEndpoint.ConversationID != binding.DirectEndpoint.ConversationID || responses.ValidateContext(input.DirectEndpoint.Messages) != nil {
+			httpx.WriteError(w, http.StatusForbidden, "voice_endpoint_binding_mismatch", "Own endpoint request does not match the authorized direct conversation")
+			return
+		}
+		copy := *input.DirectEndpoint
+		copy.Messages = append([]responses.Message(nil), copy.Messages...)
+		binding.DirectEndpoint = &copy
+	}
 	if binding.TargetAgentID != "" && (input.Provider != "kombify-agent" || input.TargetAgentID != binding.TargetAgentID) {
 		httpx.WriteError(w, http.StatusForbidden, "voice_agent_binding_mismatch", "registered agent request does not match the edge-authorized target")
 		return

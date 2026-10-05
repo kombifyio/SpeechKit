@@ -18,6 +18,7 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/a2a"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/assemblyai"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/responses"
 )
 
 type nativeVoiceSessions struct {
@@ -71,18 +72,21 @@ type registeredNativeProvider struct {
 func (p *registeredNativeProvider) HandlesOwnTools() bool { return true }
 
 func (p *registeredNativeProvider) Connect(ctx context.Context, cfg LiveConfigFrame) error {
+	if mode := live.TranscriptionMode(cfg.TranscriptionMode); !mode.Valid() || (mode != "" && p.provider != "assemblyai") {
+		return errors.New("voiceagent: unsupported native transcription mode")
+	}
 	secret := ""
 	if p.sessions.signingSecret != nil {
 		secret = strings.TrimSpace(p.sessions.signingSecret())
 	}
-	if cfg.AgentTargetID == "" || cfg.AgentEndpoint == "" || cfg.CapabilityLease == "" || cfg.OboSubjectToken == "" || secret == "" || cfg.VoiceSessionID == "" {
+	if (cfg.DirectEndpoint == nil && (cfg.AgentTargetID == "" || cfg.CapabilityLease == "")) || cfg.AgentEndpoint == "" || cfg.OboSubjectToken == "" || secret == "" || cfg.VoiceSessionID == "" {
 		return errors.New("voiceagent: complete registered native binding is required")
 	}
 	parsed, err := url.Parse(p.sessions.publicURL)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return errors.New("voiceagent: native callback requires configured public HTTPS URL")
 	}
-	expiresAt, err := registeredAuthorizationExpiry(cfg.CapabilityLease, cfg.OboSubjectToken, cfg.CredentialExpiresAt)
+	expiresAt, err := voiceAuthorizationExpiry(cfg)
 	if err != nil || !time.Now().Before(expiresAt) {
 		return errAuthorizationExpired
 	}
@@ -100,7 +104,18 @@ func (p *registeredNativeProvider) Connect(ctx context.Context, cfg LiveConfigFr
 	p.cancel = cancel
 	p.binding = cfg
 	p.mu.Unlock()
-	agent, err := a2a.New(a2a.Config{Endpoint: cfg.AgentEndpoint, TargetAgentID: cfg.AgentTargetID, SessionID: firstNonBlank(cfg.AISessionID, cfg.VoiceSessionID), Headers: registeredAgentHeaders(cfg, secret)})
+	var agent a2a.TurnStreamer
+	if cfg.DirectEndpoint != nil {
+		headers, headerErr := endpointTurnHeaders(cfg, secret)
+		if headerErr != nil {
+			p.cancel()
+			return headerErr
+		}
+		agent, err = responses.New(responses.Config{URL: cfg.AgentEndpoint, Connection: cfg.DirectEndpoint.Connection,
+			Messages: cfg.DirectEndpoint.Messages, Surface: cfg.DirectEndpoint.Surface, Headers: headers})
+	} else {
+		agent, err = a2a.New(a2a.Config{Endpoint: cfg.AgentEndpoint, TargetAgentID: cfg.AgentTargetID, SessionID: firstNonBlank(cfg.AISessionID, cfg.VoiceSessionID), Headers: registeredAgentHeaders(cfg, secret)})
+	}
 	if err != nil {
 		p.cancel()
 		return err
@@ -110,6 +125,9 @@ func (p *registeredNativeProvider) Connect(ctx context.Context, cfg LiveConfigFr
 	if err != nil {
 		p.cancel()
 		return err
+	}
+	if cfg.DirectEndpoint != nil {
+		callback.Model = cfg.DirectEndpoint.Connection.Model
 	}
 	p.mu.Lock()
 	if p.closed {
@@ -145,13 +163,16 @@ func (p *registeredNativeProvider) Connect(ctx context.Context, cfg LiveConfigFr
 	cfg.NativeLLMBaseURL = strings.Replace(callbackURL, "wss://", "https://", 1)
 	cfg.NativeLLMToken = callbackToken
 	cfg.NativeLLMModel = cfg.AgentTargetID
+	if cfg.DirectEndpoint != nil {
+		cfg.NativeLLMModel = cfg.DirectEndpoint.Connection.Model
+	}
 	cfg.Tools = nil
 	if p.provider == "assemblyai" {
 		if p.sessions.journal == nil {
 			_ = p.closeFor(ctx)
 			return errors.New("voiceagent: native AssemblyAI requires durable cleanup journal")
 		}
-		storedConfig := live.LiveConfig{Voice: cfg.Voice, Locale: cfg.Locale, FrameworkPrompt: cfg.SystemPrompt, RefinementPrompt: cfg.RefinementPrompt,
+		storedConfig := live.LiveConfig{Voice: cfg.Voice, Locale: cfg.Locale, TranscriptionMode: live.TranscriptionMode(cfg.TranscriptionMode), FrameworkPrompt: cfg.SystemPrompt, RefinementPrompt: cfg.RefinementPrompt,
 			Policies: live.LivePolicies{ActivityDetection: live.ActivityDetectionPolicy{
 				Automatic: cfg.Automatic, StartSensitivity: live.StartSensitivity(strings.ToLower(cfg.StartSensitivity)),
 				EndSensitivity: live.EndSensitivity(strings.ToLower(cfg.EndSensitivity)), PrefixPaddingMs: cfg.PrefixPaddingMs,

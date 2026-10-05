@@ -39,7 +39,9 @@ func (p *Provider) buildSettings(cfg live.LiveConfig) map[string]any {
 		listenProvider["keyterms"] = keyterms
 	}
 	hints := deepgramListenLanguageHints(resolved.LanguageHints, resolved.Locale, listenModel)
-	if len(hints) > 0 {
+	// Only multilingual Flux accepts listen language_hints. Keep the resolved
+	// hints for the independent speak-language guard even on other listen legs.
+	if len(hints) > 0 && strings.EqualFold(strings.TrimSpace(listenModel), "flux-general-multi") {
 		listenProvider["language_hints"] = hints
 	}
 	if deepgramModelUsesFlux(listenModel) {

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -22,7 +23,8 @@ import (
 // and removes this handler on voice teardown. Vendor prompts, model selection,
 // history and tools cannot change the bound agent or its durable session.
 type OpenAIHandler struct {
-	Agent     *Agent
+	Agent     TurnStreamer
+	Model     string
 	Token     string `json:"-"`
 	ExpiresAt time.Time
 	Locale    string
@@ -45,6 +47,12 @@ type OpenAIHandler struct {
 	turnCancel context.CancelFunc
 }
 
+// TurnStreamer is the existing host-observed native turn boundary. An endpoint
+// adapter can reuse the callback lifecycle without inventing an agent identity.
+type TurnStreamer interface {
+	StreamTurn(context.Context, cascaded.AgentInput, string, func(string) error) (cascaded.AgentOutput, error)
+}
+
 // CancelTurn stops the current registered-agent request without revoking the
 // voice session. Its admitted identity remains consumed, including uncertainty.
 func (h *OpenAIHandler) CancelTurn() {
@@ -65,11 +73,15 @@ func (h *OpenAIHandler) ResponsePending() bool {
 
 // NewOpenAIHandler requires a bound agent, an opaque credential and a future
 // expiry. The caller must generate at least 32 random bytes for token.
-func NewOpenAIHandler(ctx context.Context, agent *Agent, token string, expiresAt time.Time, locale string) (*OpenAIHandler, error) {
-	if ctx == nil || agent == nil || len(token) < 32 || !time.Now().Before(expiresAt) {
+func NewOpenAIHandler(ctx context.Context, agent TurnStreamer, token string, expiresAt time.Time, locale string) (*OpenAIHandler, error) {
+	if ctx == nil || agent == nil || (reflect.ValueOf(agent).Kind() == reflect.Pointer && reflect.ValueOf(agent).IsNil()) || len(token) < 32 || !time.Now().Before(expiresAt) {
 		return nil, errors.New("speechkit a2a: complete callback binding is required")
 	}
-	return &OpenAIHandler{Agent: agent, Token: token, ExpiresAt: expiresAt, Locale: locale, Context: ctx, admit: make(chan struct{}, 1), seen: make(map[[32]byte]struct{})}, nil
+	model := ""
+	if registered, ok := agent.(*Agent); ok {
+		model = registered.targetAgentID
+	}
+	return &OpenAIHandler{Agent: agent, Model: model, Token: token, ExpiresAt: expiresAt, Locale: locale, Context: ctx, admit: make(chan struct{}, 1), seen: make(map[[32]byte]struct{})}, nil
 }
 
 func (h *OpenAIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -161,7 +173,7 @@ func (h *OpenAIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	id := fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano())
 	started := false
 	write := func(delta map[string]string, finish any) error {
-		chunk := map[string]any{"id": id, "object": "chat.completion.chunk", "created": time.Now().Unix(), "model": h.Agent.targetAgentID,
+		chunk := map[string]any{"id": id, "object": "chat.completion.chunk", "created": time.Now().Unix(), "model": h.Model,
 			"choices": []map[string]any{{"index": 0, "delta": delta, "finish_reason": finish}}}
 		body, err := json.Marshal(chunk)
 		if err != nil {

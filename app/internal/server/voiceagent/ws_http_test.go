@@ -4,6 +4,10 @@ package voiceagent
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -15,7 +19,79 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/server/httpx"
 	"github.com/kombifyio/SpeechKit/app/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/app/internal/server/wssession"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/responses"
 )
+
+func TestCreateSessionRetainsOnlyExactSignedOwnEndpointConversation(t *testing.T) {
+	for _, change := range []string{"current", "floating-current", "body", "owner", "expired", "signature"} {
+		t.Run(change, func(t *testing.T) {
+			manager := mustManager(t, Options{})
+			handler, err := New(HandlerOptions{Manager: manager, Provider: staticProviderFactory{provider: newFakeProvider()}, Persona: &fakeResolver{}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			mux := http.NewServeMux()
+			handler.Mount(mux)
+			direct := responses.Context{Connection: responses.Connection{Mode: "endpoint", EndpointID: "owner-endpoint", Model: "owner-model"},
+				Messages: []responses.Message{{Role: "user", Content: "Original question"}, {Role: "assistant", Content: "Original answer"}}, Surface: "workbench-direct-chat", ConversationID: "direct-local"}
+			if change == "floating-current" {
+				direct.Surface = "floating-panel-direct-chat"
+			}
+			body, _ := json.Marshal(map[string]any{"provider": "kombify-endpoint", "direct_endpoint": direct})
+			digest := sha256.Sum256(body)
+			owner, expiry := "owner", time.Now().Add(time.Minute).Unix()
+			if change == "owner" {
+				owner = "foreign"
+			}
+			if change == "expired" {
+				expiry = 1
+			}
+			proof, _ := json.Marshal(map[string]any{"version": 1, "kind": "direct-endpoint", "subject": owner, "orgId": "default", "connection": direct.Connection,
+				"surface": direct.Surface, "conversationId": direct.ConversationID, "requestDigest": hex.EncodeToString(digest[:]), "nonce": "mint-nonce",
+				"endpoint": "https://stage.kombify.test/v1/ai/responses", "workload": "companion", "expiresAt": expiry, "consent": map[string]any{"cloud_processing": true}})
+			encoded := base64.StdEncoding.EncodeToString(proof)
+			mac := hmac.New(sha256.New, []byte("edge-secret"))
+			_, _ = mac.Write([]byte("speechkit-direct-endpoint-v1\n" + encoded))
+			if change == "body" {
+				body = []byte(strings.Replace(string(body), "Original question", "Different conversation", 1))
+			}
+			request := httptest.NewRequest(http.MethodPost, "https://speechkit.test/v1/voiceagent/sessions", strings.NewReader(string(body)))
+			request.Header.Set("X-Edge-Voice-Endpoint-Binding", encoded)
+			request.Header.Set("X-Edge-Voice-Endpoint-Hmac", hex.EncodeToString(mac.Sum(nil)))
+			if change == "signature" {
+				request.Header.Set("X-Edge-Voice-Endpoint-Hmac", "wrong-signature")
+			}
+			if err := middleware.SignEdgeEnvelope(request, middleware.EdgeKey{ID: "primary", Secret: "edge-secret"}, middleware.Identity{UserID: "owner", OrgID: "default", Plan: "pro"}, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			wrapped := middleware.Auth(middleware.AuthOptions{Mode: "edge_hmac", EdgeSecretProvider: func() string { return "edge-secret" }})(mux)
+			recorder := httptest.NewRecorder()
+			wrapped.ServeHTTP(recorder, request)
+			if change != "current" && change != "floating-current" {
+				if recorder.Code < 400 {
+					t.Fatal("modified direct context minted a voice session")
+				}
+				return
+			}
+			if recorder.Code != http.StatusCreated {
+				t.Fatal("current direct context denied", recorder.Code, recorder.Body.String())
+			}
+			var created createSessionResponse
+			if json.NewDecoder(recorder.Body).Decode(&created) != nil {
+				t.Fatal("invalid ticket")
+			}
+			session, err := manager.Get(created.SessionID)
+			if err != nil || session.VoiceAgentBinding.DirectEndpoint == nil {
+				t.Fatal("direct context not retained")
+			}
+			retained := session.VoiceAgentBinding
+			if retained.Endpoint != "https://stage.kombify.test/v1/ai/responses" || retained.TargetAgentID != "" || retained.Lease != "" || session.AISessionID != "" ||
+				retained.DirectEndpoint.Connection != direct.Connection || retained.DirectEndpoint.Messages[0].Content != "Original question" {
+				t.Fatal("direct context changed authority or history")
+			}
+		})
+	}
+}
 
 func TestCreateSessionUsesAPIPrefixInWebSocketURL(t *testing.T) {
 	manager := mustManager(t, Options{})

@@ -160,9 +160,11 @@ func (a *Adapter) Run(parent context.Context) {
 	}
 	budgetEnded := func() bool { return !budgetExpiry.IsZero() && !time.Now().Before(budgetExpiry) }
 	var authorizationExpiry time.Time
-	if a.Session != nil && a.Session.VoiceAgentBinding.TargetAgentID != "" {
+	if a.Session != nil && (a.Session.VoiceAgentBinding.TargetAgentID != "" || a.Session.VoiceAgentBinding.DirectEndpoint != nil) {
 		var err error
-		authorizationExpiry, err = registeredAuthorizationExpiry(a.Session.VoiceAgentBinding.Lease, a.Session.BridgeCredential, a.Session.VoiceAgentBinding.CredentialExpiresAt)
+		authorizationExpiry, err = voiceAuthorizationExpiry(LiveConfigFrame{CapabilityLease: a.Session.VoiceAgentBinding.Lease, OboSubjectToken: a.Session.BridgeCredential,
+			CredentialExpiresAt: a.Session.VoiceAgentBinding.CredentialExpiresAt, DirectEndpoint: a.Session.VoiceAgentBinding.DirectEndpoint,
+			EndpointBinding: a.Session.VoiceAgentBinding.EndpointBinding, EndpointSignature: a.Session.VoiceAgentBinding.EndpointSignature})
 		if err != nil || !time.Now().Before(authorizationExpiry) {
 			a.sendFatalError(parent, "auth_expired", "Start a new authorized voice session.")
 			endReason = "authorization_expired"
@@ -205,11 +207,15 @@ func (a *Adapter) Run(parent context.Context) {
 		requested := start.Provider
 		mediaProvider := normalizeProviderName(start.MediaProvider)
 		if mediaProvider != "" {
-			if a.Session == nil || a.Session.VoiceAgentBinding.TargetAgentID == "" || a.Session.VoiceBudget.ReservationID == "" || (mediaProvider != "assemblyai" && mediaProvider != "deepgram") || a.native == nil {
+			if a.Session == nil || (a.Session.VoiceAgentBinding.TargetAgentID == "" && a.Session.VoiceAgentBinding.DirectEndpoint == nil) || a.Session.VoiceBudget.ReservationID == "" || (mediaProvider != "assemblyai" && mediaProvider != "deepgram") || a.native == nil {
 				a.sendFatalError(ctx, "native_voice_binding_required", "Reserve Voice quota and bind a registered agent before selecting native voice media.")
 				return
 			}
 			requested = mediaProvider
+		}
+		if a.Session != nil && a.Session.VoiceAgentBinding.DirectEndpoint != nil && mediaProvider == "" {
+			a.sendFatalError(ctx, "native_voice_binding_required", "Own endpoint Voice requires the selected native speech provider.")
+			return
 		}
 		provider, resolved, err := a.selectProvider(requested)
 		if err != nil {
@@ -225,6 +231,10 @@ func (a *Adapter) Run(parent context.Context) {
 		start.Provider = resolved
 	}
 	defer a.closeProvider()
+	if mode := live.TranscriptionMode(start.TranscriptionMode); !mode.Valid() || (mode != "" && normalizeProviderName(start.Provider) != "assemblyai") {
+		a.sendFatalError(ctx, "transcription_mode_unsupported", "The selected speech recognition profile requires AssemblyAI native Voice.")
+		return
+	}
 	transport, err := normalizeMediaTransport(start.MediaTransport)
 	if err != nil {
 		a.sendFatalError(ctx, "invalid_media_transport", err.Error())
@@ -246,6 +256,7 @@ func (a *Adapter) Run(parent context.Context) {
 		a.sendFatalError(ctx, "persona_unresolved", "The voice persona could not be resolved.")
 		return
 	}
+	cfg.TranscriptionMode = start.TranscriptionMode
 	if a.Session != nil {
 		binding := a.Session.VoiceAgentBinding
 		cfg.AgentTargetID = binding.TargetAgentID
@@ -260,11 +271,18 @@ func (a *Adapter) Run(parent context.Context) {
 		cfg.OwnerOrgID = a.Session.Owner.OrgID
 		cfg.OwnerPlan = a.Session.Owner.Plan
 		cfg.OboSubjectToken = a.Session.BridgeCredential
+		cfg.DirectEndpoint = binding.DirectEndpoint
+		cfg.EndpointBinding, cfg.EndpointSignature = binding.EndpointBinding, binding.EndpointSignature
+		if cfg.DirectEndpoint != nil {
+			cfg.SystemPrompt, cfg.RefinementPrompt = "", ""
+		}
 	}
 	// Merge server-executed tool definitions from the tool bridge into the
 	// provider config before Connect. Bounded and fail-open to tool-less:
 	// a slow or failing bridge never blocks or kills the voice session.
-	a.mergeBridgeTools(ctx, &cfg)
+	if cfg.DirectEndpoint == nil {
+		a.mergeBridgeTools(ctx, &cfg)
+	}
 	connectTimeout := a.ConnectTimeout
 	if connectTimeout <= 0 {
 		connectTimeout = 15 * time.Second

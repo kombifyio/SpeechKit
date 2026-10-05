@@ -93,6 +93,9 @@ type StartFrame struct {
 	// for a registered-agent binding. Reasoning/tools stay with that agent.
 	// Empty retains the existing registered-agent transport for older clients.
 	MediaProvider string `json:"media_provider,omitempty"`
+	// TranscriptionMode selects AssemblyAI native speed versus accuracy.
+	// Other providers reject an explicit mode rather than silently map it.
+	TranscriptionMode string `json:"transcription_mode,omitempty"`
 	// MediaTransport selects where microphone and model audio move. Empty
 	// defaults to "websocket" for existing clients. "livekit" keeps this
 	// WebSocket as the control channel and moves audio through LiveKit tracks.
