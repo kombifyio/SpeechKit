@@ -16,6 +16,8 @@ package dictation
 
 import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
@@ -70,13 +72,16 @@ type StreamStartFrame struct {
 	ProviderProfileID string `json:"provider_profile_id,omitempty"`
 	// InterimResults defaults to true when omitted — live partials are the
 	// point of this endpoint. Send false explicitly for finals-only.
-	InterimResults *bool              `json:"interim_results,omitempty"`
-	EndpointingMs  int                `json:"endpointing_ms,omitempty"`
-	TurnDetection  bool               `json:"turn_detection,omitempty"`
-	Keyterms       []string           `json:"keyterms,omitempty"`
-	PromptHint     string             `json:"prompt_hint,omitempty"`
-	Diarization    bool               `json:"diarization,omitempty"`
-	Format         *StreamAudioFormat `json:"format,omitempty"`
+	InterimResults            *bool                          `json:"interim_results,omitempty"`
+	EndpointingMs             int                            `json:"endpointing_ms,omitempty"`
+	TurnDetection             bool                           `json:"turn_detection,omitempty"`
+	Keyterms                  []string                       `json:"keyterms,omitempty"`
+	PromptHint                string                         `json:"prompt_hint,omitempty"`
+	VocabularyHints           customize.RecognitionHints     `json:"vocabulary_hints,omitzero"`
+	RecognitionOptions        provideropts.Values            `json:"options,omitempty"`
+	ProviderOptionsByProvider map[string]provideropts.Values `json:"provider_options,omitempty"`
+	Diarization               bool                           `json:"diarization,omitempty"`
+	Format                    *StreamAudioFormat             `json:"format,omitempty"`
 }
 
 // StreamAudioFormat describes the binary PCM frames the client will send.
@@ -102,7 +107,8 @@ func (f StreamStartFrame) Options() speechkit.DictationStreamOptions {
 		TurnDetection:     f.TurnDetection,
 		Keyterms:          append([]string(nil), f.Keyterms...),
 		PromptHint:        f.PromptHint,
-		Diarization:       f.Diarization,
+		VocabularyHints:   f.VocabularyHints, Options: f.RecognitionOptions, ProviderOptionsByProvider: f.ProviderOptionsByProvider,
+		Diarization: f.Diarization,
 	}
 }
 

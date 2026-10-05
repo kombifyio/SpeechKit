@@ -63,6 +63,9 @@ type RecordingController struct {
 	idleWatchInterval time.Duration
 	now               func() time.Time
 
+	// pcmMu serializes capture callbacks with stream adoption. Buffered audio
+	// must reach the provider before the first frame captured after its dial.
+	pcmMu            sync.Mutex
 	mu               sync.Mutex
 	recording        bool
 	stopping         bool
@@ -74,9 +77,10 @@ type RecordingController struct {
 	maxDurationTimer *time.Timer
 	streamQueue      streamSegmentQueue
 	nativeStream     *dictationStreamRuntime
-	// capturedPCMBytes counts the PCM the handler saw this session, so a
-	// native stream records where in the capture its own audio begins.
+	// capturedPCMBytes counts callback audio so Stop can detect capture
+	// dispatch losses against the recorder's authoritative full buffer.
 	capturedPCMBytes int
+	pendingStreamPCM []byte
 }
 
 type dictationStreamRuntime struct {
@@ -96,10 +100,9 @@ type dictationStreamRuntime struct {
 	eventSeq     atomic.Uint64
 	finalCount   atomic.Int64
 	droppedPCM   atomic.Int64
+	ending       atomic.Bool
+	replayFull   atomic.Bool
 
-	// captureOffsetBytes is where the stream's audio begins in the full
-	// capture; frames captured while the handshake dialed never reached it.
-	captureOffsetBytes int
 	// failed is set when a send or receive error ended the stream before
 	// Stop, so its finals no longer cover the capture.
 	failed atomic.Bool

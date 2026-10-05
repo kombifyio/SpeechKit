@@ -60,8 +60,14 @@ func ResolveTranscribeOptions(provider, profileID string, opts TranscribeOpts, p
 			Modality: provideropts.ModalitySTT,
 		}
 	}
+	// Dictionary bias is a default, never a provider override: explicit opt-outs
+	// in global or provider configuration must win.
+	if opts.VocabularyHints.Prompt != "" || len(opts.VocabularyHints.Keyterms) > 0 {
+		defaults := provideropts.Values{provideropts.OptionVocabularyBias: true}
+		providerDefaults = defaults.Merge(providerDefaults)
+	}
 	global := opts.Options.Clone()
-	request := provideropts.Values{}
+	request := provideropts.Values{}.Merge(opts.RequestOptions)
 	if lang := strings.TrimSpace(opts.Language); lang != "" {
 		request[provideropts.OptionLanguage] = lang
 	}
@@ -116,6 +122,17 @@ func ResolveTranscribeOptions(provider, profileID string, opts TranscribeOpts, p
 	}
 	if len(resolved.Keyterms) == 0 {
 		resolved.Keyterms = append([]string(nil), opts.Keyterms...)
+	}
+	// Explicit request/context hints retain precedence; dictionary words augment
+	// native terms only when the provider supports them and bias is enabled.
+	if resolved.UseVocabularyKeyterms {
+		support := manifest.SupportByID()
+		if opt, ok := support[provideropts.OptionPromptHint]; ok && opt.Status != provideropts.SupportUnsupported && resolved.Prompt == "" {
+			resolved.Prompt = opts.VocabularyHints.Prompt
+		}
+		if opt, ok := support[provideropts.OptionKeyterms]; ok && opt.Status != provideropts.SupportUnsupported {
+			resolved.Keyterms = mergeRecognitionTerms(resolved.Keyterms, opts.VocabularyHints.Keyterms)
+		}
 	}
 	return resolved
 }

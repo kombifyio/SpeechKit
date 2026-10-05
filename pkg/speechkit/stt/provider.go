@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
@@ -42,10 +43,13 @@ type STTProvider interface {
 
 // TranscribeOpts configures a single transcription request.
 type TranscribeOpts struct {
-	Language string   // "de", "en", "auto"; request override only
-	Model    string   // Optional: model override
-	Prompt   string   // Optional: provider-specific hint prompt for better recognition
-	Keyterms []string // Optional: provider-native vocabulary bias terms
+	// VocabularyHints holds dictionary-derived bias; explicit hints remain separate.
+	// ResolveTranscribeOptions honors vocabulary_bias opt-outs in every option layer.
+	VocabularyHints customize.RecognitionHints
+	Language        string   // "de", "en", "auto"; request override only
+	Model           string   // Optional: model override
+	Prompt          string   // Optional: provider-specific hint prompt for better recognition
+	Keyterms        []string // Optional: provider-native vocabulary bias terms
 	// ConversationContext carries the preceding dialogue turns (oldest
 	// first, no speaker labels) for providers whose models condition on
 	// conversational context — e.g. AssemblyAI Universal-3.5 Pro sync
@@ -63,6 +67,7 @@ type TranscribeOpts struct {
 	// speechkit.DictationStreamOptions.ProviderProfileID for the batch path.
 	ProviderProfileID         string
 	Speaker                   speaker.Options                // Optional speaker diarization / attribution request
+	RequestOptions            provideropts.Values            // Optional explicit request options; highest precedence
 	Options                   provideropts.Values            // Optional normalized global/default voice options
 	ProviderOptions           provideropts.Values            // Optional normalized overrides for the selected provider
 	ProviderOptionsByProvider map[string]provideropts.Values // Optional provider-keyed overrides used by routers

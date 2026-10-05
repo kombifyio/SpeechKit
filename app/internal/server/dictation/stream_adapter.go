@@ -15,8 +15,12 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	internalcustomize "github.com/kombifyio/SpeechKit/app/internal/customize"
 	"github.com/kombifyio/SpeechKit/app/internal/server/wssession"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	speechcustomize "github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
+	speechstorage "github.com/kombifyio/SpeechKit/pkg/speechkit/storage"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 )
 
 // segmentFlushTimeout bounds how long a finalize waits for the provider to
@@ -39,9 +43,10 @@ const startWaitTimeout = 2 * time.Second
 // provider stream per `start`), which is how a keyboard reuses a warm
 // socket across mic presses.
 type StreamAdapter struct {
-	Session *wssession.ManagedSession
-	Conn    *websocket.Conn
-	Router  StreamRouter
+	Session       *wssession.ManagedSession
+	Conn          *websocket.Conn
+	Router        StreamRouter
+	Customization *Handler
 	// IdleTimeout terminates a session without any client- or provider-side
 	// activity. Zero disables the watchdog.
 	IdleTimeout time.Duration
@@ -74,6 +79,7 @@ type streamSegment struct {
 	finalizing atomic.Bool
 	// bytesPerSecond of the negotiated PCM format, for the audio budget.
 	bytesPerSecond int64
+	replacements   []speechcustomize.Replacement
 
 	// flushTimer is armed by the read pump (finalize) and stopped by the
 	// receive goroutine's teardown — two goroutines, hence the mutex. Once
@@ -295,7 +301,21 @@ func (a *StreamAdapter) startSegment(ctx context.Context, id uint64, start Strea
 	}
 	format := start.AudioFormat()
 	segCtx, segCancel := context.WithCancel(ctx)
-	stream, err := a.Router.StartDictationStream(segCtx, start.Options(), format)
+	streamOpts := start.Options()
+	var replacements []speechcustomize.Replacement
+	if a.Customization != nil {
+		if a.Session != nil {
+			// Upgrade authentication is the verified ticket owner, not client headers.
+			scope := speechstorage.ScopeFromContext(segCtx)
+			scope.UserID = a.Session.Owner.UserID
+			scope.TenantID = a.Session.Owner.OrgID
+			segCtx = speechstorage.WithScope(segCtx, scope)
+		}
+		request, rules := a.Customization.applyCustomizationHints(segCtx, stt.TranscribeOptionsFromStream(streamOpts))
+		replacements = rules
+		streamOpts = request.DictationStreamOptions(streamOpts)
+	}
+	stream, err := a.Router.StartDictationStream(segCtx, streamOpts, format)
 	if err != nil {
 		segCancel()
 		// No provider could serve this format (the router already tried them
@@ -313,6 +333,7 @@ func (a *StreamAdapter) startSegment(ctx context.Context, id uint64, start Strea
 	}
 	seg := &streamSegment{
 		id:             id,
+		replacements:   replacements,
 		stream:         stream,
 		cancel:         segCancel,
 		done:           make(chan struct{}),
@@ -376,6 +397,15 @@ func (a *StreamAdapter) receiveSegment(ctx context.Context, seg *streamSegment) 
 			return
 		}
 		a.idle.Reset()
+		if event.IsFinal && len(seg.replacements) > 0 {
+			applied, applyErr := internalcustomize.Apply(event.Text, seg.replacements, speechcustomize.StagePostSTT)
+			if applyErr != nil {
+				slog.Debug("dictation stream: customization skipped", "err", applyErr)
+			} else {
+				event.Text = applied.Text
+				a.Customization.recordCustomizationUsage(ctx, seg.replacements, applied.Matches, event.Language)
+			}
+		}
 		if event.Text != "" || len(event.Words) > 0 {
 			a.sendJSON(ctx, streamTranscriptFromEvent(seg.id, event))
 		}

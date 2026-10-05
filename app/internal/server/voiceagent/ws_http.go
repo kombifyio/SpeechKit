@@ -181,9 +181,9 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, http.StatusForbidden, "voice_endpoint_binding_mismatch", "Own endpoint request does not match the authorized direct conversation")
 			return
 		}
-		copy := *input.DirectEndpoint
-		copy.Messages = append([]responses.Message(nil), copy.Messages...)
-		binding.DirectEndpoint = &copy
+		directEndpoint := *input.DirectEndpoint
+		directEndpoint.Messages = append([]responses.Message(nil), directEndpoint.Messages...)
+		binding.DirectEndpoint = &directEndpoint
 	}
 	if binding.TargetAgentID != "" && (input.Provider != "kombify-agent" || input.TargetAgentID != binding.TargetAgentID) {
 		httpx.WriteError(w, http.StatusForbidden, "voice_agent_binding_mismatch", "registered agent request does not match the edge-authorized target")

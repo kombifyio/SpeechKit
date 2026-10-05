@@ -59,9 +59,15 @@ func (c *RecordingController) Stop(opts speechkit.RecordingStopOptions) error {
 		time.Sleep(opts.TailDelay)
 	}
 
+	// Stop drains the recorder's queued callbacks. Keep the session and PCM
+	// handlers alive until that drain completes, including its last words.
+	pcm, stopErr := c.recorder.Stop()
+	c.clearPCMHandlers()
+	c.pcmMu.Lock()
 	c.mu.Lock()
 	if c.sessionID != sessionID {
 		c.mu.Unlock()
+		c.pcmMu.Unlock()
 		return nil
 	}
 	c.recording = false
@@ -71,13 +77,13 @@ func (c *RecordingController) Stop(opts speechkit.RecordingStopOptions) error {
 	streamSegments := current.StreamSegments
 	streamedCount := c.streamQueue.streamedCount(sessionID)
 	nativeStream := c.nativeStream
+	capturedPCMBytes := c.capturedPCMBytes
 	c.collector = nil
 	c.startedAt = time.Time{}
 	c.nativeStream = nil
+	c.pendingStreamPCM = nil
 	c.mu.Unlock()
-
-	c.clearPCMHandlers()
-	pcm, stopErr := c.recorder.Stop()
+	c.pcmMu.Unlock()
 	if stopErr != nil {
 		c.onLog(fmt.Sprintf("Capture stop warning: %v", stopErr), "warn")
 	}
@@ -87,7 +93,7 @@ func (c *RecordingController) Stop(opts speechkit.RecordingStopOptions) error {
 	wallDuration := c.clockNow().Sub(startedAt)
 	if isStaleCapturedAudio(dur, wallDuration) {
 		if nativeStream != nil {
-			if finals := c.finishNativeDictationStream(nativeStream); finals > 0 {
+			if finals := c.finishNativeDictationStream(nativeStream, nil); finals > 0 {
 				c.onLog(fmt.Sprintf("Provider-stream dictation finalized with %d committed segment(s)", finals), "info")
 				return nil
 			}
@@ -99,7 +105,7 @@ func (c *RecordingController) Stop(opts speechkit.RecordingStopOptions) error {
 
 	if len(pcm) < c.minPCMBytes {
 		if nativeStream != nil {
-			if finals := c.finishNativeDictationStream(nativeStream); finals > 0 {
+			if finals := c.finishNativeDictationStream(nativeStream, pcm); finals > 0 {
 				c.onLog(fmt.Sprintf("Provider-stream dictation finalized with %d committed segment(s)", finals), "info")
 				return nil
 			}
@@ -149,7 +155,15 @@ func (c *RecordingController) Stop(opts speechkit.RecordingStopOptions) error {
 	var tailOffsetMs int64
 	var tailSessionID uint64
 	if nativeStream != nil {
-		finals := c.finishNativeDictationStream(nativeStream)
+		if capturedPCMBytes != len(pcm) {
+			// A recorder may drop callbacks while retaining their audio in
+			// its full buffer. Unknown gap positions invalidate word offsets.
+			// Recover the full capture rather than silently losing speech.
+			nativeStream.failed.Store(true)
+			nativeStream.replayFull.Store(true)
+			c.onLog("Provider-stream capture callbacks incomplete; recovering the full recording", "warn")
+		}
+		finals := c.finishNativeDictationStream(nativeStream, pcm)
 		switch {
 		case finals > 0 && (nativeStream.failed.Load() || nativeStream.cutShort.Load()):
 			tail, offsetMs := c.uncommittedStreamAudio(nativeStream, pcm, finals)
@@ -295,6 +309,7 @@ func (c *RecordingController) Cancel(opts speechkit.RecordingCancelOptions) erro
 	c.streamQueue.discard(sessionID)
 	nativeStream := c.nativeStream
 	c.nativeStream = nil
+	c.pendingStreamPCM = nil
 	c.mu.Unlock()
 	if nativeStream != nil {
 		c.stopNativeDictationStream(nativeStream, true)

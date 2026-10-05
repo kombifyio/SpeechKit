@@ -52,7 +52,7 @@ table mirrors that inventory.
 | `pkg/speechkit/catalog` | Stable | Built-in provider/model catalog: `DefaultCatalog`, `Catalog.With`, `DefaultProviderProfiles`, the provider defaults matrix and the model registry with freshness metadata. Data only; contracts stay in the root package. |
 | `pkg/speechkit/client` | Beta | Typed HTTP client for talking to a remote SpeechKit Server. |
 | `pkg/speechkit/companion` | Stable | `NewHandsFree(...)` composer for hands-free target routing across Assist, Voice Agent, and UI-assisted Dictation using wake detections, host transcript requests, optional TTS, and EventBus lifecycle. |
-| `pkg/speechkit/customize` | Stable | Public Words/Replacements customization contract. |
+| `pkg/speechkit/customize` | Stable | Public Words/Replacements customization contract, dictionary parsing and provider recognition hints. |
 | `pkg/speechkit/deviceagent` | Beta | Credential-minimal LAN-side SpeechKit device agent. |
 | `pkg/speechkit/dictation` | Stable | Embeddable strict Dictation runtime. |
 | `pkg/speechkit/hostconfig` | Beta | Turns a SpeechKit TOML configuration file into the public SDK configuration types. |
@@ -179,7 +179,8 @@ native toolchain.
    branch removes the `LiveConfig.Instruction` and `LiveConfig.SystemPrompt`
    aliases; embedders must use `LiveConfig.FrameworkPrompt`.
 7. The root package `pkg/speechkit` holds contracts and value types only and
-   imports no sibling package. Implementations live one level down:
+   may import independent contract packages (`speaker`, `customize`, and
+   `provideropts`). Implementations live one level down:
    `pipeline` owns the capture-to-transcript engine, `catalog` owns the
    shipped provider/model data, and mode packages (`dictation`, `assist`,
    `tts`, `voiceagent`) compose them. A root import must never bring in
@@ -241,7 +242,7 @@ Verified on 2026-05-26 and updated on 2026-05-27 and 2026-06-02:
   `TestPublicSDKDoesNotImportAppModule` (`pkg/speechkit/sdk_boundary_test.go`)
   fails when any file under `pkg/speechkit` imports the app module or a
   pre-split `internal/`/`cmd/` path of the root module.
-- The root package imports no `pkg/speechkit/*` sibling; `pipeline` and
+- The root package imports only independent contract packages; `pipeline` and
   `catalog` import the root, never the other way round. `go build` enforces
   this as an import cycle, so no separate test is needed.
 - The root package imports nothing under `go.opentelemetry.io`;

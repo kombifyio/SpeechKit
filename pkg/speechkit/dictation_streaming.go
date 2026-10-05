@@ -5,6 +5,9 @@ import (
 	"errors"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
+
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
@@ -26,16 +29,23 @@ var ErrUnsupportedAudioFormat = errors.New("speechkit: unsupported audio format 
 // Dictation and meeting transcription. It is intentionally separate from
 // speaker.Options because plain dictation must not require diarization.
 type DictationStreamOptions struct {
-	SessionID         uint64
-	ProviderProfileID string
-	Language          string
-	Model             string
-	InterimResults    bool
-	EndpointingMs     int
-	TurnDetection     bool
-	Keyterms          []string
-	PromptHint        string
-	Diarization       bool
+	// VocabularyHints is dictionary bias, separate from explicit PromptHint/Keyterms.
+	VocabularyHints customize.RecognitionHints
+	// Options and provider overrides use the same precedence as batch STT.
+	RequestOptions            provideropts.Values
+	Options                   provideropts.Values
+	ProviderOptions           provideropts.Values
+	ProviderOptionsByProvider map[string]provideropts.Values
+	SessionID                 uint64
+	ProviderProfileID         string
+	Language                  string
+	Model                     string
+	InterimResults            bool
+	EndpointingMs             int
+	TurnDetection             bool
+	Keyterms                  []string
+	PromptHint                string
+	Diarization               bool
 }
 
 // DictationStreamProvider is implemented by STT providers that can consume

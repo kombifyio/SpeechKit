@@ -20,6 +20,7 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/store"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	speechcustomize "github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	speechstorage "github.com/kombifyio/SpeechKit/pkg/speechkit/storage"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 )
@@ -81,7 +82,11 @@ func (h *Handler) transcribe(r *http.Request, raw []byte, contentType string, op
 
 	started := time.Now()
 	durationSecs := float64(decoded.DurationMs) / 1000.0
-	ctx := r.Context()
+	ctx := storageauth.ContextWithRequestOwner(r.Context(), r)
+	owner, _ := store.RecordOwnerFromContext(ctx)
+	scope := speechstorage.ScopeFromContext(ctx)
+	scope.UserID, scope.TenantID = owner.UserID, owner.OrgID
+	ctx = speechstorage.WithScope(ctx, scope)
 	opts, replacements := h.applyCustomizationHints(ctx, opts)
 	result, err := h.router.Route(ctx, decoded.PCM, durationSecs, opts)
 	latency := time.Since(started)
@@ -132,7 +137,9 @@ func (h *Handler) transcribe(r *http.Request, raw []byte, contentType string, op
 		CustomizationActions: customizationActions,
 	}
 	if h.store != nil {
-		persistCtx := storageauth.ContextWithRequestOwner(ctx, r)
+		// History uses the established request scope plus verified ownership.
+		// The recognition-only user scope must not relocate existing history.
+		persistCtx := storageauth.ContextWithRequestOwner(r.Context(), r)
 		audioAsset := audioAssetInput(raw, contentType, decoded.SourceFormat, decoded.DurationMs)
 		var err error
 		switch saver := h.store.(type) {
@@ -164,16 +171,23 @@ func (h *Handler) applyCustomizationHints(ctx context.Context, opts stt.Transcri
 	})
 	if err != nil {
 		slog.Debug("dictation: resolve customization failed", "err", err)
-		return opts, nil
+		resolved = internalcustomize.ResolvedSet{}
 	}
-	if resolved.Prompt != "" && !strings.Contains(opts.Prompt, resolved.Prompt) {
-		if strings.TrimSpace(opts.Prompt) == "" || strings.TrimSpace(opts.Prompt) == h.defaultPrompt {
-			opts.Prompt = resolved.Prompt
-		} else {
-			opts.Prompt = strings.TrimSpace(opts.Prompt) + "\n" + resolved.Prompt
-		}
+	callerHints := opts.VocabularyHints
+	opts = opts.WithVocabulary(resolved.Words)
+	opts.VocabularyHints.Prompt = firstNonEmpty(callerHints.Prompt, opts.VocabularyHints.Prompt)
+	opts.VocabularyHints.Keyterms = mergeKeyterms(callerHints.Keyterms, opts.VocabularyHints.Keyterms)
+	opts.VocabularyHints.Prompt = firstNonEmpty(opts.VocabularyHints.Prompt, h.vocabularyHints.Prompt)
+	opts.VocabularyHints.Keyterms = mergeKeyterms(opts.VocabularyHints.Keyterms, h.vocabularyHints.Keyterms)
+	opts.Options = h.recognitionOptions.Clone().Merge(opts.Options)
+	merged := make(map[string]provideropts.Values, len(h.providerOptionsByProvider))
+	for name, values := range h.providerOptionsByProvider {
+		merged[name] = values.Clone()
 	}
-	opts.Keyterms = mergeKeyterms(opts.Keyterms, resolved.Keyterms)
+	for name, values := range opts.ProviderOptionsByProvider {
+		merged[name] = merged[name].Merge(values)
+	}
+	opts.ProviderOptionsByProvider = merged
 	return opts, resolved.Replacements
 }
 

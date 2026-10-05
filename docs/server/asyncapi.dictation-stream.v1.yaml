@@ -254,6 +254,24 @@ components:
           description: Vocabulary boost terms.
         prompt_hint:
           type: string
+        vocabulary_hints:
+          type: object
+          description: Dictionary-derived guidance; vocabulary_bias=false suppresses it.
+          properties:
+            prompt: { type: string }
+            keyterms:
+              type: array
+              items: { type: string }
+        options:
+          type: object
+          additionalProperties: true
+          description: Provider-neutral recognition option values.
+        provider_options:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: true
+          description: Recognition overrides keyed by provider ID.
         diarization:
           type: boolean
         format:

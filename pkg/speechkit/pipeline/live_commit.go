@@ -129,6 +129,12 @@ func (s *liveCommitSink) EndDictationStreamSession(ctx context.Context, sessionI
 	}
 }
 
+func (s *liveCommitSink) CompleteDictationStreamRecording(ctx context.Context, sessionID uint64, recording speechkit.Submission, opts speechkit.DictationStreamSinkOptions) {
+	if sink, ok := s.inner.(speechkit.DictationStreamRecordingSink); ok {
+		sink.CompleteDictationStreamRecording(ctx, sessionID, recording, opts)
+	}
+}
+
 // discard drops grouped finals without committing them.
 func (s *liveCommitSink) discard() {
 	s.mu.Lock()

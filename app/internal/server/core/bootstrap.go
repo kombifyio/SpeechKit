@@ -33,7 +33,9 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/server/vocabulary"
 	"github.com/kombifyio/SpeechKit/app/internal/store"
 	assistpkg "github.com/kombifyio/SpeechKit/pkg/speechkit/assist"
+	speechcustomize "github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/lifecycle"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
 )
@@ -120,29 +122,8 @@ type App struct {
 	telemetryShutdown func(context.Context) error
 }
 
-func dictationPromptFromDictionary(dictionary string) string {
-	dictionary = strings.ReplaceAll(dictionary, "\r\n", "\n")
-	dictionary = strings.ReplaceAll(dictionary, "\r", "\n")
-	terms := make([]string, 0)
-	for _, line := range strings.Split(dictionary, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		if before, after, ok := strings.Cut(line, "=>"); ok {
-			line = strings.TrimSpace(after)
-			if line == "" {
-				line = strings.TrimSpace(before)
-			}
-		}
-		if line != "" {
-			terms = append(terms, line)
-		}
-	}
-	if len(terms) == 0 {
-		return ""
-	}
-	return "Prefer these dictionary terms in transcription: " + strings.Join(terms, ", ") + "."
+func dictationHintsFromDictionary(dictionary string) speechcustomize.RecognitionHints {
+	return speechcustomize.BuildRecognitionHints(speechcustomize.WordsFromDictionary(speechcustomize.ParseDictionary(dictionary)))
 }
 
 // Run boots the server, blocks until ctx is cancelled or the listener fails,
@@ -207,12 +188,14 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			app.Health.SetReady("mode.dictation", StatusUnavailable, "STT router not initialized")
 		} else {
 			h, err := dictation.New(dictation.Options{
-				Router:                 app.STTRouter,
-				MaxUploadMB:            cfg.Server.MaxUploadMB,
-				MaxDecodedAudioSeconds: cfg.Server.MaxDecodedAudioSeconds,
-				DefaultPrompt:          dictationPromptFromDictionary(cfg.Vocabulary.Dictionary),
-				Store:                  app.Store,
-				ActiveTemplateIDs:      cfg.Customization.ActiveTemplateIDs,
+				Router:                    app.STTRouter,
+				MaxUploadMB:               cfg.Server.MaxUploadMB,
+				MaxDecodedAudioSeconds:    cfg.Server.MaxDecodedAudioSeconds,
+				VocabularyHints:           dictationHintsFromDictionary(cfg.Vocabulary.Dictionary),
+				RecognitionOptions:        config.SpeechDefaultsValues(cfg),
+				ProviderOptionsByProvider: config.ProviderOptionOverridesByProvider(cfg, provideropts.ModalitySTT),
+				Store:                     app.Store,
+				ActiveTemplateIDs:         cfg.Customization.ActiveTemplateIDs,
 				// Lowest-precedence provider preference (voice-prefs
 				// contract): explicit request override → edge-injected user
 				// preference → this ModelSelection primary → router order.

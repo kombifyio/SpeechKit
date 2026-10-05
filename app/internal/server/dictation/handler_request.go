@@ -7,15 +7,21 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
 type transcribeJSONRequest struct {
-	AudioBase64 string `json:"audio_base64"`
-	Format      string `json:"format"`   // "wav" | "mp3" | "pcm16"
-	Language    string `json:"language"` // "de" | "en" | "auto"
-	Model       string `json:"model"`
-	Prompt      string `json:"prompt"`
+	AudioBase64               string                         `json:"audio_base64"`
+	Format                    string                         `json:"format"`   // "wav" | "mp3" | "pcm16"
+	Language                  string                         `json:"language"` // "de" | "en" | "auto"
+	Model                     string                         `json:"model"`
+	Prompt                    string                         `json:"prompt"`
+	Keyterms                  []string                       `json:"keyterms"`
+	VocabularyHints           customize.RecognitionHints     `json:"vocabulary_hints,omitzero"`
+	Options                   provideropts.Values            `json:"options"`
+	ProviderOptionsByProvider map[string]provideropts.Values `json:"provider_options"`
 	// ProviderProfileID explicitly pins the STT provider profile for this
 	// request (ops parity with the streaming `start` frame). Validated
 	// against the Dictation provider-profile catalog; unknown IDs are

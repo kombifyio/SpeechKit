@@ -9,6 +9,7 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/config"
 	"github.com/kombifyio/SpeechKit/app/internal/server/dictation"
 	"github.com/kombifyio/SpeechKit/app/internal/server/wssession"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
 // wireDictationStream mounts the streaming Dictation WebSocket surface
@@ -55,15 +56,19 @@ func wireDictationStream(cfg *config.Config, app *App) {
 		idleTimeout = -1
 	}
 	h, err := dictation.NewStreamHandler(dictation.StreamHandlerOptions{
-		Manager:            manager,
-		Router:             app.STTRouter,
-		PublicURL:          cfg.Server.PublicURL,
-		AllowedOrigins:     cfg.Server.CORSAllowedOrigins,
-		TrustedProxyCIDRs:  cfg.Server.TrustedProxyCIDRs,
-		IdleTimeout:        idleTimeout,
-		MaxSessionDuration: time.Duration(streamCfg.MaxSessionSec) * time.Second,
-		MaxStreamAudio:     time.Duration(streamCfg.MaxStreamAudioSeconds) * time.Second,
-		ReadLimit:          cfg.Server.WSReadLimitBytes,
+		Manager: manager,
+		Router:  app.STTRouter,
+		Store:   app.Store, ActiveTemplateIDs: cfg.Customization.ActiveTemplateIDs,
+		VocabularyHints:           dictationHintsFromDictionary(cfg.Vocabulary.Dictionary),
+		RecognitionOptions:        config.SpeechDefaultsValues(cfg),
+		ProviderOptionsByProvider: config.ProviderOptionOverridesByProvider(cfg, provideropts.ModalitySTT),
+		PublicURL:                 cfg.Server.PublicURL,
+		AllowedOrigins:            cfg.Server.CORSAllowedOrigins,
+		TrustedProxyCIDRs:         cfg.Server.TrustedProxyCIDRs,
+		IdleTimeout:               idleTimeout,
+		MaxSessionDuration:        time.Duration(streamCfg.MaxSessionSec) * time.Second,
+		MaxStreamAudio:            time.Duration(streamCfg.MaxStreamAudioSeconds) * time.Second,
+		ReadLimit:                 cfg.Server.WSReadLimitBytes,
 	})
 	if err != nil {
 		app.Health.SetReadyWithOptions("mode.dictation_stream", StatusUnavailable, err.Error(), ComponentOptions{

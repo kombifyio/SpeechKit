@@ -14,7 +14,10 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/server/httpx"
 	"github.com/kombifyio/SpeechKit/app/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/app/internal/server/wssession"
+	"github.com/kombifyio/SpeechKit/app/internal/store"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
@@ -36,6 +39,12 @@ type StreamRouter interface {
 type StreamHandlerOptions struct {
 	Manager *wssession.SessionManager
 	Router  StreamRouter
+	// Customization uses the same resolver as the batch handler.
+	Store                     store.Store
+	ActiveTemplateIDs         []string
+	VocabularyHints           customize.RecognitionHints
+	RecognitionOptions        provideropts.Values
+	ProviderOptionsByProvider map[string]provideropts.Values
 	// PublicURL overrides request-derived scheme/host in returned ws_url
 	// values (Docker/proxy deployments).
 	PublicURL         string
@@ -59,6 +68,7 @@ type StreamHandlerOptions struct {
 type StreamHandler struct {
 	manager            *wssession.SessionManager
 	router             StreamRouter
+	customization      *Handler
 	publicURL          string
 	allowedOrigins     []string
 	idleTimeout        time.Duration
@@ -98,6 +108,7 @@ func NewStreamHandler(opts StreamHandlerOptions) (*StreamHandler, error) {
 	return &StreamHandler{
 		manager:            opts.Manager,
 		router:             opts.Router,
+		customization:      &Handler{store: opts.Store, activeTemplates: append([]string(nil), opts.ActiveTemplateIDs...), vocabularyHints: opts.VocabularyHints, recognitionOptions: opts.RecognitionOptions.Clone(), providerOptionsByProvider: opts.ProviderOptionsByProvider},
 		publicURL:          strings.TrimSpace(opts.PublicURL),
 		allowedOrigins:     wssession.NormalizeAllowedOrigins(opts.AllowedOrigins),
 		idleTimeout:        idle,
@@ -301,6 +312,7 @@ func (h *StreamHandler) upgradeWS(w http.ResponseWriter, r *http.Request, sessio
 		Session:        session,
 		Conn:           conn,
 		Router:         h.router,
+		Customization:  h.customization,
 		IdleTimeout:    h.idleTimeout,
 		MaxDuration:    h.maxSessionDuration,
 		MaxStreamAudio: h.maxStreamAudio,

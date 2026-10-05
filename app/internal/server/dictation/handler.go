@@ -16,6 +16,8 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/server/audio"
 	"github.com/kombifyio/SpeechKit/app/internal/store"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 )
@@ -29,12 +31,15 @@ type Transcriber interface {
 
 // Options configures a single handler instance.
 type Options struct {
-	Router                 Transcriber
-	MaxUploadMB            int    // request body ceiling; 0 disables the limit (discouraged)
-	MaxDecodedAudioSeconds int    // decoded PCM duration ceiling; 0 disables the decode-duration cap
-	DefaultPrompt          string // applied when the request does not provide a prompt
-	Store                  store.Store
-	ActiveTemplateIDs      []string
+	Router                    Transcriber
+	MaxUploadMB               int                        // request body ceiling; 0 disables the limit (discouraged)
+	MaxDecodedAudioSeconds    int                        // decoded PCM duration ceiling; 0 disables the decode-duration cap
+	DefaultPrompt             string                     // legacy explicit fallback prompt
+	VocabularyHints           customize.RecognitionHints // configured dictionary default
+	RecognitionOptions        provideropts.Values
+	ProviderOptionsByProvider map[string]provideropts.Values
+	Store                     store.Store
+	ActiveTemplateIDs         []string
 	// DefaultProviderProfileID is the server's configured Dictation primary
 	// (ModelSelection.Dictate.PrimaryProfileID). It is the lowest-precedence
 	// provider preference: explicit request override → edge-injected user
@@ -44,13 +49,16 @@ type Options struct {
 
 // Handler implements the dictation HTTP surface.
 type Handler struct {
-	router           Transcriber
-	maxBytes         int64
-	decodeLimits     audio.DecodeLimits
-	defaultPrompt    string
-	store            store.Store
-	activeTemplates  []string
-	defaultProfileID string
+	router                    Transcriber
+	maxBytes                  int64
+	decodeLimits              audio.DecodeLimits
+	defaultPrompt             string
+	vocabularyHints           customize.RecognitionHints
+	recognitionOptions        provideropts.Values
+	providerOptionsByProvider map[string]provideropts.Values
+	store                     store.Store
+	activeTemplates           []string
+	defaultProfileID          string
 }
 
 // New constructs a Handler. The router must be non-nil; a zero maxBytes
@@ -64,13 +72,16 @@ func New(opts Options) (*Handler, error) {
 		maxBytes = int64(opts.MaxUploadMB) << 20
 	}
 	return &Handler{
-		router:           opts.Router,
-		maxBytes:         maxBytes,
-		decodeLimits:     audio.DecodeLimits{MaxDecodedAudioSeconds: opts.MaxDecodedAudioSeconds},
-		defaultPrompt:    strings.TrimSpace(opts.DefaultPrompt),
-		store:            opts.Store,
-		activeTemplates:  append([]string(nil), opts.ActiveTemplateIDs...),
-		defaultProfileID: strings.TrimSpace(opts.DefaultProviderProfileID),
+		router:                    opts.Router,
+		maxBytes:                  maxBytes,
+		decodeLimits:              audio.DecodeLimits{MaxDecodedAudioSeconds: opts.MaxDecodedAudioSeconds},
+		defaultPrompt:             strings.TrimSpace(opts.DefaultPrompt),
+		vocabularyHints:           opts.VocabularyHints,
+		recognitionOptions:        opts.RecognitionOptions.Clone(),
+		providerOptionsByProvider: opts.ProviderOptionsByProvider,
+		store:                     opts.Store,
+		activeTemplates:           append([]string(nil), opts.ActiveTemplateIDs...),
+		defaultProfileID:          strings.TrimSpace(opts.DefaultProviderProfileID),
 	}, nil
 }
 

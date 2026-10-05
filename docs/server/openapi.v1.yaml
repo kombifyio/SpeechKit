@@ -1169,6 +1169,18 @@ paths:
                   description: |
                     Optional explicit STT provider-profile pin (e.g.
                     `stt.deepgram.nova-3`), same semantics as the JSON field.
+                keyterms:
+                  type: string
+                  description: Comma-separated explicit recognition terms.
+                vocabulary_hints:
+                  type: string
+                  description: JSON RecognitionHints; suppressed when vocabulary bias is disabled.
+                options:
+                  type: string
+                  description: JSON provider-neutral recognition option values.
+                provider_options:
+                  type: string
+                  description: JSON recognition overrides keyed by provider ID.
           application/json:
             schema:
               $ref: '#/components/schemas/DictateJSONRequest'
@@ -3258,6 +3270,21 @@ components:
         language: { type: string }
         model: { type: string }
         prompt: { type: string }
+        keyterms:
+          type: array
+          items: { type: string }
+        vocabulary_hints:
+          $ref: '#/components/schemas/RecognitionHints'
+        options:
+          type: object
+          additionalProperties: true
+          description: Provider-neutral recognition option values.
+        provider_options:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: true
+          description: Recognition overrides keyed by provider ID.
         provider_profile_id:
           type: string
           description: |
@@ -3281,6 +3308,15 @@ components:
           $ref: '#/components/schemas/SpeakerOptions'
         speaker_options:
           $ref: '#/components/schemas/SpeakerOptions'
+
+    RecognitionHints:
+      type: object
+      description: Dictionary-derived guidance resolved separately from explicit hints; vocabulary_bias=false suppresses it.
+      properties:
+        prompt: { type: string }
+        keyterms:
+          type: array
+          items: { type: string }
 
     DictateResponse:
       type: object

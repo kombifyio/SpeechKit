@@ -39,7 +39,12 @@ const (
 	CaptureChannelSystem     = "system"
 )
 
-// AudioRecorder is the hardware abstraction for microphone capture.
+// AudioRecorder is the hardware abstraction for microphone capture. Stop must
+// stop device input and drain pending PCM callbacks before returning the full
+// captured PCM buffer. Controllers retain the callback until Stop returns;
+// this ensures provider streams receive the same beginning and ending as the
+// complete recording. Returned audio remains authoritative if a backend loses
+// callback frames under load.
 type AudioRecorder interface {
 	Start() error
 	Stop() ([]byte, error)

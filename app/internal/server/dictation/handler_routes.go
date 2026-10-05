@@ -80,8 +80,17 @@ func (h *Handler) handleMultipart(w http.ResponseWriter, r *http.Request) {
 		Language:          strings.TrimSpace(r.FormValue("language")),
 		Model:             strings.TrimSpace(r.FormValue("model")),
 		Prompt:            strings.TrimSpace(r.FormValue("prompt")),
+		Keyterms:          splitCSV(r.FormValue("keyterms")),
 		ProviderProfileID: profileRef,
 		Speaker:           parseSpeakerOptionsFromForm(r),
+	}
+	for name, target := range map[string]any{"vocabulary_hints": &opts.VocabularyHints, "options": &opts.Options, "provider_options": &opts.ProviderOptionsByProvider} {
+		if raw := strings.TrimSpace(r.FormValue(name)); raw != "" {
+			if err := json.Unmarshal([]byte(raw), target); err != nil {
+				httpx.WriteError(w, http.StatusBadRequest, "invalid_options", "invalid transcription "+name)
+				return
+			}
+		}
 	}
 	opts.Prompt = h.resolvePrompt(opts.Prompt)
 	h.transcribeAndReply(w, r, file, partCT, opts)
@@ -134,9 +143,10 @@ func (h *Handler) handleJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	opts := stt.TranscribeOpts{
-		Language:            strings.TrimSpace(body.Language),
-		Model:               strings.TrimSpace(body.Model),
-		Prompt:              strings.TrimSpace(body.Prompt),
+		Language: strings.TrimSpace(body.Language),
+		Model:    strings.TrimSpace(body.Model),
+		Prompt:   strings.TrimSpace(body.Prompt),
+		Keyterms: body.Keyterms, VocabularyHints: body.VocabularyHints, Options: body.Options, ProviderOptionsByProvider: body.ProviderOptionsByProvider,
 		ConversationContext: body.ConversationContext,
 		ProviderProfileID:   profileRef,
 		Speaker:             resolveSpeakerOptions(body.Speaker, body.SpeakerOptions),

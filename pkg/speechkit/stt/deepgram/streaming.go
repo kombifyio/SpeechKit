@@ -96,6 +96,8 @@ func (p *Provider) StartSpeakerStream(ctx context.Context, opts speaker.Options,
 func (p *Provider) StartDictationStream(ctx context.Context, opts speechkit.DictationStreamOptions, format speaker.AudioFormat) (speechkit.DictationStream, error) {
 	format = format.Normalized()
 	model := stt.FirstNonEmptyTrimmed(opts.Model, p.Model, "nova-3")
+	resolved := p.resolveOptions(model, stt.TranscribeOptionsFromStream(opts).ForProvider(p.Name()))
+	opts = stt.ApplyResolvedDictationStreamOptions(opts, resolved)
 	// Request before provider config, matching the option layering the
 	// batch path resolves through (request > provider override > global
 	// default > provider default). While every configured language was
@@ -234,8 +236,11 @@ func (p *Provider) deepgramDictationStreamingEndpoint(model, language string, op
 	if language := normalizedDeepgramLanguage(language); language != "" {
 		q.Set("language", language)
 	}
-	p.applyVocabularyBias(q, model, opts.Keyterms, p.UseVocabularyKeyterms)
-	applyDeepgramNoStore(q, p.NoStore)
+	// Dictionary opt-outs were resolved before opening the stream; explicit
+	// request keyterms still follow the provider's vocabulary switch.
+	resolved := p.resolveOptions(model, stt.TranscribeOptionsFromStream(opts).ForProvider(p.Name()))
+	p.applyVocabularyBias(q, model, opts.Keyterms, resolved.UseVocabularyKeyterms)
+	applyDeepgramNoStore(q, resolved.NoStore || p.NoStore)
 	u.RawQuery = q.Encode()
 	return u.String(), nil
 }

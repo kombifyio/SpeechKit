@@ -34,6 +34,10 @@ func (c *RecordingController) Start(opts speechkit.RecordingStartOptions) error 
 	)
 
 	c.mu.Lock()
+	if c.recording || c.stopping {
+		c.mu.Unlock()
+		return fmt.Errorf("speechkit: recording is already active")
+	}
 	c.recording = true
 	if c.streamSegments {
 		opts.StreamSegments = true
@@ -44,6 +48,7 @@ func (c *RecordingController) Start(opts speechkit.RecordingStartOptions) error 
 	sessionID = c.sessionID
 	c.streamQueue.reset(sessionID)
 	c.capturedPCMBytes = 0
+	c.pendingStreamPCM = nil
 
 	if c.segmenterFactory != nil {
 		collector = c.segmenterFactory()
@@ -58,19 +63,25 @@ func (c *RecordingController) Start(opts speechkit.RecordingStartOptions) error 
 	// did nothing.
 	if collector != nil || opts.ProviderStream {
 		handlePCM := func(pcm []byte) {
+			c.pcmMu.Lock()
 			c.mu.Lock()
 			if c.sessionID != sessionID || !c.recording {
 				c.mu.Unlock()
+				c.pcmMu.Unlock()
 				return
 			}
 			c.capturedPCMBytes += len(pcm)
 			activeCollector := c.collector
 			current := c.current
 			nativeStream := c.nativeStream
+			if current.ProviderStream && nativeStream == nil {
+				c.pendingStreamPCM = append(c.pendingStreamPCM, pcm...)
+			}
 			c.mu.Unlock()
 			if nativeStream != nil {
 				nativeStream.enqueuePCM(pcm, c)
 			}
+			c.pcmMu.Unlock()
 			if activeCollector == nil {
 				return
 			}
@@ -81,10 +92,9 @@ func (c *RecordingController) Start(opts speechkit.RecordingStartOptions) error 
 					c.collector = nil
 				}
 				c.mu.Unlock()
-				c.clearPCMHandlers()
 				return
 			}
-			if current.StreamSegments {
+			if current.StreamSegments && !current.ProviderStream {
 				c.drainAndSubmitReadySegments(sessionID, current, activeCollector)
 			}
 		}
@@ -113,6 +123,7 @@ func (c *RecordingController) Start(opts speechkit.RecordingStartOptions) error 
 			c.collector = nil
 			c.startedAt = time.Time{}
 			c.nativeStream = nil
+			c.pendingStreamPCM = nil
 		}
 		c.mu.Unlock()
 		if nativeStream != nil {
@@ -144,18 +155,32 @@ func (c *RecordingController) Start(opts speechkit.RecordingStartOptions) error 
 	if opts.ProviderStream {
 		nativeStream, err := c.startNativeDictationStream(sessionID, opts)
 		if err != nil {
+			c.mu.Lock()
+			if c.sessionID == sessionID {
+				c.current.ProviderStream = false
+				c.pendingStreamPCM = nil
+			}
+			c.mu.Unlock()
 			c.onLog(fmt.Sprintf("Provider-stream dictation unavailable; falling back to full capture: %v", err), "warn")
 		} else {
 			adopted := false
+			c.pcmMu.Lock()
 			c.mu.Lock()
 			if c.sessionID == sessionID && c.recording && !c.stopping {
 				opts.StreamSegments = false
 				c.current.StreamSegments = false
-				nativeStream.captureOffsetBytes = c.capturedPCMBytes
 				c.nativeStream = nativeStream
 				adopted = true
 			}
+			pending := c.pendingStreamPCM
+			if c.sessionID == sessionID {
+				c.pendingStreamPCM = nil
+			}
 			c.mu.Unlock()
+			if adopted {
+				nativeStream.enqueuePCM(pending, c)
+			}
+			c.pcmMu.Unlock()
 			if adopted {
 				c.onLog("Provider-stream dictation started", "info")
 			} else {

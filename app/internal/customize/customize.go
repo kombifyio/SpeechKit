@@ -10,7 +10,6 @@ import (
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	speechcustomize "github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
 type Set struct {
@@ -18,14 +17,7 @@ type Set struct {
 	Replacements []speechcustomize.Replacement
 }
 
-type DictionaryEntry struct {
-	Spoken     string
-	Canonical  string
-	Language   string
-	Source     string
-	Enabled    bool
-	UsageCount int
-}
+type DictionaryEntry = speechcustomize.DictionaryEntry
 
 type MatchRecord struct {
 	ReplacementID string `json:"replacement_id,omitempty"`
@@ -70,21 +62,9 @@ func PublicActions(actions []Action) []speechkit.CustomizationAction {
 	return out
 }
 
-type ProviderBias struct {
-	Prompt     string
-	Keyterms   []string
-	ByProvider map[string]provideropts.Values
-	Preview    []ProviderBiasPreview
-}
+type ProviderBias = speechcustomize.ProviderBias
 
-type ProviderBiasPreview struct {
-	Provider string
-	Modality string
-	Strategy string
-	Native   bool
-	Keyterms []string
-	Prompt   string
-}
+type ProviderBiasPreview = speechcustomize.ProviderBiasPreview
 
 type CompiledApplier struct {
 	Replacements []speechcustomize.Replacement
@@ -99,32 +79,7 @@ type compiledReplacement struct {
 const maxReplacementApplyPasses = 8
 
 func WordsFromDictionary(entries []DictionaryEntry) []speechcustomize.Word {
-	words := make([]speechcustomize.Word, 0, len(entries))
-	seen := map[string]struct{}{}
-	for _, entry := range entries {
-		if !entry.Enabled {
-			continue
-		}
-		canonical := strings.TrimSpace(entry.Canonical)
-		if canonical == "" {
-			continue
-		}
-		language := speechcustomize.NormalizeLanguage(entry.Language)
-		key := strings.ToLower(language + "\x00" + canonical)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		word := speechcustomize.WithDefaultsWord(speechcustomize.Word{
-			Term:       canonical,
-			Language:   language,
-			Source:     firstNonEmpty(entry.Source, "settings"),
-			Enabled:    true,
-			UsageCount: entry.UsageCount,
-		})
-		words = append(words, word)
-	}
-	return words
+	return speechcustomize.WordsFromDictionary(entries)
 }
 
 func ReplacementsFromDictionary(entries []DictionaryEntry) []speechcustomize.Replacement {
@@ -215,129 +170,27 @@ func DictionaryFromSet(set Set) []DictionaryEntry {
 }
 
 func BuildPrompt(words []speechcustomize.Word) string {
-	terms := CanonicalTerms(words)
-	if len(terms) == 0 {
-		return ""
-	}
-	// Whisper-family models treat `prompt` as previous-transcript style, not as
-	// an instruction. A comma-separated English list ("Prefer these terms: A, B.")
-	// makes German recordings copy that list punctuation.
-	return strings.Join(terms, " ")
+	return speechcustomize.BuildPrompt(words)
 }
 
 func BuildKeyterms(words []speechcustomize.Word) []string {
-	terms := CanonicalTerms(words)
-	seen := map[string]struct{}{}
-	out := make([]string, 0, len(terms))
-	for _, term := range terms {
-		key := strings.ToLower(term)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, term)
-	}
-	for _, word := range words {
-		if !word.Enabled {
-			continue
-		}
-		for _, alias := range speechcustomize.NormalizeAliasList(word.Term, word.SoundsLike) {
-			key := strings.ToLower(alias)
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			out = append(out, alias)
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
+	return speechcustomize.BuildKeyterms(words)
 }
 
 func BuildVoiceAgentHint(words []speechcustomize.Word) string {
-	terms := CanonicalTerms(words)
-	if len(terms) == 0 {
-		return ""
-	}
-	return "Prefer these names and product terms in recognition and responses: " + strings.Join(terms, ", ") + "."
+	return speechcustomize.BuildVoiceAgentHint(words)
 }
 
 func BuildProviderBias(words []speechcustomize.Word) ProviderBias {
-	return BuildProviderBiasForModality(words, provideropts.ModalitySTT)
-}
-
-func BuildProviderBiasForModality(words []speechcustomize.Word, modality string) ProviderBias {
-	modality = strings.TrimSpace(modality)
-	if modality == "" {
-		modality = provideropts.ModalitySTT
-	}
-	keyterms := BuildKeyterms(words)
-	prompt := BuildPrompt(words)
-	bias := ProviderBias{
-		Prompt:     prompt,
-		Keyterms:   keyterms,
-		ByProvider: map[string]provideropts.Values{},
-	}
-	if len(keyterms) == 0 && prompt == "" {
-		return bias
-	}
-	for _, manifest := range provideropts.DefaultManifests() {
-		if manifest.Modality != modality {
-			continue
-		}
-		support := manifest.SupportByID()
-		values := provideropts.Values{}
-		strategy := ""
-		if opt, ok := support[provideropts.OptionKeyterms]; ok && optionCanCarryBias(opt) && len(keyterms) > 0 {
-			if vocab, ok := support[provideropts.OptionVocabularyBias]; !ok || optionCanCarryBias(vocab) {
-				values[provideropts.OptionVocabularyBias] = true
-			}
-			values[provideropts.OptionKeyterms] = append([]string(nil), keyterms...)
-			strategy = string(opt.Status)
-		} else if opt, ok := support[provideropts.OptionPromptHint]; ok && optionCanCarryBias(opt) && prompt != "" {
-			if vocab, ok := support[provideropts.OptionVocabularyBias]; ok && optionCanCarryBias(vocab) {
-				values[provideropts.OptionVocabularyBias] = true
-			}
-			values[provideropts.OptionPromptHint] = prompt
-			strategy = string(opt.Status)
-		}
-		if len(values) == 0 {
-			continue
-		}
-		bias.ByProvider[manifest.Provider] = values
-		bias.Preview = append(bias.Preview, ProviderBiasPreview{
-			Provider: manifest.Provider,
-			Modality: manifest.Modality,
-			Strategy: strategy,
-			Native:   strategy == string(provideropts.SupportNative),
-			Keyterms: append([]string(nil), keyterms...),
-			Prompt:   prompt,
-		})
-	}
-	return bias
+	return speechcustomize.BuildProviderBias(words)
 }
 
 func CanonicalTerms(words []speechcustomize.Word) []string {
-	terms := make([]string, 0, len(words))
-	seen := map[string]struct{}{}
-	for _, word := range words {
-		if !word.Enabled {
-			continue
-		}
-		term := strings.TrimSpace(word.Term)
-		if term == "" {
-			continue
-		}
-		key := strings.ToLower(term)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		terms = append(terms, term)
-	}
-	return terms
+	return speechcustomize.CanonicalTerms(words)
+}
+
+func BuildProviderBiasForModality(words []speechcustomize.Word, modality string) ProviderBias {
+	return speechcustomize.BuildProviderBiasForModality(words, modality)
 }
 
 func Apply(text string, replacements []speechcustomize.Replacement, stage speechcustomize.Stage) (ApplyResult, error) {
@@ -489,10 +342,6 @@ func tagsMatch(contextTags, itemTags []string) bool {
 		}
 	}
 	return false
-}
-
-func optionCanCarryBias(opt provideropts.OptionSupport) bool {
-	return opt.Status != "" && opt.Status != provideropts.SupportUnsupported
 }
 
 func replacementKindIsActive(kind speechcustomize.Kind) bool {

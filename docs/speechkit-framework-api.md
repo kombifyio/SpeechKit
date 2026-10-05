@@ -36,6 +36,32 @@ selects which built-in or server-provided template data participates in
 Dictation, Assist, and Voice Agent resolution. The dictionary-shaped API remains
 a compatibility migration projection, not the extension model.
 
+Dictionary recognition uses the public `customize.BuildRecognitionHints` and
+`stt.TranscribeOpts.WithVocabulary` contracts. Hosts pass the same options to
+batch STT or convert them with `TranscribeOpts.DictationStreamOptions`; native
+stream adapters resolve them through the same provider option authority.
+Dictionary hints remain separate from explicit request prompts and keyterms.
+Global and provider `vocabulary_bias=false` settings suppress dictionary hints;
+explicit request option overrides retain their precedence. Providers select
+native keyterms or prompt hints according to their capability manifest, so a
+dictionary remains recognition guidance, not a guarantee of a particular word.
+
+```go
+request := stt.TranscribeOpts{Language: "multi"}.WithVocabulary(words)
+batch, err := router.Transcribe(ctx, audio, request)
+stream, err := router.StartDictationStream(ctx, request.DictationStreamOptions(
+    speechkit.DictationStreamOptions{InterimResults: true},
+), speaker.AudioFormat{SampleRateHz: 16000, Channels: 1, Encoding: speaker.AudioEncodingPCM16})
+```
+
+The desktop Dictation and meeting hosts and self-host Dictation HTTP/WebSocket
+consumers resolve stored Words and active templates before provider selection.
+Server streams use the authenticated stream owner's storage scope and apply
+post-STT Replacements to final events. The public server client can send
+per-request vocabulary through `client.TranscribeOptions.WithVocabulary`; HTTP
+requests and WebSocket start frames accept `vocabulary_hints`, `options`, and
+`provider_options`. Explicit `prompt`/`prompt_hint` and `keyterms` remain additive.
+
 The public SDK exposes these contracts through:
 
 - `speechkit.DefaultModeContracts()`
@@ -56,6 +82,31 @@ Host products can embed individual modes without importing the Windows desktop h
 - `pkg/speechkit/assist.NewService(...)` constructs an Assist service from host-provided deterministic tools and/or an Assist generator. `ModeBehaviorClean` rejects unmatched LLM generation. The ready-made deterministic tools are `pkg/speechkit/assist/skills` (`skills.New` returns the matcher/executor pair over the `pkg/speechkit/assist/shortcuts` codeword catalog); the desktop app and the self-host server wire Assist through exactly this constructor.
 - `pkg/speechkit/voiceagent.NewService(...)` constructs a Voice Agent service from a host-provided realtime provider.
 
+### Capture integrity for live dictation
+
+`pipeline.RecordingController` owns audio continuity for every host using
+native dictation streaming. It captures before opening the provider connection,
+buffers that initial audio, and sends it before subsequent frames. On Stop it
+keeps callbacks attached while `AudioRecorder.Stop` drains pending frames, then
+finalizes the provider. Recorder implementations must return the complete PCM
+recording and finish their callbacks before Stop returns.
+
+A blocked sender terminates the stream at its first queue loss; the remaining
+audio is recovered from the full recording. Missing capture callbacks or word
+timings require a complete replay. Session-held output is discarded before
+that replay so hold-to-talk does not insert a partial instruction followed by
+its replacement. Hosts that choose immediate passage insertion may already
+have delivered text and can see repeated text during full recovery; the
+controller reports recovery rather than silently omitting speech. Short or
+quiet recovery audio is sent to the recognizer without local energy filtering.
+
+Live history stores can implement `TranscriptionSessionAudioStore` to attach the
+original recording to the existing transcript through the optional
+`DictationStreamRecordingSink` completion hook. `RecordingController` calls it
+after draining the stream and before ending the session. Cancelled captures do
+not attach a source. Recovery extends the same history entry when one exists. The reference store preserves
+`save_audio`, scope, duration, retention and deletion policies for live captures.
+
 Host products can also import individual primitives without constructing a
 full mode runtime:
 
@@ -65,7 +116,7 @@ full mode runtime:
 | Spoken output only | `pkg/speechkit/tts` |
 | Hands-Free composition | `pkg/speechkit/companion` |
 | Speaker diarization/attribution contracts | `pkg/speechkit/speaker` |
-| Customization contracts | `pkg/speechkit/customize`, with runtime implementation in `app/internal/customize` and the semantic standard in `docs/words-and-replacements-standard.md` |
+| Customization contracts and recognition hints | `pkg/speechkit/customize`, with replacement runtime implementation in `app/internal/customize` and the semantic standard in `docs/words-and-replacements-standard.md` |
 | Meeting capture runtime and note primitives | `pkg/speechkit/meeting` |
 | Server-connected mode calls | `pkg/speechkit/client` |
 | Embedded Voice Agent tools/session harness | `pkg/speechkit/agentkit`, `pkg/speechkit/voiceagent/live` |

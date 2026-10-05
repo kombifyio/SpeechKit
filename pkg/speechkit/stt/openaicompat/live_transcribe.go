@@ -16,6 +16,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
@@ -88,6 +89,7 @@ func (p *Provider) SupportsDictationStream() bool { return p.name == "openai" }
 // then drains every committed turn and returns io.EOF, matching SpeechKit's
 // one-provider-stream-per-segment model.
 func (p *Provider) StartDictationStream(ctx context.Context, opts speechkit.DictationStreamOptions, format speaker.AudioFormat) (speechkit.DictationStream, error) {
+	opts = stt.ResolveDictationStreamOptions(p.Name(), "stt.openai.gpt-live-transcribe", opts, provideropts.Values{provideropts.OptionVocabularyBias: true}, nil)
 	if !p.SupportsDictationStream() {
 		return nil, fmt.Errorf("%s: %w", p.name, ErrDictationStreamUnsupported)
 	}

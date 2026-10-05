@@ -13,6 +13,7 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 )
@@ -83,6 +84,7 @@ func (p *Provider) connectLive(ctx context.Context, model string, cfg *genai.Liv
 // followed by io.EOF, matching SpeechKit's one-provider-stream-per-segment
 // model.
 func (p *Provider) StartDictationStream(ctx context.Context, opts speechkit.DictationStreamOptions, format speaker.AudioFormat) (speechkit.DictationStream, error) {
+	opts = stt.ResolveDictationStreamOptions(p.Name(), "stt.gemini.transcribe-live", opts, provideropts.Values{provideropts.OptionVocabularyBias: true}, nil)
 	format = format.Normalized()
 	if format.Channels != 1 || format.SampleRateHz <= 0 ||
 		(format.Encoding != speaker.AudioEncodingLinear16 && format.Encoding != speaker.AudioEncodingPCM16) {

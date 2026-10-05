@@ -7,6 +7,7 @@ import (
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 	speechcustomize "github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
@@ -44,10 +45,23 @@ type Status struct {
 // Speaker the diarization or identification add-ons to request; the zero
 // value transcribes only.
 type TranscribeOptions struct {
-	Language string
-	Model    string
-	Prompt   string
-	Speaker  speaker.Options
+	// Dictionary hints are forwarded separately so server vocabulary opt-outs work.
+	VocabularyHints           speechcustomize.RecognitionHints
+	Keyterms                  []string
+	Options                   provideropts.Values
+	ProviderOptionsByProvider map[string]provideropts.Values
+	ProviderProfileID         string
+	Language                  string
+	Model                     string
+	Prompt                    string
+	Speaker                   speaker.Options
+}
+
+// WithVocabulary supplies dictionary-derived hints to the server using the
+// same public customization rendering as embedded batch and streaming STT.
+func (o TranscribeOptions) WithVocabulary(words []speechcustomize.Word) TranscribeOptions {
+	o.VocabularyHints = speechcustomize.BuildRecognitionHints(words)
+	return o
 }
 
 // TranscribeResponse is the POST /v1/dictation/transcribe body. DurationMs is

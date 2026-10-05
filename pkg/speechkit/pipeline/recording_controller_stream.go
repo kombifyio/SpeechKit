@@ -29,10 +29,10 @@ func (c *RecordingController) startNativeDictationStream(sessionID uint64, opts 
 	if provider == nil {
 		return nil, fmt.Errorf("provider not configured")
 	}
-	// The native stream is opened before the recorder reports its start time,
-	// so "now" is the closest anchor available for a host that did not pass an
-	// explicit epoch. The two are milliseconds apart.
-	streamEpoch := captureEpoch(opts, c.clockNow())
+	c.mu.Lock()
+	startedAt := c.startedAt
+	c.mu.Unlock()
+	streamEpoch := captureEpoch(opts, startedAt)
 	if sink == nil {
 		return nil, fmt.Errorf("event sink not configured")
 	}
@@ -97,10 +97,18 @@ func (r *dictationStreamRuntime) enqueuePCM(pcm []byte, controller *RecordingCon
 	if r.closed {
 		return
 	}
+	if r.failed.Load() {
+		return
+	}
 	select {
 	case r.pcm <- frame:
 	default:
 		dropped := r.droppedPCM.Add(1)
+		// Do not resume after a hole: later word timestamps would no longer
+		// locate the missing speech. Stop recovers from the last committed
+		// word using the recorder's complete audio.
+		r.failed.Store(true)
+		r.cancel()
 		if dropped == 1 || dropped%100 == 0 {
 			controller.onLog(fmt.Sprintf("Provider-stream PCM queue full; dropped %d frame(s)", dropped), "warn")
 			telemetry.RecordOutcome(r.ctx, telemetry.OutcomePCMQueueDrop, errors.New("pcm queue full"),
@@ -126,7 +134,12 @@ func (r *dictationStreamRuntime) closeInput() {
 func (r *dictationStreamRuntime) sendLoop(controller *RecordingController) {
 	defer close(r.senderDone)
 	for pcm := range r.pcm {
+		if r.ctx.Err() != nil {
+			r.failed.Store(true)
+			return
+		}
 		if err := r.stream.SendPCM(r.ctx, pcm); err != nil {
+			r.failed.Store(true)
 			if r.ctx.Err() == nil {
 				controller.onLog(fmt.Sprintf("Provider-stream send error: %v", err), "error")
 				r.failed.Store(true)
@@ -143,7 +156,14 @@ func (r *dictationStreamRuntime) receiveLoop(controller *RecordingController) {
 		event, err := r.stream.Receive(r.ctx)
 		if err != nil {
 			switch {
-			case r.ctx.Err() != nil, errors.Is(err, context.Canceled), errors.Is(err, io.EOF):
+			case r.ctx.Err() != nil, errors.Is(err, context.Canceled):
+				r.failed.Store(true)
+				return
+			case errors.Is(err, io.EOF):
+				if !r.ending.Load() {
+					r.failed.Store(true)
+					controller.onLog("Provider-stream ended before capture stopped; retaining audio for recovery", "warn")
+				}
 				return
 			default:
 				controller.onLog(fmt.Sprintf("Provider-stream receive error: %v", err), "error")
@@ -170,7 +190,9 @@ func (r *dictationStreamRuntime) receiveLoop(controller *RecordingController) {
 		}
 		if err := r.sink.HandleDictationStreamEvent(r.ctx, event, r.sinkOpts); err != nil {
 			controller.onLog(fmt.Sprintf("Provider-stream transcript error: %v", err), "error")
-			continue
+			r.failed.Store(true)
+			r.cancel()
+			return
 		}
 		if event.IsFinal {
 			r.finalCount.Add(1)
@@ -184,18 +206,15 @@ func (r *dictationStreamRuntime) receiveLoop(controller *RecordingController) {
 }
 
 // uncommittedTail returns the part of the full capture the stream never
-// committed: everything after the last committed word, mapped from the
-// stream's timeline onto the capture. Frames the stream never received (a full
-// PCM queue, a capture overrun) shorten its timeline, so the mapped boundary
-// can only land early: the tail may repeat committed words but never skips
-// uncommitted ones. ok is false when the stream reported no word timings and
-// the boundary is unknown. offsetMs is where the tail begins.
+// committed: everything after the last committed word. The stream starts at
+// capture offset zero, and stops on its first queue loss. Unknown capture
+// gaps require a full replay instead of trusting stream-relative timestamps.
 func (r *dictationStreamRuntime) uncommittedTail(pcm []byte) (tail []byte, offsetMs int64, ok bool) {
 	endMs := r.committedEndMs.Load()
-	if endMs <= 0 {
+	if endMs <= 0 || r.replayFull.Load() {
 		return nil, 0, false
 	}
-	from := r.captureOffsetBytes + int(endMs)*pcmBytesPerMs
+	from := int(endMs) * pcmBytesPerMs
 	from -= from % speechkitaudio.BytesPerSample
 	if from >= len(pcm) {
 		return nil, int64(len(pcm) / pcmBytesPerMs), true
@@ -207,20 +226,14 @@ const pcmBytesPerMs = speechkitaudio.SampleRate * speechkitaudio.Channels * spee
 
 // uncommittedStreamAudio returns the capture Stop still owes a stream that
 // committed finals but did not finish cleanly, and where it begins. It returns
-// nil when nothing uncommitted remains, or when a drain was merely cut short
-// and no word timings locate the committed text.
+// nil only when no uncommitted audio remains. Missing timings require a full
+// replay: omitting or energy-gating that audio can remove short negations.
 func (c *RecordingController) uncommittedStreamAudio(r *dictationStreamRuntime, pcm []byte, finals int64) ([]byte, int64) {
 	tail, offsetMs, bounded := r.uncommittedTail(pcm)
 	if !bounded {
-		if !r.failed.Load() {
-			c.onLog(fmt.Sprintf("Provider-stream drain cut short after %d committed segment(s); no word timings locate the rest", finals), "warn")
-			return nil, 0
-		}
-		// A failed stream without word timings repeats committed text rather
-		// than lose the speech after it.
 		tail, offsetMs = pcm, 0
 	}
-	if len(tail) < c.minPCMBytes || (speechkit.PCMDurationSecs(tail) < shortNoSpeechGateSecs && speechkitaudio.PCMLevel(tail) < noiseFloorRMS) {
+	if len(tail) == 0 {
 		c.onLog(fmt.Sprintf("Provider-stream ended early after %d committed segment(s); no uncommitted audio remains", finals), "info")
 		return nil, 0
 	}
@@ -242,8 +255,9 @@ func (c *RecordingController) stopNativeDictationStream(runtime *dictationStream
 		runtime.cutShort.Store(true)
 		runtime.cancel()
 	}
+	runtime.ending.Store(true)
 	finalizeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	if err := runtime.stream.Finalize(finalizeCtx); err != nil && finalizeCtx.Err() == nil {
+	if err := runtime.stream.Finalize(finalizeCtx); err != nil {
 		c.onLog(fmt.Sprintf("Provider-stream finalize warning: %v", err), "warn")
 		runtime.cutShort.Store(true)
 	}
@@ -253,11 +267,21 @@ func (c *RecordingController) stopNativeDictationStream(runtime *dictationStream
 		runtime.cutShort.Store(true)
 		runtime.cancel()
 	}
-	if grouped, ok := runtime.sink.(*liveCommitSink); ok && cancelled && grouped.policy.Mode == LiveCommitSession {
+	grouped, sessionHeld := runtime.sink.(*liveCommitSink)
+	sessionHeld = sessionHeld && grouped.policy.Mode == LiveCommitSession
+	if sessionHeld && (cancelled || runtime.failed.Load() || runtime.cutShort.Load()) {
 		grouped.discard()
+		if !cancelled {
+			runtime.replayFull.Store(true)
+		}
 	} else if flusher, ok := runtime.sink.(LiveCommitFlusher); ok {
-		if err := flusher.FlushLiveCommit(context.Background()); err != nil {
-			c.onLog(fmt.Sprintf("Provider-stream live-commit flush warning: %v", err), "warn")
+		flushErr := flusher.FlushLiveCommit(context.WithoutCancel(runtime.ctx))
+		if flushErr != nil {
+			c.onLog(fmt.Sprintf("Provider-stream live-commit flush warning: %v", flushErr), "warn")
+			runtime.failed.Store(true)
+			if sessionHeld {
+				runtime.replayFull.Store(true)
+			}
 		}
 	}
 	runtime.cancel()
@@ -272,13 +296,21 @@ func (c *RecordingController) stopNativeDictationStream(runtime *dictationStream
 // sink, so output it held back while the microphone was open is delivered
 // now (see [speechkit.DictationStreamSessionEnder]). Cancel stops a stream
 // without this step.
-func (c *RecordingController) finishNativeDictationStream(runtime *dictationStreamRuntime) int64 {
+func (c *RecordingController) finishNativeDictationStream(runtime *dictationStreamRuntime, pcm []byte) int64 {
 	finals := c.stopNativeDictationStream(runtime, false)
 	if runtime == nil {
 		return finals
 	}
+	if len(pcm) > 0 && finals > 0 {
+		if recorder, ok := runtime.sink.(speechkit.DictationStreamRecordingSink); ok {
+			recorder.CompleteDictationStreamRecording(context.WithoutCancel(runtime.ctx), runtime.sessionID, speechkit.Submission{
+				PCM: pcm, WAV: speechkit.PCMToWAV(pcm), DurationSecs: speechkit.PCMDurationSecs(pcm),
+				Language: runtime.sinkOpts.Language, SessionID: runtime.sessionID,
+			}, runtime.sinkOpts)
+		}
+	}
 	if ender, ok := runtime.sink.(speechkit.DictationStreamSessionEnder); ok {
-		ender.EndDictationStreamSession(context.Background(), runtime.sessionID, runtime.sinkOpts)
+		ender.EndDictationStreamSession(context.WithoutCancel(runtime.ctx), runtime.sessionID, runtime.sinkOpts)
 	}
 	return finals
 }

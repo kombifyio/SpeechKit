@@ -48,6 +48,11 @@ type liveSession struct {
 	persistMu sync.Mutex
 	rowID     int64
 	rowless   bool
+	// Completed capture stays only until the same history row accepts it.
+	recordingComplete   bool
+	recordingDurationMs int64
+	recordingAudio      []byte
+	recordingSaved      bool
 }
 
 // liveSessionPart is one committed final; order is its segment, with a batch
@@ -275,20 +280,34 @@ func (w *TranscriptionWorker) persistLiveSessionAsync(parent context.Context, se
 		w.live.mu.Lock()
 		text, totalMs, latencyMs := session.text, session.durationMs, session.latencyMs
 		w.live.mu.Unlock()
+		if session.recordingComplete {
+			totalMs = session.recordingDurationMs
+		}
 
 		created := session.rowID == 0
 		var err error
 		if created {
 			var id int64
-			id, err = sessionStore.CreateTranscription(ctx, text, transcript.Language, transcript.Provider, transcript.Model, totalMs, latencyMs, persistableAudio(job.Submission))
+			audio := persistableAudio(job.Submission)
+			if session.recordingComplete {
+				audio = session.recordingAudio
+			}
+			id, err = sessionStore.CreateTranscription(ctx, text, transcript.Language, transcript.Provider, transcript.Model, totalMs, latencyMs, audio)
 			if errors.Is(err, errors.ErrUnsupported) {
 				session.rowless = true
 				w.saveTranscription(ctx, job, transcript, finalization, durationMs)
 				return
 			}
 			session.rowID = id
+			if err == nil && session.recordingComplete {
+				session.recordingSaved = true
+				session.recordingAudio = nil
+			}
 		} else {
 			err = sessionStore.UpdateTranscriptionText(ctx, session.rowID, text, totalMs, latencyMs)
+			if err == nil {
+				err = w.persistLiveRecording(ctx, session)
+			}
 		}
 		if err != nil {
 			w.onFinalization(job, transcript, finalization.WithPersistenceResult(err))

@@ -44,7 +44,7 @@ func TestRecordingControllerProviderStreamCommitsFinalWithoutBatchDuplicate(t *t
 	if recorder.pcmHandler == nil {
 		t.Fatal("recorder PCM handler was not installed")
 	}
-	recorder.pcmHandler([]byte("frame"))
+	recorder.pcmHandler(full)
 	if got := len(submitter.jobs); got != 0 {
 		t.Fatalf("batch jobs before Stop = %d, want 0 while native stream is active", got)
 	}
@@ -78,7 +78,7 @@ func TestRecordingControllerProviderStreamCommitsFinalWithoutBatchDuplicate(t *t
 // A stream that dies mid-dictation (Deepgram's UtteranceEnd once failed to
 // decode) must not take the rest of the dictation with it: Stop transcribes
 // the capture after the last committed word, mapped past the audio captured
-// while the handshake was still dialing.
+// while the handshake was still dialing (now included in the stream).
 func TestRecordingControllerProviderStreamFailureTranscribesUncommittedTail(t *testing.T) {
 	const bytesPerMs = 32 // 16 kHz mono PCM16
 	dialing := strings.Repeat("d", 200*bytesPerMs)
@@ -89,7 +89,7 @@ func TestRecordingControllerProviderStreamFailureTranscribesUncommittedTail(t *t
 	stream := &failingDictationStream{final: speechkit.DictationStreamEvent{
 		Text:    "Erster Satz.",
 		IsFinal: true,
-		Words:   []speechkit.WordConfidence{{Text: "Satz.", StartMs: 100, EndMs: 500}},
+		Words:   []speechkit.WordConfidence{{Text: "Satz.", StartMs: 100, EndMs: 700}},
 	}}
 	provider := &dialingDictationStreamProvider{recorder: recorder, dialing: []byte(dialing), stream: stream}
 	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, nil)

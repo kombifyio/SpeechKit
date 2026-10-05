@@ -582,6 +582,15 @@ func (c *Client) TranscribeFile(ctx context.Context, path string, opts Transcrib
 	writeFormField(writer, "language", opts.Language)
 	writeFormField(writer, "model", opts.Model)
 	writeFormField(writer, "prompt", opts.Prompt)
+	writeFormField(writer, "keyterms", strings.Join(opts.Keyterms, ","))
+	writeFormField(writer, "provider_profile_id", opts.ProviderProfileID)
+	for name, value := range map[string]any{"vocabulary_hints": opts.VocabularyHints, "options": opts.Options, "provider_options": opts.ProviderOptionsByProvider} {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return nil, fmt.Errorf("encode transcription %s: %w", name, err)
+		}
+		writeFormField(writer, name, string(encoded))
+	}
 	writeSpeakerFormFields(writer, opts.Speaker)
 	if err := writer.Close(); err != nil {
 		return nil, fmt.Errorf("finish multipart request: %w", err)
