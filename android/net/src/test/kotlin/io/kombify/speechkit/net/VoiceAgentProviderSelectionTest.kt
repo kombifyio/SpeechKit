@@ -31,6 +31,7 @@ class VoiceAgentProviderSelectionTest {
     @Test
     fun `the requested provider reaches the start frame`() {
         for (media in listOf(null, "assemblyai", "deepgram")) {
+            val mode = "max_accuracy".takeIf { media == "assemblyai" }
             val received = AtomicReference<String>()
             val started = CountDownLatch(1)
             val server = agentServer { socket, text ->
@@ -44,7 +45,7 @@ class VoiceAgentProviderSelectionTest {
             try {
                 runBlocking {
                     withTimeout(5_000) {
-                        controller.start(VoiceAgentStartFrame(provider = "kombify-agent", mediaProvider = media))
+                        controller.start(VoiceAgentStartFrame(provider = "kombify-agent", mediaProvider = media, transcriptionMode = mode))
                     }
                 }
                 check(started.await(10, TimeUnit.SECONDS)) { "no start frame reached the server" }
@@ -53,6 +54,7 @@ class VoiceAgentProviderSelectionTest {
                 assertEquals(VoiceAgentMsg.START, start?.type)
                 assertEquals("kombify-agent", start?.provider)
                 assertEquals(media, start?.mediaProvider)
+                assertEquals(mode, start?.transcriptionMode)
 
                 // The ticket rides in the subprotocol, never in the URL — a mint
                 // request and an upgrade request, in that order.

@@ -9,6 +9,65 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.76.1](https://github.com/kombifyio/SpeechKit/compare/v0.76.0...v0.76.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* **release:** include public release documentation corrections ([#792](https://github.com/kombifyio/SpeechKit/issues/792)) ([d6a13f0](https://github.com/kombifyio/SpeechKit/commit/d6a13f032eeffcd71e3eb4c7fc3e5162694109e3))
+
+
+### Release documentation
+
+* **release:** remove internal maintenance note from public changelog ([#790](https://github.com/kombifyio/SpeechKit/issues/790)) ([139e933](https://github.com/kombifyio/SpeechKit/commit/139e93345b2885cc1d02fff7c436f6a508c568fe))
+
+## [0.76.0](https://github.com/kombifyio/SpeechKit/compare/fad34bd7c3a81e897f815fd70b55b52fb9edf953...04fc40e746d48c94cbe55f9901509e8a9bd59d91) (2026-10-05)
+
+### Highlights
+
+- **Talk with your selected model**: Voice conversations can use your own AI endpoint and model, retaining the conversation you started in chat.
+- **Continue from the floating panel**: Voice carries the selected endpoint and conversation history through the floating panel, with current permission checks on each turn.
+- **Choose speed or accuracy**: AssemblyAI conversations support balanced, lower-latency and higher-accuracy transcription profiles, including the Android SDK.
+- **Use multilingual speech reliably**: Deepgram language hints apply to multilingual Flux while English-only sessions keep their supported configuration.
+
+
+
+### Features
+
+* **quality-gate:** move the sandbox Worker to Sandbox SDK 1.0 on ctx.container ([#744](https://github.com/kombifyio/SpeechKit/issues/744)) ([f0f3144](https://github.com/kombifyio/SpeechKit/commit/f0f3144ab5acfa573fd07bbb3740b13bd94a32f4))
+* **voice:** forward native AssemblyAI transcription profiles ([#783](https://github.com/kombifyio/SpeechKit/issues/783)) ([79431e1](https://github.com/kombifyio/SpeechKit/commit/79431e1366d65db7acdc968a67a8b37a7cf8da67))
+* **voice:** preserve signed instance handoff and Task answers ([#776](https://github.com/kombifyio/SpeechKit/issues/776)) ([7be6e22](https://github.com/kombifyio/SpeechKit/commit/7be6e22bc54bf5b679e310b95aad72425fadb9ad))
+* **voice:** retain signed floating endpoint conversations ([#782](https://github.com/kombifyio/SpeechKit/issues/782)) ([969b74e](https://github.com/kombifyio/SpeechKit/commit/969b74ee0b625a046eb97b29856a2b32cdd338eb))
+* **voice:** stream direct endpoint conversations through native media ([#777](https://github.com/kombifyio/SpeechKit/issues/777)) ([cd6f7c1](https://github.com/kombifyio/SpeechKit/commit/cd6f7c17a4b2543c4025eb10c06d081abf0b13d0))
+
+
+### Bug Fixes
+
+* **android:** forward voice transcription profile through SDK ([#784](https://github.com/kombifyio/SpeechKit/issues/784)) ([40af1d3](https://github.com/kombifyio/SpeechKit/commit/40af1d3444fba237aa471b413d553ca392d38a86))
+* **dictation:** one history entry per live dictation; hold-to-talk inserts on release ([#736](https://github.com/kombifyio/SpeechKit/issues/736)) ([cc6383c](https://github.com/kombifyio/SpeechKit/commit/cc6383c055b6457262df412ef2451f8057a27eb9))
+* **export:** separate hosted endpoint signer from standalone builds ([#779](https://github.com/kombifyio/SpeechKit/issues/779)) ([e9f217f](https://github.com/kombifyio/SpeechKit/commit/e9f217f52d3a8bed3211e3e9c8bd6910eb70d1a0))
+* **release:** avoid historical blobs during OSS admission checkout ([#786](https://github.com/kombifyio/SpeechKit/issues/786)) ([899cac9](https://github.com/kombifyio/SpeechKit/commit/899cac9a08c65a1933cf40b9019282ccbf215c91))
+* **release:** format native Voice highlights for website ([#769](https://github.com/kombifyio/SpeechKit/issues/769)) ([ba75fb9](https://github.com/kombifyio/SpeechKit/commit/ba75fb9b9c204866486c2ceba7816f3e531a8a81))
+* **release:** include native registered Voice scope in 0.75.5 ([#767](https://github.com/kombifyio/SpeechKit/issues/767)) ([5d150c5](https://github.com/kombifyio/SpeechKit/commit/5d150c5f59909f1e76935fbaad4ae94241499ea8))
+* **server:** accept only the signed edge envelope for edge identity ([#772](https://github.com/kombifyio/SpeechKit/issues/772)) ([b8acca4](https://github.com/kombifyio/SpeechKit/commit/b8acca45ae034606988b9fd4e1a46e54f6db52dc))
+* **server:** verify a signed, replay-guarded edge envelope ([#757](https://github.com/kombifyio/SpeechKit/issues/757)) ([6f3ace1](https://github.com/kombifyio/SpeechKit/commit/6f3ace15df8d0ebf7711876bd6cfdb8c667c6882))
+* **test:** make bundle-path and installer-binding tests pass on Windows ([#734](https://github.com/kombifyio/SpeechKit/issues/734)) ([cd99e6d](https://github.com/kombifyio/SpeechKit/commit/cd99e6dc7f49db0dcd8fe931dee8c6a41da7bc3e))
+* **voiceagent:** preserve host audio and bounded session lifecycle ([#737](https://github.com/kombifyio/SpeechKit/issues/737)) ([e8912b5](https://github.com/kombifyio/SpeechKit/commit/e8912b5d9fd8c4b12c1f903bea90edb680a70d8f))
+* **voiceagent:** skip the tool bridge for remote-agent sessions ([#759](https://github.com/kombifyio/SpeechKit/issues/759)) ([764ea81](https://github.com/kombifyio/SpeechKit/commit/764ea81694598cfb19e52630bcf357c6c0fb8bca))
+* **voice:** document settlement context and quota release scope ([#753](https://github.com/kombifyio/SpeechKit/issues/753)) ([5a551db](https://github.com/kombifyio/SpeechKit/commit/5a551db3c4c200652d82bc553a09771098b67ac3))
+* **voice:** prefer managed speech providers and allow bounded four-hour sessions ([#745](https://github.com/kombifyio/SpeechKit/issues/745)) ([4975a23](https://github.com/kombifyio/SpeechKit/commit/4975a23cb75a4cb3dcc6e3fb13c6e4329323afcd))
+* **voice:** restrict Deepgram language hints to multilingual Flux ([#780](https://github.com/kombifyio/SpeechKit/issues/780)) ([60e66d5](https://github.com/kombifyio/SpeechKit/commit/60e66d592db7ff53818e45f2e93e939b96433597))
+* **voice:** settle reservations when pending admission closes ([#752](https://github.com/kombifyio/SpeechKit/issues/752)) ([d5440ab](https://github.com/kombifyio/SpeechKit/commit/d5440ab63ae977f5bc159c8acc7a818196950db6))
+
+Notes cover changes after VERSION 0.75.0 (fad34bd7c3a81e897f815fd70b55b52fb9edf953), the earliest available contiguous 0.75.x VERSION anchor, through selected source 04fc40e746d48c94cbe55f9901509e8a9bd59d91.
+
+## [0.75.9](https://github.com/kombifyio/SpeechKit/compare/v0.75.8...v0.75.9) (2026-10-05)
+
+
+### Bug Fixes
+
+* **android:** forward voice transcription profile through SDK ([#784](https://github.com/kombifyio/SpeechKit/issues/784)) ([40af1d3](https://github.com/kombifyio/SpeechKit/commit/40af1d3444fba237aa471b413d553ca392d38a86))
+
 ## [0.75.8](https://github.com/kombifyio/SpeechKit/compare/v0.75.7...v0.75.8) (2026-10-05)
 
 

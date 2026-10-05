@@ -168,6 +168,8 @@ data class VoiceAgentStartFrame(
     @Json(name = "activity_detection") val activityDetection: VoiceAgentActivityDetection? = null,
     val speaker: VoiceAgentSpeakerOptions? = null,
     @Json(name = "system_prompt_override") val systemPromptOverride: String? = null,
+    /** AssemblyAI native input profile: balanced, min_latency or max_accuracy; null retains provider defaults. */
+    @Json(name = "transcription_mode") val transcriptionMode: String? = null,
 ) : VoiceAgentClientFrame
 
 /**
