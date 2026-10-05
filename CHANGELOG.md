@@ -9,9 +9,31 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.75.6](https://github.com/kombifyio/SpeechKit/compare/v0.75.5...v0.75.6) (2026-10-05)
+
+### Highlights
+
+- **Choose your conversation voice**: Use AssemblyAI or Deepgram for natural conversations while keeping your registered agent's context and permissions.
+- **Stay in control of consent**: Native Voice checks your cloud-processing permission throughout the conversation, with separate recording consent for AssemblyAI.
+- **Interrupt with confidence**: Interruptions and cancellation stop pending agent work, even before the first spoken reply.
+- **Keep your choice on Android**: The Android SDK carries your selected voice provider through direct and coinstalled sessions and clearly rejects unsupported combinations.
+
+
+
+### Bug Fixes
+
+* **release:** format native Voice highlights for website ([#769](https://github.com/kombifyio/SpeechKit/issues/769)) ([ba75fb9](https://github.com/kombifyio/SpeechKit/commit/ba75fb9b9c204866486c2ceba7816f3e531a8a81))
+
 ## [0.75.5](https://github.com/kombifyio/SpeechKit/compare/v0.75.4...v0.75.5) (2026-10-04)
 
 ### Highlights
+
+- **Choose your conversation voice**: Use AssemblyAI or Deepgram for natural conversations while keeping your registered agent's context and permissions.
+- **Stay in control of consent**: Native Voice checks your cloud-processing permission throughout the conversation, with separate recording consent for AssemblyAI.
+- **Interrupt with confidence**: Interruptions and cancellation stop pending agent work, even before the first spoken reply.
+- **Keep your choice on Android**: The Android SDK carries your selected voice provider through direct and coinstalled sessions and clearly rejects unsupported combinations.
+
+### Added
 
 - Registered-agent Voice sessions can select native AssemblyAI or Deepgram media while preserving the registered agent's conversation, tools and authorization. Provider-supplied instructions and tools cannot replace that authority.
 - Native sessions recheck the owner's current cloud-processing consent before provider setup and throughout the conversation. AssemblyAI additionally requires explicit consent for provider recording; revocation or an unavailable authority stops the session.
