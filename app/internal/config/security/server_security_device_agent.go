@@ -1,15 +1,17 @@
-package config
+package security
 
 import (
 	"fmt"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/app/internal/config"
 )
 
 const serverDeviceAgentMinimumTokenBytes = 32
 
-func validateServerDeviceAgent(cfg *Config) error {
+func validateServerDeviceAgent(cfg *config.Config) error {
 	if cfg == nil {
 		return nil
 	}
@@ -37,7 +39,7 @@ func validateServerDeviceAgent(cfg *Config) error {
 		return fmt.Errorf("[server.device_agent] requires [tts].enabled=true and strategy=local-only")
 	}
 	haTokenEnv := strings.TrimSpace(cfg.Assist.HomeAssistant.TokenEnv)
-	haToken := strings.TrimSpace(ResolveSecret(haTokenEnv))
+	haToken := strings.TrimSpace(config.ResolveSecret(haTokenEnv))
 	if !validServerHomeAssistantToken(haToken) {
 		return fmt.Errorf("[assist.home_assistant].token_env %q must resolve to a bounded Home Assistant bearer credential", haTokenEnv)
 	}
@@ -141,7 +143,7 @@ func validateServerDeviceAgent(cfg *Config) error {
 		tokenEnvs[tokenEnvKey] = struct{}{}
 		reservedEnvs[tokenEnvKey] = "device " + deviceID
 
-		resolvedToken := strings.TrimSpace(ResolveSecret(tokenEnv))
+		resolvedToken := strings.TrimSpace(config.ResolveSecret(tokenEnv))
 		if resolvedToken == "" {
 			return fmt.Errorf("%s.token_env %q did not resolve to a device credential", path, tokenEnv)
 		}
@@ -178,7 +180,7 @@ func validateServerDeviceAgent(cfg *Config) error {
 	return validateServerDeviceAgentBoxMedia(cfg, reservedEnvs, reservedValues)
 }
 
-func validateServerDeviceAgentLocalRule(path string, rule ServerDeviceAgentLocalRuleConfig) error {
+func validateServerDeviceAgentLocalRule(path string, rule config.ServerDeviceAgentLocalRuleConfig) error {
 	if !validServerDeviceAgentID(rule.RuleID) {
 		return fmt.Errorf("%s.rule_id must be a bounded stable identifier", path)
 	}
@@ -214,7 +216,7 @@ func validateServerDeviceAgentLocalRule(path string, rule ServerDeviceAgentLocal
 	return nil
 }
 
-func validateServerDeviceAgentClaimSettings(cfg ServerDeviceAgentConfig) error {
+func validateServerDeviceAgentClaimSettings(cfg config.ServerDeviceAgentConfig) error {
 	raw := []struct {
 		name  string
 		value int
@@ -231,20 +233,20 @@ func validateServerDeviceAgentClaimSettings(cfg ServerDeviceAgentConfig) error {
 	}
 
 	settings := cfg.EffectiveClaimSettings()
-	if settings.MaxRequestAgeSec <= 0 || settings.MaxRequestAgeSec > MaxServerDeviceAgentRequestAgeSec {
-		return fmt.Errorf("[server.device_agent].max_request_age_sec must resolve to 1..%d", MaxServerDeviceAgentRequestAgeSec)
+	if settings.MaxRequestAgeSec <= 0 || settings.MaxRequestAgeSec > config.MaxServerDeviceAgentRequestAgeSec {
+		return fmt.Errorf("[server.device_agent].max_request_age_sec must resolve to 1..%d", config.MaxServerDeviceAgentRequestAgeSec)
 	}
-	if settings.FutureSkewSec < 0 || settings.FutureSkewSec > MaxServerDeviceAgentFutureSkewSec {
-		return fmt.Errorf("[server.device_agent].future_skew_sec must resolve to 0..%d", MaxServerDeviceAgentFutureSkewSec)
+	if settings.FutureSkewSec < 0 || settings.FutureSkewSec > config.MaxServerDeviceAgentFutureSkewSec {
+		return fmt.Errorf("[server.device_agent].future_skew_sec must resolve to 0..%d", config.MaxServerDeviceAgentFutureSkewSec)
 	}
-	if settings.ClaimRetentionSec <= 0 || settings.ClaimRetentionSec > MaxServerDeviceAgentClaimRetentionSec {
-		return fmt.Errorf("[server.device_agent].claim_retention_sec must resolve to 1..%d", MaxServerDeviceAgentClaimRetentionSec)
+	if settings.ClaimRetentionSec <= 0 || settings.ClaimRetentionSec > config.MaxServerDeviceAgentClaimRetentionSec {
+		return fmt.Errorf("[server.device_agent].claim_retention_sec must resolve to 1..%d", config.MaxServerDeviceAgentClaimRetentionSec)
 	}
 	if settings.ClaimRetentionSec <= settings.MaxRequestAgeSec+settings.FutureSkewSec {
 		return fmt.Errorf("[server.device_agent].claim_retention_sec must be greater than max_request_age_sec + future_skew_sec")
 	}
-	if settings.MaxClaims <= 0 || settings.MaxClaims > MaxServerDeviceAgentClaims {
-		return fmt.Errorf("[server.device_agent].max_claims must resolve to 1..%d", MaxServerDeviceAgentClaims)
+	if settings.MaxClaims <= 0 || settings.MaxClaims > config.MaxServerDeviceAgentClaims {
+		return fmt.Errorf("[server.device_agent].max_claims must resolve to 1..%d", config.MaxServerDeviceAgentClaims)
 	}
 	return nil
 }

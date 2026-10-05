@@ -22,8 +22,7 @@ const (
 	// (edge worker / reverse proxy). The actual user identity comes from
 	// the edge: X-Edge-User-Id, X-Edge-Org-Id, X-Edge-Plan and optional
 	// X-Edge-Role, signed with key id, timestamp, nonce, method and path
-	// (see auth_edge_envelope.go). The legacy X-Edge-Auth-Hmac signature is
-	// accepted only while LegacyEdgeHMACProvider allows it.
+	// (see auth_edge_envelope.go).
 	AuthModeEdgeHMAC AuthMode = "edge_hmac"
 	// AuthModeBearerOrEdge accepts either credential format; handy when a
 	// single deployment serves both internal services (bearer) and
@@ -99,10 +98,6 @@ type AuthOptions struct {
 	// "primary") plus the "<edge secret env>_NEXT" rotation slot (key id
 	// from EDGE_AUTH_KEY_ID_NEXT, default "next").
 	EdgeKeysProvider func() []EdgeKey
-	// LegacyEdgeHMACProvider reports whether the legacy X-Edge-Auth-Hmac
-	// signature is still accepted next to the signed edge envelope. Nil
-	// keeps it accepted for the migration window.
-	LegacyEdgeHMACProvider func() bool
 }
 
 type PublicRoute struct {

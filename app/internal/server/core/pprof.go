@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"net/http/pprof"
 
-	"github.com/kombifyio/SpeechKit/app/internal/config"
+	"github.com/kombifyio/SpeechKit/app/internal/config/security"
 )
 
 // registerPprof mounts the net/http/pprof handlers on app.Mux when
@@ -25,7 +25,7 @@ func registerPprof(app *App) {
 	if !dbg.PprofEnabled {
 		return
 	}
-	if !config.IsLoopbackListenAddr(app.Cfg.Server.ListenAddr) && !dbg.PprofPublic {
+	if !security.IsLoopbackListenAddr(app.Cfg.Server.ListenAddr) && !dbg.PprofPublic {
 		slog.Warn("pprof enabled but refused on a non-loopback listener; set [server.debug] pprof_public=true to override",
 			"listen_addr", app.Cfg.Server.ListenAddr)
 		return

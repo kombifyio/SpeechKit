@@ -16,13 +16,12 @@ import (
 
 const envelopeTestSecret = "edge-envelope-secret"
 
-func envelopeAuth(t *testing.T, legacy bool, next http.Handler) http.Handler {
+func envelopeAuth(t *testing.T, next http.Handler) http.Handler {
 	t.Helper()
 	return Auth(AuthOptions{
-		Mode:                   "edge_hmac",
-		EdgeSecretProvider:     func() string { return envelopeTestSecret },
-		EdgeKeysProvider:       func() []EdgeKey { return []EdgeKey{{ID: "primary", Secret: envelopeTestSecret}} },
-		LegacyEdgeHMACProvider: func() bool { return legacy },
+		Mode:               "edge_hmac",
+		EdgeSecretProvider: func() string { return envelopeTestSecret },
+		EdgeKeysProvider:   func() []EdgeKey { return []EdgeKey{{ID: "primary", Secret: envelopeTestSecret}} },
 	})(next)
 }
 
@@ -44,7 +43,7 @@ func serve(h http.Handler, r *http.Request) int {
 func TestEdgeEnvelopeAcceptedWithVoiceBudgetOverlay(t *testing.T) {
 	var got Identity
 	var budget VoiceBudget
-	h := envelopeAuth(t, false, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := envelopeAuth(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got = IdentityFromContext(r.Context())
 		budget = VoiceBudgetFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
@@ -69,7 +68,7 @@ func TestEdgeEnvelopeAcceptedWithVoiceBudgetOverlay(t *testing.T) {
 }
 
 func TestEdgeEnvelopeReplayRejected(t *testing.T) {
-	h := envelopeAuth(t, false, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	h := envelopeAuth(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 	first := signedEnvelopeRequest(t, http.MethodGet, "/api/v1/settings", EdgeKey{ID: "primary", Secret: envelopeTestSecret})
 	replay := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
 	replay.Header = first.Header.Clone()
@@ -83,7 +82,7 @@ func TestEdgeEnvelopeReplayRejected(t *testing.T) {
 }
 
 func TestEdgeEnvelopeWrongRequestBindingRejected(t *testing.T) {
-	h := envelopeAuth(t, false, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	h := envelopeAuth(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 	signed := signedEnvelopeRequest(t, http.MethodGet, "/api/v1/settings", EdgeKey{ID: "primary", Secret: envelopeTestSecret})
 	// Same envelope presented for another path.
 	moved := httptest.NewRequest(http.MethodGet, "/api/v1/deployment/status", nil)
@@ -95,7 +94,7 @@ func TestEdgeEnvelopeWrongRequestBindingRejected(t *testing.T) {
 }
 
 func TestEdgeEnvelopeUnknownKeyIDRejected(t *testing.T) {
-	h := envelopeAuth(t, false, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	h := envelopeAuth(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 	r := signedEnvelopeRequest(t, http.MethodGet, "/api/v1/settings", EdgeKey{ID: "retired", Secret: envelopeTestSecret})
 
 	if code := serve(h, r); code != http.StatusUnauthorized {
@@ -103,11 +102,22 @@ func TestEdgeEnvelopeUnknownKeyIDRejected(t *testing.T) {
 	}
 }
 
-func TestLegacyEdgeHMACRejectedWhenFlagOff(t *testing.T) {
-	h := envelopeAuth(t, false, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+// TestLegacyEdgeHMACRejected: the retired replayable X-Edge-Auth-Hmac
+// identity signature no longer authenticates, even when correctly signed.
+func TestLegacyEdgeHMACRejected(t *testing.T) {
+	h := envelopeAuth(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 	ts := strconv.FormatInt(time.Now().Unix(), 10)
+	mac := hmac.New(sha256.New, []byte(envelopeTestSecret))
+	mac.Write([]byte(strings.Join([]string{"user-42", "org-1", "pro", "admin", ts}, "\n")))
+	r := httptest.NewRequest(http.MethodGet, "/v1/any", nil)
+	r.Header.Set("X-Edge-User-Id", "user-42")
+	r.Header.Set("X-Edge-Org-Id", "org-1")
+	r.Header.Set("X-Edge-Plan", "pro")
+	r.Header.Set("X-Edge-Role", "admin")
+	r.Header.Set("X-Edge-Auth-Ts", ts)
+	r.Header.Set("X-Edge-Auth-Hmac", hex.EncodeToString(mac.Sum(nil)))
 
-	if code := serve(h, edgeRequest("user-42", "org-1", "pro", "admin", ts, edgeSig(envelopeTestSecret, "user-42", "org-1", "pro", "admin", ts))); code != http.StatusUnauthorized {
-		t.Fatalf("legacy HMAC accepted with the legacy flag off; got %d", code)
+	if code := serve(h, r); code != http.StatusUnauthorized {
+		t.Fatalf("legacy HMAC accepted; got %d", code)
 	}
 }

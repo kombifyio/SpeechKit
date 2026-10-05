@@ -120,6 +120,7 @@ type LiveConfigFrame struct {
 	// never values accepted from the WebSocket start frame.
 	AgentTargetID       string
 	AgentEndpoint       string
+	AgentInstanceAuth   string
 	CapabilityLease     string
 	CredentialExpiresAt int64
 	VoiceSessionID      string

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/app/internal/config"
+	"github.com/kombifyio/SpeechKit/app/internal/config/security"
 	deviceagentserver "github.com/kombifyio/SpeechKit/app/internal/server/deviceagent"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 )
@@ -261,7 +262,7 @@ func wireBoxMediaListener(ctx context.Context, cfg *config.Config, app *App) (*b
 		})
 		return nil, nil
 	}
-	if err := config.ValidateServerProductionAuth(cfg); err != nil {
+	if err := security.ValidateServerProductionAuth(cfg); err != nil {
 		return nil, fmt.Errorf("validate Box media server configuration: %w", err)
 	}
 	if app.DeviceAgentBridge == nil || !app.DeviceAgentBridgeMounted {

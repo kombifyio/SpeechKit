@@ -1,4 +1,4 @@
-package config
+package security
 
 import (
 	"net/url"
@@ -7,10 +7,12 @@ import (
 	"testing"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/kombifyio/SpeechKit/app/internal/config"
 )
 
 func TestServerDeviceAgentConfigTOMLShape(t *testing.T) {
-	var cfg Config
+	var cfg config.Config
 	_, err := toml.Decode(`
 [server.device_agent]
 enabled = true
@@ -81,17 +83,17 @@ expires_at = "2026-07-31T00:00:00Z"
 }
 
 func TestServerDeviceAgentEffectiveClaimSettingsDefaults(t *testing.T) {
-	settings := (ServerDeviceAgentConfig{}).EffectiveClaimSettings()
-	if settings.MaxRequestAgeSec != DefaultServerDeviceAgentMaxRequestAgeSec {
+	settings := (config.ServerDeviceAgentConfig{}).EffectiveClaimSettings()
+	if settings.MaxRequestAgeSec != config.DefaultServerDeviceAgentMaxRequestAgeSec {
 		t.Fatalf("MaxRequestAgeSec = %d", settings.MaxRequestAgeSec)
 	}
-	if settings.FutureSkewSec != DefaultServerDeviceAgentFutureSkewSec {
+	if settings.FutureSkewSec != config.DefaultServerDeviceAgentFutureSkewSec {
 		t.Fatalf("FutureSkewSec = %d", settings.FutureSkewSec)
 	}
-	if settings.ClaimRetentionSec != DefaultServerDeviceAgentClaimRetentionSec {
+	if settings.ClaimRetentionSec != config.DefaultServerDeviceAgentClaimRetentionSec {
 		t.Fatalf("ClaimRetentionSec = %d", settings.ClaimRetentionSec)
 	}
-	if settings.MaxClaims != DefaultServerDeviceAgentMaxClaims {
+	if settings.MaxClaims != config.DefaultServerDeviceAgentMaxClaims {
 		t.Fatalf("MaxClaims = %d", settings.MaxClaims)
 	}
 }
@@ -104,11 +106,11 @@ func TestValidateServerProductionAuthAcceptsValidDeviceAgentConfig(t *testing.T)
 }
 
 func TestValidateServerProductionAuthLeavesDisabledDeviceAgentInert(t *testing.T) {
-	cfg := &Config{
-		Server: ServerConfig{
+	cfg := &config.Config{
+		Server: config.ServerConfig{
 			ListenAddr: "127.0.0.1:8080",
 			AuthMode:   "none",
-			DeviceAgent: ServerDeviceAgentConfig{
+			DeviceAgent: config.ServerDeviceAgentConfig{
 				Enabled: true,
 			},
 		},
@@ -120,7 +122,7 @@ func TestValidateServerProductionAuthLeavesDisabledDeviceAgentInert(t *testing.T
 }
 
 func TestValidateServerProductionAuthRejectsBoxMediaWithoutDeviceAgent(t *testing.T) {
-	cfg := &Config{Server: ServerConfig{ListenAddr: "127.0.0.1:8080", AuthMode: "none"}}
+	cfg := &config.Config{Server: config.ServerConfig{ListenAddr: "127.0.0.1:8080", AuthMode: "none"}}
 	cfg.Server.DeviceAgent.BoxMedia.Enabled = true
 	if err := ValidateServerProductionAuth(cfg); err == nil || !strings.Contains(err.Error(), "requires [server.device_agent].enabled=true") {
 		t.Fatalf("Box media without device-agent error = %v", err)
@@ -144,52 +146,60 @@ func TestValidateServerProductionAuthAcceptsValidBoxMediaConfig(t *testing.T) {
 func TestValidateServerProductionAuthRejectsIncompleteBoxMediaConfig(t *testing.T) {
 	tests := []struct {
 		name   string
-		mutate func(*testing.T, *Config)
+		mutate func(*testing.T, *config.Config)
 		want   string
 	}{
-		{"local STT disabled", func(_ *testing.T, cfg *Config) { cfg.Local.Enabled = false }, "[local].enabled=true"},
-		{"relative local model", func(_ *testing.T, cfg *Config) { cfg.Local.ModelPath = "ggml-small.bin" }, "model_path"},
-		{"invalid local port", func(_ *testing.T, cfg *Config) { cfg.Local.Port = 0 }, "[local].port"},
-		{"wildcard listener", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.ListenAddr = ":8444" }, "listen_addr"},
-		{"loopback listener", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.ListenAddr = "127.0.0.1:8444" }, "RFC1918 IPv4"},
-		{"link-local listener", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.ListenAddr = "169.254.10.20:8444" }, "RFC1918 IPv4"},
-		{"CGNAT listener", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.ListenAddr = "100.64.10.20:8444" }, "RFC1918 IPv4"},
-		{"IPv6 ULA listener", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.ListenAddr = "[fd00::10]:8444" }, "RFC1918 IPv4"},
-		{"IPv6 loopback listener", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.ListenAddr = "[::1]:8444" }, "RFC1918 IPv4"},
-		{"public listener", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.ListenAddr = "203.0.113.10:8444" }, "RFC1918 IPv4"},
-		{"selected binding loopback only", func(_ *testing.T, cfg *Config) {
+		{"local STT disabled", func(_ *testing.T, cfg *config.Config) { cfg.Local.Enabled = false }, "[local].enabled=true"},
+		{"relative local model", func(_ *testing.T, cfg *config.Config) { cfg.Local.ModelPath = "ggml-small.bin" }, "model_path"},
+		{"invalid local port", func(_ *testing.T, cfg *config.Config) { cfg.Local.Port = 0 }, "[local].port"},
+		{"wildcard listener", func(_ *testing.T, cfg *config.Config) { cfg.Server.DeviceAgent.BoxMedia.ListenAddr = ":8444" }, "listen_addr"},
+		{"loopback listener", func(_ *testing.T, cfg *config.Config) { cfg.Server.DeviceAgent.BoxMedia.ListenAddr = "127.0.0.1:8444" }, "RFC1918 IPv4"},
+		{"link-local listener", func(_ *testing.T, cfg *config.Config) {
+			cfg.Server.DeviceAgent.BoxMedia.ListenAddr = "169.254.10.20:8444"
+		}, "RFC1918 IPv4"},
+		{"CGNAT listener", func(_ *testing.T, cfg *config.Config) {
+			cfg.Server.DeviceAgent.BoxMedia.ListenAddr = "100.64.10.20:8444"
+		}, "RFC1918 IPv4"},
+		{"IPv6 ULA listener", func(_ *testing.T, cfg *config.Config) { cfg.Server.DeviceAgent.BoxMedia.ListenAddr = "[fd00::10]:8444" }, "RFC1918 IPv4"},
+		{"IPv6 loopback listener", func(_ *testing.T, cfg *config.Config) { cfg.Server.DeviceAgent.BoxMedia.ListenAddr = "[::1]:8444" }, "RFC1918 IPv4"},
+		{"public listener", func(_ *testing.T, cfg *config.Config) {
+			cfg.Server.DeviceAgent.BoxMedia.ListenAddr = "203.0.113.10:8444"
+		}, "RFC1918 IPv4"},
+		{"selected binding loopback only", func(_ *testing.T, cfg *config.Config) {
 			cfg.Server.DeviceAgent.Devices[0].AllowedClientCIDRs = []string{"127.0.0.1/32"}
 		}, "selected device allowed_client_cidrs"},
-		{"selected binding link-local only", func(_ *testing.T, cfg *Config) {
+		{"selected binding link-local only", func(_ *testing.T, cfg *config.Config) {
 			cfg.Server.DeviceAgent.Devices[0].AllowedClientCIDRs = []string{"169.254.10.0/24"}
 		}, "selected device allowed_client_cidrs"},
-		{"selected binding CGNAT only", func(_ *testing.T, cfg *Config) {
+		{"selected binding CGNAT only", func(_ *testing.T, cfg *config.Config) {
 			cfg.Server.DeviceAgent.Devices[0].AllowedClientCIDRs = []string{"100.64.10.0/24"}
 		}, "selected device allowed_client_cidrs"},
-		{"selected binding IPv6 loopback only", func(_ *testing.T, cfg *Config) {
+		{"selected binding IPv6 loopback only", func(_ *testing.T, cfg *config.Config) {
 			cfg.Server.DeviceAgent.Devices[0].AllowedClientCIDRs = []string{"::1/128"}
 		}, "selected device allowed_client_cidrs"},
-		{"selected binding IPv6 ULA only", func(_ *testing.T, cfg *Config) {
+		{"selected binding IPv6 ULA only", func(_ *testing.T, cfg *config.Config) {
 			cfg.Server.DeviceAgent.Devices[0].AllowedClientCIDRs = []string{"fd00::/64"}
 		}, "selected device allowed_client_cidrs"},
-		{"relative certificate", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.CertificateFile = "server.crt" }, "certificate_file"},
-		{"reused key path", func(_ *testing.T, cfg *Config) {
+		{"relative certificate", func(_ *testing.T, cfg *config.Config) { cfg.Server.DeviceAgent.BoxMedia.CertificateFile = "server.crt" }, "certificate_file"},
+		{"reused key path", func(_ *testing.T, cfg *config.Config) {
 			cfg.Server.DeviceAgent.BoxMedia.PrivateKeyFile = cfg.Server.DeviceAgent.BoxMedia.CertificateFile
 		}, "must be distinct"},
-		{"bad pinned CA digest", func(_ *testing.T, cfg *Config) {
+		{"bad pinned CA digest", func(_ *testing.T, cfg *config.Config) {
 			cfg.Server.DeviceAgent.BoxMedia.PinnedCASHA256 = strings.Repeat("A", 64)
 		}, "pinned_ca_sha256"},
-		{"unresolved media token", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.TokenEnv = "TEST_BOX_MEDIA_MISSING" }, "must resolve"},
-		{"device token env reused", func(_ *testing.T, cfg *Config) {
+		{"unresolved media token", func(_ *testing.T, cfg *config.Config) {
+			cfg.Server.DeviceAgent.BoxMedia.TokenEnv = "TEST_BOX_MEDIA_MISSING"
+		}, "must resolve"},
+		{"device token env reused", func(_ *testing.T, cfg *config.Config) {
 			cfg.Server.DeviceAgent.BoxMedia.TokenEnv = cfg.Server.DeviceAgent.Devices[0].TokenEnv
 		}, "credential env"},
-		{"device token value reused", func(t *testing.T, _ *Config) {
+		{"device token value reused", func(t *testing.T, _ *config.Config) {
 			t.Setenv("TEST_BOX_MEDIA_TOKEN", "device-token-one-0123456789abcdef")
 		}, "device kitchen-speaker credential"},
-		{"unknown device", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.DeviceID = "other-device" }, "existing paired device"},
-		{"wrong pairing epoch", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.PairingID = "pairing-old" }, "current pairing epoch"},
-		{"unknown command", func(_ *testing.T, cfg *Config) { cfg.Server.DeviceAgent.BoxMedia.CommandID = "other-command" }, "existing G0 rule"},
-		{"different transcript", func(_ *testing.T, cfg *Config) {
+		{"unknown device", func(_ *testing.T, cfg *config.Config) { cfg.Server.DeviceAgent.BoxMedia.DeviceID = "other-device" }, "existing paired device"},
+		{"wrong pairing epoch", func(_ *testing.T, cfg *config.Config) { cfg.Server.DeviceAgent.BoxMedia.PairingID = "pairing-old" }, "current pairing epoch"},
+		{"unknown command", func(_ *testing.T, cfg *config.Config) { cfg.Server.DeviceAgent.BoxMedia.CommandID = "other-command" }, "existing G0 rule"},
+		{"different transcript", func(_ *testing.T, cfg *config.Config) {
 			cfg.Server.DeviceAgent.BoxMedia.Transcript = "turn on the kitchen light"
 		}, "exactly match"},
 	}
@@ -210,29 +220,29 @@ func TestValidateServerProductionAuthRejectsIncompleteBoxMediaConfig(t *testing.
 func TestValidateServerProductionAuthRejectsIncompleteDeviceAgentConfig(t *testing.T) {
 	tests := []struct {
 		name   string
-		mutate func(*Config)
+		mutate func(*config.Config)
 		want   string
 	}{
-		{"missing server instance", func(cfg *Config) { cfg.Server.DeviceAgent.ServerInstanceID = "" }, "server_instance_id"},
-		{"missing claim store", func(cfg *Config) { cfg.Server.DeviceAgent.ClaimStorePath = "" }, "claim_store_path"},
-		{"missing HA URL", func(cfg *Config) { cfg.Assist.HomeAssistant.URL = "" }, "home_assistant].url"},
-		{"missing HA token env", func(cfg *Config) { cfg.Assist.HomeAssistant.TokenEnv = "" }, "home_assistant].token_env"},
-		{"unresolved HA token", func(cfg *Config) { cfg.Assist.HomeAssistant.TokenEnv = "TEST_HOME_ASSISTANT_UNRESOLVED" }, "must resolve"},
-		{"TTS disabled", func(cfg *Config) { cfg.TTS.Enabled = false }, "strategy=local-only"},
-		{"cloud TTS strategy", func(cfg *Config) { cfg.TTS.Strategy = "cloud-first" }, "strategy=local-only"},
-		{"missing devices", func(cfg *Config) { cfg.Server.DeviceAgent.Devices = nil }, "at least one paired device"},
-		{"missing device id", func(cfg *Config) { cfg.Server.DeviceAgent.Devices[0].DeviceID = "" }, "device_id"},
-		{"missing pairing id", func(cfg *Config) { cfg.Server.DeviceAgent.Devices[0].PairingID = "" }, "pairing_id"},
-		{"pairing id equals device id", func(cfg *Config) {
+		{"missing server instance", func(cfg *config.Config) { cfg.Server.DeviceAgent.ServerInstanceID = "" }, "server_instance_id"},
+		{"missing claim store", func(cfg *config.Config) { cfg.Server.DeviceAgent.ClaimStorePath = "" }, "claim_store_path"},
+		{"missing HA URL", func(cfg *config.Config) { cfg.Assist.HomeAssistant.URL = "" }, "home_assistant].url"},
+		{"missing HA token env", func(cfg *config.Config) { cfg.Assist.HomeAssistant.TokenEnv = "" }, "home_assistant].token_env"},
+		{"unresolved HA token", func(cfg *config.Config) { cfg.Assist.HomeAssistant.TokenEnv = "TEST_HOME_ASSISTANT_UNRESOLVED" }, "must resolve"},
+		{"TTS disabled", func(cfg *config.Config) { cfg.TTS.Enabled = false }, "strategy=local-only"},
+		{"cloud TTS strategy", func(cfg *config.Config) { cfg.TTS.Strategy = "cloud-first" }, "strategy=local-only"},
+		{"missing devices", func(cfg *config.Config) { cfg.Server.DeviceAgent.Devices = nil }, "at least one paired device"},
+		{"missing device id", func(cfg *config.Config) { cfg.Server.DeviceAgent.Devices[0].DeviceID = "" }, "device_id"},
+		{"missing pairing id", func(cfg *config.Config) { cfg.Server.DeviceAgent.Devices[0].PairingID = "" }, "pairing_id"},
+		{"pairing id equals device id", func(cfg *config.Config) {
 			cfg.Server.DeviceAgent.Devices[0].PairingID = cfg.Server.DeviceAgent.Devices[0].DeviceID
 		}, "distinct from device_id"},
-		{"missing room", func(cfg *Config) { cfg.Server.DeviceAgent.Devices[0].RoomID = "" }, "room_id"},
-		{"missing token env", func(cfg *Config) { cfg.Server.DeviceAgent.Devices[0].TokenEnv = "" }, "token_env"},
-		{"unresolved token", func(cfg *Config) {
+		{"missing room", func(cfg *config.Config) { cfg.Server.DeviceAgent.Devices[0].RoomID = "" }, "room_id"},
+		{"missing token env", func(cfg *config.Config) { cfg.Server.DeviceAgent.Devices[0].TokenEnv = "" }, "token_env"},
+		{"unresolved token", func(cfg *config.Config) {
 			cfg.Server.DeviceAgent.Devices[0].TokenEnv = "TEST_DEVICE_AGENT_UNRESOLVED_TOKEN"
 		}, "did not resolve"},
-		{"missing CIDRs", func(cfg *Config) { cfg.Server.DeviceAgent.Devices[0].AllowedClientCIDRs = nil }, "at least one explicit local CIDR"},
-		{"missing local rules", func(cfg *Config) { cfg.Server.DeviceAgent.Devices[0].LocalRules = nil }, "local_rules"},
+		{"missing CIDRs", func(cfg *config.Config) { cfg.Server.DeviceAgent.Devices[0].AllowedClientCIDRs = nil }, "at least one explicit local CIDR"},
+		{"missing local rules", func(cfg *config.Config) { cfg.Server.DeviceAgent.Devices[0].LocalRules = nil }, "local_rules"},
 	}
 
 	for _, tc := range tests {
@@ -250,37 +260,37 @@ func TestValidateServerProductionAuthRejectsIncompleteDeviceAgentConfig(t *testi
 func TestValidateServerProductionAuthRejectsAmbiguousDeviceBindings(t *testing.T) {
 	tests := []struct {
 		name   string
-		mutate func(*testing.T, *Config)
+		mutate func(*testing.T, *config.Config)
 		want   string
 	}{
-		{"duplicate device id", func(t *testing.T, cfg *Config) {
+		{"duplicate device id", func(t *testing.T, cfg *config.Config) {
 			appendSecondDevice(t, cfg)
 			cfg.Server.DeviceAgent.Devices[1].DeviceID = cfg.Server.DeviceAgent.Devices[0].DeviceID
 		}, "device_id"},
-		{"duplicate pairing id", func(t *testing.T, cfg *Config) {
+		{"duplicate pairing id", func(t *testing.T, cfg *config.Config) {
 			appendSecondDevice(t, cfg)
 			cfg.Server.DeviceAgent.Devices[1].PairingID = cfg.Server.DeviceAgent.Devices[0].PairingID
 		}, "pairing_id"},
-		{"duplicate token env case insensitive", func(t *testing.T, cfg *Config) {
+		{"duplicate token env case insensitive", func(t *testing.T, cfg *config.Config) {
 			appendSecondDevice(t, cfg)
 			cfg.Server.DeviceAgent.Devices[1].TokenEnv = strings.ToLower(cfg.Server.DeviceAgent.Devices[0].TokenEnv)
 		}, "token_env"},
-		{"duplicate resolved token", func(t *testing.T, cfg *Config) {
+		{"duplicate resolved token", func(t *testing.T, cfg *config.Config) {
 			appendSecondDevice(t, cfg)
 			t.Setenv("TEST_DEVICE_AGENT_TOKEN_TWO", "device-token-one-0123456789abcdef")
 		}, "same credential"},
-		{"HA token env reused", func(_ *testing.T, cfg *Config) {
+		{"HA token env reused", func(_ *testing.T, cfg *config.Config) {
 			cfg.Server.DeviceAgent.Devices[0].TokenEnv = cfg.Assist.HomeAssistant.TokenEnv
 		}, "credential env"},
-		{"HA token value reused", func(t *testing.T, cfg *Config) {
+		{"HA token value reused", func(t *testing.T, cfg *config.Config) {
 			t.Setenv("TEST_DEVICE_AGENT_TOKEN_ONE", "home-assistant-token-0123456789abcdef")
 		}, "Home Assistant credential"},
-		{"general server bearer reused by device", func(t *testing.T, cfg *Config) {
+		{"general server bearer reused by device", func(t *testing.T, cfg *config.Config) {
 			cfg.Server.AuthMode = "bearer"
 			cfg.Server.BearerTokenEnv = "TEST_GENERAL_SERVER_TOKEN"
 			t.Setenv("TEST_GENERAL_SERVER_TOKEN", "device-token-one-0123456789abcdef")
 		}, "general server bearer"},
-		{"general server bearer reused by HA", func(t *testing.T, cfg *Config) {
+		{"general server bearer reused by HA", func(t *testing.T, cfg *config.Config) {
 			cfg.Server.AuthMode = "bearer"
 			cfg.Server.BearerTokenEnv = "TEST_GENERAL_SERVER_TOKEN"
 			t.Setenv("TEST_GENERAL_SERVER_TOKEN", "home-assistant-token-0123456789abcdef")
@@ -378,18 +388,24 @@ func TestValidateServerProductionAuthRejectsUnsafeDeviceAgentHAURL(t *testing.T)
 func TestValidateServerProductionAuthValidatesDeviceAgentClaimBounds(t *testing.T) {
 	tests := []struct {
 		name   string
-		mutate func(*ServerDeviceAgentConfig)
+		mutate func(*config.ServerDeviceAgentConfig)
 		want   string
 	}{
-		{"negative age", func(cfg *ServerDeviceAgentConfig) { cfg.MaxRequestAgeSec = -1 }, "max_request_age_sec"},
-		{"negative skew", func(cfg *ServerDeviceAgentConfig) { cfg.FutureSkewSec = -1 }, "future_skew_sec"},
-		{"negative retention", func(cfg *ServerDeviceAgentConfig) { cfg.ClaimRetentionSec = -1 }, "claim_retention_sec"},
-		{"negative claims", func(cfg *ServerDeviceAgentConfig) { cfg.MaxClaims = -1 }, "max_claims"},
-		{"age over cap", func(cfg *ServerDeviceAgentConfig) { cfg.MaxRequestAgeSec = MaxServerDeviceAgentRequestAgeSec + 1 }, "max_request_age_sec"},
-		{"skew over cap", func(cfg *ServerDeviceAgentConfig) { cfg.FutureSkewSec = MaxServerDeviceAgentFutureSkewSec + 1 }, "future_skew_sec"},
-		{"retention over cap", func(cfg *ServerDeviceAgentConfig) { cfg.ClaimRetentionSec = MaxServerDeviceAgentClaimRetentionSec + 1 }, "claim_retention_sec"},
-		{"claims over cap", func(cfg *ServerDeviceAgentConfig) { cfg.MaxClaims = MaxServerDeviceAgentClaims + 1 }, "max_claims"},
-		{"retention equals window", func(cfg *ServerDeviceAgentConfig) {
+		{"negative age", func(cfg *config.ServerDeviceAgentConfig) { cfg.MaxRequestAgeSec = -1 }, "max_request_age_sec"},
+		{"negative skew", func(cfg *config.ServerDeviceAgentConfig) { cfg.FutureSkewSec = -1 }, "future_skew_sec"},
+		{"negative retention", func(cfg *config.ServerDeviceAgentConfig) { cfg.ClaimRetentionSec = -1 }, "claim_retention_sec"},
+		{"negative claims", func(cfg *config.ServerDeviceAgentConfig) { cfg.MaxClaims = -1 }, "max_claims"},
+		{"age over cap", func(cfg *config.ServerDeviceAgentConfig) {
+			cfg.MaxRequestAgeSec = config.MaxServerDeviceAgentRequestAgeSec + 1
+		}, "max_request_age_sec"},
+		{"skew over cap", func(cfg *config.ServerDeviceAgentConfig) {
+			cfg.FutureSkewSec = config.MaxServerDeviceAgentFutureSkewSec + 1
+		}, "future_skew_sec"},
+		{"retention over cap", func(cfg *config.ServerDeviceAgentConfig) {
+			cfg.ClaimRetentionSec = config.MaxServerDeviceAgentClaimRetentionSec + 1
+		}, "claim_retention_sec"},
+		{"claims over cap", func(cfg *config.ServerDeviceAgentConfig) { cfg.MaxClaims = config.MaxServerDeviceAgentClaims + 1 }, "max_claims"},
+		{"retention equals window", func(cfg *config.ServerDeviceAgentConfig) {
 			cfg.MaxRequestAgeSec = 60
 			cfg.FutureSkewSec = 10
 			cfg.ClaimRetentionSec = 70
@@ -408,7 +424,7 @@ func TestValidateServerProductionAuthValidatesDeviceAgentClaimBounds(t *testing.
 	}
 }
 
-func validServerDeviceAgentConfig(t *testing.T) *Config {
+func validServerDeviceAgentConfig(t *testing.T) *config.Config {
 	t.Helper()
 	// Keep missing-token tests hermetic even on workstations with Doppler CLI
 	// and managed build defaults available.
@@ -416,27 +432,27 @@ func validServerDeviceAgentConfig(t *testing.T) *Config {
 	t.Setenv("DOPPLER_CONFIG", "")
 	t.Setenv("TEST_DEVICE_AGENT_TOKEN_ONE", "device-token-one-0123456789abcdef")
 	t.Setenv("TEST_HOME_ASSISTANT_TOKEN", "home-assistant-token-0123456789abcdef")
-	return &Config{
-		TTS: TTSConfig{Enabled: true, Strategy: "local-only"},
-		Assist: AssistConfig{HomeAssistant: AssistHomeAssistantConfig{
+	return &config.Config{
+		TTS: config.TTSConfig{Enabled: true, Strategy: "local-only"},
+		Assist: config.AssistConfig{HomeAssistant: config.AssistHomeAssistantConfig{
 			URL:      "http://127.0.0.1:8123",
 			TokenEnv: "TEST_HOME_ASSISTANT_TOKEN",
 			Language: "en",
 		}},
-		Server: ServerConfig{
+		Server: config.ServerConfig{
 			ListenAddr: "127.0.0.1:8080",
 			AuthMode:   "none",
-			DeviceAgent: ServerDeviceAgentConfig{
+			DeviceAgent: config.ServerDeviceAgentConfig{
 				Enabled:          true,
 				ServerInstanceID: "speechkit-home-01",
 				ClaimStorePath:   "/var/lib/speechkit/device-agent-claims.db",
-				Devices: []ServerDeviceAgentDeviceConfig{{
+				Devices: []config.ServerDeviceAgentDeviceConfig{{
 					DeviceID:           "kitchen-speaker",
 					PairingID:          "pairing-kitchen-2026-07",
 					RoomID:             "kitchen",
 					TokenEnv:           "TEST_DEVICE_AGENT_TOKEN_ONE",
 					AllowedClientCIDRs: []string{"192.168.10.42/32"},
-					LocalRules: []ServerDeviceAgentLocalRuleConfig{{
+					LocalRules: []config.ServerDeviceAgentLocalRuleConfig{{
 						RuleID: "kitchen-light-off", TriggerText: "turn off the kitchen light", Locale: "en-US",
 						Action: "turn_off", EntityID: "light.kitchen",
 						NotBefore: "2026-07-01T00:00:00Z", ExpiresAt: "2026-07-31T00:00:00Z",
@@ -447,16 +463,16 @@ func validServerDeviceAgentConfig(t *testing.T) *Config {
 	}
 }
 
-func appendSecondDevice(t *testing.T, cfg *Config) {
+func appendSecondDevice(t *testing.T, cfg *config.Config) {
 	t.Helper()
 	t.Setenv("TEST_DEVICE_AGENT_TOKEN_TWO", "device-token-two-0123456789abcdef")
-	cfg.Server.DeviceAgent.Devices = append(cfg.Server.DeviceAgent.Devices, ServerDeviceAgentDeviceConfig{
+	cfg.Server.DeviceAgent.Devices = append(cfg.Server.DeviceAgent.Devices, config.ServerDeviceAgentDeviceConfig{
 		DeviceID:           "office-speaker",
 		PairingID:          "pairing-office-2026-07",
 		RoomID:             "office",
 		TokenEnv:           "TEST_DEVICE_AGENT_TOKEN_TWO",
 		AllowedClientCIDRs: []string{"192.168.10.43/32"},
-		LocalRules: []ServerDeviceAgentLocalRuleConfig{{
+		LocalRules: []config.ServerDeviceAgentLocalRuleConfig{{
 			RuleID: "office-light-off", TriggerText: "turn off the office light", Locale: "en-US",
 			Action: "turn_off", EntityID: "light.office",
 			NotBefore: "2026-07-01T00:00:00Z", ExpiresAt: "2026-07-31T00:00:00Z",
@@ -464,14 +480,14 @@ func appendSecondDevice(t *testing.T, cfg *Config) {
 	})
 }
 
-func enableValidBoxMediaConfig(t *testing.T, cfg *Config) {
+func enableValidBoxMediaConfig(t *testing.T, cfg *config.Config) {
 	t.Helper()
 	root := t.TempDir()
 	t.Setenv("TEST_BOX_MEDIA_TOKEN", "box-media-token-0123456789abcdefghijkl")
-	cfg.Local = LocalConfig{
+	cfg.Local = config.LocalConfig{
 		Enabled: true, ModelPath: filepath.Join(root, "ggml-small.bin"), Port: 9000, GPU: "cpu",
 	}
-	cfg.Server.DeviceAgent.BoxMedia = ServerDeviceAgentBoxMediaConfig{
+	cfg.Server.DeviceAgent.BoxMedia = config.ServerDeviceAgentBoxMediaConfig{
 		Enabled: true, ListenAddr: "192.168.10.10:8444",
 		CertificateFile: filepath.Join(root, "box-media.crt"),
 		PrivateKeyFile:  filepath.Join(root, "box-media.key"),

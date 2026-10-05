@@ -1,4 +1,4 @@
-package config
+package security
 
 import (
 	"encoding/hex"
@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/kombifyio/SpeechKit/app/internal/config"
 )
 
 var serverDeviceAgentBoxMediaRFC1918Prefixes = []netip.Prefix{
@@ -16,7 +18,7 @@ var serverDeviceAgentBoxMediaRFC1918Prefixes = []netip.Prefix{
 	netip.MustParsePrefix("192.168.0.0/16"),
 }
 
-func validateServerDeviceAgentBoxMedia(cfg *Config, reservedEnvs, reservedValues map[string]string) error {
+func validateServerDeviceAgentBoxMedia(cfg *config.Config, reservedEnvs, reservedValues map[string]string) error {
 	media := cfg.Server.DeviceAgent.BoxMedia
 	if !media.Enabled {
 		return nil
@@ -80,7 +82,7 @@ func validateServerDeviceAgentBoxMedia(cfg *Config, reservedEnvs, reservedValues
 	if scope, exists := reservedEnvs[tokenEnvKey]; exists {
 		return fmt.Errorf("%s.token_env must be distinct from the %s credential env", path, scope)
 	}
-	mediaToken := strings.TrimSpace(ResolveSecret(tokenEnv))
+	mediaToken := strings.TrimSpace(config.ResolveSecret(tokenEnv))
 	if !validServerDeviceAgentToken(mediaToken) {
 		return fmt.Errorf("%s.token_env %q must resolve to a %d..512 byte bearer credential", path, tokenEnv, serverDeviceAgentMinimumTokenBytes)
 	}

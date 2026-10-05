@@ -34,6 +34,55 @@ func TestVerifiedVoiceAgentBindingRequiresCompleteValidEdgeDecision(t *testing.T
 	}
 }
 
+// A signed owner-instance handle may reach only its exact canonical path.
+func TestAuthOwnedInstanceVoiceBindingPreservesExactSignedHandle(t *testing.T) {
+	t.Setenv("TEST_EDGE_SECRET", "edge-secret")
+	for _, change := range []string{"current", "handle", "target", "endpoint", "missing", "expired"} {
+		t.Run(change, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, "/v1/voiceagent/sessions", nil)
+			signEdgeHeaders(t, request, "edge-secret")
+			id := Identity{UserID: "user-42", OrgID: "org-kombify"}
+			target, endpoint, handle := "instance:owned-uuid", "https://api.kombify.io/a2a/instances/owned-uuid", "v1.captured.current-signature"
+			expiry := strconv.FormatInt(time.Now().Add(time.Minute).Unix(), 10)
+			if change == "expired" {
+				expiry = "1"
+			}
+			request.Header.Set(VoiceAgentTargetHeader, target)
+			request.Header.Set(VoiceAgentEndpointHeader, endpoint)
+			request.Header.Set(VoiceAgentLeaseHeader, "current-voice-lease")
+			request.Header.Set(VoiceAgentCredentialExpiresAtHeader, expiry)
+			request.Header.Set(VoiceAgentInstanceAuthHeader, handle)
+			mac := hmac.New(sha256.New, []byte("edge-secret"))
+			_, _ = mac.Write([]byte(strings.Join([]string{id.UserID, id.OrgID, target, endpoint, "current-voice-lease", expiry, handle}, "\n")))
+			request.Header.Set(VoiceAgentHMACHeader, hex.EncodeToString(mac.Sum(nil)))
+			switch change {
+			case "handle":
+				request.Header.Set(VoiceAgentInstanceAuthHeader, "v1.neighbor.signature")
+			case "target":
+				request.Header.Set(VoiceAgentTargetHeader, "instance:neighbor-uuid")
+			case "endpoint":
+				request.Header.Set(VoiceAgentEndpointHeader, "https://api.kombify.io/a2a/agents/owned-uuid")
+			case "missing":
+				request.Header.Del(VoiceAgentInstanceAuthHeader)
+			}
+			served := false
+			handler := Auth(AuthOptions{Mode: "edge_hmac", EdgeSecretEnv: "TEST_EDGE_SECRET"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				served = true
+				binding := VoiceAgentBindingFromContext(r.Context())
+				if binding.InstanceAuth != handle || binding.Endpoint != endpoint || binding.TargetAgentID != target {
+					t.Fatal("Signed instance handoff was replaced")
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if served != (change == "current") || (change != "current" && response.Code != http.StatusUnauthorized) {
+				t.Fatal("Unexpected instance authorization effect", served, response.Code)
+			}
+		})
+	}
+}
+
 func TestAuthVoiceAgentCredentialExpiryIsAuthenticated(t *testing.T) {
 	t.Setenv("TEST_EDGE_SECRET", "edge-secret")
 	validExpiry := strconv.FormatInt(time.Now().Add(time.Minute).Unix(), 10)

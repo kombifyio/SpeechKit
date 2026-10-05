@@ -121,7 +121,7 @@ func registeredAgentHeaders(cfg LiveConfigFrame, secret string) a2a.HeaderProvid
 		timestamp := fmt.Sprint(now)
 		mac := hmac.New(sha256.New, []byte(secret))
 		_, _ = mac.Write([]byte("v1\nprimary\n" + timestamp + "\n" + encoded))
-		return http.Header{
+		headers := http.Header{
 			"Authorization":                      {"Bearer " + cfg.OboSubjectToken},
 			"X-Kombify-Capability-Lease":         {cfg.CapabilityLease},
 			"X-Kombify-A2a-Delegation-Context":   {encoded},
@@ -132,7 +132,12 @@ func registeredAgentHeaders(cfg LiveConfigFrame, secret string) a2a.HeaderProvid
 			"X-Kombify-Session-Id":               {turn.SessionID},
 			"X-Kombify-Run-Id":                   {runID},
 			"X-Kombify-Agent-Id":                 {"speechkit-server"},
-		}, nil
+		}
+		if cfg.AgentInstanceAuth != "" {
+			headers.Set("X-Kombify-Instance-Auth", cfg.AgentInstanceAuth)
+			headers.Set("X-Kombify-Instance-Ai-Token", cfg.OboSubjectToken)
+		}
+		return headers, nil
 	}
 }
 

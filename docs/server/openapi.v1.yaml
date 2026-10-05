@@ -2026,9 +2026,7 @@ components:
         other than the signed one, and reused nonces. Used when fronted by an
         edge worker or reverse proxy that has already validated a user JWT.
 
-        The deprecated `X-Edge-Auth-Hmac` signature (no key id, request
-        binding or nonce) is accepted only with a fresh `X-Edge-Auth-Ts` and
-        only until `SPEECHKIT_EDGE_AUTH_LEGACY_HMAC=off`.
+        The earlier `X-Edge-Auth-Hmac` signature is no longer accepted.
 
   parameters:
     SessionID:

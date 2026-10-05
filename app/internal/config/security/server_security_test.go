@@ -1,12 +1,14 @@
-package config
+package security
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/kombifyio/SpeechKit/app/internal/config"
 )
 
 func TestValidateServerProductionAuthRejectsPublicNoAuth(t *testing.T) {
-	cfg := &Config{}
+	cfg := &config.Config{}
 	cfg.Server.ListenAddr = ":8080"
 	cfg.Server.AuthMode = "none"
 
@@ -20,7 +22,7 @@ func TestValidateServerProductionAuthRejectsPublicNoAuth(t *testing.T) {
 }
 
 func TestValidateServerProductionAuthRejectsPublicEmptyAuthMode(t *testing.T) {
-	cfg := &Config{}
+	cfg := &config.Config{}
 	cfg.Server.ListenAddr = ":8080"
 
 	err := ValidateServerProductionAuth(cfg)
@@ -34,7 +36,7 @@ func TestValidateServerProductionAuthRejectsPublicEmptyAuthMode(t *testing.T) {
 
 func TestValidateServerProductionAuthAllowsLoopbackNoAuth(t *testing.T) {
 	for _, addr := range []string{"127.0.0.1:8080", "localhost:8080", "[::1]:8080"} {
-		cfg := &Config{}
+		cfg := &config.Config{}
 		cfg.Server.ListenAddr = addr
 		cfg.Server.AuthMode = "none"
 
@@ -46,7 +48,7 @@ func TestValidateServerProductionAuthAllowsLoopbackNoAuth(t *testing.T) {
 
 func TestValidateServerProductionAuthAllowsExplicitInsecureTestOverride(t *testing.T) {
 	t.Setenv(AllowInsecureNoAuthEnv, "1")
-	cfg := &Config{}
+	cfg := &config.Config{}
 	cfg.Server.ListenAddr = ":8080"
 	cfg.Server.AuthMode = "none"
 
@@ -57,7 +59,7 @@ func TestValidateServerProductionAuthAllowsExplicitInsecureTestOverride(t *testi
 
 func TestValidateServerProductionAuthRejectsWildcardCORSWithAuthenticatedModes(t *testing.T) {
 	for _, mode := range []string{"bearer", "edge_hmac", "bearer_or_edge"} {
-		cfg := &Config{}
+		cfg := &config.Config{}
 		cfg.Server.ListenAddr = "127.0.0.1:8080"
 		cfg.Server.AuthMode = mode
 		cfg.Server.CORSAllowedOrigins = []string{"https://app.example.com", " * "}
@@ -73,7 +75,7 @@ func TestValidateServerProductionAuthRejectsWildcardCORSWithAuthenticatedModes(t
 }
 
 func TestValidateServerProductionAuthAllowsWildcardCORSForExplicitLocalNoAuth(t *testing.T) {
-	cfg := &Config{}
+	cfg := &config.Config{}
 	cfg.Server.ListenAddr = "127.0.0.1:8080"
 	cfg.Server.AuthMode = "none"
 	cfg.Server.CORSAllowedOrigins = []string{"*"}
@@ -89,7 +91,7 @@ func TestValidateServerProductionAuthRejectsWildcardCORSWithAdminAuth(t *testing
 	// reject even when auth_mode=none on loopback (the admin cookie
 	// is independent of the request-auth mode).
 	for _, addr := range []string{"127.0.0.1:8080", ":8080"} {
-		cfg := &Config{}
+		cfg := &config.Config{}
 		cfg.Server.ListenAddr = addr
 		cfg.Server.AuthMode = "none"
 		cfg.Server.AdminAuthEnabled = true
@@ -110,7 +112,7 @@ func TestValidateServerProductionAuthRejectsWildcardCORSWithAdminAuth(t *testing
 
 func TestValidateServerProductionAuthRejectsMissingBearerToken(t *testing.T) {
 	t.Setenv("SPEECHKIT_SERVER_TOKEN", "")
-	cfg := &Config{}
+	cfg := &config.Config{}
 	cfg.Server.ListenAddr = ":8080"
 	cfg.Server.AuthMode = "bearer"
 	cfg.Server.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
@@ -126,7 +128,7 @@ func TestValidateServerProductionAuthRejectsMissingBearerToken(t *testing.T) {
 
 func TestValidateServerProductionAuthAllowsConfiguredBearerToken(t *testing.T) {
 	t.Setenv("SPEECHKIT_SERVER_TOKEN", "compose-token")
-	cfg := &Config{}
+	cfg := &config.Config{}
 	cfg.Server.ListenAddr = ":8080"
 	cfg.Server.AuthMode = "bearer"
 	cfg.Server.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
@@ -139,7 +141,7 @@ func TestValidateServerProductionAuthAllowsConfiguredBearerToken(t *testing.T) {
 func TestValidateServerProductionAuthRejectsBearerOrEdgeWithoutCredentials(t *testing.T) {
 	t.Setenv("SPEECHKIT_SERVER_TOKEN", "")
 	t.Setenv("EDGE_AUTH_SECRET", "")
-	cfg := &Config{}
+	cfg := &config.Config{}
 	cfg.Server.ListenAddr = ":8080"
 	cfg.Server.AuthMode = "bearer_or_edge"
 	cfg.Server.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
@@ -156,7 +158,7 @@ func TestValidateServerProductionAuthRejectsBearerOrEdgeWithoutCredentials(t *te
 
 func TestValidateServerProductionAuthRejectsBearerOrOIDCWithoutCredentials(t *testing.T) {
 	t.Setenv("SPEECHKIT_SERVER_TOKEN", "")
-	cfg := &Config{}
+	cfg := &config.Config{}
 	cfg.Server.ListenAddr = ":8080"
 	cfg.Server.AuthMode = "bearer_or_oidc"
 	cfg.Server.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
@@ -176,7 +178,7 @@ func TestValidateServerProductionAuthBearerOrOIDCRequiresJWKS(t *testing.T) {
 	// crash the server after validation passed. Bearer-only deployments
 	// use auth_mode=bearer.
 	t.Setenv("SPEECHKIT_SERVER_TOKEN", "svc-token")
-	cfg := &Config{}
+	cfg := &config.Config{}
 	cfg.Server.ListenAddr = ":8080"
 	cfg.Server.AuthMode = "bearer_or_oidc"
 	cfg.Server.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
@@ -190,7 +192,7 @@ func TestValidateServerProductionAuthBearerOrOIDCRequiresJWKS(t *testing.T) {
 
 	// OIDC config satisfies the mode; the bearer leg stays optional.
 	t.Setenv("SPEECHKIT_SERVER_TOKEN", "")
-	cfg2 := &Config{}
+	cfg2 := &config.Config{}
 	cfg2.Server.ListenAddr = ":8080"
 	cfg2.Server.AuthMode = "bearer_or_oidc"
 	cfg2.Server.BearerTokenEnv = "SPEECHKIT_SERVER_TOKEN"
@@ -201,7 +203,7 @@ func TestValidateServerProductionAuthBearerOrOIDCRequiresJWKS(t *testing.T) {
 }
 
 func TestValidateServerProductionAuthRejectsNegativeResourceLimits(t *testing.T) {
-	cfg := &Config{}
+	cfg := &config.Config{}
 	cfg.Server.ReadTimeoutSec = -1
 
 	err := ValidateServerProductionAuth(cfg)
@@ -214,7 +216,7 @@ func TestValidateServerProductionAuthRejectsNegativeResourceLimits(t *testing.T)
 }
 
 func TestValidateServerProductionAuthRejectsInvalidTrustedProxyCIDR(t *testing.T) {
-	cfg := &Config{}
+	cfg := &config.Config{}
 	cfg.Server.TrustedProxyCIDRs = []string{"not-a-cidr"}
 
 	err := ValidateServerProductionAuth(cfg)

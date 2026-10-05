@@ -121,3 +121,26 @@ func TestRegisteredAgentHeadersBindTurnAndDisclosureIsSpokenOnce(t *testing.T) {
 		t.Fatal("delegation signature mismatch")
 	}
 }
+
+func TestRegisteredInstanceTurnCarriesOnlyCapturedRuntimeCredentials(t *testing.T) {
+	expiry := time.Now().Add(time.Minute).Unix()
+	leasePayload, _ := json.Marshal(map[string]any{"capabilities": []string{"agent.conversation"}, "exp": expiry})
+	lease := "header." + base64.RawURLEncoding.EncodeToString(leasePayload) + ".signature"
+	forwarded := false
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwarded = r.Header.Get("X-Kombify-Instance-Auth") == "v1.captured.handle" && r.Header.Get("X-Kombify-Instance-Ai-Token") == "captured-ai-token"
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: "+`{"jsonrpc":"2.0","result":{"kind":"task","status":{"state":"completed"},"artifacts":[{"name":"run_task","parts":[{"kind":"data","data":{"text":"Owned instance answered."}}]}]}}`+"\n\n")
+	}))
+	defer upstream.Close()
+	agent, err := a2a.New(a2a.Config{Endpoint: upstream.URL, TargetAgentID: "instance:owned-uuid", SessionID: "current-chat",
+		Headers: registeredAgentHeaders(LiveConfigFrame{AgentTargetID: "instance:owned-uuid", AgentEndpoint: upstream.URL, AgentInstanceAuth: "v1.captured.handle",
+			CapabilityLease: lease, OboSubjectToken: "captured-ai-token", CredentialExpiresAt: expiry, OwnerUserID: "owner", OwnerOrgID: "org"}, "operator-secret")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer, err := agent.Run(context.Background(), publiccascaded.AgentInput{Utterance: "Answer in this instance"})
+	if err != nil || answer.Text != "Owned instance answered." || !forwarded {
+		t.Fatal("Captured instance handoff failed", err, answer.Text, forwarded)
+	}
+}

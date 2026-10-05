@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/app/internal/config"
+	"github.com/kombifyio/SpeechKit/app/internal/config/security"
 	"github.com/kombifyio/SpeechKit/app/internal/server/discovery"
 	"github.com/kombifyio/SpeechKit/app/internal/server/middleware"
 )
@@ -233,9 +234,6 @@ func serverMiddlewareChain(ctx context.Context, cfg *config.Config, app *App) (f
 			BearerTokenProvider: app.AuthState.BearerToken,
 			EdgeSecretProvider:  app.AuthState.EdgeSecret,
 			EdgeKeysProvider:    app.AuthState.EdgeKeys,
-			// The legacy edge HMAC stays accepted until the edge sends only
-			// the signed envelope; SPEECHKIT_EDGE_AUTH_LEGACY_HMAC=off ends it.
-			LegacyEdgeHMACProvider: config.ServerEdgeLegacyHMACEnabled,
 			AdminUsernameProvider: func() string {
 				if app.Cfg == nil || !app.Cfg.Server.AdminAuthEnabled {
 					return ""
@@ -267,7 +265,7 @@ func serverMiddlewareChain(ctx context.Context, cfg *config.Config, app *App) (f
 			// startup; this is a runtime backstop for code paths that
 			// embed the server without calling that validator (tests,
 			// in-process hosts, future helper binaries).
-			RequireAuthenticatedMode: !config.IsLoopbackListenAddr(cfg.Server.ListenAddr),
+			RequireAuthenticatedMode: !security.IsLoopbackListenAddr(cfg.Server.ListenAddr),
 			TrustedProxyCIDRs:        cfg.Server.TrustedProxyCIDRs,
 			OIDCVerifier:             oidcVerifier,
 			// Voice-agent tool bridge: the header carrying the per-session

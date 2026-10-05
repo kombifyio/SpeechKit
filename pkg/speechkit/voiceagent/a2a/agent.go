@@ -332,6 +332,12 @@ func rpcErrorCode(value any) string {
 	if code == "" {
 		code, _ = errorValue["code"].(string)
 	}
+	if code == "" {
+		result, _ := root["result"].(map[string]any)
+		metadata, _ := result["metadata"].(map[string]any)
+		failure, _ := metadata["io.kombify.error"].(map[string]any)
+		code, _ = failure["code"].(string)
+	}
 	return cascaded.SafeFailureCode(code)
 }
 
@@ -343,7 +349,17 @@ func rpcError(value any) bool {
 		return false
 	}
 	errorValue, exists := root["error"]
-	return exists && errorValue != nil
+	if exists && errorValue != nil {
+		return true
+	}
+	result, _ := root["result"].(map[string]any)
+	status, _ := result["status"].(map[string]any)
+	state, _ := status["state"].(string)
+	switch state {
+	case "failed", "rejected", "canceled", "TASK_STATE_FAILED", "TASK_STATE_REJECTED", "TASK_STATE_CANCELED":
+		return true
+	}
+	return false
 }
 
 func answerText(value any) string {
@@ -351,7 +367,7 @@ func answerText(value any) string {
 	if !ok {
 		return ""
 	}
-	if rpcError, exists := root["error"]; exists && rpcError != nil {
+	if rpcError(value) {
 		return ""
 	}
 	result, _ := root["result"].(map[string]any)
@@ -364,6 +380,33 @@ func answerText(value any) string {
 	if artifact, ok := result["artifact"].(map[string]any); ok {
 		if text := partsText(artifact["parts"]); text != "" {
 			return text
+		}
+	}
+	status, _ := result["status"].(map[string]any)
+	if status["state"] == "completed" || status["state"] == "TASK_STATE_COMPLETED" {
+		artifacts, _ := result["artifacts"].([]any)
+		var answer strings.Builder
+		for _, raw := range artifacts {
+			artifact, _ := raw.(map[string]any)
+			if text := partsText(artifact["parts"]); text != "" {
+				answer.WriteString(text)
+			} else if artifact["name"] == "run_task" {
+				// The generic Agent Host's existing run_task contract carries
+				// the completed answer as a data artifact, not a text delta.
+				parts, _ := artifact["parts"].([]any)
+				for _, rawPart := range parts {
+					part, _ := rawPart.(map[string]any)
+					data, _ := part["data"].(map[string]any)
+					if part["kind"] == "data" {
+						if text, ok := data["text"].(string); ok {
+							answer.WriteString(text)
+						}
+					}
+				}
+			}
+		}
+		if answer.Len() > 0 {
+			return answer.String()
 		}
 	}
 	if status, ok := result["status"].(map[string]any); ok {

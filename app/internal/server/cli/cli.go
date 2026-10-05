@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/app/internal/config"
+	"github.com/kombifyio/SpeechKit/app/internal/config/security"
 	"github.com/kombifyio/SpeechKit/app/internal/server/core"
 )
 
@@ -112,7 +113,7 @@ func runOnce(opts Options) int {
 		fmt.Fprintf(os.Stderr, "%s: apply deployment env: %v\n", banner, err)
 		return 2
 	}
-	if err := config.ValidateServerProductionAuth(cfg); err != nil {
+	if err := security.ValidateServerProductionAuth(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "%s: unsafe server configuration: %v\n", banner, err)
 		return 2
 	}

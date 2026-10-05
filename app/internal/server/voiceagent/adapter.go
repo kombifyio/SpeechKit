@@ -250,6 +250,7 @@ func (a *Adapter) Run(parent context.Context) {
 		binding := a.Session.VoiceAgentBinding
 		cfg.AgentTargetID = binding.TargetAgentID
 		cfg.AgentEndpoint = binding.Endpoint
+		cfg.AgentInstanceAuth = binding.InstanceAuth
 		cfg.CapabilityLease = binding.Lease
 		cfg.CredentialExpiresAt = binding.CredentialExpiresAt
 		cfg.NativeConsent = NativeVoiceConsent{Verified: binding.ConsentVerified, CloudProcessing: binding.CloudProcessing, RecordingAllowed: binding.VoiceAgentRecording, RecordingUpdatedAt: binding.VoiceAgentRecordingUpdatedAt, ExpiresAt: binding.CredentialExpiresAt}

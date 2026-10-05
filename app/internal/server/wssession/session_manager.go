@@ -73,6 +73,7 @@ type VoiceAgentBinding struct {
 	Endpoint                     string
 	Lease                        string
 	CredentialExpiresAt          int64
+	InstanceAuth                 string
 	ConsentVerified              bool
 	CloudProcessing              bool
 	VoiceAgentRecording          bool

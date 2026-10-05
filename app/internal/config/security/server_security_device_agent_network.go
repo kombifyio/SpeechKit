@@ -1,10 +1,12 @@
-package config
+package security
 
 import (
 	"fmt"
 	"net/netip"
 	"net/url"
 	"strings"
+
+	"github.com/kombifyio/SpeechKit/app/internal/config"
 )
 
 var serverDeviceAgentLocalPrefixes = []netip.Prefix{
@@ -19,7 +21,7 @@ var serverDeviceAgentLocalPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("fe80::/10"),
 }
 
-func validateServerDeviceAgentHomeAssistant(cfg AssistHomeAssistantConfig) error {
+func validateServerDeviceAgentHomeAssistant(cfg config.AssistHomeAssistantConfig) error {
 	rawURL := strings.TrimSpace(cfg.URL)
 	if rawURL == "" {
 		return fmt.Errorf("[assist.home_assistant].url is required when [server.device_agent] is enabled")
@@ -70,7 +72,7 @@ func validateServerDeviceAgentHomeAssistant(cfg AssistHomeAssistantConfig) error
 		return fmt.Errorf("[assist.home_assistant].url literal host %q is public or wildcard; the device-agent bridge is local-only", host)
 	}
 	// DNS names are resolve-time validated by the bridge's restricted HTTP
-	// client. Config validation deliberately makes no network call.
+	// client. config.Config validation deliberately makes no network call.
 	return nil
 }
 

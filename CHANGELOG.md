@@ -9,6 +9,18 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.75.7](https://github.com/kombifyio/SpeechKit/compare/v0.75.6...v0.75.7) (2026-10-05)
+
+
+### Features
+
+* **voice:** preserve signed instance handoff and Task answers ([#776](https://github.com/kombifyio/SpeechKit/issues/776)) ([7be6e22](https://github.com/kombifyio/SpeechKit/commit/7be6e22bc54bf5b679e310b95aad72425fadb9ad))
+
+
+### Bug Fixes
+
+* **server:** accept only the signed edge envelope for edge identity ([#772](https://github.com/kombifyio/SpeechKit/issues/772)) ([b8acca4](https://github.com/kombifyio/SpeechKit/commit/b8acca45ae034606988b9fd4e1a46e54f6db52dc))
+
 ## [0.75.6](https://github.com/kombifyio/SpeechKit/compare/v0.75.5...v0.75.6) (2026-10-05)
 
 ### Highlights

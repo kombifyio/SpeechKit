@@ -15,10 +15,6 @@ const (
 	ServerBearerRoleEnv        = "SPEECHKIT_SERVER_BEARER_ROLE"
 	ServerAdminUsernameEnv     = "SPEECHKIT_SERVER_ADMIN_USERNAME"
 	ServerAdminPasswordHashEnv = "SPEECHKIT_SERVER_ADMIN_PASSWORD_HASH"
-	// ServerEdgeLegacyHMACEnv switches the legacy X-Edge-Auth-Hmac identity
-	// signature off ("off", "false" or "0") once the edge sends only the
-	// signed edge envelope. Any other value, or none, keeps it accepted.
-	ServerEdgeLegacyHMACEnv = "SPEECHKIT_EDGE_AUTH_LEGACY_HMAC"
 
 	// ServerToolBridgeURLEnv sets the voice-agent tool bridge base URL
 	// (e.g. https://api.kombify.io/v1/agents/voice-tools). Setting it enables
@@ -245,15 +241,4 @@ func applyServerOIDCEnv(cfg *Config) []string {
 	}
 
 	return notes
-}
-
-// ServerEdgeLegacyHMACEnabled reports whether the legacy X-Edge-Auth-Hmac
-// identity signature is still accepted (see ServerEdgeLegacyHMACEnv).
-func ServerEdgeLegacyHMACEnabled() bool {
-	switch strings.ToLower(cleanSetting(os.Getenv(ServerEdgeLegacyHMACEnv))) {
-	case "off", "false", "0":
-		return false
-	default:
-		return true
-	}
 }

@@ -15,6 +15,33 @@ import (
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
+func TestAgentReadsOnlySuccessfulHostTaskAnswers(t *testing.T) {
+	for _, state := range []string{"completed", "failed", "rejected", "canceled"} {
+		t.Run(state, func(t *testing.T) {
+			client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				body := fmt.Sprintf(`{"jsonrpc":"2.0","result":{"kind":"task","status":{"state":%q,"message":{"parts":[{"kind":"text","text":"private failure detail"}]}},"artifacts":[{"name":"run_task","parts":[{"kind":"data","data":{"text":"Owned instance answered."}}]}],"metadata":{"io.kombify.error":{"code":"quota_exhausted"}}}}`, state)
+				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"text/event-stream"}},
+					Body: io.NopCloser(strings.NewReader("data: " + body + "\n\n")), Request: request}, nil
+			})}
+			agent, err := New(Config{Endpoint: "https://agents.example.test/a2a/instances/current-instance", TargetAgentID: "instance:current-instance", SessionID: "current-chat", HTTPClient: client})
+			if err != nil {
+				t.Fatal(err)
+			}
+			answer, err := agent.Run(context.Background(), cascaded.AgentInput{Utterance: "Answer here"})
+			if state == "completed" {
+				if err != nil || answer.Text != "Owned instance answered." {
+					t.Fatal("Host task answer was lost", err, answer.Text)
+				}
+				return
+			}
+			var coded cascaded.CodedError
+			if !errors.As(err, &coded) || coded.Code() != "quota_exhausted" || answer.Text != "" || strings.Contains(err.Error(), "private failure detail") {
+				t.Fatal("Failed task was spoken or lost its safe outcome", err, answer.Text)
+			}
+		})
+	}
+}
+
 func TestAgentRejectsCumulativeStreamOverflow(t *testing.T) {
 	var stream strings.Builder
 	delta := strings.Repeat("x", 8<<10)

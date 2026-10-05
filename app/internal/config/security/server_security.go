@@ -1,17 +1,22 @@
-package config
+// Package security validates server authentication and device-agent configuration
+// before activation, keeping production security rules separate from settings.
+package security
 
 import (
 	"fmt"
 	"net"
 	"os"
 	"strings"
+
+	"github.com/kombifyio/SpeechKit/app/internal/config"
 )
 
+// AllowInsecureNoAuthEnv names the existing explicit local-test auth override.
 const AllowInsecureNoAuthEnv = "SPEECHKIT_ALLOW_INSECURE_NO_AUTH"
 
 // ValidateServerProductionAuth rejects accidental public no-auth server binds.
 // auth_mode=none remains available for local development and explicit tests.
-func ValidateServerProductionAuth(cfg *Config) error {
+func ValidateServerProductionAuth(cfg *config.Config) error {
 	if cfg == nil {
 		return nil
 	}
@@ -50,7 +55,7 @@ func ValidateServerProductionAuth(cfg *Config) error {
 	return fmt.Errorf("auth_mode=none is only allowed on loopback listen addresses; set %s=1 only for explicit local test runs", AllowInsecureNoAuthEnv)
 }
 
-func validateServerResourceLimits(cfg *Config) error {
+func validateServerResourceLimits(cfg *config.Config) error {
 	if cfg.Server.ReadHeaderTimeoutSec < 0 {
 		return fmt.Errorf("read_header_timeout_sec must be >= 0")
 	}
@@ -81,19 +86,19 @@ func validateServerResourceLimits(cfg *Config) error {
 // validateServerOIDCConfig keeps a multi-tenant issuer template from trusting
 // every directory in the world by omission: with {tenantid} in the issuer the
 // operator must list the tenants to accept, or opt in to "*" explicitly.
-func validateServerOIDCConfig(cfg *Config) error {
+func validateServerOIDCConfig(cfg *config.Config) error {
 	mode := strings.ToLower(strings.TrimSpace(cfg.Server.AuthMode))
 	if mode != "oidc" && mode != "bearer_or_oidc" {
 		return nil
 	}
 	oidc := cfg.Server.OIDC
 	if oidc.MultiTenant() && !oidc.HasAllowedTenants() {
-		return fmt.Errorf("[server.oidc].issuer %q is a multi-tenant template; set allowed_tenants to the tenant ids to accept, or [%q] to accept every tenant", oidc.Issuer, ServerOIDCAllowAnyTenant)
+		return fmt.Errorf("[server.oidc].issuer %q is a multi-tenant template; set allowed_tenants to the tenant ids to accept, or [%q] to accept every tenant", oidc.Issuer, config.ServerOIDCAllowAnyTenant)
 	}
 	return nil
 }
 
-func validateServerAuthCredentials(cfg *Config, authMode string) error {
+func validateServerAuthCredentials(cfg *config.Config, authMode string) error {
 	bearerEnv := strings.TrimSpace(cfg.Server.BearerTokenEnv)
 	if bearerEnv == "" {
 		bearerEnv = "SPEECHKIT_SERVER_TOKEN"

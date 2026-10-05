@@ -1,8 +1,24 @@
-package config
+package security
 
 import (
 	"strings"
 )
+
+// Environment names use the same ASCII grammar as the settings boundary;
+// credential resolution remains owned by config.ResolveSecret.
+func validEnvName(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	for i, r := range value {
+		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || r == '_' || (i > 0 && r >= '0' && r <= '9') {
+			continue
+		}
+		return false
+	}
+	return true
+}
 
 func validServerDeviceAgentID(raw string) bool {
 	value := strings.TrimSpace(raw)

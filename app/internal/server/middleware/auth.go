@@ -30,7 +30,6 @@ type authRuntime struct {
 	bearerTokenProvider       func() string
 	edgeSecretProvider        func() string
 	edgeKeysProvider          func() []EdgeKey
-	legacyEdgeHMACProvider    func() bool
 	edgeReplay                *edgeReplayGuard
 	bearerRoleProvider        func() string
 	adminUsernameProvider     func() string
@@ -65,10 +64,6 @@ func newAuthRuntime(opts AuthOptions) authRuntime {
 	if edgeKeysProvider == nil {
 		secretEnv := strings.TrimSpace(opts.EdgeSecretEnv)
 		edgeKeysProvider = func() []EdgeKey { return edgeKeysFromEnv(edgeSecretProvider(), secretEnv) }
-	}
-	legacyEdgeHMACProvider := opts.LegacyEdgeHMACProvider
-	if legacyEdgeHMACProvider == nil {
-		legacyEdgeHMACProvider = func() bool { return true }
 	}
 	bearerRoleProvider := opts.BearerRoleProvider
 	if bearerRoleProvider == nil {
@@ -113,7 +108,6 @@ func newAuthRuntime(opts AuthOptions) authRuntime {
 		bearerTokenProvider:       bearerTokenProvider,
 		edgeSecretProvider:        edgeSecretProvider,
 		edgeKeysProvider:          edgeKeysProvider,
-		legacyEdgeHMACProvider:    legacyEdgeHMACProvider,
 		edgeReplay:                newEdgeReplayGuard(edgeReplayGuardCapacity),
 		bearerRoleProvider:        bearerRoleProvider,
 		adminUsernameProvider:     adminUsernameProvider,
@@ -217,17 +211,13 @@ func (a authRuntime) authenticateConfiguredMode(r *http.Request) (Identity, bool
 	return verifySmoke(r, strings.TrimSpace(a.smokeTokenProvider()))
 }
 
-// verifyEdge authenticates an edge-forwarded identity. A request that carries
-// the signed envelope is judged on it alone; the legacy HMAC is consulted only
-// for requests without one, and only while the legacy flag is on.
+// verifyEdge authenticates an edge-forwarded identity from the signed edge
+// envelope alone; a request without one is not edge-authenticated.
 func (a authRuntime) verifyEdge(r *http.Request) (Identity, bool) {
-	if hasEdgeEnvelope(r) {
-		return verifyEdgeEnvelope(r, a.edgeKeysProvider(), a.edgeReplay, time.Now())
-	}
-	if !a.legacyEdgeHMACProvider() {
+	if !hasEdgeEnvelope(r) {
 		return Identity{}, false
 	}
-	return verifyEdgeHMAC(r, strings.TrimSpace(a.edgeSecretProvider()))
+	return verifyEdgeEnvelope(r, a.edgeKeysProvider(), a.edgeReplay, time.Now())
 }
 
 func (a authRuntime) serveAuthenticated(next http.Handler, w http.ResponseWriter, r *http.Request, id Identity) {

@@ -413,11 +413,8 @@ replicas behind one edge need sticky routing or a single instance for the
 replay guarantee. The request body is not covered.
 `middleware.SignEdgeEnvelope` is the reference signer.
 
-The earlier `X-Edge-Auth-Hmac` signature (hex HMAC-SHA256 of
-`user_id \n org_id \n plan \n role \n ts`) binds no key id, request or nonce
-and is deprecated. The server still accepts it, with a fresh `X-Edge-Auth-Ts`,
-until `SPEECHKIT_EDGE_AUTH_LEGACY_HMAC=off`; a request that carries
-`X-Edge-Auth-Signature` is judged on the envelope alone.
+The earlier `X-Edge-Auth-Hmac` signature bound no key id, request or nonce
+and is no longer accepted; edge signers must send the envelope.
 
 ### Edge-resolved user voice preferences
 
