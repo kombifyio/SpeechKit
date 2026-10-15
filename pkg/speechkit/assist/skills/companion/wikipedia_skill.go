@@ -13,6 +13,7 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/assist"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/assist/shortcuts"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
 
 // WikipediaSkill answers "tell me about <topic>" / "erzähl mir was
@@ -33,7 +34,7 @@ type WikipediaSkill struct {
 // API and a 5s HTTP client.
 func NewWikipediaSkill() *WikipediaSkill {
 	return &WikipediaSkill{
-		client: &http.Client{Timeout: 5 * time.Second},
+		client: netsec.NewClient(netsec.ClientOptions{Timeout: 5 * time.Second}),
 		// %s = language code, %s = url-encoded topic.
 		endpointFmt: "https://%s.wikipedia.org/api/rest_v1/page/summary/%s",
 	}

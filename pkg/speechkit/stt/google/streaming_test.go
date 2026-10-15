@@ -3,6 +3,7 @@ package google
 import (
 	"context"
 	"io"
+	"strings"
 	"testing"
 
 	"cloud.google.com/go/speech/apiv2/speechpb"
@@ -114,5 +115,42 @@ func TestGoogleSpeakerStreamReceiveSkipsEmptyThenEOF(t *testing.T) {
 	}
 	if _, err := s.Receive(context.Background()); err != io.EOF {
 		t.Fatalf("want io.EOF after drain, got %v", err)
+	}
+}
+
+func TestResolveGoogleStreamingCredentialsLoadsInlineJSONByDeclaredType(t *testing.T) {
+	const jsonEnv = "SPEECHKIT_TEST_GOOGLE_INLINE_JSON"
+	cases := []struct {
+		name    string
+		raw     string
+		wantErr string
+	}{
+		{
+			name: "authorized user",
+			raw:  `{"type":"authorized_user","client_id":"id","client_secret":"secret","refresh_token":"token"}`,
+		},
+		{name: "no type field", raw: `{"client_id":"id"}`, wantErr: `no "type" field`},
+		{name: "not JSON", raw: `not-json`, wantErr: "credential JSON"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &Provider{
+				STTCredentialsJSONEnv: jsonEnv,
+				SecretResolver:        func(name string) string { return map[string]string{jsonEnv: tc.raw}[name] },
+			}
+			creds, err := p.resolveGoogleStreamingCredentials()
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("err = %v, want it to mention %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveGoogleStreamingCredentials: %v", err)
+			}
+			if creds == nil {
+				t.Fatal("expected credentials")
+			}
+		})
 	}
 }

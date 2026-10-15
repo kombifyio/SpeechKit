@@ -342,12 +342,14 @@ func TestStreamWS_MaxAudioBudget(t *testing.T) {
 	}
 }
 
-func TestStreamWS_FinalizeDrainDeadline(t *testing.T) {
-	// A finalize with nothing buffered must still produce segment_done via
-	// the flush deadline (Deepgram keeps the connection open after Finalize).
+func TestStreamWS_FinalizeMissingCaptureReported(t *testing.T) {
+	// A provider that ends without the complete capture must report failure
+	// instead of pretending the user's recording finished successfully.
 	t.Setenv(wssession.EnvAllowEmptyOrigin, "1")
 	manager := mustStreamManager(t)
-	router := &fakeStreamRouter{has: true}
+	stream := newFakeDictationStream()
+	stream.onFinalize = func(s *fakeDictationStream) { close(s.events) }
+	router := &fakeStreamRouter{has: true, prepared: []*fakeDictationStream{stream}}
 	handler := mustStreamHandler(t, manager, router, nil)
 	mux := http.NewServeMux()
 	handler.Mount(mux)
@@ -367,7 +369,14 @@ func TestStreamWS_FinalizeDrainDeadline(t *testing.T) {
 	if frame := readStreamJSON(t, ctx, conn); frame["type"] != StreamMsgReady {
 		t.Fatalf("expected ready, got %v", frame)
 	}
+	if err := conn.Write(ctx, websocket.MessageBinary, make([]byte, 640)); err != nil {
+		t.Fatal(err)
+	}
 	writeStreamJSON(t, ctx, conn, map[string]string{"type": StreamMsgFinalize})
+	failure := readStreamJSON(t, ctx, conn)
+	if failure["type"] != StreamMsgError {
+		t.Fatalf("missing complete capture must report failure: %v", failure)
+	}
 	done := readStreamJSON(t, ctx, conn)
 	if done["type"] != StreamMsgSegmentDone {
 		t.Fatalf("expected segment_done after drain deadline, got %v", done)

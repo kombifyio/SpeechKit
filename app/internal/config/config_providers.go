@@ -52,6 +52,14 @@ type RoutingConfig struct {
 
 // ProvidersConfig groups all external provider configurations.
 type ProvidersConfig struct {
+	// Allowed is the provider allowlist (provider ids such as local, ollama,
+	// foundry, github_copilot), set by the Providers\Allowed machine policy.
+	// A provider outside a non-empty list is never constructed
+	// (Config.ProviderAllowed). Empty means every provider in the reference
+	// client and on-device providers only on a managed host, where the value
+	// is read from the machine policy alone.
+	Allowed []string `toml:"allowed"`
+
 	OpenAI     OpenAIProviderConfig     `toml:"openai"`
 	Groq       GroqProviderConfig       `toml:"groq"`
 	Google     GoogleProviderConfig     `toml:"google"`

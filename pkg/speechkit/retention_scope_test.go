@@ -41,9 +41,10 @@ func TestNormalizeRetentionScopeFailsClosed(t *testing.T) {
 }
 
 // Under the ephemeral scope the recording goes and the result stays. Settings
-// are not a record of anything that was said, so they stay too.
+// and the user's own notes are written on purpose, not a record of what was
+// said, so they stay too.
 func TestDurableKeepsTheResultAndDropsTheRecording(t *testing.T) {
-	for _, class := range []ArtifactClass{ArtifactClassRecording, ArtifactClassScreenCapture, ArtifactClassNote} {
+	for _, class := range []ArtifactClass{ArtifactClassRecording, ArtifactClassScreenCapture} {
 		durable, reason := RetentionScopeEphemeral.Durable(class)
 		if durable {
 			t.Errorf("%s is durable under the ephemeral scope", class)
@@ -52,7 +53,7 @@ func TestDurableKeepsTheResultAndDropsTheRecording(t *testing.T) {
 			t.Errorf("%s reason = %q, want %q", class, reason, RetentionScopeReasonEphemeral)
 		}
 	}
-	for _, class := range []ArtifactClass{ArtifactClassReview, ArtifactClassSettings} {
+	for _, class := range []ArtifactClass{ArtifactClassNote, ArtifactClassReview, ArtifactClassSettings} {
 		if durable, reason := RetentionScopeEphemeral.Durable(class); !durable || reason != "" {
 			t.Errorf("%s should survive the ephemeral scope, got durable=%v reason=%q", class, durable, reason)
 		}

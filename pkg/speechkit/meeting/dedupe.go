@@ -38,8 +38,12 @@ const (
 //
 // It never touches what is stored: the transcript keeps both, because that is
 // what was captured. Only the write-up is spared the duplicate.
+//
+// Echo is a property of two channels. Lines that carry fewer than two distinct
+// channels (a meeting recorded from the microphone alone, see
+// StartOptions.Channels) are returned unchanged without comparing anything.
 func SuppressEcho(lines []TranscriptLine) []TranscriptLine {
-	if len(lines) < 2 {
+	if len(lines) < 2 || !spansChannels(lines) {
 		return lines
 	}
 	dropped := make(map[int]bool, len(lines))
@@ -120,4 +124,23 @@ func jaccard(a, b map[string]struct{}) float64 {
 		return 0
 	}
 	return float64(overlap) / float64(union)
+}
+
+// spansChannels reports whether the lines come from at least two distinct
+// named channels, the only case in which one copy can be the echo of another.
+func spansChannels(lines []TranscriptLine) bool {
+	first := ""
+	for _, line := range lines {
+		if line.Channel == "" {
+			continue
+		}
+		if first == "" {
+			first = line.Channel
+			continue
+		}
+		if line.Channel != first {
+			return true
+		}
+	}
+	return false
 }

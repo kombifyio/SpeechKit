@@ -10,6 +10,8 @@ import (
 
 	"github.com/kombifyio/SpeechKit/app/internal/auditlog"
 	"github.com/kombifyio/SpeechKit/app/internal/config"
+	"github.com/kombifyio/SpeechKit/app/internal/models/sttbatteries"
+	"github.com/kombifyio/SpeechKit/app/internal/providerpolicy"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/allproviders"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/openaicompat"
@@ -170,6 +172,9 @@ func buildSTTRouter(cfg *config.Config) (*stt.Router, []namedProvider, []string)
 		enabled.Local = &allproviders.LocalOpts{Port: cfg.Local.Port, ModelPath: cfg.Local.ModelPath, GPU: cfg.Local.GPU}
 		notes = append(notes, "Local whisper.cpp configured (not yet started; see readiness probe)")
 	}
+
+	// The provider allowlist and the retention scope, as on the desktop.
+	notes = append(notes, providerpolicy.EnforceSTT(cfg, sttbatteries.EnabledSet{Enabled: &enabled})...)
 
 	routerCfg := allproviders.RouterConfig{
 		Strategy:             strategy,

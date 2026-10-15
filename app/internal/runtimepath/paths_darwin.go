@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// macOS keeps everything under ~/Library/Application Support/SpeechKit.
+// macOS keeps everything under ~/Library/Application Support/<DataDirName>.
 // There is no roaming/local split, and models deliberately do not go to
 // ~/Library/Caches: that directory is purgeable and a multi-gigabyte
 // whisper model must not vanish under memory pressure. When the home
@@ -17,30 +17,33 @@ import (
 
 // userHomeDir (runtimepath.go) is the seam tests replace.
 
-func applicationSupportDir() string {
+func applicationSupportDir(name string) string {
 	home, err := userHomeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
 		return ""
 	}
-	return filepath.Join(home, "Library", "Application Support", "SpeechKit")
+	return filepath.Join(home, "Library", "Application Support", name)
 }
 
-func platformDataDir() string {
-	if dir := applicationSupportDir(); dir != "" {
+func platformDataDir(name string) string {
+	if dir := applicationSupportDir(name); dir != "" {
 		return dir
 	}
-	return envDataDir()
+	return envDataDir(name)
 }
 
-func platformLocalDataDir() string {
-	if dir := applicationSupportDir(); dir != "" {
+func platformLocalDataDir(name string) string {
+	if dir := applicationSupportDir(name); dir != "" {
 		return dir
 	}
-	return envLocalDataDir()
+	return envLocalDataDir(name)
 }
 
-func platformSecretsDir() string {
-	return filepath.Join(DataDir(), "secrets")
+func platformContentDir(name string) string  { return platformDataDir(name) }
+func platformLegacyContentDir(string) string { return "" }
+
+func platformSecretsDir(name string) string {
+	return filepath.Join(platformDataDir(name), "secrets")
 }
 
 // platformAllowsPortable refuses portable mode inside an app bundle: writing

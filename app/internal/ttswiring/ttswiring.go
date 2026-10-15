@@ -15,6 +15,7 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/config"
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/ttsroute"
 )
@@ -101,8 +102,21 @@ func ResolveEnabledProvidersWithAuth(cfg *config.Config, auth Auth) (tts.Enabled
 	if !cloudAllowed {
 		notes = append(notes, "Privacy: cloud TTS providers suspended (network scope "+string(cfg.NetworkScope())+")")
 	}
+	// The provider allowlist and the retention scope: a refused provider is
+	// never constructed, whatever its [tts] toggle says. adapter is the
+	// option-manifest identifier.
+	allowed := func(adapter string, enabled bool) bool {
+		if !enabled {
+			return false
+		}
+		ok, reason := cfg.ProviderConstructionAllowed(adapter, provideropts.ModalityTTS)
+		if !ok {
+			notes = append(notes, "Policy: TTS provider "+adapter+" not constructed ["+reason+"]")
+		}
+		return ok
+	}
 
-	if cloudAllowed && cfg.TTS.OpenAI.Enabled {
+	if cloudAllowed && allowed("openai", cfg.TTS.OpenAI.Enabled) {
 		if apiKey := providerCredential(cfg, "openai"); apiKey != "" {
 			enabled.OpenAI = &tts.OpenAIOpts{
 				APIKey: apiKey,
@@ -114,13 +128,13 @@ func ResolveEnabledProvidersWithAuth(cfg *config.Config, auth Auth) (tts.Enabled
 
 	if cloudAllowed && cfg.TTS.Google.Enabled {
 		if apiKey := providerCredential(cfg, "google"); apiKey != "" {
-			if model := geminiTTSModel(cfg); model != "" {
+			if model := geminiTTSModel(cfg); model != "" && allowed("gemini", true) {
 				enabled.Gemini = &tts.GeminiOpts{
 					APIKey: apiKey,
 					Model:  model,
 					Voice:  geminiTTSVoice(firstNonEmpty(cfg.TTS.Google.Voice, cfg.TTS.Voice)),
 				}
-			} else {
+			} else if model == "" && allowed("google", true) {
 				enabled.Google = &tts.GoogleOpts{
 					APIKey: apiKey,
 					Voice:  firstNonEmpty(cfg.TTS.Google.Voice, cfg.TTS.Voice),
@@ -130,7 +144,7 @@ func ResolveEnabledProvidersWithAuth(cfg *config.Config, auth Auth) (tts.Enabled
 	}
 
 	// Deepgram Aura reuses the shared DEEPGRAM_API_KEY (no separate credential).
-	if cloudAllowed && cfg.TTS.Deepgram.Enabled {
+	if cloudAllowed && allowed("deepgram", cfg.TTS.Deepgram.Enabled) {
 		if key := providerCredential(cfg, "deepgram"); key != "" {
 			enabled.Deepgram = &tts.DeepgramOpts{
 				APIKey: key,
@@ -139,7 +153,7 @@ func ResolveEnabledProvidersWithAuth(cfg *config.Config, auth Auth) (tts.Enabled
 		}
 	}
 
-	if cloudAllowed && cfg.TTS.HuggingFace.Enabled {
+	if cloudAllowed && allowed("huggingface", cfg.TTS.HuggingFace.Enabled) {
 		if token := providerCredential(cfg, "huggingface"); token != "" {
 			enabled.HuggingFace = &tts.HuggingFaceOpts{
 				Token: token,
@@ -152,16 +166,16 @@ func ResolveEnabledProvidersWithAuth(cfg *config.Config, auth Auth) (tts.Enabled
 	// [providers.foundry] (no separate credential). MAI-Voice deployments are
 	// served by the resource's Azure Speech surface; everything else goes
 	// through the OpenAI-compatible /audio/speech route.
-	if cloudAllowed && cfg.TTS.Foundry.Enabled {
+	if cloudAllowed && allowed("foundry", cfg.TTS.Foundry.Enabled) {
 		apiKey := providerCredential(cfg, "foundry")
 		token := auth.FoundryBearerToken
-		if !cfg.Providers.Foundry.UsesEntra() {
+		if !cfg.FoundryUsesEntra() {
 			token = nil
 		}
 		if apiKey != "" || token != nil {
 			foundry := cfg.Providers.Foundry
 			if foundry.TTSEngine() == config.FoundryEngineSpeech {
-				host, err := config.FoundrySpeechHost(foundry.ProjectEndpoint)
+				host, err := config.FoundrySpeechHost(cfg.FoundryProjectEndpoint())
 				if err != nil {
 					notes = append(notes, "TTS: Microsoft Foundry enabled but project endpoint is invalid: "+err.Error())
 				} else {
@@ -174,7 +188,7 @@ func ResolveEnabledProvidersWithAuth(cfg *config.Config, auth Auth) (tts.Enabled
 					}
 				}
 			} else {
-				baseURL, err := config.FoundryOpenAIBase(foundry.ProjectEndpoint)
+				baseURL, err := config.FoundryOpenAIBase(cfg.FoundryProjectEndpoint())
 				if err != nil {
 					notes = append(notes, "TTS: Microsoft Foundry enabled but project endpoint is invalid: "+err.Error())
 				} else {
@@ -192,7 +206,7 @@ func ResolveEnabledProvidersWithAuth(cfg *config.Config, auth Auth) (tts.Enabled
 		}
 	}
 
-	if cfg.TTS.Piper.Enabled {
+	if allowed("piper", cfg.TTS.Piper.Enabled) {
 		if voiceDir := strings.TrimSpace(cfg.TTS.Piper.VoiceDir); voiceDir == "" {
 			notes = append(notes, "TTS: Piper enabled but voice_dir is empty; skipping")
 		} else {
@@ -208,7 +222,7 @@ func ResolveEnabledProvidersWithAuth(cfg *config.Config, auth Auth) (tts.Enabled
 	// A self-hosted OpenAI-compatible server (Kokoro-FastAPI, Speaches) is a
 	// Local Provider: allowed in the open and local_network scopes, and pinned
 	// to local addresses whenever the scope is restricted.
-	if cfg.TTS.Local.Enabled && strings.TrimSpace(cfg.TTS.Local.URL) != "" {
+	if strings.TrimSpace(cfg.TTS.Local.URL) != "" && allowed("openedai", cfg.TTS.Local.Enabled) {
 		scope := cfg.NetworkScope()
 		if allowed, _ := scope.AllowsProviderKind(framework.ProviderKindLocalProvider); !allowed {
 			notes = append(notes, "Privacy: self-hosted TTS server suspended (network scope "+string(scope)+")")

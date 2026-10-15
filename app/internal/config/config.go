@@ -144,6 +144,10 @@ type Config struct {
 	// Microsoft365 connects meetings to the user's Microsoft 365 account.
 	// Desktop-only; the Server-Target ignores this block.
 	Microsoft365 Microsoft365Config `toml:"microsoft365"`
+	// Models says where model files come from (models_source.go).
+	Models ModelsConfig `toml:"models"`
+	// OneNote controls the OneNote export of meeting notes (onenote.go).
+	OneNote OneNoteConfig `toml:"onenote"`
 
 	// policy is the machine policy this config was loaded under (nil when
 	// none). It is never serialized; it travels with copies so every
@@ -196,6 +200,21 @@ type MeetingConfig struct {
 	ScreenshotEnabled       bool   `toml:"screenshot_enabled"`
 	ScreenshotHotkey        string `toml:"screenshot_hotkey"`
 	ScreenshotHotkeyEnabled bool   `toml:"screenshot_hotkey_enabled"`
+
+	// CaptureChannels selects the sources a meeting records: "mic" and/or
+	// "system" (the loopback of the call audio). Absent means the reference
+	// behaviour, both. A single entry runs one capture session and skips
+	// echo suppression. The Meeting\CaptureChannels policy pins it. Clone and
+	// compare it as a set.
+	CaptureChannels []string `toml:"capture_channels"`
+
+	// ScreenshotDeniedProcesses lists process image names (file name only,
+	// no path, compared case-insensitively) whose windows the picker refuses
+	// to capture, such as a password manager or a banking client. The
+	// machine policy Meeting\ScreenshotDeniedProcesses adds to it and a
+	// policy-pinned list replaces it; a per-user policy value can add
+	// entries, never remove them.
+	ScreenshotDeniedProcesses []string `toml:"screenshot_denied_processes"`
 }
 
 const CopilotTranscriptGrantVersion = 1

@@ -10,7 +10,7 @@ not the entire desktop application.
 - `embed-companion/`: composes wake detections, explicit Hands-Free target routing, Assist requests, optional TTS, and runtime events through the public SDK surface.
 - `embed-tts/`: demonstrates `pkg/speechkit/tts` Provider, Router, Service, and provider-kind routing.
 - `embed-event-bus/`: publishes and consumes the additive wake, skill, companion, Voice-Agent, and TTS events.
-- `assist/in-process/`: fully in-process Assist — wires any OpenAI-compatible chat endpoint (local llama.cpp via `SPEECHKIT_LLM_BASE_URL`, or OpenAI) into `pkg/speechkit/assist.Service` with optional OpenAI TTS output, no SpeechKit server.
+- `assist/in-process/`: fully in-process Assist — wires any OpenAI-compatible chat endpoint (local llama.cpp via `SPEECHKIT_LLM_BASE_URL`, or OpenAI) into `pkg/speechkit/assist.Service` with optional OpenAI TTS output, no SpeechKit server. The base URL must be https (plain http only on loopback), and `OPENAI_API_KEY` goes only to api.openai.com unless `SPEECHKIT_LLM_SEND_OPENAI_KEY_TO` names the host; see its README.
 - `meeting/synthetic-host/`: embeds the public `pkg/speechkit/meeting` runtime with an in-memory synthetic transcript adapter; no mic, STT provider, or cloud call.
 - `voice-agent/game-instructor/`: end-to-end 15-minute Voice Agent embedded in a Go program (persona/role/sequence TOML + WebSocket client). Reference for the single-prompt "build a voice agent into my app" use case.
 - `voice-agent/in-process/`: fully in-process Voice Agent — constructs a `live.LiveProvider` (OpenAI Realtime) and drives a text dialogue with no SpeechKit server in the path.

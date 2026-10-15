@@ -12,6 +12,12 @@ import "strings"
 type UpdateConfig struct {
 	Enabled     bool   `toml:"enabled"`
 	ManifestURL string `toml:"manifest_url"`
+	// Mode is what a found update leads to: "install" (default) downloads,
+	// verifies and installs it; "notify" only reports that it exists, for a
+	// product whose updates an administrator deploys. Pinned by the
+	// Update\Mode policy; the user hive may only set "notify". An unknown
+	// value is treated as "notify".
+	Mode string `toml:"mode"`
 	// AutoDownload fetches an available update in the background as soon as
 	// the check finds one, so installing is a single click instead of a
 	// download wait. Installation is never automatic: the user always
@@ -82,6 +88,11 @@ type AuditConfig struct {
 	OTLPCertFile    string `toml:"otlp_cert_file"`
 	OTLPKeyFile     string `toml:"otlp_key_file"`
 	OTLPCAFile      string `toml:"otlp_ca_file"`
+	// ForwardRequired makes the forwarded copy (Event Log, OTLP) mandatory:
+	// every audit record waits, bounded, for a forward sink to acknowledge
+	// it, and while none does the client reports "audit degraded" and refuses
+	// new cloud sessions. False keeps forwarding best effort.
+	ForwardRequired bool `toml:"forward_required"`
 }
 
 // TelemetryConfig is the single switch surface for every outbound non-provider

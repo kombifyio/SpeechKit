@@ -88,6 +88,15 @@ var postgresMigration024 string
 //go:embed migrations/postgres/025_recording_session_imports.sql
 var postgresMigration025 string
 
+//go:embed migrations/postgres/027_recording_session_exports.sql
+var postgresMigration027 string
+
+//go:embed migrations/postgres/028_notebooks.sql
+var postgresMigration028 string
+
+//go:embed migrations/postgres/029_notebook_site.sql
+var postgresMigration029 string
+
 // PostgresStore implements Store using PostgreSQL for metadata and the local
 // filesystem for optional raw WAV persistence. All query logic lives in the
 // embedded *sqlStore; this type only owns connection setup and migrations.
@@ -116,11 +125,16 @@ func NewPostgresStore(cfg StoreConfig) (*PostgresStore, error) {
 		return nil, err
 	}
 
+	contentDir, err := runtimepath.ContentDir()
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	store := &PostgresStore{sqlStore: &sqlStore{
 		db:                      db,
 		dialect:                 dialectPostgres,
-		audioDir:                defaultAudioDir(),
-		snapshotDir:             defaultSnapshotDir(),
+		audioDir:                filepath.Join(contentDir, "audio"),
+		snapshotDir:             filepath.Join(contentDir, "snapshots"),
 		maxStorageMB:            cfg.MaxAudioStorageMB,
 		saveAudio:               cfg.SaveAudio,
 		audioRetentionDays:      cfg.AudioRetentionDays,
@@ -129,15 +143,10 @@ func NewPostgresStore(cfg StoreConfig) (*PostgresStore, error) {
 		transcriptionModelHints: normalizeTranscriptionModelHints(cfg.TranscriptionModelHints),
 		defaultScope:            speechstorage.NormalizeScope(cfg.DefaultScope),
 		scopePolicy:             normalizedScopePolicy(cfg.ScopePolicy),
+		retentionScope:          normalizeStoreRetentionScope(cfg.RetentionScope),
+		retentionTTLDays:        max(cfg.RetentionTTLDays, 0),
+		onRetentionSweep:        cfg.OnRetentionSweep,
 	}}
 	store.startMaintenance()
 	return store, nil
-}
-
-func defaultAudioDir() string {
-	return filepath.Join(runtimepath.DataDir(), "audio")
-}
-
-func defaultSnapshotDir() string {
-	return filepath.Join(runtimepath.DataDir(), "snapshots")
 }

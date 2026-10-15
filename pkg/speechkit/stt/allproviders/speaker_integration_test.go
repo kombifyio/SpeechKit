@@ -342,9 +342,10 @@ func assertSpeakerStreamTwoSpeakers(t *testing.T, ctx context.Context, stream sp
 		if len(labels) >= 2 && finalFrames > 0 {
 			return
 		}
-		if senderDone && finalFrames > 0 && frames >= 3 {
-			break
-		}
+		// Keep reading after the sender is done: audio goes out ~5x faster
+		// than real time, so the provider is still working through the
+		// backlog (and the second speaker's turns) when EndAudio returns.
+		// The loop ends on EOF or after 10 s without a frame.
 	}
 	if !senderDone {
 		if err := <-sendErr; err != nil {

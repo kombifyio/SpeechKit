@@ -56,6 +56,11 @@ func TestDeleteScopeErasesMeetingChildrenAndSnapshotFiles(t *testing.T) {
 
 	aliceSession, alicePath := seedMeetingForPrivacyTest(t, s, alice, "alice meeting")
 	bobSession, bobPath := seedMeetingForPrivacyTest(t, s, bob, "bob meeting")
+	for _, scope := range []speechstorage.Scope{alice, bob} {
+		if _, err := s.CreateNotebook(scopeCtx(scope), oneNoteNotebook(scope.UserID+" notebook", "sec-1")); err != nil {
+			t.Fatalf("CreateNotebook(%s): %v", scope.UserID, err)
+		}
+	}
 
 	result, err := s.DeleteScope(ctx, alice)
 	if err != nil {
@@ -88,6 +93,13 @@ func TestDeleteScopeErasesMeetingChildrenAndSnapshotFiles(t *testing.T) {
 		if got := countFor(table, bobSession); got != 1 {
 			t.Errorf("%s holds %d rows for the untouched meeting, want 1", table, got)
 		}
+	}
+
+	if left, err := s.ListNotebooks(scopeCtx(alice)); err != nil || len(left) != 0 {
+		t.Errorf("the erased scope's notebook index = %+v, %v; want it empty", left, err)
+	}
+	if kept, err := s.ListNotebooks(scopeCtx(bob)); err != nil || len(kept) != 1 {
+		t.Errorf("the untouched scope's notebook index = %+v, %v; want its notebook", kept, err)
 	}
 
 	// The store only reports the paths; the caller unlinks them. Both files are

@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
 
 // NativeVoiceConsent is an authenticated snapshot or a current owner decision.
@@ -50,7 +52,7 @@ func (r NativeConsentHTTPReader) Read(parent context.Context, cfg LiveConfigFram
 		return NativeVoiceConsent{}, err
 	}
 	req.Header.Set("Accept", "application/json")
-	client := http.Client{}
+	client := *netsec.Default()
 	if r.Client != nil {
 		client = *r.Client
 	}

@@ -2,6 +2,8 @@ package google
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"os"
@@ -28,6 +30,14 @@ const (
 	envGoogleApplicationCreds   = "GOOGLE_APPLICATION_CREDENTIALS"
 	envGoogleCloudSTTAPIKey     = "GOOGLE_CLOUD_STT_API_KEY"
 	envGoogleLegacySTTAPIKey    = "GOOGLE_STT_API_KEY"
+)
+
+// Upper bounds for the LINEAR16 decoding config. They sit far above any rate
+// or channel count an audio stream carries and only keep the int32 proto
+// fields from wrapping.
+const (
+	maxGoogleSampleRateHz = 384000
+	maxGoogleChannels     = 8
 )
 
 const googleSTTScope = "https://www.googleapis.com/auth/cloud-platform"
@@ -73,6 +83,12 @@ func (p *Provider) StartSpeakerStream(ctx context.Context, opts speaker.Options,
 		clientOpts = append(clientOpts, option.WithEndpoint(chirp3Host(region)+":443"))
 	}
 
+	f := format.Normalized()
+	decoding, err := googleLinear16Decoding(f.SampleRateHz, f.Channels)
+	if err != nil {
+		return nil, err
+	}
+
 	client, err := speech.NewClient(ctx, clientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("google stt v2 client: %w", err)
@@ -83,18 +99,13 @@ func (p *Provider) StartSpeakerStream(ctx context.Context, opts speaker.Options,
 		return nil, fmt.Errorf("google stt v2 streaming open: %w", err)
 	}
 
-	f := format.Normalized()
 	configReq := &speechpb.StreamingRecognizeRequest{
 		Recognizer: fmt.Sprintf("projects/%s/locations/%s/recognizers/_", projectID, location),
 		StreamingRequest: &speechpb.StreamingRecognizeRequest_StreamingConfig{
 			StreamingConfig: &speechpb.StreamingRecognitionConfig{
 				Config: &speechpb.RecognitionConfig{
 					DecodingConfig: &speechpb.RecognitionConfig_ExplicitDecodingConfig{
-						ExplicitDecodingConfig: &speechpb.ExplicitDecodingConfig{
-							Encoding:          speechpb.ExplicitDecodingConfig_LINEAR16,
-							SampleRateHertz:   int32(f.SampleRateHz), //nolint:gosec // audio sample rate is a small bounded value
-							AudioChannelCount: int32(f.Channels),     //nolint:gosec // audio channel count is a small bounded value
-						},
+						ExplicitDecodingConfig: decoding,
 					},
 					LanguageCodes: []string{mapLanguageCode(opts.Language)},
 					Model:         model,
@@ -216,6 +227,24 @@ func googleStreamingTranscriptFrame(resp *speechpb.StreamingRecognizeResponse, p
 	}
 }
 
+// googleLinear16Decoding builds the explicit LINEAR16 decoding config for the
+// v2 streaming request. Sample rate and channel count arrive as int; the proto
+// fields are int32, so a value outside what an audio stream can carry is an
+// error rather than a silently wrapped number.
+func googleLinear16Decoding(sampleRateHz, channels int) (*speechpb.ExplicitDecodingConfig, error) {
+	if sampleRateHz <= 0 || sampleRateHz > maxGoogleSampleRateHz {
+		return nil, fmt.Errorf("google stt v2: sample rate %d Hz out of range", sampleRateHz)
+	}
+	if channels <= 0 || channels > maxGoogleChannels {
+		return nil, fmt.Errorf("google stt v2: channel count %d out of range", channels)
+	}
+	return &speechpb.ExplicitDecodingConfig{
+		Encoding:          speechpb.ExplicitDecodingConfig_LINEAR16,
+		SampleRateHertz:   int32(sampleRateHz),
+		AudioChannelCount: int32(channels),
+	}, nil
+}
+
 // resolveGoogleStreamingCredentials loads OAuth credentials for v2 streaming:
 // an inline service-account JSON (SPEECHKIT_GOOGLE_STT_CREDENTIALS_JSON) if
 // present, otherwise Application Default Credentials (GOOGLE_APPLICATION_CREDENTIALS
@@ -226,11 +255,16 @@ func (p *Provider) resolveGoogleStreamingCredentials() (*auth.Credentials, error
 	applicationCredentialsEnv := stt.FirstNonEmptyTrimmed(p.ApplicationCredentialsEnv, envGoogleApplicationCreds)
 
 	if raw := stt.FirstNonEmptyTrimmed(os.Getenv(credentialsJSONEnv), p.SecretResolver.Resolve(credentialsJSONEnv)); raw != "" {
-		// DetectDefault validates the credential configuration (the gap that deprecated the older
-		// CredentialsFromJSON/WithCredentialsJSON path); the JSON itself is operator-controlled (secret manager/env).
-		creds, err := credentials.DetectDefault(&credentials.DetectOptions{
-			CredentialsJSON: []byte(raw), //nolint:staticcheck // SA1019: credential type is not known up front, so typed NewCredentialsFromJSON cannot be used; DetectDefault validates it and the JSON is operator-controlled.
-			Scopes:          []string{googleSTTScope},
+		// The JSON is operator-controlled (secret manager/env). Its own "type" field
+		// names the credential type, and NewCredentialsFromJSON checks the
+		// document against that declared type before loading it — the typed
+		// replacement for the deprecated DetectOptions.CredentialsJSON.
+		credType, err := googleCredentialType(raw)
+		if err != nil {
+			return nil, fmt.Errorf("google stt v2: parse %s: %w", credentialsJSONEnv, err)
+		}
+		creds, err := credentials.NewCredentialsFromJSON(credType, []byte(raw), &credentials.DetectOptions{
+			Scopes: []string{googleSTTScope},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("google stt v2: parse %s: %w", credentialsJSONEnv, err)
@@ -250,6 +284,23 @@ func (p *Provider) resolveGoogleStreamingCredentials() (*auth.Credentials, error
 
 	return nil, fmt.Errorf("google stt v2 streaming transcription requires service-account/ADC credentials via %s or %s; %s is batch REST only",
 		credentialsJSONEnv, applicationCredentialsEnv, envGoogleSTTAPIKey)
+}
+
+// googleCredentialType reads the "type" field a Google credential JSON
+// declares about itself (service_account, authorized_user, external_account,
+// ...). A document without one is not a credential configuration this
+// provider can load.
+func googleCredentialType(raw string) (credentials.CredType, error) {
+	var head struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal([]byte(raw), &head); err != nil {
+		return "", fmt.Errorf("credential JSON: %w", err)
+	}
+	if strings.TrimSpace(head.Type) == "" {
+		return "", errors.New("credential JSON has no \"type\" field")
+	}
+	return credentials.CredType(head.Type), nil
 }
 
 func googleStreamingCredentialsPresent(resolver stt.SecretResolver, applicationCredentialsEnv, credentialsJSONEnv string) bool {

@@ -4,8 +4,14 @@ package config
 // vocabulary, customization, speech defaults, assist, and shortcuts.
 
 type StoreConfig struct {
-	Backend            string `toml:"backend"` // "sqlite" | "postgres" | registered name
-	SQLitePath         string `toml:"sqlite_path"`
+	Backend    string `toml:"backend"` // "sqlite" | "postgres" | registered name
+	SQLitePath string `toml:"sqlite_path"`
+	// DataRoot pins the directory user content (database, recordings,
+	// snapshots, wake-word clips) lives in. Empty means the platform
+	// default: %LOCALAPPDATA%\SpeechKit on Windows installs, <exe>\data for
+	// portable bundles. A network path is refused. The machine policy pin
+	// Storage\DataRoot targets this field.
+	DataRoot           string `toml:"data_root"`
 	PostgresDSN        string `toml:"postgres_dsn"`
 	SaveAudio          bool   `toml:"save_audio"`
 	AudioRetentionDays int    `toml:"audio_retention_days"`

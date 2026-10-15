@@ -1,4 +1,4 @@
-package flows
+package flowadapt
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kombifyio/SpeechKit/app/internal/ai/flows"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/assist"
 )
@@ -17,10 +18,10 @@ func TestAssistGeneratorNilFlowIsNilGenerator(t *testing.T) {
 }
 
 func TestAssistGeneratorMapsRequestAndAppliesPanelDefaults(t *testing.T) {
-	var captured AssistInput
-	flow := New(func(_ context.Context, input AssistInput) (AssistOutput, error) {
+	var captured flows.AssistInput
+	flow := flows.New(func(_ context.Context, input flows.AssistInput) (flows.AssistOutput, error) {
 		captured = input
-		return AssistOutput{Text: "Answer", SpeakText: "Short answer", Action: "respond", Locale: "de"}, nil
+		return flows.AssistOutput{Text: "Answer", SpeakText: "Short answer", Action: "respond", Locale: "de"}, nil
 	})
 
 	result, err := AssistGenerator(flow).GenerateAssist(context.Background(), speechkit.AssistRequest{
@@ -45,8 +46,8 @@ func TestAssistGeneratorMapsRequestAndAppliesPanelDefaults(t *testing.T) {
 
 func TestAssistGeneratorWrapsFlowErrors(t *testing.T) {
 	flowErr := errors.New("model down: invalid configuration")
-	flow := New(func(context.Context, AssistInput) (AssistOutput, error) {
-		return AssistOutput{}, flowErr
+	flow := flows.New(func(context.Context, flows.AssistInput) (flows.AssistOutput, error) {
+		return flows.AssistOutput{}, flowErr
 	})
 
 	_, err := AssistGenerator(flow).GenerateAssist(context.Background(), speechkit.AssistRequest{Text: "hi"})

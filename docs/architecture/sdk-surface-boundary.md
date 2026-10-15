@@ -47,7 +47,7 @@ table mirrors that inventory.
 | `pkg/speechkit/assist/skills` | Beta | Voice-Companion skill catalog for Assist hosts: `New` builds an `assist.ToolMatcher` + `assist.ToolExecutor` pair over the `UtilityRegistry` (routable utilities and their presentation defaults), with host hooks for the resolver, a fallback executor, disabled intents and the in-process Timer/Reminder scheduler. |
 | `pkg/speechkit/assist/skills/companion` | Beta | The Voice-Companion skill implementations (Time, Date, Math, Weather, Timer, Reminder, Wikipedia, Temperature, Home Assistant), the `Skill` contract, `CompositeExecutor`, and the `TimerSink`/`ReminderSink` host hooks. |
 | `pkg/speechkit/assist/toolbridge` | Experimental | Adapts Assist-mode tools to other tool-calling surfaces. |
-| `pkg/speechkit/audio` | Stable | Shared PCM audio primitives: 16kHz S16 mono constants, WAV framing, duration and level math. |
+| `pkg/speechkit/audio` | Stable | Shared PCM primitives: capture constants, WAV framing/parsing, duration and level math, mono resampling and synthesized WAV/MP3/PCM decoding. Server and embedded voice playback use the same normalization. |
 | `pkg/speechkit/audio/capture` | Beta | Microphone and system-loopback capture. `Session` satisfies `speechkit.AudioRecorder`, so a host does not implement recording itself; `RegisterBackend` is the extension point, and builds without a native backend report `ErrBackendUnavailable`. |
 | `pkg/speechkit/catalog` | Stable | Built-in provider/model catalog: `DefaultCatalog`, `Catalog.With`, `DefaultProviderProfiles`, the provider defaults matrix and the model registry with freshness metadata. Data only; contracts stay in the root package. |
 | `pkg/speechkit/client` | Beta | Typed HTTP client for talking to a remote SpeechKit Server. |
@@ -58,11 +58,13 @@ table mirrors that inventory.
 | `pkg/speechkit/hostconfig` | Beta | Turns a SpeechKit TOML configuration file into the public SDK configuration types. |
 | `pkg/speechkit/internal/speakercontract` | n/a | Internal test-only speaker conformance helpers; not importable by embedders. |
 | `pkg/speechkit/internal/logutil` | n/a | Internal logging helper for SDK packages; not importable by embedders. |
+| `pkg/speechkit/internal/pcmresample` | n/a | Internal PCM16 16 kHz to 24 kHz upsampler shared by the realtime Voice Agent providers and `stt/openaicompat`, so the STT adapter does not link the Voice Agent; not importable by embedders. |
 | `pkg/speechkit/internal/sdkparity` | n/a | Internal test-only TTS Router parity harness (moved from the app module by ADR 0004); not importable by embedders. |
 | `pkg/speechkit/internal/testutil` | n/a | Internal test-only helpers (env-gated integration skips, `Eventually`); not importable by embedders. |
 | `pkg/speechkit/lifecycle` | Stable | Mode start/stop orchestration and refcounted shared resources. |
 | `pkg/speechkit/localization` | Stable | Resolves stable SpeechKit message IDs against BCP-47 locales. |
 | `pkg/speechkit/meeting` | Beta | Embeddable Meeting Mode runtime and note/digest primitives: dual-channel capture lifecycle, per-channel health snapshots, transcript rendering/chunking, echo suppression, built-in note templates, anchor preservation, and call/end watcher policy. Hosts supply capture pipelines, persistence, generation, Wails windows, hotkeys, and server routes. |
+| `pkg/speechkit/meeting/export` | Beta | Notes export SPI of ADR 0002: `Document` (title, date, locale, review sections, the user's notes verbatim, transcript citations, screenshot references), content `Fingerprint`, structural `Outline` with Markdown and OneNote-subset XHTML renderers, `Parts`, `Target` with `Receipt`, `Registry`, and the sentinels `ErrTargetUnavailable`, `ErrDestinationGone`, `ErrDestinationFull`, `ErrTooLarge`. Names no destination; OneNote lives in the app module. |
 | `pkg/speechkit/netsec` | Stable | Centralized network security primitives shared by public surfaces. |
 | `pkg/speechkit/pipeline` | Beta | Composable capture-to-transcript engine: `RecordingController`, `TranscriptionWorker`, `TranscriptionRunner`, `DictationSegmenter`, `TranscriptSessionLedger`, live-commit policy. Implements the root-package contracts; `dictation` composes it. |
 | `pkg/speechkit/procguard` | Beta | Ties long-lived child processes to the lifetime of the host process. |
@@ -88,7 +90,7 @@ table mirrors that inventory.
 | `pkg/speechkit/ttsroute` | Beta | Single source of truth mapping a Voice-Output selection to a TTS route. |
 | `pkg/speechkit/voiceagent` | Stable | Embeddable Voice Agent service (realtime audio-to-audio mode). |
 | `pkg/speechkit/voiceagent/a2a` | Experimental | Adapts a registered A2A agent to the cascaded voice pipeline; SpeechKit keeps STT/TTS custody, the remote endpoint owns agent semantics, memory, tools and authorization. |
-| `pkg/speechkit/voiceagent/cascaded` | Stable | Turn-based STT -> LLM -> TTS voice-agent pipeline fallback, plus the `LiveProvider` adapter that lets a `live.Session` drive it like a realtime provider. |
+| `pkg/speechkit/voiceagent/cascaded` | Stable | Turn-based STT -> LLM -> TTS pipeline and `LiveProvider` adapter. Live playback is normalized to raw 24 kHz S16 mono; recoverable turn failures carry safe guidance without ending the conversation. |
 | `pkg/speechkit/voiceagent/live` | Stable | Voice Agent realtime-protocol types, session runtime, and the `LiveProvider` contract. It names no provider, so importing it costs 15 external packages. |
 | `pkg/speechkit/voiceagent/live/assemblyai` | Beta | AssemblyAI Voice Agent realtime provider. |
 | `pkg/speechkit/voiceagent/live/deepgram` | Beta | Deepgram Voice Agent realtime provider. |
@@ -100,9 +102,25 @@ table mirrors that inventory.
 | `pkg/speechkit/voiceagent/live/voicelive` | Beta | Microsoft Foundry Voice Live adapter over the OpenAI Realtime provider: Foundry host, Azure and MAI voices, and the Azure-only session fields. |
 | `pkg/speechkit/voiceagent/live/livecontract` | Beta | Reusable conformance checks for `LiveProvider` implementations. |
 | `pkg/speechkit/voiceagent/local` | Beta | `voiceagent.Provider` on top of an in-process local pipeline. |
+| `pkg/speechkit/voiceagent/responses` | Experimental | Adapts one explicitly selected own endpoint (a Responses-style API the application admits) to the cascaded conversation pipeline; the application owns account, consent, funding and endpoint admission, and the adapter never selects a model, an agent, a credential or a fallback. |
 | `pkg/speechkit/wakeword` | Stable | Wake-word phrase catalog, detection events, dispatcher, `AutoEndPolicy`, and the engine-neutral `Detector`/`Pipeline` (PCM conversion, debounce, cooldown, pause) over the `Engine` contract. `RegisterEngine` is the extension point; the root ships no engine and links no native code, so a desktop host imports it without pulling in sherpa-onnx. |
 | `pkg/speechkit/wakeword/sherpa` | Stable | sherpa-onnx keyword-spotting engine. Importing it registers the engine with `wakeword.RegisterEngine` in cgo builds; `sherpa.NewDetector` selects it explicitly and returns `ErrCgoRequired` without cgo. |
 | `pkg/speechkit/wakeword/training` | Beta | Opt-in training-data capture around wake detections: `Capture` writes pre-roll/post-roll WAV clips with a JSON `Record` sidecar, `Uploader` ships labelled records to a SpeechKit server's `/v1/wakeword/activations`. Pure Go; every switch defaults to off. |
+
+## Live speech output and failed turns
+
+`cascaded.NewLiveProvider` and the server downlink share `NewPCMOutputTTS`:
+synthesized WAV, MP3 or raw PCM is decoded to 24 kHz S16LE mono before playback.
+Applications consuming `live.LiveMessage.Audio` receive samples, never a file
+header or compressed audio. `cascaded.NewProvider` retains its lower-level
+configured TTS format for hosts that own their own output framing.
+
+Use `OnTurnError` on the live or high-level voice callbacks to display safe
+guidance for a failed turn. The session returns to listening and can accept the
+next turn. A raw `LiveProvider.Receive` consumer observes the same outcome in
+`LiveMessage.TurnError` and can inspect its `Code() string` method. `OnError`
+retains its terminal-session meaning. Lost authorization and a failed processor
+end the session on both the server and the embedded adapter.
 
 ## Stability Tiers
 
@@ -116,6 +134,7 @@ before v1.0.
 | Stable | Covered by the apidiff gate. No breaking change without a minor version bump and a changelog callout. | `public-api-stability` fails incompatible changes unless the PR carries `breaking-api-approved`. |
 | Beta | Apidiff-checked, but may change with a changelog callout. | Same apidiff gate; expect occasional approved breaks. |
 | Experimental | May change in any release; not for production use. | Skipped by `public-api-stability` (a notice is printed). |
+| Host-stable | The desktop host kit under `app/host/...` that a managed composition root builds on (`// Stability: Host-stable — ...`; facades of `app/internal` packages say `Host-stable (facade of app/internal/<p>)`). Not part of the public export and no SemVer promise to OSS users; a breaking change needs a `### Host kit` changelog callout that names the known managed consumers. | `Host API Stability` in the same workflow (`GOOS=windows CGO_ENABLED=0`) fails incompatible changes unless the PR carries `breaking-host-api-approved`. |
 
 Tiers were assigned from evidence: age, how many binaries in `app/cmd/` and
 `app/internal/` consume the package, runnable examples, conformance suites, and

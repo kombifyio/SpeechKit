@@ -63,6 +63,10 @@ type RunOptions struct {
 // Shared AI dependencies (Genkit runtime, TTS router, Agent flow) are built
 // lazily via ensureSharedAIDeps so Assist and Cascaded-VoiceAgent share one
 // Genkit instance instead of paying init cost twice.
+// optionalWiring holds route wiring that other files in this package register
+// from init. The list stays empty when no such file is built into the binary.
+var optionalWiring []func(cfg *config.Config, app *App)
+
 type App struct {
 	Cfg           *config.Config
 	Mux           *http.ServeMux
@@ -286,6 +290,9 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	// "training_data_disabled" payload. See
 	// docs/wakeword-training-data.md for the full privacy contract.
 	wireWakewordTraining(cfg, app)
+	for _, wire := range optionalWiring {
+		wire(cfg, app)
+	}
 
 	// Wake-word model catalog (openWakeWord ONNX + microWakeWord manifests).
 	// Public + default-on: serves already-public model metadata so a

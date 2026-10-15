@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/cascaded"
 )
 
@@ -100,7 +101,7 @@ func New(config Config) (*Agent, error) {
 	if err := ValidateContext(config.Messages); err != nil {
 		return nil, err
 	}
-	client := http.Client{Timeout: 90 * time.Second}
+	client := *netsec.NewClient(netsec.ClientOptions{Timeout: 90 * time.Second})
 	if config.Client != nil {
 		client = *config.Client
 	}

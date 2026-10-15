@@ -46,6 +46,28 @@ type DictationStreamOptions struct {
 	Keyterms                  []string
 	PromptHint                string
 	Diarization               bool
+	// CompleteCapture asks for one final event that transcribes the complete
+	// capture after Finalize, instead of finals cut while audio still arrives.
+	// A live final is the provider's first pass over a moving window and can
+	// miss words that a pass over the finished recording keeps, so a caller
+	// that commits once at the end sets this. Events before the final are
+	// drafts, sent only with InterimResults. A provider that cannot serve it
+	// returns an ordinary live stream; see [IsCompleteCaptureStream].
+	CompleteCapture bool
+}
+
+// CompleteCaptureStream is implemented by a [DictationStream] whose only
+// final event is the transcript of the complete capture.
+type CompleteCaptureStream interface {
+	CompleteCapture() bool
+}
+
+// IsCompleteCaptureStream reports whether stream's final covers the complete
+// capture. The finals of any other stream are live passes: a caller that owns
+// the full recording must not commit them as its transcript.
+func IsCompleteCaptureStream(stream DictationStream) bool {
+	complete, ok := stream.(CompleteCaptureStream)
+	return ok && complete.CompleteCapture()
 }
 
 // DictationStreamProvider is implemented by STT providers that can consume

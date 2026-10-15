@@ -344,6 +344,8 @@ const (
 	LiveEventInterrupted LiveEventType = "interrupted"
 	// LiveEventTurnEnd marks the end of a model turn.
 	LiveEventTurnEnd LiveEventType = "turn_end"
+	// LiveEventTurnFailed reports a failed turn without ending the session.
+	LiveEventTurnFailed LiveEventType = "turn_failed"
 	// LiveEventSessionResumable reports that the session can be resumed after
 	// a reconnect.
 	LiveEventSessionResumable LiveEventType = "session_resumable"
@@ -407,6 +409,10 @@ type LiveMessage struct {
 	Audio []byte // PCM audio chunk (24kHz 16-bit mono)
 	Text  string // Text transcript (may be partial or empty)
 	Done  bool   // True when the model's turn is complete
+	// TurnError reports a failed turn while leaving the session usable. It must
+	// contain only safe public guidance; transport/session failures are returned
+	// from Receive instead. Hosts may inspect a Code() string method for routing.
+	TurnError error
 
 	// Transcription fields (populated when transcription is enabled).
 	InputTranscript        string  // User speech transcribed by server
@@ -433,10 +439,13 @@ type LiveMessage struct {
 // the right shape for the embedded [voiceagent.Service]; reach for this
 // struct only when wiring a custom realtime host.
 type Callbacks struct {
-	OnStateChange          func(state State)
-	OnAudio                func(audio []byte) // Audio chunk to play
-	OnText                 func(text string)  // Text for display (speech bubble)
-	OnError                func(err error)
+	OnStateChange func(state State)
+	OnAudio       func(audio []byte) // Audio chunk to play
+	OnText        func(text string)  // Text for display (speech bubble)
+	OnError       func(err error)    // Terminal session failure, followed by cleanup.
+	// OnTurnError reports a recoverable turn failure. The session returns to
+	// listening and remains available for the next turn; OnError is not called.
+	OnTurnError            func(err error)
 	OnInputTranscript      func(text string, done bool) // User speech transcribed
 	OnOutputTranscript     func(text string, done bool) // Model speech transcribed
 	OnToolCall             func(call ToolCall)

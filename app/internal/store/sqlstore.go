@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
 	speechstorage "github.com/kombifyio/SpeechKit/pkg/speechkit/storage"
 )
 
@@ -33,6 +34,11 @@ type sqlStore struct {
 	transcriptionModelHints map[string]string
 	defaultScope            speechstorage.Scope
 	scopePolicy             speechstorage.ScopePolicy
+	// retentionScope and retentionTTLDays enforce the [privacy] retention
+	// axis; onRetentionSweep reports each sweep (see retention_sweep.go).
+	retentionScope   framework.RetentionScope
+	retentionTTLDays int
+	onRetentionSweep func(RetentionSweep)
 	// sweepOrphanAudio enables sweepOrphanedAudio. Only a store that can be
 	// sure it is the sole owner of audioDir may delete files no row of its
 	// own references; see NewSQLiteStore.
@@ -121,7 +127,10 @@ func (s *sqlStore) transcriptionModelHint(provider string) string {
 // the orphan sweep catches what a crash in between leaves behind.
 func (s *sqlStore) persistAudio(audio AudioAssetInput, prefix string) (string, error) {
 	audio = normalizeAudioAssetInput(audio)
-	if !s.saveAudio || len(audio.Data) == 0 {
+	// Under the ephemeral retention scope audio is recording material that
+	// must not outlive the session; it is held in memory for transcription
+	// and never written.
+	if !s.saveAudio || s.ephemeral() || len(audio.Data) == 0 {
 		return "", nil
 	}
 	if err := os.MkdirAll(s.audioDir, 0o700); err != nil {
@@ -175,7 +184,8 @@ func (s *sqlStore) startMaintenance() {
 // recordings, it must not exempt the ones already on disk from deletion.
 func (s *sqlStore) maintenanceConfigured() bool {
 	return s.meetingRetentionDays > 0 || s.transcriptRetentionDays > 0 ||
-		s.maxStorageMB > 0 || s.audioRetentionDays > 0
+		s.maxStorageMB > 0 || s.audioRetentionDays > 0 ||
+		s.ephemeral() || s.retentionTTLDays > 0
 }
 
 // runMaintenancePass applies every configured retention rule once. The
@@ -183,7 +193,14 @@ func (s *sqlStore) maintenanceConfigured() bool {
 // does, because it is what makes the
 // audio size cap and retention trustworthy: they only see files a row
 // points at.
+//
+// The retention TTL and the ephemeral scope run first: they are the hard
+// bounds, and at store open the ephemeral pass is the startup recovery for
+// sessions whose sweep a crash or a quit skipped.
 func (s *sqlStore) runMaintenancePass() {
+	now := time.Now()
+	s.enforceRetentionTTL(now)
+	s.enforceEphemeralScope(now)
 	if s.meetingRetentionDays > 0 {
 		s.enforceMeetingRetention()
 	}

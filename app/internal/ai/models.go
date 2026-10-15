@@ -55,7 +55,16 @@ func newLocalAIClient(validation *netsec.ValidationOptions) *http.Client {
 	return netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Minute, DialValidation: validation})
 }
 
+// ErrProviderNotAllowed is returned (wrapped, with the stable reason id)
+// when Config.AllowProvider refuses a model's provider.
+var ErrProviderNotAllowed = errors.New("model provider not allowed by policy")
+
 func newModel(cfg Config, provider, name string) (Model, error) {
+	if cfg.AllowProvider != nil {
+		if ok, reason := cfg.AllowProvider(strings.TrimSpace(provider)); !ok {
+			return nil, fmt.Errorf("%w: %s [%s]", ErrProviderNotAllowed, strings.TrimSpace(provider), reason)
+		}
+	}
 	switch strings.TrimSpace(provider) {
 	case "openai":
 		opts := oaiCallOptions{AuthToken: cfg.OpenAIAPIKey}
@@ -106,11 +115,7 @@ func newModel(cfg Config, provider, name string) (Model, error) {
 	case "local":
 		client := newLocalAIClient(&localLLMCallValidation)
 		if cfg.LocalLLMTransport != nil {
-			next := client.Transport
-			if next == nil {
-				next = http.DefaultTransport
-			}
-			client.Transport = cfg.LocalLLMTransport(next)
+			client.Transport = cfg.LocalLLMTransport(client.Transport)
 		}
 		return newOpenAICompatibleModel("local", name, cfg.LocalLLMBaseURL, client, localLLMCallValidation, oaiCallOptions{}), nil
 	case "ollama":

@@ -32,6 +32,8 @@ func newFakeDictationStream() *fakeDictationStream {
 	return &fakeDictationStream{events: make(chan speechkit.DictationStreamEvent, 16)}
 }
 
+func (*fakeDictationStream) CompleteCapture() bool { return true }
+
 func (s *fakeDictationStream) SendPCM(_ context.Context, pcm []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

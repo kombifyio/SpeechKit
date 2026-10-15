@@ -271,13 +271,20 @@ func finalizationState(f speechkit.TranscriptionFinalization, text string) (stri
 // Returns true because the segment is finished, not because it succeeded — the
 // same audio would produce the same empty result, so releasing it for a retry
 // would only loop.
+// errEmptyFinalTranscript is the error recorded on the span for an empty final
+// transcript. The user-facing wording stays in
+// speechkit.EmptyFinalTranscriptMessage for the log and UI state; the span
+// carries a Go-style error string, with provider, model and language as
+// attributes beside it.
+var errEmptyFinalTranscript = errors.New("empty final transcript: provider returned no recognized speech")
+
 func (w *TranscriptionWorker) commitEmptyFinalTranscript(ctx context.Context, job speechkit.TranscriptionJob, transcript speechkit.Transcript) bool {
 	finalization := speechkit.NewTranscriptionFinalization(transcript, nil, false, w.runner.store != nil)
 	w.onFinalization(job, transcript, finalization)
 	provider := firstNonEmptyField(transcript.Provider, "unknown")
 	model := firstNonEmptyField(transcript.Model, "unknown")
 	language := firstNonEmptyField(transcript.Language, "unset")
-	telemetry.RecordOutcome(ctx, telemetry.OutcomeEmptyFinalTranscript, errors.New(speechkit.EmptyFinalTranscriptMessage), //nolint:staticcheck // ST1005: user-facing message shared with the UI state, not a Go-style error string.
+	telemetry.RecordOutcome(ctx, telemetry.OutcomeEmptyFinalTranscript, errEmptyFinalTranscript,
 		telemetry.StringAttr("provider", provider),
 		telemetry.StringAttr("model", model),
 		telemetry.StringAttr("language", language),

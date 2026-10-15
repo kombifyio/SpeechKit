@@ -14,6 +14,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	customtemplates "github.com/kombifyio/SpeechKit/app/internal/customize/templates"
+	"github.com/kombifyio/SpeechKit/app/internal/productid"
 	"github.com/kombifyio/SpeechKit/app/internal/voiceagentprofile"
 )
 
@@ -70,6 +71,7 @@ func attachLoadedPolicy(cfg *Config) {
 		slog.Warn("config: ignored per-user registry values that would loosen settings",
 			"count", policy.IgnoredUserKeys)
 	}
+	logPolicyRejections(policy.Rejected)
 }
 
 func setLoadRecovery(notice string) {
@@ -89,10 +91,17 @@ func normalizeFreshConfig(cfg *Config) {
 	NormalizeDeepgramSTTSettings(cfg)
 	EnableAlwaysOnLLM(cfg)
 	normalizeWakewordConfig(cfg)
+	EnforcePolicy(cfg)
 }
 
 // Load reads config from the given path. Falls back to defaults if file not found.
+// Without a registered product identity it returns ErrNoIdentity: the machine
+// policy of an unnamed product cannot be read, and reading none would be
+// fail-open.
 func Load(path string) (*Config, error) {
+	if _, err := productid.Current(); err != nil {
+		return nil, err
+	}
 	cfg := defaults()
 	setLoadRecovery("")
 
@@ -117,6 +126,15 @@ func Load(path string) (*Config, error) {
 		slog.Warn("config file permissions are loose", "msg", warning)
 	}
 
+	if ManagedMode() {
+		// On a managed host config.toml is untrusted: only the user-editable
+		// keys reach cfg; everything else stays at policy or default.
+		filtered, ferr := untrustedManagedConfig(data)
+		if ferr != nil {
+			return recoverUnreadableConfig(path, data, ferr), nil
+		}
+		data = filtered
+	}
 	meta, err := toml.Decode(string(data), cfg)
 	if err != nil {
 		return recoverUnreadableConfig(path, data, err), nil
@@ -125,6 +143,9 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	if err := NormalizePrivacyConfig(cfg); err != nil {
+		return nil, err
+	}
+	if err := NormalizeMeetingCaptureChannels(cfg); err != nil {
 		return nil, err
 	}
 
@@ -183,6 +204,9 @@ func Load(path string) (*Config, error) {
 		cfg.UI.VoiceAgentOverlayMode,
 		OverlayFeedbackModeSmallFeedback,
 	)
+	// The backfill chain above may copy legacy values over pinned ones (the
+	// [feedback] save_audio bridge, for one); the policy has the last word.
+	EnforcePolicy(cfg)
 	return cfg, nil
 }
 
@@ -215,19 +239,20 @@ func recoverUnreadableConfig(path string, data []byte, decodeErr error) *Config 
 		notice += " The unreadable file was kept as " + filepath.Base(aside) + "."
 	}
 	setLoadRecovery(notice)
-	if err := Save(path, cfg); err != nil {
+	if err := save(path, cfg); err != nil {
 		slog.Warn("could not write the recovered config.toml", "err", err)
 	}
 	return cfg
 }
 
-// Save writes cfg to path atomically: the TOML goes to an owner-only temp
+// save writes cfg to path atomically: the TOML goes to an owner-only temp
 // file in the same directory, is fsynced, and replaces the target with a
 // rename, so a crash or power loss leaves either the old or the new file and
 // never a truncated one. Policy-pinned values are written as the user's own
 // pre-policy values (see persistable), and the in-memory cfg is re-pinned to
-// the policy so no code path can save its way around it.
-func Save(path string, cfg *Config) error {
+// the policy so no code path can save its way around it. Outside this
+// package every write goes through Shared, which calls it under its lock.
+func save(path string, cfg *Config) error {
 	if path == "" {
 		path = defaultConfigPath()
 	}
@@ -241,11 +266,24 @@ func Save(path string, cfg *Config) error {
 	if err := NormalizePrivacyConfig(cfg); err != nil {
 		return err
 	}
+	if err := NormalizeMeetingCaptureChannels(cfg); err != nil {
+		return err
+	}
 	EnforcePolicy(cfg)
 
 	var buf bytes.Buffer
 	if err := toml.NewEncoder(&buf).Encode(persistable(cfg)); err != nil {
 		return fmt.Errorf("encode config: %w", err)
+	}
+	data := buf.Bytes()
+	if ManagedMode() {
+		// A managed host writes the user-editable keys only; nothing else in
+		// config.toml would be read back.
+		filtered, _, err := filterManagedTOML(data)
+		if err != nil {
+			return err
+		}
+		data = filtered
 	}
 
 	saveMu.Lock()
@@ -258,7 +296,7 @@ func Save(path string, cfg *Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
-	return writeFileAtomic(path, buf.Bytes())
+	return writeFileAtomic(path, data)
 }
 
 // writeFileAtomic replaces path with data via temp file + fsync + rename.

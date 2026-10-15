@@ -15,11 +15,11 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/pcmresample"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 )
 
 // OpenAILiveTranscribeModel is OpenAI's streaming speech-to-text model
@@ -82,7 +82,7 @@ func (p *Provider) SupportsDictationStream() bool { return p.name == "openai" }
 //
 // The API accepts 24 kHz PCM only: 24 kHz mono linear16 passes through and
 // 16 kHz mono linear16 (SpeechKit's mic rate) is upsampled per chunk with
-// [live.UpsampleMicPCM16Mono]; anything else fails with
+// linear interpolation; anything else fails with
 // [speechkit.ErrUnsupportedAudioFormat].
 //
 // Finalize turns server VAD off and commits the trailing buffer; Receive
@@ -287,7 +287,7 @@ func (s *openAILiveTranscribeStream) SendPCM(ctx context.Context, pcm []byte) er
 		return nil
 	}
 	if s.upsample {
-		pcm = live.UpsampleMicPCM16Mono(pcm)
+		pcm = pcmresample.UpsampleMicPCM16Mono(pcm)
 	}
 	return s.writeJSON(ctx, map[string]any{
 		"type":  "input_audio_buffer.append",

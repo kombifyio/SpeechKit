@@ -28,19 +28,19 @@ func TestDarwinDataDirsUseApplicationSupport(t *testing.T) {
 	withExecutable(t, "/Applications/SpeechKit.app/Contents/MacOS/SpeechKit")
 
 	want := filepath.Join("/Users/tester", "Library", "Application Support", "SpeechKit")
-	if got := DataDir(); got != want {
+	if got := must(t, DataDir); got != want {
 		t.Fatalf("DataDir() = %q, want %q", got, want)
 	}
-	if got := LocalDataDir(); got != want {
+	if got := must(t, LocalDataDir); got != want {
 		t.Fatalf("LocalDataDir() = %q, want %q", got, want)
 	}
-	if got := ModelsDir(); got != filepath.Join(want, "models") {
+	if got := must(t, ModelsDir); got != filepath.Join(want, "models") {
 		t.Fatalf("ModelsDir() = %q", got)
 	}
-	if got := SecretsDir(); got != filepath.Join(want, "secrets") {
+	if got := must(t, SecretsDir); got != filepath.Join(want, "secrets") {
 		t.Fatalf("SecretsDir() = %q", got)
 	}
-	if got := ConfigFilePath(); got != filepath.Join(want, "config.toml") {
+	if got := must(t, ConfigFilePath); got != filepath.Join(want, "config.toml") {
 		t.Fatalf("ConfigFilePath() = %q", got)
 	}
 }
@@ -51,7 +51,7 @@ func TestDarwinNoHomeFallsBackToEnvironmentLayout(t *testing.T) {
 	t.Setenv("APPDATA", "/tmp/appdata")
 	t.Setenv("LOCALAPPDATA", "")
 
-	if got, want := DataDir(), filepath.Join("/tmp/appdata", "SpeechKit"); got != want {
+	if got, want := must(t, DataDir), filepath.Join("/tmp/appdata", "SpeechKit"); got != want {
 		t.Fatalf("DataDir() = %q, want %q", got, want)
 	}
 }
@@ -95,7 +95,7 @@ func TestDarwinLooseBinaryWithConfigIsPortable(t *testing.T) {
 	if !IsPortable() {
 		t.Fatal("IsPortable() = false for a loose binary with config.toml next to it")
 	}
-	if got := DataDir(); got != filepath.Join(dir, "data") {
+	if got := must(t, DataDir); got != filepath.Join(dir, "data") {
 		t.Fatalf("DataDir() = %q", got)
 	}
 	if BundleDir() != "" {

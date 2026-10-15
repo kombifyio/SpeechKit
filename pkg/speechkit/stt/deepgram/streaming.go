@@ -87,13 +87,24 @@ func (p *Provider) StartSpeakerStream(ctx context.Context, opts speaker.Options,
 	}, nil
 }
 
-// StartDictationStream implements [speechkit.DictationStreamProvider] over
-// the Listen WebSocket. The language is opts.Language, else the provider's
-// LanguageOverride, else "multi"; endpointing is opts.EndpointingMs, else the
-// provider's, else 700 ms; interim results are requested only when asked for.
-// The returned stream coalesces Deepgram's is_final fragments into one final
-// event per utterance.
+// StartDictationStream implements [speechkit.DictationStreamProvider]. With
+// opts.CompleteCapture the capture is uploaded to the Listen REST endpoint
+// while it is recorded and the stream's only final is the transcript of the
+// whole recording (see completeCaptureStream); otherwise the stream is the
+// Listen WebSocket, which finalizes utterance by utterance.
 func (p *Provider) StartDictationStream(ctx context.Context, opts speechkit.DictationStreamOptions, format speaker.AudioFormat) (speechkit.DictationStream, error) {
+	if opts.CompleteCapture {
+		return p.startCompleteCaptureStream(ctx, opts, format)
+	}
+	return p.startLiveDictationStream(ctx, opts, format)
+}
+
+// startLiveDictationStream opens the Listen WebSocket. The language is
+// opts.Language, else the provider's LanguageOverride, else "multi";
+// endpointing is opts.EndpointingMs, else the provider's, else 700 ms; interim
+// results are requested only when asked for. The returned stream coalesces
+// Deepgram's is_final fragments into one final event per utterance.
+func (p *Provider) startLiveDictationStream(ctx context.Context, opts speechkit.DictationStreamOptions, format speaker.AudioFormat) (speechkit.DictationStream, error) {
 	format = format.Normalized()
 	model := stt.FirstNonEmptyTrimmed(opts.Model, p.Model, "nova-3")
 	resolved := p.resolveOptions(model, stt.TranscribeOptionsFromStream(opts).ForProvider(p.Name()))
@@ -171,9 +182,12 @@ func (p *Provider) deepgramStreamingEndpoint(model, language string, format spea
 	if p.EndpointingMs > 0 {
 		q.Set("endpointing", strconv.Itoa(p.EndpointingMs))
 	}
-	if language := normalizedDeepgramLanguage(stt.FirstNonEmptyTrimmed(language, p.LanguageOverride)); language != "" {
-		q.Set("language", language)
-	}
+	// Listen defaults to English when the parameter is absent, so an unpinned
+	// stream names the multilingual mode explicitly.
+	q.Set("language", stt.FirstNonEmptyTrimmed(
+		normalizedDeepgramLanguage(stt.FirstNonEmptyTrimmed(language, p.LanguageOverride)),
+		deepgramCodeSwitchingLanguage(),
+	))
 	p.applyVocabularyBias(q, model, nil, p.UseVocabularyKeyterms)
 	applyDeepgramNoStore(q, p.NoStore)
 	u.RawQuery = q.Encode()
@@ -234,9 +248,8 @@ func (p *Provider) deepgramDictationStreamingEndpoint(model, language string, op
 	if opts.InterimResults {
 		q.Set("utterance_end_ms", strconv.Itoa(deepgramDictationUtteranceEndMs))
 	}
-	if language := normalizedDeepgramLanguage(language); language != "" {
-		q.Set("language", language)
-	}
+	// Never leave the parameter out: Listen would fall back to English.
+	q.Set("language", stt.FirstNonEmptyTrimmed(normalizedDeepgramLanguage(language), deepgramCodeSwitchingLanguage()))
 	// Dictionary opt-outs were resolved before opening the stream; explicit
 	// request keyterms still follow the provider's vocabulary switch.
 	p.applyVocabularyBias(q, model, opts.Keyterms, resolved.UseVocabularyKeyterms)

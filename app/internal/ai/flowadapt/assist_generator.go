@@ -1,9 +1,10 @@
-package flows
+package flowadapt
 
 import (
 	"context"
 	"fmt"
 
+	"github.com/kombifyio/SpeechKit/app/internal/ai/flows"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/assist"
 )
@@ -17,7 +18,7 @@ import (
 // every generated result is a panel answer (Surface panel, Kind answer), and a
 // flow failure is wrapped as "assist: LLM failed: <err>" so the hosts' error
 // classification keeps seeing the provider message.
-func AssistGenerator(flow *Flow[AssistInput, AssistOutput]) assist.Generator {
+func AssistGenerator(flow *flows.Flow[flows.AssistInput, flows.AssistOutput]) assist.Generator {
 	if flow == nil {
 		return nil
 	}
@@ -25,11 +26,11 @@ func AssistGenerator(flow *Flow[AssistInput, AssistOutput]) assist.Generator {
 }
 
 type assistGenerator struct {
-	flow *Flow[AssistInput, AssistOutput]
+	flow *flows.Flow[flows.AssistInput, flows.AssistOutput]
 }
 
 func (g assistGenerator) GenerateAssist(ctx context.Context, req speechkit.AssistRequest) (speechkit.AssistResult, error) {
-	output, err := g.flow.Run(ctx, AssistInput{
+	output, err := g.flow.Run(ctx, flows.AssistInput{
 		Utterance: req.Text,
 		Locale:    req.Locale,
 		Selection: req.Selection,

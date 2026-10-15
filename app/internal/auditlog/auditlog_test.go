@@ -58,13 +58,16 @@ func TestAppendEventWritesValidJSON(t *testing.T) {
 	}
 	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
-	if !scanner.Scan() {
-		t.Fatalf("want at least one line, got EOF")
-	}
 	var got Record
-	if err := json.Unmarshal(scanner.Bytes(), &got); err != nil {
-		t.Fatalf("unmarshal: %v", err)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		var rec Record
+		if err := json.Unmarshal(scanner.Bytes(), &rec); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if rec.Event == EventProviderSelected {
+			got = rec
+		}
 	}
 
 	if got.SchemaVersion != "2" {
@@ -118,13 +121,12 @@ func TestAppendEventRollsToNewDayFile(t *testing.T) {
 func TestPruneOldAuditFiles(t *testing.T) {
 	dir := t.TempDir()
 	t.Cleanup(ResetForTests)
-	Configure(true, dir, 2, false) // 2-day retention
-
 	oldDate := time.Now().UTC().AddDate(0, 0, -5).Format("2006-01-02")
 	oldPath := filepath.Join(dir, "audit-"+oldDate+".log")
 	if err := os.WriteFile(oldPath, []byte("{}\n"), 0o600); err != nil {
 		t.Fatalf("seed old file: %v", err)
 	}
+	Configure(true, dir, 2, false) // 2-day retention
 
 	err := AppendEvent(context.Background(), Record{Event: EventAuthFailed})
 	if err != nil {

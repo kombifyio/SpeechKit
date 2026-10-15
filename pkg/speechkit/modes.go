@@ -120,10 +120,13 @@ const (
 	// CapabilityNativeContextPrompt accepts caller-supplied situational
 	// context and CapabilityNativeKeyterms provider-side key terms;
 	// CapabilityNativeDictationStream marks a [DictationStreamProvider];
+	// CapabilityCompleteCaptureStream one whose stream can also return the
+	// transcript of the complete capture (DictationStreamOptions.CompleteCapture);
 	// CapabilityLanguageHints biases recognition toward given BCP-47 languages.
 	CapabilityNativeContextPrompt   Capability = "native_context_prompt"
 	CapabilityNativeKeyterms        Capability = "native_keyterms"
 	CapabilityNativeDictationStream Capability = "native_dictation_stream"
+	CapabilityCompleteCaptureStream Capability = "complete_capture_stream"
 	CapabilityLanguageHints         Capability = "language_hints"
 	// Provider-native options: speaker labels on a live stream, PII
 	// redaction, voice focus (suppressing background voices), a medical
@@ -500,7 +503,7 @@ func DefaultModeContracts() []ModeContract {
 			// conversation_context and the realtime session agent_context, so
 			// a dictation profile may legitimately advertise that its speech
 			// model conditions on caller-supplied situational context.
-			Allowed:   []Capability{CapabilityTranscription, CapabilitySTT, CapabilityAudioInput, CapabilityDictionaryPrompt, CapabilityDictionaryNativeHints, CapabilityWordsPrompt, CapabilityWordsNativeHints, CapabilityPostSTTReplacements, CapabilityNativeDictationStream, CapabilityNativeContextPrompt, CapabilitySpeakerDiarization, CapabilitySpeakerIdentification, CapabilitySpeakerAttribution},
+			Allowed:   []Capability{CapabilityTranscription, CapabilitySTT, CapabilityAudioInput, CapabilityDictionaryPrompt, CapabilityDictionaryNativeHints, CapabilityWordsPrompt, CapabilityWordsNativeHints, CapabilityPostSTTReplacements, CapabilityNativeDictationStream, CapabilityCompleteCaptureStream, CapabilityNativeContextPrompt, CapabilitySpeakerDiarization, CapabilitySpeakerIdentification, CapabilitySpeakerAttribution},
 			Forbidden: []Capability{CapabilityToolCalling, CapabilityLLM, CapabilityRealtimeAudio, CapabilityTTS},
 		},
 		{

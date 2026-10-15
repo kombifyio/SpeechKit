@@ -26,6 +26,19 @@ type Config struct {
 	TTS              TTS              `toml:"tts"`
 	VoiceAgent       VoiceAgent       `toml:"voice_agent"`
 	ServerConnection ServerConnection `toml:"server_connection"`
+	Providers        Providers        `toml:"providers"`
+}
+
+// Providers mirrors the embedder-relevant part of the [providers] table: the
+// provider allowlist. Provider-level settings (endpoints, deployments,
+// credentials) stay host-owned.
+type Providers struct {
+	// Allowed lists the provider ids a host may construct (for example
+	// local, ollama, foundry, github_copilot; see catalog.ProviderFamily for
+	// how ids compare). Empty means no restriction here; [PolicyFrom] expands
+	// a non-empty list into RuntimePolicy.AllowedProfiles. A managed host that
+	// reads an empty list as "none" applies that rule itself.
+	Allowed []string `toml:"allowed"`
 }
 
 // General mirrors the embedder-relevant [general] switches: which modes are

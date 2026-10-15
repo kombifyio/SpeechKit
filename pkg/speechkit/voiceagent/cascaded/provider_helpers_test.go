@@ -51,10 +51,11 @@ func (f *fakeAgent) Run(_ context.Context, in AgentInput) (AgentOutput, error) {
 }
 
 type fakeTTS struct {
-	mu    sync.Mutex
-	audio []byte
-	err   error
-	calls int
+	mu     sync.Mutex
+	audio  []byte
+	format string
+	err    error
+	calls  int
 }
 
 type fakeSpeakerStreamer struct {
@@ -120,7 +121,11 @@ func (f *fakeTTS) Synthesize(_ context.Context, _ string, _ tts.SynthesizeOpts) 
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &tts.Result{Audio: f.audio, Format: "mp3"}, nil
+	format := f.format
+	if format == "" {
+		format = "mp3"
+	}
+	return &tts.Result{Audio: f.audio, Format: format}, nil
 }
 
 // -- helpers ----------------------------------------------------------

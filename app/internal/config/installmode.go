@@ -54,20 +54,28 @@ func (s *InstallState) DismissHint(id string) bool {
 	return true
 }
 
-// installStateDir returns the directory for install state (APPDATA/SpeechKit).
-func installStateDir() string {
+// installStateDir returns the directory for install state (the product's
+// roaming data directory), or productid.ErrNoIdentity.
+func installStateDir() (string, error) {
 	return runtimepath.DataDir()
 }
 
 // installStatePath returns the full path to install.toml.
-func installStatePath() string {
-	return filepath.Join(installStateDir(), "install.toml")
+func installStatePath() (string, error) {
+	dir, err := installStateDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "install.toml"), nil
 }
 
 // LoadInstallState reads the install state from disk.
 // Returns a default (empty mode) if the file doesn't exist.
 func LoadInstallState() (*InstallState, error) {
-	path := installStatePath()
+	path, err := installStatePath()
+	if err != nil {
+		return nil, err
+	}
 	state := &InstallState{}
 
 	data, err := os.ReadFile(path) // #nosec G304 -- installStatePath is scoped to the SpeechKit data directory.
@@ -87,8 +95,11 @@ func LoadInstallState() (*InstallState, error) {
 
 // SaveInstallState writes the install state to disk.
 func SaveInstallState(state *InstallState) error {
-	dir := installStateDir()
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	path, err := installStatePath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create install state dir: %w", err)
 	}
 
@@ -96,7 +107,6 @@ func SaveInstallState(state *InstallState) error {
 		state.DeviceID = uuid.New().String()
 	}
 
-	path := installStatePath()
 	file, err := os.Create(path) // #nosec G304 -- installStatePath is scoped to the SpeechKit data directory.
 	if err != nil {
 		return fmt.Errorf("create install state: %w", err)
@@ -108,12 +118,6 @@ func SaveInstallState(state *InstallState) error {
 	}
 
 	return nil
-}
-
-// IsFirstRun returns true if no install state file exists.
-func IsFirstRun() bool {
-	_, err := os.Stat(installStatePath())
-	return os.IsNotExist(err)
 }
 
 // ApplyLocalInstallDefaults keeps a pending local install local-first while the

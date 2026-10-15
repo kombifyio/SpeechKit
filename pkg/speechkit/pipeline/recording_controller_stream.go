@@ -15,6 +15,10 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
+// errNoCompleteCaptureStream reports a provider that cannot transcribe the
+// complete capture through its stream, to a host that asked for nothing else.
+var errNoCompleteCaptureStream = errors.New("provider has no complete-capture stream")
+
 // providerStreamDialTimeout bounds the native live-dictation handshake so a
 // hung websocket cannot freeze the desktop hotkey loop. The microphone must
 // already be open by then; if the handshake misses this window, Start falls
@@ -47,7 +51,11 @@ func (c *RecordingController) startNativeDictationStream(sessionID uint64, opts 
 	if streamOpts.Language == "" {
 		streamOpts.Language = opts.Language
 	}
-	streamOpts.InterimResults = true
+	// A live stream is only opened for its drafts. A complete-capture stream
+	// commits without them, so there the host decides.
+	if !streamOpts.CompleteCapture {
+		streamOpts.InterimResults = true
+	}
 	dialTimeout := providerStreamDialTimeout
 	if dialTimeout <= 0 {
 		dialTimeout = 800 * time.Millisecond
@@ -63,10 +71,19 @@ func (c *RecordingController) startNativeDictationStream(sessionID uint64, opts 
 		cancel()
 		return nil, err
 	}
+	completeCapture := speechkit.IsCompleteCaptureStream(stream)
+	if streamOpts.CompleteCapture && !streamOpts.InterimResults && !completeCapture {
+		// The host wanted the complete-capture transcript and no drafts, and
+		// this provider can give it neither: Stop transcribes the recording.
+		cancel()
+		_ = stream.Close()
+		return nil, errNoCompleteCaptureStream
+	}
 	runtime := &dictationStreamRuntime{
-		sessionID: sessionID,
-		stream:    stream,
-		sink:      sink,
+		sessionID:       sessionID,
+		completeCapture: completeCapture,
+		stream:          stream,
+		sink:            sink,
 		sinkOpts: speechkit.DictationStreamSinkOptions{
 			Target:             opts.Target,
 			QuickNote:          opts.QuickNote,
@@ -92,6 +109,7 @@ func (r *dictationStreamRuntime) enqueuePCM(pcm []byte, controller *RecordingCon
 		return
 	}
 	frame := append([]byte(nil), pcm...)
+	r.queuedPCMBytes.Add(int64(len(frame)))
 	r.inputMu.Lock()
 	defer r.inputMu.Unlock()
 	if r.closed {
@@ -249,6 +267,19 @@ func (c *RecordingController) stopNativeDictationStream(runtime *dictationStream
 	if runtime == nil {
 		return 0
 	}
+	grouped, sessionHeld := runtime.sink.(*liveCommitSink)
+	sessionHeld = sessionHeld && grouped.policy.Mode == LiveCommitSession
+	if cancelled && sessionHeld {
+		// Nothing of a cancelled session is committed, so there is nothing to
+		// flush or wait for: asking the provider for its last finals would
+		// keep the microphone open until it answered.
+		runtime.closeInput()
+		runtime.cancel()
+		grouped.discard()
+		_ = runtime.stream.Close()
+		waitForChannel(runtime.receiverDone, time.Second)
+		return runtime.finalCount.Load()
+	}
 	runtime.closeInput()
 	if !waitForChannel(runtime.senderDone, 3*time.Second) {
 		c.onLog("Provider-stream sender did not drain before finalize; cancelling stream", "warn")
@@ -262,18 +293,22 @@ func (c *RecordingController) stopNativeDictationStream(runtime *dictationStream
 		runtime.cutShort.Store(true)
 	}
 	cancel()
-	if !waitForChannel(runtime.receiverDone, 5*time.Second) {
+	if !waitForChannel(runtime.receiverDone, runtime.drainTimeout()) {
 		c.onLog("Provider-stream receiver did not finish after finalize; cancelling stream", "warn")
 		runtime.cutShort.Store(true)
 		runtime.cancel()
 	}
-	grouped, sessionHeld := runtime.sink.(*liveCommitSink)
-	sessionHeld = sessionHeld && grouped.policy.Mode == LiveCommitSession
-	if sessionHeld && (cancelled || runtime.failed.Load() || runtime.cutShort.Load()) {
+	// A session commits once, after the recorder has the whole capture. Live
+	// finals are a first pass over a moving window and can miss words that a
+	// pass over the finished recording keeps, so they stay drafts: only a
+	// complete-capture transcript may be the commit, and Stop transcribes
+	// the recording when the stream gave none. Without a recording that Stop
+	// can transcribe, the live finals are all there is.
+	draftsOnly := sessionHeld && !runtime.completeCapture && !runtime.recordingUnusable.Load()
+	if sessionHeld && (draftsOnly || runtime.failed.Load() || runtime.cutShort.Load()) {
 		grouped.discard()
-		if !cancelled {
-			runtime.replayFull.Store(true)
-		}
+		runtime.replayFull.Store(true)
+		runtime.draftsOnly.Store(draftsOnly)
 	} else if flusher, ok := runtime.sink.(LiveCommitFlusher); ok {
 		flushErr := flusher.FlushLiveCommit(context.WithoutCancel(runtime.ctx))
 		if flushErr != nil {
@@ -313,6 +348,18 @@ func (c *RecordingController) finishNativeDictationStream(runtime *dictationStre
 		ender.EndDictationStreamSession(context.WithoutCancel(runtime.ctx), runtime.sessionID, runtime.sinkOpts)
 	}
 	return finals
+}
+
+// drainTimeout bounds the wait for the provider's last events after Finalize.
+// A complete-capture stream answers with the whole transcript only then, which
+// takes longer the longer the recording is.
+func (r *dictationStreamRuntime) drainTimeout() time.Duration {
+	const base = 5 * time.Second
+	if !r.completeCapture {
+		return base
+	}
+	captured := time.Duration(r.queuedPCMBytes.Load()/pcmBytesPerMs) * time.Millisecond
+	return base + captured/30
 }
 
 func waitForChannel(done <-chan struct{}, timeout time.Duration) bool {

@@ -27,6 +27,11 @@ type Microsoft365Config struct {
 	// SpeechKit's own review. Every user needs a Microsoft 365 Copilot
 	// licence.
 	ImportCopilotRecaps bool `toml:"import_copilot_recaps"`
+	// AllowTranscriptPaste lets the user paste a transcript text or upload a
+	// .vtt file into a finished meeting when the import found none. It sits
+	// under the same permission as the import: the route also needs
+	// ImportTeamsTranscripts and the recorded grant. Off by default.
+	AllowTranscriptPaste bool `toml:"allow_transcript_paste"`
 	// TenantID pins the Microsoft sign-in authority. Empty signs in to the
 	// account's home tenant, which is where its Teams meetings live.
 	TenantID string `toml:"tenant_id,omitempty"`
@@ -58,6 +63,12 @@ func (c Microsoft365Config) HasRecapGrant() bool {
 // user turned the import on and gave the permission.
 func (c Microsoft365Config) TranscriptImportActive() bool {
 	return c.ImportTeamsTranscripts && c.HasTranscriptGrant()
+}
+
+// TranscriptPasteActive reports whether a transcript can be pasted into a
+// meeting: the paste switch is on next to the import and its permission.
+func (c Microsoft365Config) TranscriptPasteActive() bool {
+	return c.AllowTranscriptPaste && c.TranscriptImportActive()
 }
 
 // RecapImportActive reports whether Copilot meeting recaps are imported.

@@ -16,12 +16,24 @@
 // See docs/server/README.md for the full operator guide.
 package main
 
-import "github.com/kombifyio/SpeechKit/app/internal/server/cli"
+import (
+	"fmt"
+	"os"
+
+	"github.com/kombifyio/SpeechKit/app/internal/productid"
+	"github.com/kombifyio/SpeechKit/app/internal/server/cli"
+)
 
 // version is overridden at build time via `-ldflags="-X main.version=..."`.
 var version = "dev"
 
 func main() {
+	// The server shares the reference client's data directory, secret store
+	// and policy roots.
+	if err := productid.Register(productid.Reference); err != nil {
+		fmt.Fprintln(os.Stderr, "speechkit-server:", err)
+		os.Exit(1)
+	}
 	cli.Run(cli.Options{
 		Banner:  "speechkit-server",
 		Version: version,

@@ -26,6 +26,9 @@ func InferLiveEventTypes(msg *LiveMessage) []LiveEventType {
 	if msg.Interrupted {
 		out = appendLiveEventType(out, LiveEventInterrupted)
 	}
+	if msg.TurnError != nil {
+		out = appendLiveEventType(out, LiveEventTurnFailed)
+	}
 	if msg.InputTranscript != "" {
 		if msg.InputTranscriptDone {
 			out = appendLiveEventType(out, LiveEventInputFinal)

@@ -86,7 +86,10 @@ type StartOptions struct {
 	// Title is used for host-visible capture labels only.
 	Title    string
 	Language string
-	// Channels to record. Defaults to microphone plus system loopback.
+	// Channels to record. Defaults to microphone plus system loopback. A single
+	// channel is valid: only that channel's pipeline is requested from the
+	// factory, the snapshot reports one channel, and SuppressEcho has nothing
+	// to compare.
 	Channels []string
 	// Recording carries the transcription settings the host resolved for this
 	// meeting (provider stream, streaming segments, ...). The runtime fills in

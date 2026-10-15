@@ -37,6 +37,12 @@ func (s *recordingHistorySink) CompleteDictationStreamRecording(ctx context.Cont
 	s.scope = ctx.Value(recordingContextKey{})
 }
 
+// completeCaptureFakeStream is a stream whose final is the transcript of the
+// whole capture, like a provider's complete-capture stream.
+type completeCaptureFakeStream struct{ *fakeDictationStream }
+
+func (completeCaptureFakeStream) CompleteCapture() bool { return true }
+
 // Protect the audio-conservation invariant: the provider must receive the
 // full recording in order, including speech during dial and stop drain.
 func TestRecordingControllerStreamPreservesCaptureBoundaries(t *testing.T) {
@@ -46,7 +52,7 @@ func TestRecordingControllerStreamPreservesCaptureBoundaries(t *testing.T) {
 	full := bytes.Join([][]byte{onset, middle, tail}, nil)
 	recorder := &stopDrainRecorder{fakeRecorder: &fakeRecorder{stopPCM: full}, tail: tail}
 	stream := newFakeDictationStream(speechkit.DictationStreamEvent{Text: "Keep the complete instruction", IsFinal: true})
-	provider := &dialingDictationStreamProvider{recorder: recorder.fakeRecorder, dialing: onset, stream: stream}
+	provider := &dialingDictationStreamProvider{recorder: recorder.fakeRecorder, dialing: onset, stream: completeCaptureFakeStream{stream}}
 	submitter := &fakeSubmitter{}
 	controller := NewRecordingController(recorder, submitter, &fakeObserver{}, nil)
 	sink := &recordingHistorySink{fakeDictationStreamSink: &fakeDictationStreamSink{}}
@@ -108,6 +114,43 @@ func TestRecordingControllerStreamRecoversMissingCallbacksWithoutPartialCommit(t
 		if event.Text != "" {
 			t.Fatal("partial held transcript was committed before full recovery")
 		}
+	}
+}
+
+// A live stream's finals are a first pass over a moving window: Deepgram's
+// live socket dropped words that its REST model returned for the same
+// recording. A session that commits once must commit the recording itself,
+// also when it is shorter than a capture the controller would otherwise skip.
+func TestRecordingControllerSessionCommitsTheRecordingNotLiveFinals(t *testing.T) {
+	for name, full := range map[string][]byte{
+		"dictation":       bytes.Repeat([]byte{1, 2}, 16000),
+		"short utterance": bytes.Repeat([]byte{1, 2}, speechkit.DefaultMinPCMBytes/4),
+	} {
+		t.Run(name, func(t *testing.T) {
+			recorder := &fakeRecorder{stopPCM: full}
+			stream := newFakeDictationStream(speechkit.DictationStreamEvent{Text: "live pass with a word missing", IsFinal: true})
+			sink := &fakeDictationStreamSink{}
+			submitter := &fakeSubmitter{}
+			controller := NewRecordingController(recorder, submitter, &fakeObserver{}, nil)
+			controller.SetDictationStream(&fakeDictationStreamProvider{stream: stream}, sink)
+			if err := controller.Start(speechkit.RecordingStartOptions{ProviderStream: true, LiveCommitMode: LiveCommitSession}); err != nil {
+				t.Fatal(err)
+			}
+			recorder.pcmHandler(full)
+			if err := controller.Stop(speechkit.RecordingStopOptions{}); err != nil {
+				t.Fatal(err)
+			}
+			if finals := sink.finalEvents(); len(finals) != 0 {
+				t.Fatalf("a live final was committed: %q", finals[0].Text)
+			}
+			var submitted []byte
+			for _, job := range submitter.jobs {
+				submitted = append(submitted, job.PCM...)
+			}
+			if !bytes.Equal(submitted, full) {
+				t.Fatal("the complete recording was not submitted for transcription")
+			}
+		})
 	}
 }
 

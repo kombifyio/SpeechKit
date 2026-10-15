@@ -4,6 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+
+	"github.com/kombifyio/SpeechKit/app/internal/productid"
 )
 
 var (
@@ -58,8 +61,14 @@ func IsPortable() bool {
 	return false
 }
 
+// portableDisabled reports the <EnvPrefix>_DISABLE_PORTABLE switch. A product
+// without an environment prefix (or none registered) reads no override.
 func portableDisabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("SPEECHKIT_DISABLE_PORTABLE"))) {
+	product, err := productid.Current()
+	if err != nil || product.EnvPrefix == "" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(product.EnvPrefix + "_DISABLE_PORTABLE"))) {
 	case "1", "true", "yes", "on":
 		return true
 	default:
@@ -67,47 +76,144 @@ func portableDisabled() bool {
 	}
 }
 
+// dataDirName is the registered product's data directory name. Every path
+// function below fails closed with productid.ErrNoIdentity without one, so a
+// process that names no product never gets a relative or shared path.
+func dataDirName() (string, error) {
+	p, err := productid.Current()
+	if err != nil {
+		return "", err
+	}
+	return p.DataDirName, nil
+}
+
 // DataDir is the roaming per-user directory for config, feedback and
 // secrets. Portable bundles keep it next to the executable; installed
 // builds use the platform's per-user location (paths_<os>.go).
-func DataDir() string {
+func DataDir() (string, error) {
+	name, err := dataDirName()
+	if err != nil {
+		return "", err
+	}
 	if IsPortable() {
 		exeDir := ExecutableDir()
 		if exeDir != "" {
-			return filepath.Join(exeDir, "data")
+			return filepath.Join(exeDir, "data"), nil
 		}
 	}
-	return platformDataDir()
+	return platformDataDir(name), nil
 }
 
 // LocalDataDir is the machine-local per-user directory for large,
 // non-roaming data such as downloaded models and runtimes.
-func LocalDataDir() string {
+func LocalDataDir() (string, error) {
+	name, err := dataDirName()
+	if err != nil {
+		return "", err
+	}
 	if IsPortable() {
 		return DataDir()
 	}
-	return platformLocalDataDir()
+	return platformLocalDataDir(name), nil
 }
 
-func ModelsDir() string {
-	return filepath.Join(LocalDataDir(), "models")
+// ContentDir is the data root: where user content lives (the SQLite
+// database, recordings, snapshots, wake-word clips). On Windows installs it
+// is %LOCALAPPDATA%\<DataDirName>, never Roaming, because roaming profiles,
+// FSLogix and UE-V copy Roaming to file servers. SetContentDir pins it (the
+// data_root setting, or the root start-up kept after a failed migration);
+// portable bundles keep <exe>\data; macOS and the other targets keep
+// DataDir.
+func ContentDir() (string, error) {
+	if _, err := dataDirName(); err != nil {
+		return "", err
+	}
+	contentMu.RLock()
+	pinned := contentOverride
+	contentMu.RUnlock()
+	if pinned != "" {
+		return pinned, nil
+	}
+	return DefaultContentDir()
 }
 
-func ConfigFilePath() string {
+// DefaultContentDir is the data root without any pin applied.
+func DefaultContentDir() (string, error) {
+	name, err := dataDirName()
+	if err != nil {
+		return "", err
+	}
+	if IsPortable() {
+		return DataDir()
+	}
+	return platformContentDir(name), nil
+}
+
+// LegacyContentDir is the roaming directory earlier releases kept user
+// content in, or "" where the content root never moved (portable bundles,
+// macOS, Unix).
+func LegacyContentDir() (string, error) {
+	name, err := dataDirName()
+	if err != nil {
+		return "", err
+	}
+	if IsPortable() {
+		return "", nil
+	}
+	return platformLegacyContentDir(name), nil
+}
+
+// SetContentDir pins the data root for this process; "" clears the pin.
+func SetContentDir(dir string) {
+	contentMu.Lock()
+	contentOverride = strings.TrimSpace(dir)
+	contentMu.Unlock()
+}
+
+var (
+	contentMu       sync.RWMutex
+	contentOverride string
+)
+
+// ModelsDir is where downloaded models live, under LocalDataDir.
+func ModelsDir() (string, error) {
+	local, err := LocalDataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(local, "models"), nil
+}
+
+// ConfigFilePath is config.toml: next to the executable of a portable
+// bundle, in DataDir otherwise.
+func ConfigFilePath() (string, error) {
+	data, err := DataDir()
+	if err != nil {
+		return "", err
+	}
 	if IsPortable() {
 		exeDir := ExecutableDir()
 		if exeDir != "" {
-			return filepath.Join(exeDir, "config.toml")
+			return filepath.Join(exeDir, "config.toml"), nil
 		}
 	}
-	return filepath.Join(DataDir(), "config.toml")
+	return filepath.Join(data, "config.toml"), nil
 }
 
-func SecretsDir() string {
-	if IsPortable() {
-		return filepath.Join(DataDir(), "secrets")
+// SecretsDir is where the encrypted secret store keeps its blobs.
+func SecretsDir() (string, error) {
+	name, err := dataDirName()
+	if err != nil {
+		return "", err
 	}
-	return platformSecretsDir()
+	if IsPortable() {
+		data, err := DataDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(data, "secrets"), nil
+	}
+	return platformSecretsDir(name), nil
 }
 
 // envDataDir is the %APPDATA%-based roaming directory the Windows install
@@ -115,42 +221,32 @@ func SecretsDir() string {
 // same variables behaves as before.
 //
 // Without APPDATA the data must still land in the user's own profile. The
-// old fallback was ".\SpeechKit" in the current working directory, which
-// for a process started from a shared or system folder put transcripts and
+// old fallback was ".\<name>" in the current working directory, which for a
+// process started from a shared or system folder put transcripts and
 // recordings wherever that happened to be.
-func envDataDir() string {
+func envDataDir(name string) string {
 	if appData := strings.TrimSpace(os.Getenv("APPDATA")); appData != "" {
-		return filepath.Join(appData, "SpeechKit")
+		return filepath.Join(appData, name)
 	}
 	if configDir, err := userConfigDir(); err == nil && strings.TrimSpace(configDir) != "" {
-		return filepath.Join(configDir, "SpeechKit")
+		return filepath.Join(configDir, name)
 	}
 	if home, err := userHomeDir(); err == nil && strings.TrimSpace(home) != "" {
-		return filepath.Join(home, ".speechkit")
+		return filepath.Join(home, "."+strings.ToLower(name))
 	}
 	// No profile at all (a stripped service environment): the per-user
 	// temp directory is still private to the account, unlike the CWD.
-	return filepath.Join(os.TempDir(), "SpeechKit")
+	return filepath.Join(os.TempDir(), name)
 }
 
 // envLocalDataDir is the %LOCALAPPDATA%-based local directory, falling
-// back to DataDir when the variable is unset.
-func envLocalDataDir() string {
+// back to the roaming directory when the variable is unset.
+func envLocalDataDir(name string) string {
 	localAppData := strings.TrimSpace(os.Getenv("LOCALAPPDATA"))
 	if localAppData == "" {
-		return DataDir()
+		return platformDataDir(name)
 	}
-	return filepath.Join(localAppData, "SpeechKit")
-}
-
-// configDirSecretsDir keeps secrets under os.UserConfigDir, falling back to
-// DataDir when the platform cannot report one.
-func configDirSecretsDir() string {
-	configDir, err := userConfigDir()
-	if err != nil || strings.TrimSpace(configDir) == "" {
-		return filepath.Join(DataDir(), "secrets")
-	}
-	return filepath.Join(configDir, "SpeechKit", "secrets")
+	return filepath.Join(localAppData, name)
 }
 
 func pathExists(path string) bool {

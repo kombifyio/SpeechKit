@@ -23,7 +23,10 @@ type fileStore struct {
 }
 
 func (s *fileStore) Load(name string) (string, bool, error) {
-	path := secretFilePath(name)
+	path, err := secretFilePath(name)
+	if err != nil {
+		return "", false, err
+	}
 	data, err := os.ReadFile(path) // #nosec G304 -- secretFilePath maps names to a scoped secrets-dir filename.
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -39,7 +42,10 @@ func (s *fileStore) Load(name string) (string, bool, error) {
 }
 
 func (s *fileStore) Store(name, value string) error {
-	path := secretFilePath(name)
+	path, err := secretFilePath(name)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
@@ -51,15 +57,24 @@ func (s *fileStore) Store(name, value string) error {
 }
 
 func (s *fileStore) Delete(name string) error {
-	path := secretFilePath(name)
+	path, err := secretFilePath(name)
+	if err != nil {
+		return err
+	}
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	return nil
 }
 
-func secretFilePath(name string) string {
-	return filepath.Join(runtimepath.SecretsDir(), secretFileName(name))
+// secretFilePath fails closed with productid.ErrNoIdentity when no product
+// identity names the secrets directory.
+func secretFilePath(name string) (string, error) {
+	dir, err := runtimepath.SecretsDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, secretFileName(name)), nil
 }
 
 var safeSecretFileNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)

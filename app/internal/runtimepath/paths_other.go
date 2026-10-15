@@ -7,8 +7,11 @@ package runtimepath
 // harness set APPDATA/LOCALAPPDATA explicitly, and there is no desktop
 // client on these platforms yet that would want an XDG layout.
 
-func platformDataDir() string      { return envDataDir() }
-func platformLocalDataDir() string { return envLocalDataDir() }
-func platformSecretsDir() string   { return configDirSecretsDir() }
+func platformDataDir(name string) string      { return envDataDir(name) }
+func platformLocalDataDir(name string) string { return envLocalDataDir(name) }
+func platformSecretsDir(name string) string   { return configDirSecretsDir(name) }
+
+func platformContentDir(name string) string  { return platformDataDir(name) }
+func platformLegacyContentDir(string) string { return "" }
 
 func platformAllowsPortable(string) bool { return true }

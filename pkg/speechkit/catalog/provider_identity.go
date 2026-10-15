@@ -102,6 +102,46 @@ func ProviderIDForExecutionMode(mode speechkit.ExecutionMode) string {
 	}
 }
 
+// ProviderFamily maps a provider id, alias or profile id onto the provider an
+// allowlist names: a product served by another provider's account or endpoint
+// belongs to that provider (foundry-voicelive and foundry-gpt-live are
+// foundry, gpt-live is openai), the bundled Piper engine is local, and the
+// self-hosted adapters (vps, openedai) are selfhosted. Everything else is its
+// canonical id from [NormalizeProviderID].
+func ProviderFamily(provider string) string {
+	id := NormalizeProviderID(provider)
+	switch id {
+	case "foundry-voicelive", "foundry-gpt-live":
+		return "foundry"
+	case "gpt-live":
+		return "openai"
+	case "piper":
+		return "local"
+	case "vps", "openedai":
+		return "selfhosted"
+	default:
+		return id
+	}
+}
+
+// ProviderInAllowlist reports whether allowed names provider. Both sides are
+// compared by [ProviderFamily], so "foundry" admits every Foundry surface and
+// "github_copilot" matches "github-copilot". An empty provider is never
+// named; an empty allowed list names nothing (what an empty list means is the
+// host's decision).
+func ProviderInAllowlist(provider string, allowed []string) bool {
+	family := ProviderFamily(provider)
+	if family == "" {
+		return false
+	}
+	for _, entry := range allowed {
+		if ProviderFamily(entry) == family {
+			return true
+		}
+	}
+	return false
+}
+
 func providerDisplayName(provider string) string {
 	switch NormalizeProviderID(provider) {
 	case "local":

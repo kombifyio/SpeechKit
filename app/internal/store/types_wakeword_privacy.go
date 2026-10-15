@@ -133,13 +133,15 @@ type ScopePrivacyStore interface {
 
 // ScopeExport is the structured payload returned by ExportScope (GDPR Art. 15).
 type ScopeExport struct {
-	Scope              Scope                 `json:"scope"`
-	Transcriptions     []Transcription       `json:"transcriptions"`
-	QuickNotes         []QuickNote           `json:"quick_notes"`
-	VoiceAgentSessions []VoiceAgentSession   `json:"voice_agent_sessions"`
-	RecordingSessions  []RecordingSession    `json:"recording_sessions,omitempty"`
-	DictionaryEntries  []UserDictionaryEntry `json:"dictionary_entries,omitempty"`
-	AudioAssetPaths    []string              `json:"audio_asset_paths"`
+	Scope              Scope               `json:"scope"`
+	Transcriptions     []Transcription     `json:"transcriptions"`
+	QuickNotes         []QuickNote         `json:"quick_notes"`
+	VoiceAgentSessions []VoiceAgentSession `json:"voice_agent_sessions"`
+	RecordingSessions  []RecordingSession  `json:"recording_sessions,omitempty"`
+	// Notebooks is the notebook index the sessions reference.
+	Notebooks         []Notebook            `json:"notebooks,omitempty"`
+	DictionaryEntries []UserDictionaryEntry `json:"dictionary_entries,omitempty"`
+	AudioAssetPaths   []string              `json:"audio_asset_paths"`
 	// SnapshotFilePaths are the on-disk image files of the exported meetings'
 	// screen captures, listed like AudioAssetPaths so the caller can bundle
 	// them; the JSON never embeds the pixels.

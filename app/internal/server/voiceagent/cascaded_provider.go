@@ -5,7 +5,7 @@ package voiceagent
 import (
 	"context"
 
-	"github.com/kombifyio/SpeechKit/app/internal/ai/flows"
+	"github.com/kombifyio/SpeechKit/app/internal/ai/flowadapt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/cascaded"
 )
 
@@ -43,7 +43,7 @@ func NewCascadedProvider(deps CascadedDeps) *CascadedProvider {
 
 // NewAgentFlowAdapter bridges the server's agent flow to cascaded.Agent for
 // app/internal/server/core/voiceagent_wiring.go.
-var NewAgentFlowAdapter = flows.NewCascadedAgent
+var NewAgentFlowAdapter = flowadapt.NewCascadedAgent
 
 // Connect translates the rich server LiveConfigFrame into a minimal
 // cascaded.SessionConfig and forwards.

@@ -163,6 +163,14 @@ func ResolveProviderCredentialValue(cfg *Config, target string) (string, string,
 	switch target {
 	case "":
 		return "", "", nil
+	case "foundry":
+		envName := ProviderCredentialEnvName(cfg, target)
+		if cfg.foundryKeyForbidden() {
+			// Foundry\AuthMode = entra is pinned: a resource key from config
+			// or the secret store is never used.
+			return "", envName, nil
+		}
+		return strings.TrimSpace(ResolveSecret(envName)), envName, nil
 	case "huggingface":
 		token, _, err := ResolveHuggingFaceToken(cfg)
 		return strings.TrimSpace(token), HuggingFaceTokenEnvName(cfg), err

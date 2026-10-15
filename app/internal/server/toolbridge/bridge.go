@@ -34,6 +34,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
 
 // WireVersion is the toolbridge wire-contract version this client speaks.
@@ -176,7 +178,7 @@ func New(opts Options) (*Bridge, error) {
 	}
 	client := opts.HTTPClient
 	if client == nil {
-		client = &http.Client{Timeout: timeout}
+		client = netsec.NewClient(netsec.ClientOptions{Timeout: timeout})
 	}
 	clock := opts.Clock
 	if clock == nil {

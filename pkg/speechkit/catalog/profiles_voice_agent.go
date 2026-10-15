@@ -106,7 +106,7 @@ func voiceAgentProviderProfiles() []speechkit.ProviderProfile {
 			AdapterKind:      "gemini_live",
 			Variants: []speechkit.ModelVariant{
 				{ID: "gemini.3.8.live", Name: "Gemini 3.8 Live", ModelID: modelGemini38Live, Recommended: true},
-				{ID: "gemini.3.8.live-extended-thinking", Name: "Gemini 3.8 Live Extended Thinking (Preview)", ModelID: modelGemini38LiveExtendedThinking, Description: "Background reasoning with conversational fillers; tools always run non-blocking."},
+				{ID: "gemini.3.8.live-extended-thinking", Name: "Gemini 3.8 Live Extended Thinking", ModelID: modelGemini38LiveExtendedThinking, Description: "Background reasoning with conversational fillers; tools always run non-blocking."},
 			},
 			AllowInference: true,
 		},

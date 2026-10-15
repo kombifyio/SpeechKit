@@ -93,7 +93,7 @@ func (p *Provider) Transcribe(ctx context.Context, audioData []byte, opts stt.Tr
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	start := time.Now()
-	resp, err := transcribeHTTPClient(p.client, requestTimeout, &p.Validation).Do(req)
+	resp, err := p.keyed(transcribeHTTPClient(p.client, requestTimeout, &p.Validation)).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("local transcribe: %w", stt.ClassifyTransportError("local", err))
 	}

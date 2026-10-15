@@ -129,6 +129,10 @@ linters:
           msg: 'use the instance logger (logutil.Resolve(x.Logger)), not the global slog'
         - pattern: '^slog\.Default$'
           msg: 'resolve fallbacks through logutil.Resolve'
+        # Egress: every outbound client comes from netsec, so the network scope
+        # binds it. http.Client literals are caught by the ruleguard rule below.
+        - pattern: '^http[.](DefaultClient|DefaultTransport)$'
+          msg: 'use netsec.NewClient or netsec.Default (egress is guarded centrally)'
       analyze-types: false
 
   exclusions:
@@ -152,6 +156,16 @@ linters:
       - path-except: '^pkg/'
         linters:
           - forbidigo
+        text: 'logutil[.]Resolve'
+      # netsec is the one place that builds raw clients and transports.
+      - path: '^pkg/speechkit/netsec/'
+        linters:
+          - forbidigo
+        text: 'netsec[.]'
+      - path: '^pkg/speechkit/netsec/'
+        linters:
+          - gocritic
+        text: 'netsec[.]NewClient'
       - path: _test\.go
         linters:
           - forbidigo
@@ -172,7 +186,7 @@ linters:
         text: context-as-argument
         linters:
           - revive
-      - path: app/internal/winapi/
+      - path: app/host/internal/winapi/
         linters:
           - revive
           - gocritic

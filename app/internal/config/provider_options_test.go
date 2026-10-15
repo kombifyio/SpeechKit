@@ -43,7 +43,7 @@ func TestProviderOptionsSaveReloadPreservesFalseOverride(t *testing.T) {
 	})
 
 	path := filepath.Join(t.TempDir(), "config.toml")
-	if err := Save(path, cfg); err != nil {
+	if err := save(path, cfg); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	raw, err := os.ReadFile(path)

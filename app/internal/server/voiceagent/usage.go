@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
 
 // VoiceUsage is provider-authoritative connected time. The server starts the
@@ -64,7 +66,7 @@ type HTTPUsageReporter struct {
 func NewHTTPUsageReporter(endpoint string) *HTTPUsageReporter {
 	return &HTTPUsageReporter{
 		Endpoint: strings.TrimSpace(endpoint),
-		Client:   &http.Client{Timeout: 5 * time.Second},
+		Client:   netsec.NewClient(netsec.ClientOptions{Timeout: 5 * time.Second}),
 	}
 }
 
@@ -109,7 +111,7 @@ func (r *HTTPUsageReporter) report(ctx context.Context, usage VoiceUsage, author
 	}
 	client := r.Client
 	if client == nil {
-		client = &http.Client{Timeout: 5 * time.Second}
+		client = netsec.NewClient(netsec.ClientOptions{Timeout: 5 * time.Second})
 	}
 	if forbidRedirects {
 		// Custom service-auth headers are not stripped by Go's default

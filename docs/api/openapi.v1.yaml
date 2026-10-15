@@ -6,9 +6,9 @@ info:
   description: >
     SpeechKit exposes this API from the local desktop host so external tools can
     inspect mode contracts, manage per-mode settings, select provider profiles,
-    check readiness, and start or stop the three strict modes. Read-only GET
-    routes are local introspection surfaces; mutating PATCH and POST routes
-    declare ControlPlaneHeader or ControlPlaneCookie security.
+    check readiness, and start or stop the three strict modes. Every route
+    declares ControlPlaneHeader security; the desktop host rejects a request
+    without the per-session token.
 servers:
   - url: http://127.0.0.1:{port}
     description: Local SpeechKit desktop host
@@ -16,7 +16,8 @@ servers:
       port:
         default: "0"
         description: Runtime-assigned local control-plane port.
-security: []
+security:
+  - ControlPlaneHeader: []
 tags:
   - name: Modes
   - name: Server
@@ -63,7 +64,6 @@ paths:
       summary: Update one mode's settings.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       requestBody:
         required: true
         content:
@@ -95,7 +95,6 @@ paths:
       summary: Start the selected mode through the command bus.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       responses:
         "200":
           description: Command accepted.
@@ -120,7 +119,6 @@ paths:
       summary: Stop the selected mode through the command bus.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       responses:
         "200":
           description: Command accepted.
@@ -154,7 +152,6 @@ paths:
       summary: Update or activate a SpeechKit server target.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       requestBody:
         required: true
         content:
@@ -179,7 +176,6 @@ paths:
       summary: Probe a SpeechKit server target with health and readiness checks.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       requestBody:
         required: true
         content:
@@ -276,7 +272,6 @@ paths:
       summary: Import old dictionary-shaped entries as a migration projection.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       requestBody:
         required: true
         content:
@@ -321,7 +316,6 @@ paths:
         - $ref: "#/components/parameters/CustomizationSource"
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       requestBody:
         required: true
         content:
@@ -362,7 +356,6 @@ paths:
         - $ref: "#/components/parameters/CustomizationSource"
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       requestBody:
         required: true
         content:
@@ -403,7 +396,6 @@ paths:
         - $ref: "#/components/parameters/CustomizationSource"
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       requestBody:
         required: true
         content:
@@ -443,7 +435,6 @@ paths:
         - $ref: "#/components/parameters/CustomizationSource"
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       requestBody:
         required: true
         content:
@@ -483,7 +474,6 @@ paths:
         - $ref: "#/components/parameters/CustomizationSource"
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       requestBody:
         required: true
         content:
@@ -515,7 +505,6 @@ paths:
       summary: Replace the active Native Template list.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       requestBody:
         required: true
         content:
@@ -579,7 +568,6 @@ paths:
         - $ref: "#/components/parameters/CustomizationSource"
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       requestBody:
         required: true
         content:
@@ -672,7 +660,6 @@ paths:
       summary: Start a long-running dictation or meeting recording session record.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       requestBody:
         required: true
         content:
@@ -754,13 +741,49 @@ paths:
           $ref: "#/components/responses/NotFound"
         "501":
           $ref: "#/components/responses/NotImplemented"
+    patch:
+      tags: [Data]
+      operationId: updateRecordingSession
+      summary: Link a recording session to a notebook of the index, or unlink it.
+      description: >-
+        The only updatable field is notebookId: a notebook id links the session
+        to that notebook, null (or 0) removes the link. The session keeps its
+        transcript, notes and screenshots either way.
+      security:
+        - ControlPlaneHeader: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordingSessionUpdateRequest"
+      responses:
+        "200":
+          description: Updated recording session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSession"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          description: The session or the notebook does not exist.
+        "501":
+          $ref: "#/components/responses/NotImplemented"
     delete:
       tags: [Data]
       operationId: deleteRecordingSession
       summary: Delete one recording session and its ordered transcript segments.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -794,7 +817,6 @@ paths:
       summary: List the written-up notes of a meeting, newest first.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -828,7 +850,6 @@ paths:
         starting one.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -896,7 +917,6 @@ paths:
         title. A write-up is only addressable through its own meeting.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -936,7 +956,6 @@ paths:
         write files to arbitrary places. Closing the dialog is not an error.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -984,7 +1003,6 @@ paths:
       summary: Keep this meeting out of the retention sweep.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -1025,7 +1043,6 @@ paths:
       summary: List what a meeting can be written up as.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -1062,7 +1079,6 @@ paths:
       summary: Read the notes the user wrote themselves during this meeting.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -1089,7 +1105,6 @@ paths:
         pane rather than appending to it.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -1124,7 +1139,6 @@ paths:
         transcription without inferring them.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -1147,9 +1161,14 @@ paths:
       tags: [Data]
       operationId: startRecordingSessionCapture
       summary: Start meeting capture on the microphone and system-loopback channels.
+      description: >-
+        Capture attaches to the open notebook of the session; without an open
+        notebook, start opens one that ends with its capture. A session
+        records one capture: a second start while it runs, a start after its
+        capture stopped, and a start while another notebook is open answer
+        409. Pause and resume break a running capture off and continue it.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -1178,7 +1197,6 @@ paths:
       summary: Pause Dictation capture for a recording session without finishing the session record.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -1205,7 +1223,6 @@ paths:
       summary: Resume Dictation capture for a paused recording session.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -1234,7 +1251,6 @@ paths:
       summary: Stop Dictation capture for a recording session without finishing the session record.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -1261,7 +1277,6 @@ paths:
       summary: Append or replace one finalized or draft transcript segment in a recording session.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -1296,7 +1311,6 @@ paths:
       summary: Mark a recording session finished and persist a supplied or derived summary.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -1322,6 +1336,75 @@ paths:
           $ref: "#/components/responses/NotFound"
         "501":
           $ref: "#/components/responses/NotImplemented"
+  /api/v1/recording-sessions/{sessionId}/open:
+    post:
+      tags: [Data]
+      operationId: openRecordingSessionNotebook
+      summary: Open a meeting session as this device's notebook, without starting capture.
+      description: >-
+        One notebook is open on a device at a time. An open notebook shows the
+        meeting notepad and takes screenshots whether or not capture runs;
+        start attaches capture to it, stopping capture keeps it open, and
+        close ends it. Opening the open notebook again is not an error.
+      security:
+        - ControlPlaneHeader: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: The opened session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSession"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >-
+            Another notebook is open, the session is finished or not a
+            meeting, or Meeting Mode is disabled.
+          content:
+            text/plain:
+              schema:
+                type: string
+  /api/v1/recording-sessions/{sessionId}/close:
+    post:
+      tags: [Data]
+      operationId: closeRecordingSessionNotebook
+      summary: Close the notebook of a meeting session and end the session.
+      description: >-
+        Stops capture when it runs for the session, closes the notebook and
+        ends the session the way a finished meeting ends (the end is stored,
+        the notepad closes, the write-up and the Teams import start). A
+        screenshot still in flight is discarded. Closing a finished session
+        answers it unchanged.
+      security:
+        - ControlPlaneHeader: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: The closed session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSession"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /api/v1/recording-sessions/{sessionId}/summary:
     get:
       tags: [Data]
@@ -1352,7 +1435,6 @@ paths:
       summary: Attach or replace a recording session summary without finishing capture.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -1387,7 +1469,6 @@ paths:
       summary: Start an asynchronous provider-capable summary job for ordered final recording-session segments.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -1419,7 +1500,6 @@ paths:
         from these digests rather than from the raw transcript.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -1447,11 +1527,12 @@ paths:
       operationId: listRecordingSessionImports
       summary: List what was imported into a meeting from outside services.
       description: >-
-        Today one row per meeting at most: the Microsoft Teams transcript
-        import. While it waits, the meeting's write-up waits too.
+        One row per kind at most: the Microsoft Teams transcript import (its
+        `contentJson` records whether the transcript was imported or pasted),
+        the Copilot recap and the preflight outcome. While the transcript
+        import waits, the meeting's write-up waits too.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -1473,6 +1554,171 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/RecordingSessionImport"
+  /api/v1/recording-sessions/{sessionId}/preflight:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+    post:
+      tags: [Data]
+      operationId: runTeamsPreflight
+      summary: Check a meeting's Microsoft 365 transcript path once.
+      description: >-
+        Runs the preflight of a meeting: the silent token and transcript
+        permission, the calendar around now, the online meeting behind the call
+        and a transcript list on it. A recorded `ready` or `no_teams_meeting`
+        is final for the session and answers every later call
+        (`cached: true`). The repairable outcomes `signed_out`,
+        `admin_consent_required`, `tenant_disabled` and `unavailable` are
+        recorded too, so a restart shows the last answer, but a later POST runs
+        the preflight again (the one-minute access probe cache is the only
+        debounce) and replaces the recorded outcome when it changed. It reads
+        only and never blocks a capture; the caller decides what to show.
+        `disabled` (the import is off by configuration, policy or the privacy
+        scope, or its permission was not given) asks Microsoft 365 nothing and
+        is not recorded. Every outcome carries a
+        stable localization id in `messageId`. Answers 409 for a session that
+        is not a meeting.
+      security:
+        - ControlPlaneHeader: []
+      responses:
+        "200":
+          description: The outcome.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamsPreflight"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The session is not a meeting.
+    get:
+      tags: [Data]
+      operationId: getTeamsPreflight
+      summary: Read a meeting's recorded preflight outcome without running it.
+      security:
+        - ControlPlaneHeader: []
+      responses:
+        "200":
+          description: The recorded outcome.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamsPreflight"
+        "204":
+          description: The meeting has no recorded preflight yet.
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/recording-sessions/{sessionId}/transcript-paste:
+    post:
+      tags: [Data]
+      operationId: pasteMeetingTranscript
+      summary: Add a pasted or uploaded transcript to a finished meeting.
+      description: >-
+        For a meeting whose Teams transcript did not arrive. The body is JSON
+        (`{"text": "...", "replace": false}`), a plain text or `text/vtt` body,
+        or a multipart upload with a `.vtt` in the `file` part (a `replace`
+        form field is read as well). WebVTT and the unattributed Teams text
+        format are read by the same parser as the Graph import; the cues are
+        appended as `teams` segments, so the write-up, the retention sweep and
+        OneNote treat a pasted transcript like an imported one, and the
+        write-up is queued from it. The transcript text is capped at 16 MB. The
+        session records the origin on its `teams_transcript` import row
+        (`contentJson`: `origin` imported or pasted, `at`, and for a paste
+        `format` and `cues`). An automatic import never overwrites a pasted
+        transcript. Refused when the transcript permission is missing, when
+        `[microsoft365].import_teams_transcripts` or
+        `[microsoft365].allow_transcript_paste` is off, when the session is not
+        a finished meeting, or when a transcript is already present and
+        `replace` is not true. Emits `meeting.transcript_pasted` (counts only,
+        never text).
+      security:
+        - ControlPlaneHeader: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - name: replace
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Replace a transcript that is already there.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text:
+                  type: string
+                replace:
+                  type: boolean
+          text/plain:
+            schema:
+              type: string
+          text/vtt:
+            schema:
+              type: string
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                replace:
+                  type: boolean
+      responses:
+        "200":
+          description: The cues were appended.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptPasteResult"
+        "403":
+          description: Refused; `reason` is grant_missing, import_off or paste_off.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptPasteRefusal"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Refused; `reason` is not_finished or transcript_present, or the session is not a meeting.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptPasteRefusal"
+        "413":
+          description: The transcript is larger than 16 MB (`too_large`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptPasteRefusal"
+        "415":
+          description: The body is neither JSON, text, WebVTT nor multipart (`unsupported_media_type`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptPasteRefusal"
+        "422":
+          description: The text holds no readable cue (`unreadable`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptPasteRefusal"
   /api/v1/recording-sessions/{sessionId}/imports/teams-transcript/retry:
     post:
       tags: [Data]
@@ -1484,7 +1730,6 @@ paths:
         Microsoft 365 account is connected.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -1501,7 +1746,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/RecordingSessionImport"
         "409":
-          description: The import is off or no account is connected.
+          description: The import is off, no account is connected, or a pasted transcript is present.
   /api/v1/recording-sessions/{sessionId}/imports/copilot-recap/retry:
     post:
       tags: [Data]
@@ -1512,7 +1757,6 @@ paths:
         is off or no Microsoft 365 account is connected.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       parameters:
         - name: sessionId
           in: path
@@ -1530,6 +1774,162 @@ paths:
                 $ref: "#/components/schemas/RecordingSessionImport"
         "409":
           description: The import is off or no account is connected.
+  /api/v1/recording-sessions/{sessionId}/exports:
+    get:
+      tags: [Data]
+      operationId: listRecordingSessionExports
+      summary: List the exports of a meeting.
+      description: One record per target, with its stable status id.
+      security:
+        - ControlPlaneHeader: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: The meeting's exports.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RecordingSessionExport"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Data]
+      operationId: createRecordingSessionExport
+      summary: Export a meeting to a target, such as its notebook's OneNote section.
+      description: >-
+        Builds the page from the newest ready review, the user's notes
+        verbatim, the cited transcript lines and the screenshots, and pushes
+        it in the background (202 with the pending record). The same content
+        is never sent twice; changed content is appended to the stored page.
+        A meeting linked to a notebook is also exported on its own once its
+        write-up is over while [onenote] enabled is on. A destination outside
+        [onenote] allowed_notebook_scope fails with
+        sk.export.destination_not_allowed before any request.
+      security:
+        - ControlPlaneHeader: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordingSessionExportRequest"
+      responses:
+        "202":
+          description: The pending export.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionExport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: No ready review, no destination, or an export already running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionExportRefused"
+        "503":
+          description: The target is not registered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionExportRefused"
+  /api/v1/recording-sessions/{sessionId}/exports/{exportId}:
+    get:
+      tags: [Data]
+      operationId: getRecordingSessionExport
+      summary: Get one export of a meeting.
+      security:
+        - ControlPlaneHeader: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - name: exportId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: The export.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionExport"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/recording-sessions/{sessionId}/exports/{exportId}/retry:
+    post:
+      tags: [Data]
+      operationId: retryRecordingSessionExport
+      summary: Run an export again.
+      description: >-
+        Pushes to the linked notebook's destination, or to the destination in
+        the body. Answers 202 with the pending record, like the POST.
+      security:
+        - ControlPlaneHeader: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - name: exportId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordingSessionExportRequest"
+      responses:
+        "202":
+          description: The pending export.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionExport"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: No ready review, no destination, or an export already running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingSessionExportRefused"
   /api/v1/recording-sessions/{sessionId}/snapshots:
     parameters:
       - name: sessionId
@@ -1559,10 +1959,20 @@ paths:
     post:
       tags: [Data]
       operationId: captureRecordingSessionSnapshot
-      summary: Capture the monitor under the foreground window right now and stamp it with the live meeting's transcript-timeline offset.
+      summary: Capture a window the user picks right now into the open notebook of this session.
+      description: >-
+        The session's notebook must be open (409 otherwise); capture need not
+        run. A request over the control plane is not a user gesture, so it
+        never captures a whole monitor: the host opens its window picker and
+        the answer arrives once the user picked a window (409 with reason
+        `cancelled` when the picker is dismissed, `busy` while another
+        screenshot is being taken). The process deny list and the window
+        protection apply. The snapshot is stamped with the session's
+        transcript-timeline offset: the running capture's, the last capture's
+        after it stopped, or 0 before capture ever started. A host without a
+        window picker answers 501.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       requestBody:
         required: false
         content:
@@ -1576,6 +1986,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RecordingSessionSnapshot"
+        "403":
+          description: >-
+            The picked window may not be captured: `denied` (its application is on the
+            screenshot deny list), `process_unresolved` (a deny list is in force and the
+            window's application could not be determined) or `protected` (the window is
+            protected from screen capture). Nothing is stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotRefusal"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -1619,7 +2039,6 @@ paths:
       summary: Delete one screen snapshot, including its image file.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       responses:
         "200":
           description: Snapshot deleted.
@@ -1659,21 +2078,180 @@ paths:
           $ref: "#/components/responses/NotFound"
         "501":
           $ref: "#/components/responses/NotImplemented"
+  /api/v1/notebooks:
+    get:
+      tags: [Data]
+      operationId: listNotebooks
+      summary: List the device's notebook index, newest first.
+      security:
+        - ControlPlaneHeader: []
+      responses:
+        "200":
+          description: Notebooks.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notebook"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+    post:
+      tags: [Data]
+      operationId: createNotebook
+      summary: Add a notebook linked to a OneNote section.
+      security:
+        - ControlPlaneHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotebookRequest"
+      responses:
+        "201":
+          description: Created notebook.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notebook"
+        "400":
+          description: No display name, an unknown destination kind or a destination without its ids.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/notebooks/destinations:
+    get:
+      tags: [Data]
+      operationId: listNotebookDestinations
+      summary: List the OneNote sections a notebook can be linked to.
+      description: >-
+        Every section of every notebook in the allowed notebook scope
+        ([onenote] allowed_notebook_scope, policy
+        OneNote\AllowedNotebookScope): the user's own notebooks, or the one
+        named SharePoint site. Listing needs the Microsoft 365 connect level
+        notes_readwrite (Notes.ReadWrite). A missing sign-in or consent
+        answers 409 with the access state and the connect level that fixes
+        it; OneNote turned off or unreachable answers 503, a privacy scope
+        without cloud services 403.
+      security:
+        - ControlPlaneHeader: []
+      responses:
+        "200":
+          description: Destinations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NotebookDestinationOption"
+        "403":
+          description: The privacy scope does not allow cloud services.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotebookDestinationsUnavailable"
+        "409":
+          description: Sign-in or consent needed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotebookDestinationsUnavailable"
+        "503":
+          description: No destination source is wired, OneNote is off, or Microsoft 365 is unreachable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotebookDestinationsUnavailable"
+  /api/v1/notebooks/{notebookId}:
+    parameters:
+      - name: notebookId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+    get:
+      tags: [Data]
+      operationId: getNotebook
+      summary: Get one notebook.
+      security:
+        - ControlPlaneHeader: []
+      responses:
+        "200":
+          description: Notebook.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notebook"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Data]
+      operationId: updateNotebook
+      summary: Rename a notebook or relink it to another destination.
+      description: An absent field keeps the stored value.
+      security:
+        - ControlPlaneHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotebookRequest"
+      responses:
+        "200":
+          description: Updated notebook.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notebook"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Data]
+      operationId: deleteNotebook
+      summary: Remove a notebook from the index; its sessions stay and lose the link.
+      security:
+        - ControlPlaneHeader: []
+      responses:
+        "200":
+          description: Notebook deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, deleted]
+                properties:
+                  id:
+                    type: integer
+                    format: int64
+                  deleted:
+                    type: boolean
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/v1/meeting/snapshot:
     post:
       tags: [Data]
       operationId: captureLiveMeetingSnapshot
       deprecated: true
-      summary: Overlay shortcut — capture a screen snapshot into whichever meeting is live right now.
+      summary: Overlay shortcut — capture a window the user picks into whichever meeting is live right now.
       description: |
         Deprecated since v0.68.0 and scheduled for removal in v0.69.0. Every
         response carries `Deprecation: true`, a `Sunset` date and a `Link`
         header with `rel="successor-version"`. Resolve the live meeting via
         `GET /api/v1/recording-sessions?kind=meeting&limit=1` and capture with
-        `POST /api/v1/recording-sessions/{sessionId}/snapshots` instead.
+        `POST /api/v1/recording-sessions/{sessionId}/snapshots` instead. It
+        captures the same way: through the window picker, never a whole
+        monitor.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       requestBody:
         required: false
         content:
@@ -1687,6 +2265,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RecordingSessionSnapshot"
+        "403":
+          description: >-
+            The picked window may not be captured: `denied` (its application is on the
+            screenshot deny list), `process_unresolved` (a deny list is in force and the
+            window's application could not be determined) or `protected` (the window is
+            protected from screen capture). Nothing is stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotRefusal"
         "409":
           $ref: "#/components/responses/Conflict"
         "501":
@@ -1720,7 +2308,6 @@ paths:
         the fix.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       requestBody:
         required: false
         content:
@@ -1764,7 +2351,6 @@ paths:
         fallback policy reloads the generation runtime before the response.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       requestBody:
         required: true
         content:
@@ -1819,7 +2405,6 @@ paths:
         a silent success.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       requestBody:
         required: true
         content:
@@ -1863,7 +2448,6 @@ paths:
         running write-ups.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       requestBody:
         required: true
         content:
@@ -1890,7 +2474,6 @@ paths:
         once the user is done.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       responses:
         "202":
           description: The sign-in was started.
@@ -1904,7 +2487,6 @@ paths:
       description: Running write-ups on Copilot are cancelled, not just future ones.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       responses:
         "200":
           description: The integration after revocation.
@@ -1939,7 +2521,6 @@ paths:
         otherwise 400. Withdrawing the permission turns the import off.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       requestBody:
         required: true
         content:
@@ -1969,7 +2550,6 @@ paths:
         409 while a sign-in runs.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       requestBody:
         content:
           application/json:
@@ -1997,7 +2577,6 @@ paths:
       summary: Forget the connected Microsoft 365 account.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       responses:
         "200":
           description: The integration after signing out.
@@ -2040,7 +2619,6 @@ paths:
       summary: Start downloading or pulling a provider artifact.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       responses:
         "200":
           description: Download job accepted.
@@ -2065,7 +2643,6 @@ paths:
       summary: Select an already available provider artifact for its profile.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       responses:
         "200":
           description: Provider artifact selected.
@@ -2093,7 +2670,6 @@ paths:
       summary: Activate a provider profile for its mode.
       security:
         - ControlPlaneHeader: []
-        - ControlPlaneCookie: []
       responses:
         "200":
           description: Activated profile.
@@ -2107,18 +2683,207 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /settings/state:
+    get:
+      tags: [Settings]
+      operationId: getSettingsState
+      summary: Read the settings the desktop is running with, including the policy-locked fields.
+      description: >-
+        The same document the reference settings panel renders. Secrets never
+        appear in it: credential state is reported as configured flags and a
+        database DSN is returned with its password redacted. `policyLockedFields`
+        names the configuration keys an administrator policy pins; the host
+        rejects a write to them, so a managed UI renders them read-only.
+      responses:
+        "200":
+          description: The settings snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsState"
+  /overlay/state:
+    get:
+      tags: [Modes]
+      operationId: getOverlayState
+      summary: Read the live dictation, assist and voice agent state the pill renders.
+      responses:
+        "200":
+          description: The overlay snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OverlayState"
+  /features:
+    get:
+      tags: [Settings]
+      operationId: getFeatures
+      summary: Read which capabilities this build and install provide.
+      responses:
+        "200":
+          description: Feature flags.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Features"
+  /app/version:
+    get:
+      tags: [Settings]
+      operationId: getAppVersion
+      summary: Read the running version and, when the update channel is on, the newest release.
+      responses:
+        "200":
+          description: Version and update availability.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppVersion"
+  /auth/foundry/status:
+    get:
+      tags: [Integrations]
+      operationId: getFoundryAuthStatus
+      summary: Read who is signed in to Microsoft Foundry, through which source, and what the machine has.
+      responses:
+        "200":
+          description: Foundry authentication status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FoundryAuthStatus"
+  /auth/foundry/login:
+    post:
+      tags: [Integrations]
+      operationId: startFoundryLogin
+      summary: Start a Microsoft Entra sign-in for Foundry as a background job.
+      description: >-
+        The sign-in blocks on the user (a browser, a device-code page), so the
+        route returns a job id at once and clients poll
+        `/auth/foundry/login/status`. 403 when the privacy network scope
+        forbids cloud services.
+      security:
+        - ControlPlaneHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode]
+              properties:
+                mode:
+                  type: string
+                  enum: [azure_cli, browser, device_code]
+                tenantId:
+                  type: string
+      responses:
+        "200":
+          description: The sign-in job started.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobId]
+                properties:
+                  jobId:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /auth/foundry/login/status:
+    get:
+      tags: [Integrations]
+      operationId: getFoundryLoginStatus
+      summary: Poll the running Foundry sign-in job.
+      responses:
+        "200":
+          description: Progress of the sign-in job.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FoundryLoginStatus"
+  /auth/foundry/logout:
+    post:
+      tags: [Integrations]
+      operationId: foundryLogout
+      summary: Forget the Foundry sign-in and fall back to the API key.
+      security:
+        - ControlPlaneHeader: []
+      responses:
+        "200":
+          description: The authentication status after signing out.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FoundryAuthStatus"
+  /api/v1/privacy/export:
+    post:
+      tags: [Data]
+      operationId: exportPrivacyData
+      summary: Export the data stored on this device (GDPR Art. 15).
+      description: >-
+        The desktop keeps one person's data per OS profile, so every accepted
+        scope (`install`, `user`, `device`) addresses the same data. `format:
+        zip` answers `application/zip` with the JSON manifest and the audio
+        files; the default answers JSON. 501 when the storage backend cannot
+        export.
+      security:
+        - ControlPlaneHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrivacyRequest"
+      responses:
+        "200":
+          description: The exported data.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrivacyExportResponse"
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/privacy/delete:
+    post:
+      tags: [Data]
+      operationId: deletePrivacyData
+      summary: Erase the data stored on this device (GDPR Art. 17).
+      description: >-
+        `confirm: true` is mandatory; without it the host answers 400. The
+        response reports what was erased, what could not be (`incomplete`) and
+        what is deliberately kept (`retained`).
+      security:
+        - ControlPlaneHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrivacyRequest"
+      responses:
+        "200":
+          description: The erasure result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrivacyDeleteResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
 components:
   securitySchemes:
     ControlPlaneHeader:
       type: apiKey
       in: header
       name: X-SpeechKit-Control-Token
-      description: Required for mutating requests when the desktop host has issued a control-plane token.
-    ControlPlaneCookie:
-      type: apiKey
-      in: cookie
-      name: speechkit_control_plane
-      description: HttpOnly same-site cookie issued by the local desktop host.
+      description: Required on every control-plane request, reads included, except the static frontend assets. The per-session token is delivered only to the desktop webview inside its HTML entry and is never returned by an endpoint.
   parameters:
     Mode:
       name: mode
@@ -3196,6 +3961,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/RecordingSessionSnapshot"
+        notebookId:
+          type: integer
+          format: int64
+          description: The notebook of the index this session belongs to; absent when none.
+        open:
+          type: boolean
+          description: Whether this session is the notebook open on this device, with or without capture.
     RecordingSessionSegment:
       type: object
       required: [id, sessionId, segmentIndex, text, isFinal, startedMs, endedMs, createdAt]
@@ -3259,6 +4031,14 @@ components:
         createdAt:
           type: string
           format: date-time
+    SnapshotRefusal:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          enum: [denied, process_unresolved, protected, cancelled, busy]
+          description: Why no screenshot was stored. Never names the window or its application.
     RecordingSessionSnapshotRequest:
       type: object
       properties:
@@ -3285,6 +4065,202 @@ components:
         startedAt:
           type: string
           format: date-time
+        notebookId:
+          type: integer
+          format: int64
+          description: Link the new session to this notebook of the index.
+        open:
+          type: boolean
+          description: >-
+            Open the new meeting session as this device's notebook without
+            starting capture (409 while another notebook is open).
+    RecordingSessionUpdateRequest:
+      type: object
+      required: [notebookId]
+      additionalProperties: false
+      properties:
+        notebookId:
+          type: [integer, "null"]
+          format: int64
+          description: A notebook id to link, or null to unlink.
+    Notebook:
+      type: object
+      required: [id, displayName, destination, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        displayName:
+          type: string
+        destination:
+          $ref: "#/components/schemas/NotebookDestination"
+        lastSyncedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    NotebookDestination:
+      type: object
+      required: [kind, notebookId, sectionId]
+      properties:
+        kind:
+          type: string
+          enum: [onenote]
+        notebookId:
+          type: string
+          description: The OneNote notebook id.
+        sectionId:
+          type: string
+          description: The OneNote section id pages are written to.
+        siteId:
+          type: string
+          description: >-
+            The SharePoint site whose notebooks hold the section; absent for
+            the user's own notebooks.
+        displayPath:
+          type: string
+          description: Human-readable location, such as "Work notebook / Meetings".
+    NotebookRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        displayName:
+          type: string
+        destination:
+          $ref: "#/components/schemas/NotebookDestination"
+    NotebookDestinationOption:
+      type: object
+      required: [kind, notebookId, notebookName, sectionId, sectionName, displayPath]
+      properties:
+        kind:
+          type: string
+          enum: [onenote]
+        notebookId: { type: string }
+        notebookName: { type: string }
+        sectionId: { type: string }
+        sectionName: { type: string }
+        siteId: { type: string }
+        displayPath: { type: string }
+    NotebookDestinationsUnavailable:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          enum: [notebook_destinations_unavailable, notebook_destinations_access]
+        access:
+          type: string
+          description: In the Microsoft 365 settings vocabulary.
+          enum: [signed_out, admin_consent_required, scope_blocked, unavailable]
+        connectLevel:
+          type: string
+          description: The connect level that grants what is missing; empty when none helps.
+          enum: ["", notes, notes_readwrite]
+    RecordingSessionExport:
+      type: object
+      required: [id, sessionId, targetId, status, statusId, retryable]
+      description: >-
+        One export of a meeting to one target. Identifiers and states only,
+        never content.
+      properties:
+        id:
+          type: integer
+          format: int64
+        sessionId:
+          type: integer
+          format: int64
+        targetId:
+          type: string
+          example: onenote
+        status:
+          type: string
+          enum: [pending, synced, failed]
+        statusId:
+          type: string
+          description: Stable localization id of the state.
+          enum:
+            - sk.export.pending
+            - sk.export.synced
+            - sk.export.signed_out
+            - sk.export.consent_required
+            - sk.export.destination_gone
+            - sk.export.destination_full
+            - sk.export.destination_not_allowed
+            - sk.export.too_large
+            - sk.export.throttled
+            - sk.export.unavailable
+            - sk.export.failed
+            - sk.export.target_unavailable
+        warningId:
+          type: string
+          description: >-
+            Set on a failed export: the meeting's transcript and screenshots
+            stay on the device until the sync succeeds or the retention limit
+            ends them.
+          enum: [sk.export.kept_until_synced]
+        retryable:
+          type: boolean
+          description: A retry can succeed without the user changing anything.
+        destinationId:
+          type: string
+        externalId:
+          type: string
+          description: The page the destination holds.
+        url:
+          type: string
+        pushedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    RecordingSessionExportRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        target:
+          type: string
+          description: >-
+            Export target id (onenote). Defaults to the destination kind of
+            the notebook the meeting is linked to.
+        destination:
+          $ref: "#/components/schemas/ExportDestination"
+        allowRollover:
+          type: boolean
+          description: >-
+            Let a full OneNote section roll over to a new section named with
+            the year (default true); the linked notebook then follows it.
+    ExportDestination:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+          description: The section id.
+        parentId:
+          type: string
+          description: The notebook id, needed for a rollover.
+        name:
+          type: string
+        container:
+          type: string
+          description: The SharePoint site id; empty for the user's own notebooks.
+    RecordingSessionExportRefused:
+      type: object
+      required: [statusId]
+      properties:
+        statusId:
+          type: string
+          enum:
+            - sk.export.pending
+            - sk.export.review_not_ready
+            - sk.export.no_destination
+            - sk.export.target_unavailable
+            - sk.export.failed
     RecordingSessionSegmentRequest:
       type: object
       required: [text]
@@ -3502,7 +4478,7 @@ components:
     MeetingSettings:
       type: object
       description: Meeting Mode settings as stored, plus the local write-up model's readiness.
-      required: [enabled, autoDetect, autoEnhance, compactOnStart, alwaysOnTop, generationProvider, fallbackProviders, providers, batchMinutes, summaryLanguage, additionalSummaryLanguages, screenshotEnabled, screenshotHotkey, screenshotHotkeyEnabled, localModelReady]
+      required: [enabled, autoDetect, autoEnhance, compactOnStart, alwaysOnTop, generationProvider, fallbackProviders, providers, batchMinutes, summaryLanguage, additionalSummaryLanguages, screenshotEnabled, screenshotHotkey, screenshotHotkeyEnabled, captureChannels, localModelReady]
       properties:
         enabled:
           type: boolean
@@ -3548,6 +4524,16 @@ components:
           type: string
         screenshotHotkeyEnabled:
           type: boolean
+        captureChannels:
+          type: array
+          items:
+            type: string
+            enum: [mic, system]
+          description: >-
+            The sources a meeting records, as resolved: the configured list, or both `mic` and
+            `system` when none is configured. One entry runs a single capture session (the system
+            loopback is never opened with `["mic"]`) and the channel health reports one row.
+            Pinned by the machine policy `Meeting\CaptureChannels`.
         localModelReady:
           type: boolean
         localModelId:
@@ -3598,9 +4584,19 @@ components:
           type: string
         screenshotHotkeyEnabled:
           type: boolean
+        captureChannels:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum: [mic, system]
+          description: >-
+            Channels to record from the next meeting on. Unknown names and an empty list answer
+            400; a change under the `Meeting\CaptureChannels` pin answers 403.
     Microsoft365Integration:
       type: object
-      required: [available, scopeBlocked, signedIn, transcriptAccess, importTeamsTranscripts, granted, recapAccess, importCopilotRecaps, recapGranted, connect]
+      required: [available, scopeBlocked, signedIn, transcriptAccess, importTeamsTranscripts, allowTranscriptPaste, granted, recapAccess, importCopilotRecaps, recapGranted, connect]
       properties:
         available:
           type: boolean
@@ -3622,6 +4618,9 @@ components:
           description: Set with admin_consent_required; the page a tenant admin opens to approve access.
         importTeamsTranscripts:
           type: boolean
+        allowTranscriptPaste:
+          type: boolean
+          description: A transcript can be pasted into a finished meeting; it also needs the import and its permission.
         granted:
           type: boolean
           description: The versioned permission to copy Teams transcripts onto this device is recorded.
@@ -3651,11 +4650,69 @@ components:
           type: boolean
         importCopilotRecaps:
           type: boolean
+        allowTranscriptPaste:
+          type: boolean
         grantTranscriptImport:
           type: boolean
           description: >-
             Grants (true) the current permission, covering Teams transcripts and
             Copilot recaps, or withdraws (false) it, which turns both imports off.
+    TeamsPreflight:
+      type: object
+      required: [sessionId, outcome, messageId, cached]
+      properties:
+        sessionId:
+          type: integer
+          format: int64
+        outcome:
+          type: string
+          enum: [ready, no_teams_meeting, signed_out, admin_consent_required, tenant_disabled, disabled, unavailable]
+        messageId:
+          type: string
+          description: >-
+            Stable localization id of the sentence for the outcome:
+            sk.meeting.preflight.<outcome>.
+        adminConsentUrl:
+          type: string
+          description: Set with admin_consent_required; the page a tenant admin opens.
+        checkedAt:
+          type: string
+          format: date-time
+          description: When Microsoft 365 was asked; absent for disabled.
+        cached:
+          type: boolean
+          description: A final outcome (ready or no_teams_meeting) of an earlier call answers.
+    TranscriptPasteResult:
+      type: object
+      required: [sessionId, origin, format, cues, replaced]
+      properties:
+        sessionId:
+          type: integer
+          format: int64
+        origin:
+          type: string
+          enum: [pasted]
+        format:
+          type: string
+          enum: [webvtt, teams_text]
+        cues:
+          type: integer
+          description: Cues appended as teams segments.
+        replaced:
+          type: boolean
+    TranscriptPasteRefusal:
+      type: object
+      required: [error, reason]
+      properties:
+        error:
+          type: string
+          enum: [transcript_paste_refused]
+        reason:
+          type: string
+          enum: [grant_missing, import_off, paste_off, not_finished, transcript_present, too_large, unreadable, unsupported_media_type]
+        messageId:
+          type: string
+          description: Stable localization id, sk.meeting.paste.refused.<reason>; absent for unsupported_media_type.
     RecordingSessionImport:
       type: object
       required: [id, sessionId, kind, status, attempts, createdAt, updatedAt]
@@ -3668,7 +4725,7 @@ components:
           format: int64
         kind:
           type: string
-          enum: [teams_transcript, copilot_recap]
+          enum: [teams_transcript, copilot_recap, teams_preflight]
         status:
           type: string
           enum: [waiting, imported, unavailable, failed, cancelled]
@@ -3689,7 +4746,10 @@ components:
           type: string
         contentJson:
           type: string
-          description: For copilot_recap, the recap as JSON ({notes:[{title,text,subpoints}], actionItems:[{title,text,owner}]}).
+          description: >-
+            For copilot_recap, the recap as JSON ({notes:[{title,text,subpoints}], actionItems:[{title,text,owner}]}).
+            For teams_transcript, the origin ({origin: imported | pasted, at, and for a paste format and cues}).
+            For teams_preflight, the outcome ({outcome, checkedAt}).
         errorKind:
           type: string
           description: >-
@@ -3811,7 +4871,7 @@ components:
                 type: string
     RecordingSessionStateResponse:
       type: object
-      required: [id, live, captureStatus, segmentCount, capture]
+      required: [id, live, open, captureStatus, segmentCount, capture]
       properties:
         id:
           type: integer
@@ -3819,6 +4879,9 @@ components:
         live:
           type: boolean
           description: Whether this session is the one currently being recorded.
+        open:
+          type: boolean
+          description: Whether this session is the notebook open on this device, with or without capture.
         captureStatus:
           type: string
           enum: [idle, recording, paused, stopped]
@@ -3937,3 +5000,293 @@ components:
           $ref: "#/components/schemas/RuntimeMode"
         model:
           type: string
+    SettingsState:
+      type: object
+      description: >-
+        The settings snapshot. Only the fields a managed UI branches on are
+        listed; the document carries more (profiles, provider credential
+        states, hotkeys) and clients must ignore unknown keys.
+      properties:
+        language:
+          type: string
+          description: BCP-47 UI and speech language.
+        saveAudio:
+          type: boolean
+        audioRetentionDays:
+          type: integer
+        dictationProcessingMode:
+          type: string
+        activeMode:
+          type: string
+        modeEnabled:
+          $ref: "#/components/schemas/ModeAvailability"
+        availableModes:
+          $ref: "#/components/schemas/ModeAvailability"
+        privacy:
+          type: object
+          properties:
+            networkScope:
+              type: string
+              description: The network scope the privacy settings select.
+            allowSetupTraffic:
+              type: boolean
+        policyLockedFields:
+          type: array
+          items:
+            type: string
+          description: Configuration keys an administrator policy pins. Absent when none is.
+      additionalProperties: true
+    ModeAvailability:
+      type: object
+      properties:
+        dictate:
+          type: boolean
+        assist:
+          type: boolean
+        voice_agent:
+          type: boolean
+      additionalProperties: true
+    OverlayState:
+      type: object
+      required: [state, phase, text, level, visible, activeMode, meetingActive]
+      properties:
+        platform:
+          type: string
+          description: The operating system the host runs on (runtime.GOOS).
+        hotkeyPermission:
+          type: string
+        state:
+          type: string
+        phase:
+          type: string
+        text:
+          type: string
+        level:
+          type: number
+        visible:
+          type: boolean
+        activeMode:
+          type: string
+        meetingActive:
+          type: boolean
+        lastTranscription:
+          type: string
+        transcriptDraft:
+          type: string
+        speechLanguage:
+          type: string
+        mainLanguage:
+          type: string
+        modeEnabled:
+          $ref: "#/components/schemas/ModeAvailability"
+        availableModes:
+          $ref: "#/components/schemas/ModeAvailability"
+        auditDegraded:
+          type: boolean
+          description: Audit forwarding is required but failing; cloud sessions are refused.
+      additionalProperties: true
+    Features:
+      type: object
+      required: [cloudMode, hasAuth, hasCloudStore, loggedIn, plan, installMode, bitlocker]
+      properties:
+        cloudMode:
+          type: boolean
+        hasAuth:
+          type: boolean
+        hasCloudStore:
+          type: boolean
+        loggedIn:
+          type: boolean
+        plan:
+          type: string
+        installMode:
+          type: string
+        bitlocker:
+          type: string
+          enum: [protected, unprotected, unknown]
+    AppVersion:
+      type: object
+      required: [version, updateCheckEnabled]
+      properties:
+        version:
+          type: string
+        updateCheckEnabled:
+          type: boolean
+        checkedAt:
+          type: string
+          format: date-time
+        latestVersion:
+          type: string
+        updateURL:
+          type: string
+        installMode:
+          type: string
+        manualDownloadRequired:
+          type: boolean
+        adminManaged:
+          type: boolean
+          description: Reported only; this client never installs an admin-managed update.
+        updateNote:
+          type: string
+        downloadURL:
+          type: string
+        downloadSizeBytes:
+          type: integer
+          format: int64
+        assetName:
+          type: string
+        verification:
+          type: string
+        publisherVerified:
+          type: boolean
+    FoundryAccount:
+      type: object
+      properties:
+        user:
+          type: string
+        tenantId:
+          type: string
+        tenantName:
+          type: string
+        subscriptionName:
+          type: string
+    FoundryAuthStatus:
+      type: object
+      required: [authMode, entraCredential, signedIn, browserAvailable, azureCli, projectEndpoint, endpointValid, keyConfigured]
+      properties:
+        authMode:
+          type: string
+        entraCredential:
+          type: string
+        signedIn:
+          type: boolean
+          description: An Entra identity is usable right now.
+        source:
+          type: string
+          enum: [azure_cli, browser, device_code, client_secret]
+        account:
+          $ref: "#/components/schemas/FoundryAccount"
+        browserAvailable:
+          type: boolean
+        browserUnavailableReason:
+          type: string
+        clientIdSource:
+          type: string
+          enum: [config, env, build]
+        signedOutReason:
+          type: string
+        clientSecretConfigured:
+          type: boolean
+        clientSecretError:
+          type: string
+        azureCli:
+          type: object
+          required: [found, signedIn, installSupported]
+          properties:
+            found:
+              type: boolean
+            path:
+              type: string
+            version:
+              type: string
+            source:
+              type: string
+            signedIn:
+              type: boolean
+            account:
+              $ref: "#/components/schemas/FoundryAccount"
+            installSupported:
+              type: boolean
+            error:
+              type: string
+            checkedAt:
+              type: string
+        scopeBlocked:
+          type: string
+          description: Present when the privacy network scope blocks cloud sign-in.
+        projectEndpoint:
+          type: string
+        endpointValid:
+          type: boolean
+        keyConfigured:
+          type: boolean
+    FoundryLoginStatus:
+      type: object
+      required: [running, done]
+      properties:
+        running:
+          type: boolean
+        done:
+          type: boolean
+        error:
+          type: string
+        deviceCode:
+          type: object
+          required: [code, url]
+          properties:
+            code:
+              type: string
+            url:
+              type: string
+        account:
+          $ref: "#/components/schemas/FoundryAccount"
+        source:
+          type: string
+          enum: [azure_cli, browser, device_code, client_secret]
+    PrivacyRequest:
+      type: object
+      required: [scope]
+      properties:
+        scope:
+          type: string
+          enum: [install, user, device]
+        user_sid:
+          type: string
+          description: Recorded in the audit event as the subject the requester named; it does not select rows.
+        format:
+          type: string
+          enum: [json, zip]
+          description: Export only. Defaults to json.
+        confirm:
+          type: boolean
+          description: Delete only. Must be true.
+    PrivacyExportResponse:
+      type: object
+      required: [export]
+      properties:
+        export:
+          type: object
+          description: The scope export (transcriptions, quick notes, voice agent sessions, recording sessions, dictionary entries).
+          additionalProperties: true
+    PrivacyDeleteResponse:
+      type: object
+      required: [rows_deleted, audio_files_attempted, audio_files_removed, snapshot_files_attempted, snapshot_files_removed, requested_scope, scope_key, compacted, retained]
+      properties:
+        rows_deleted:
+          type: integer
+        audio_files_attempted:
+          type: integer
+        audio_files_removed:
+          type: integer
+        snapshot_files_attempted:
+          type: integer
+        snapshot_files_removed:
+          type: integer
+        requested_scope:
+          type: string
+        scope_key:
+          type: string
+        other_files_removed:
+          type: object
+          additionalProperties:
+            type: integer
+        incomplete:
+          type: array
+          items:
+            type: string
+        compacted:
+          type: boolean
+        retained:
+          type: array
+          items:
+            type: string

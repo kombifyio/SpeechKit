@@ -108,6 +108,27 @@ with `[update] enabled = false`. Administrators can enforce both with the
 `local_network` and `device_only` network scopes update checks run only with
 `allow_setup_traffic = true` (see `docs/privacy/network-scope.md`).
 
+### What leaves the device during setup
+
+Besides the update check above, installing and setting up the desktop app can
+make these requests. None carries audio, transcripts, notes or credentials; each
+exposes only what any HTTPS download exposes (your IP address and the file asked
+for).
+
+| What | Where it goes | When | How to turn it off |
+|------|---------------|------|--------------------|
+| Update check | the release host, or your own mirror when `[update] manifest_url` / the `Update\ManifestURL` policy is set | every few hours while the app runs | `[telemetry] update_check = false`, `[update] enabled = false`, or the `Telemetry\UpdateCheck` and `Update\Enabled` Group Policy values |
+| Local speech and language models (Whisper, Gemma GGUF files) | Hugging Face (`huggingface.co`: `ggerganov/whisper.cpp`, `ggml-org`, `bartowski`) | only when you choose a model that is not on the machine yet; every file is checked against a pinned SHA-256 before use | pick a model that is already installed; in the `local_network` and `device_only` network scopes model downloads stay blocked unless `allow_setup_traffic = true` (see `docs/privacy/network-scope.md`); `Providers\EnforceLocalOnly` caps the scope at `local_network`, so the same rule applies on managed machines. An administrator can turn these downloads off entirely with `[models] source = "bundled"` / the `Models\Source` policy (only files already on the machine are used), or point them at an internal mirror with an https URL (same pinned SHA-256; the public hosts are then not contacted) |
+| Wake-word models | the kombify wake-word file host (`speechkit.kombify.io`); a few ship inside the installer and need no download | only when you pick a phrase or refresh the shared models | leave wake-word off, the network-scope rule above, or `Models\Source` (`bundled` or a mirror) |
+| Ollama models (`gemma4:e4b`) | the Ollama registry, fetched by your own Ollama installation, not by SpeechKit | only when you ask SpeechKit to pull the model | do not use the Ollama provider; the `Providers\Allowed` policy lists which providers may run |
+| Microsoft Edge WebView2 runtime | nothing: the installer carries the offline runtime and installs it locally | at install | not applicable |
+
+The installers themselves do not call out. A machine without internet access can
+install, run Dictation with a model copied onto it, and never contact any host;
+see `docs/server/local-only-guarantee.md` and `docs/compliance/ENTERPRISE-DEPLOYMENT.md`
+for the air-gap setup. A complete list of the components that ship with the app,
+and the pinned sources of the downloadable models, is in `THIRD-PARTY-NOTICES.md`.
+
 The public SpeechKit website is separate from the local apps. The default OSS
 website build also has analytics disabled. The Kombify-hosted SaaS website may
 capture privacy-safe PostHog product metrics only after explicit analytics
@@ -142,11 +163,13 @@ All application data is stored locally:
 | Data | Location (Windows) | Location (Android) |
 |------|--------------------|--------------------|
 | Configuration | `config.toml` next to SpeechKit.exe | SharedPreferences |
-| Transcriptions | `%APPDATA%/SpeechKit/feedback.db` | Room database (app-internal) |
-| Audio files (dictation only) | `%APPDATA%/SpeechKit/audio/` | App-internal storage |
-| Meeting transcripts and notes | `%APPDATA%/SpeechKit/feedback.db` | — |
+| Transcriptions | `%LOCALAPPDATA%/SpeechKit/feedback.db` | Room database (app-internal) |
+| Audio files (dictation only) | `%LOCALAPPDATA%/SpeechKit/audio/` | App-internal storage |
+| Meeting transcripts and notes | `%LOCALAPPDATA%/SpeechKit/feedback.db` | — |
 | Credentials | Windows Credential Manager | SharedPreferences |
 | Logs (off by default; `[logging] level`) | Application log directory | Logcat |
+
+User content (database, recordings, snapshots, wake-word clips) lives in Local AppData, never in the roaming profile, so roaming profiles, FSLogix and UE-V do not copy it to a file server. Releases before this change kept it in `%APPDATA%/SpeechKit`; on start SpeechKit moves it to `%LOCALAPPDATA%/SpeechKit` once, when no other instance holds the database, and leaves a `data-moved.txt` note in the old folder. `[store] data_root` pins another local folder (network paths are refused). At start the client also reports whether the volume under that folder is BitLocker protected (`bitlocker` in `GET /features`: `protected`, `unprotected` or `unknown`); it only reports, it does not enforce.
 
 You can delete all local data by uninstalling SpeechKit or manually removing these directories.
 The privacy erasure (`POST /api/v1/privacy/delete`, see

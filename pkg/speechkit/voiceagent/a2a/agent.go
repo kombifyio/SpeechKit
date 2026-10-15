@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/cascaded"
 )
 
@@ -86,7 +87,7 @@ func New(config Config) (*Agent, error) {
 	}
 	client := config.HTTPClient
 	if client == nil {
-		client = &http.Client{Timeout: 60 * time.Second}
+		client = netsec.NewClient(netsec.ClientOptions{Timeout: 60 * time.Second})
 	}
 	// Delegated headers authorize one bound endpoint. A redirect must not
 	// forward them to another endpoint, even with a host-injected HTTP client.

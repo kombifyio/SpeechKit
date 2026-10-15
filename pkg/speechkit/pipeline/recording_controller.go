@@ -85,11 +85,14 @@ type RecordingController struct {
 
 type dictationStreamRuntime struct {
 	sessionID uint64
-	stream    speechkit.DictationStream
-	sink      speechkit.DictationStreamSink
-	sinkOpts  speechkit.DictationStreamSinkOptions
-	ctx       context.Context
-	cancel    context.CancelFunc
+	// completeCapture marks a stream whose only final is the transcript of
+	// the whole capture (see [speechkit.CompleteCaptureStream]).
+	completeCapture bool
+	stream          speechkit.DictationStream
+	sink            speechkit.DictationStreamSink
+	sinkOpts        speechkit.DictationStreamSinkOptions
+	ctx             context.Context
+	cancel          context.CancelFunc
 
 	inputMu sync.Mutex
 	closed  bool
@@ -102,6 +105,14 @@ type dictationStreamRuntime struct {
 	droppedPCM   atomic.Int64
 	ending       atomic.Bool
 	replayFull   atomic.Bool
+	// draftsOnly is set when Stop discarded a session's live finals as
+	// drafts, which is the normal end of a session on a live stream.
+	draftsOnly atomic.Bool
+	// queuedPCMBytes is the audio handed to the stream so far.
+	queuedPCMBytes atomic.Int64
+	// recordingUnusable is set by Stop before it ends a stream whose
+	// recording it will not transcribe (stale device buffer).
+	recordingUnusable atomic.Bool
 
 	// failed is set when a send or receive error ended the stream before
 	// Stop, so its finals no longer cover the capture.

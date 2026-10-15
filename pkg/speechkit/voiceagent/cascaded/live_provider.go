@@ -30,6 +30,7 @@ type LiveProvider struct {
 // STT or Agent through [ErrNotConfigured], and a nil TTS keeps the session
 // text-only, matching [NewProvider].
 func NewLiveProvider(deps Deps) *LiveProvider {
+	deps.TTS = NewPCMOutputTTS(deps.TTS)
 	return &LiveProvider{inner: NewProvider(deps)}
 }
 
@@ -72,8 +73,17 @@ func (p *LiveProvider) Receive(ctx context.Context) (*live.LiveMessage, error) {
 	if msg == nil {
 		return nil, nil
 	}
+	var turnErr error
+	if msg.ErrorCode != "" {
+		turnErr = turnError{code: SafeFailureCode(msg.ErrorCode)}
+		if IsTerminalFailure(msg.ErrorCode) {
+			// Lost authority or a stopped processor requires a new session.
+			return nil, turnErr
+		}
+	}
 	return live.NormalizeMessageEvents(&live.LiveMessage{
 		Done:                   msg.Done,
+		TurnError:              turnErr,
 		Audio:                  msg.Audio,
 		InputTranscript:        msg.InputTranscript,
 		InputTranscriptDone:    msg.InputTranscriptDone,

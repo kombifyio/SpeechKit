@@ -60,7 +60,11 @@ func describeProcessExit(waitErr error) string {
 }
 
 func describeExitCode(code int) string {
-	switch uint32(code) {
+	// Windows reports an NTSTATUS as a 32-bit value; depending on how it was
+	// carried it arrives here positive (0xc0000409) or sign-extended
+	// (-1073740791). Masking to the low 32 bits names both the same way.
+	status := int64(code) & 0xffffffff
+	switch status {
 	case 0xc0000409:
 		return "exit code 0xc0000409 STATUS_STACK_BUFFER_OVERRUN: whisper-server aborted while loading the model; a non-ASCII model path or a truncated/corrupt model file is the usual cause"
 	case 0xc0000005:
@@ -73,7 +77,7 @@ func describeExitCode(code int) string {
 		return "exit code 0xc0000135 STATUS_DLL_NOT_FOUND: a bundled ggml/whisper runtime DLL is missing next to whisper-server"
 	}
 	if code < 0 || code > 0xffff {
-		return fmt.Sprintf("exit code 0x%08x", uint32(code))
+		return fmt.Sprintf("exit code 0x%08x", status)
 	}
 	return fmt.Sprintf("exit code %d", code)
 }

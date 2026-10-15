@@ -145,6 +145,7 @@ func defaults() *Config {
 		Update: UpdateConfig{
 			Enabled:            true,
 			ManifestURL:        "https://api.github.com/repos/kombifyio/SpeechKit/releases/latest",
+			Mode:               UpdateModeInstall,
 			AutoDownload:       true,
 			Channel:            "auto",
 			CheckIntervalHours: 6,

@@ -32,15 +32,31 @@ info:
     Session vs. segment: one WebSocket session carries any number of
     sequential **segments**. Each `start` frame opens a fresh provider-native
     dictation stream and is acknowledged with `ready`; `finalize` flushes the
-    provider's buffered tail; `segment_done` closes the segment, after which
+    complete recording; `segment_done` closes the segment, after which
     the next `start` may follow on the same socket. A keyboard maps one mic
     press to one segment and keeps the socket warm between presses.
 
     Transcript semantics: `transcript` frames with `done: false` are drafts
     that may update UI state (e.g. composing text); only `done: true` finals
-    should be committed to the target text field. Finals arrive continuously
-    via provider endpointing during a segment and once more as the flushed
-    tail after `finalize`.
+    should be committed to the target text field. Each segment emits one final
+    after `finalize`, transcribed from the complete recording (ADR 0006).
+    Provider endpointing results while recording are drafts, including native
+    live finals. Deepgram uploads the capture while it is recorded; other
+    streaming providers use the batch router after capture with the same
+    recognition options and customization. That buffered fallback uses the
+    batch upload size limit and fails explicitly instead of committing a
+    partial recording. Full-recording recognition may take up to ten minutes;
+    clients must keep the segment open until its final or an error.
+    The idle microphone watchdog pauses during finalization and resumes after
+    the segment finishes; the recognition deadline and session maximum still
+    apply. For `interim_results: false`, known selected profiles without
+    complete-capture support use that same provider's batch path without opening
+    a live socket. Unknown and native complete-capture profiles retain their
+    normal startup; provider or authorization errors never trigger this choice.
+    Other ordinary live sockets are discarded when no drafts were requested.
+    Upload and decoded-duration limits reject the incoming audio immediately.
+    Each segment has one terminal owner: concurrent upload/receive failures
+    produce one safe error and one `segment_done`, with no later transcript.
 
     Golden example frames for every message type live in
     `fixtures/dictation-stream.v1.json`; a Go test asserts the server's
@@ -374,6 +390,9 @@ components:
             - streaming_unavailable
             - provider_stream_failed
             - provider_stream_closed
+            - empty_transcript
+            - payload_too_large
+            - audio_too_long
             - format_unsupported
             - invalid_frame
         message:

@@ -226,26 +226,6 @@ func TestSaveAndLoadInstallState(t *testing.T) {
 	}
 }
 
-func TestIsFirstRun_True(t *testing.T) {
-	t.Setenv("APPDATA", t.TempDir())
-
-	if !IsFirstRun() {
-		t.Fatal("IsFirstRun should return true for empty APPDATA dir")
-	}
-}
-
-func TestIsFirstRun_False(t *testing.T) {
-	t.Setenv("APPDATA", t.TempDir())
-
-	if err := SaveInstallState(&InstallState{Mode: InstallModeLocal}); err != nil {
-		t.Fatalf("SaveInstallState: %v", err)
-	}
-
-	if IsFirstRun() {
-		t.Fatal("IsFirstRun should return false after SaveInstallState")
-	}
-}
-
 func TestSaveInstallState_GeneratesDeviceID(t *testing.T) {
 	t.Setenv("APPDATA", t.TempDir())
 

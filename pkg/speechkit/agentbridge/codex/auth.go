@@ -49,7 +49,7 @@ func detectAuth(home string) authInfo {
 	if home == "" {
 		return authInfo{Method: agentbridge.AuthNone}
 	}
-	raw, err := os.ReadFile(filepath.Join(home, "auth.json")) //nolint:gosec // G304: fixed filename under the configured Codex home, not caller input
+	raw, err := readAuthFile(home)
 	if err != nil {
 		return authInfo{Method: agentbridge.AuthNone}
 	}
@@ -87,4 +87,16 @@ func planFromIDToken(idToken string) string {
 		return ""
 	}
 	return strings.ToLower(strings.TrimSpace(claims.Auth.ChatGPTPlanType))
+}
+
+// readAuthFile reads auth.json inside the Codex home through an os.Root, so a
+// symlink or ".." in the home cannot make it read a file outside that
+// directory.
+func readAuthFile(home string) ([]byte, error) {
+	root, err := os.OpenRoot(home)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = root.Close() }()
+	return root.ReadFile("auth.json")
 }

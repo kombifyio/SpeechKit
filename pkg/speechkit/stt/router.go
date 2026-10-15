@@ -14,7 +14,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -512,16 +511,23 @@ func (r *Router) checkInternet(ctx context.Context) bool {
 	return r.internetOnline.Load()
 }
 
-// probeInternet does a quick TCP check to detect connectivity.
-// Uses ConnectivityProbe address, defaulting to "1.1.1.1:443".
+// probeInternet does a quick TCP check to detect connectivity. It dials
+// through [netsec.DialContext], so the active egress policy decides whether
+// the socket opens at all, and it never runs when the policy forbids public
+// egress or the strategy is local-only: a probe that cannot run means
+// "offline", never "assume online". Uses the ConnectivityProbe address,
+// defaulting to "1.1.1.1:443".
 func (r *Router) probeInternet(ctx context.Context) bool {
+	if r.Strategy == StrategyLocalOnly || !netsec.CurrentPolicy().AllowsPublicEgress() {
+		return false
+	}
 	addr := r.ConnectivityProbe
 	if addr == "" {
 		addr = "1.1.1.1:443"
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", addr)
+	conn, err := netsec.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return false
 	}

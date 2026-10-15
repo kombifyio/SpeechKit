@@ -9,6 +9,8 @@ import (
 	"sync"
 
 	"github.com/keybase/go-keychain"
+
+	"github.com/kombifyio/SpeechKit/app/internal/productid"
 )
 
 // macOS has no DPAPI, and putting every provider key in its own Keychain item
@@ -18,22 +20,32 @@ import (
 // random 32-byte master key and the secrets stay AES-256-GCM files under
 // runtimepath.SecretsDir(), exactly like the Windows DPAPI layout. That is one
 // Keychain prompt per build identity for the whole store.
-const (
-	// keychainService is the app's bundle identifier, so the item shows up in
-	// Keychain Access under the same name as the desktop client.
-	keychainService = "com.kombify.speechkit"
-	// keychainMasterKeyAccount is the account of the single master-key item.
-	keychainMasterKeyAccount = "secrets-master-key"
-	// keychainMasterKeyLabel is what Keychain Access displays.
-	keychainMasterKeyLabel = "kombify SpeechKit secrets master key"
-)
+//
+// The item's service is the registered product's bundle identifier, so it
+// shows up in Keychain Access under the same name as the desktop client, and
+// its label is "<DisplayName> secrets master key". Both are resolved when the
+// key is first needed, not at package init, because the composition root
+// registers the identity after the package variables are set up.
+const keychainMasterKeyAccount = "secrets-master-key"
+
+// keychainNames returns the service and label of the registered product's
+// master-key item, or productid.ErrNoIdentity.
+func keychainNames() (service, label string, err error) {
+	p, err := productid.Current()
+	if err != nil {
+		return "", "", err
+	}
+	return p.BundleID, p.DisplayName() + " secrets master key", nil
+}
 
 // newDefaultStore wraps the shared file store (filestore.go) in AES-256-GCM
 // under the Keychain-held master key.
 func newDefaultStore() secretBackend {
-	return newKeychainFileStore(keychainService, keychainMasterKeyAccount)
+	return newKeychainFileStore("", keychainMasterKeyAccount)
 }
 
+// newKeychainFileStore keeps the master key in the item service/account; an
+// empty service is the registered product's bundle identifier.
 func newKeychainFileStore(service, account string) *fileStore {
 	master := &keychainMasterKey{service: service, account: account}
 	return &fileStore{
@@ -68,7 +80,7 @@ func newKeychainFileStore(service, account string) *fileStore {
 // restarting the app. The mutex is held across the Keychain call so concurrent
 // callers queue behind one prompt instead of racing into several.
 type keychainMasterKey struct {
-	service string
+	service string // empty: the registered product's bundle identifier
 	account string
 
 	mu  sync.Mutex
@@ -82,7 +94,14 @@ func (k *keychainMasterKey) resolve() ([]byte, error) {
 	if len(k.key) == secretMasterKeyLen {
 		return k.key, nil
 	}
-	key, err := loadOrCreateKeychainMasterKey(k.service, k.account)
+	service, label, err := keychainNames()
+	if err != nil {
+		return nil, err
+	}
+	if k.service != "" {
+		service = k.service
+	}
+	key, err := loadOrCreateKeychainMasterKey(service, label, k.account)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +109,7 @@ func (k *keychainMasterKey) resolve() ([]byte, error) {
 	return key, nil
 }
 
-func loadOrCreateKeychainMasterKey(service, account string) ([]byte, error) {
+func loadOrCreateKeychainMasterKey(service, label, account string) ([]byte, error) {
 	key, err := readKeychainMasterKey(service, account)
 	if err != nil {
 		return nil, err
@@ -99,7 +118,7 @@ func loadOrCreateKeychainMasterKey(service, account string) ([]byte, error) {
 	case secretMasterKeyLen:
 		return key, nil
 	case 0:
-		return createKeychainMasterKey(service, account)
+		return createKeychainMasterKey(service, label, account)
 	default:
 		// An item of the wrong size is not ours to overwrite: fail closed
 		// rather than silently orphan whatever it protects.
@@ -129,13 +148,13 @@ func readKeychainMasterKey(service, account string) ([]byte, error) {
 	return results[0].Data, nil
 }
 
-func createKeychainMasterKey(service, account string) ([]byte, error) {
+func createKeychainMasterKey(service, label, account string) ([]byte, error) {
 	key := make([]byte, secretMasterKeyLen)
 	if _, err := rand.Read(key); err != nil {
 		return nil, fmt.Errorf("secrets: generate keychain master key: %w", err)
 	}
 
-	item := keychain.NewGenericPassword(service, account, keychainMasterKeyLabel, key, "")
+	item := keychain.NewGenericPassword(service, account, label, key, "")
 	// No access group: an ad-hoc signed build has no team identifier, and an
 	// access group it cannot claim would make the item unreadable.
 	item.SetSynchronizable(keychain.SynchronizableNo)

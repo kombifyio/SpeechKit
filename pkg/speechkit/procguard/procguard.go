@@ -39,7 +39,8 @@
 //
 // The call order is [Prepare] before cmd.Start, [Adopt] straight after it.
 // Both are robustness measures rather than preconditions: a child that could
-// not be adopted still works, so callers log and carry on.
+// not be adopted still works, so callers log and carry on — [AdoptOrReport]
+// is that call shape.
 //
 // Stability: Beta — API-checked; may change with a changelog callout.
 package procguard

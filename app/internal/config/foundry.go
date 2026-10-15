@@ -90,9 +90,10 @@ const (
 	// organisation deploys to the device, instead of as a user. That is the
 	// "own client id and secret" setup: the registration is single-tenant or
 	// the organisation's own multi-tenant one, entra_tenant_id names the
-	// tenant, and application permissions (Cognitive Services access, Graph
-	// Notes.ReadWrite.All for OneNote) replace user consent. The secret lives
-	// in the secret store under DefaultFoundryEntraClientSecretEnv.
+	// tenant, and application permissions (Cognitive Services access) replace
+	// user consent. OneNote stays delegated-only: Graph dropped app-only
+	// OneNote authentication on 2025-03-31. The secret lives in the secret
+	// store under DefaultFoundryEntraClientSecretEnv.
 	FoundryEntraCredentialClientSecret = "client_secret"
 
 	// DefaultFoundryEntraClientSecretEnv is the secret-store / environment

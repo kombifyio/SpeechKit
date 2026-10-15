@@ -77,6 +77,7 @@ const (
 	CapabilityNativeContextPrompt   = speechkit.CapabilityNativeContextPrompt
 	CapabilityNativeKeyterms        = speechkit.CapabilityNativeKeyterms
 	CapabilityNativeDictationStream = speechkit.CapabilityNativeDictationStream
+	CapabilityCompleteCaptureStream = speechkit.CapabilityCompleteCaptureStream
 	CapabilityLanguageHints         = speechkit.CapabilityLanguageHints
 	CapabilitySpeakerStreaming      = speechkit.CapabilitySpeakerStreaming
 	CapabilityPrivacyRedaction      = speechkit.CapabilityPrivacyRedaction

@@ -48,6 +48,9 @@ const (
 	StreamErrStreamingUnavailable = "streaming_unavailable"
 	StreamErrProviderStreamFailed = "provider_stream_failed"
 	StreamErrProviderStreamClosed = "provider_stream_closed"
+	StreamErrEmptyTranscript      = "empty_transcript"
+	StreamErrPayloadTooLarge      = "payload_too_large"
+	StreamErrAudioTooLong         = "audio_too_long"
 	StreamErrFormatUnsupported    = "format_unsupported"
 	StreamErrInvalidFrame         = "invalid_frame"
 )
@@ -99,6 +102,9 @@ func (f StreamStartFrame) Options() speechkit.DictationStreamOptions {
 		interim = *f.InterimResults
 	}
 	return speechkit.DictationStreamOptions{
+		// Live provider finals are drafts of a moving window. A segment
+		// commits only the transcript of its complete recording (ADR 0006).
+		CompleteCapture:   true,
 		ProviderProfileID: f.ProviderProfileID,
 		Language:          f.Language,
 		Model:             f.Model,
@@ -153,8 +159,8 @@ type StreamReadyFrame struct {
 	SegmentID uint64 `json:"segment_id"`
 }
 
-// StreamTranscriptFrame carries a draft (done=false) or final (done=true)
-// transcript for the active segment. Drafts may update UI state; only finals
+// StreamTranscriptFrame carries a draft (done=false) or the complete-recording
+// final (done=true) after finalize. Drafts may update UI state; only the final
 // should be committed to the target text field.
 type StreamTranscriptFrame struct {
 	Type       string                     `json:"type"` // "transcript"

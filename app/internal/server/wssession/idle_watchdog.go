@@ -32,6 +32,8 @@ type IdleWatchdog struct {
 	fired   chan struct{}
 	timeout time.Duration
 	stopped bool
+	paused  bool
+	epoch   uint64
 }
 
 // NewIdleWatchdog constructs a watchdog with the given timeout.
@@ -44,7 +46,7 @@ func NewIdleWatchdog(timeout time.Duration) *IdleWatchdog {
 		// No-op watchdog: Fired() returns a channel that never fires.
 		return w
 	}
-	w.timer = time.AfterFunc(timeout, w.onFire)
+	w.timer = time.AfterFunc(timeout, func() { w.onFire(0) })
 	return w
 }
 
@@ -53,7 +55,7 @@ func NewIdleWatchdog(timeout time.Duration) *IdleWatchdog {
 func (w *IdleWatchdog) Reset() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.stopped || w.timer == nil {
+	if w.stopped || w.paused || w.timer == nil {
 		return
 	}
 	// Stop returns false if the timer has already fired or been stopped.
@@ -63,6 +65,35 @@ func (w *IdleWatchdog) Reset() {
 		return
 	}
 	w.timer.Reset(w.timeout)
+}
+
+// Pause suspends idle expiry while an admitted operation has its own deadline.
+// Resume starts a fresh idle interval when that operation finishes.
+func (w *IdleWatchdog) Pause() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.stopped || w.timer == nil {
+		return
+	}
+	w.paused = true
+	w.epoch++
+	w.timer.Stop()
+	select {
+	case <-w.fired:
+	default:
+	}
+}
+
+// Resume re-arms a paused watchdog; it never revives one permanently stopped.
+func (w *IdleWatchdog) Resume() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.stopped || !w.paused || w.timer == nil {
+		return
+	}
+	w.paused = false
+	epoch := w.epoch
+	w.timer = time.AfterFunc(w.timeout, func() { w.onFire(epoch) })
 }
 
 // Stop halts the timer permanently. Idempotent. After Stop, Fired() will
@@ -83,11 +114,10 @@ func (w *IdleWatchdog) Stop() {
 // without a Reset.
 func (w *IdleWatchdog) Fired() <-chan struct{} { return w.fired }
 
-func (w *IdleWatchdog) onFire() {
+func (w *IdleWatchdog) onFire(epoch uint64) {
 	w.mu.Lock()
-	stopped := w.stopped
-	w.mu.Unlock()
-	if stopped {
+	defer w.mu.Unlock()
+	if w.stopped || w.paused || w.epoch != epoch {
 		return
 	}
 	// Non-blocking send: Fired() is a buffered channel of size 1. If the

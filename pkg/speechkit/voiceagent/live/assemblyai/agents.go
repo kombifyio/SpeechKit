@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 )
 
@@ -57,7 +58,7 @@ func (a Agents) request(ctx context.Context, method, path string, body any) (*ht
 	req.Header.Set("Content-Type", "application/json")
 	client := a.HTTPClient
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+		client = netsec.NewClient(netsec.ClientOptions{Timeout: 15 * time.Second})
 	}
 	safeClient := *client
 	safeClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }

@@ -107,4 +107,4 @@ func NewProvider(deps Deps) *Provider {
 
 // Bridging a host's LLM flow to Agent is the host's job so this public package
 // carries no AI-runtime dependency; SpeechKit's own server does it in
-// app/internal/ai/flows.NewCascadedAgent. Embedders supply their own Agent.
+// app/internal/ai/flowadapt.NewCascadedAgent. Embedders supply their own Agent.

@@ -9,11 +9,9 @@ package audio
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"mime"
 	"net/http"
 	"os/exec"
@@ -21,6 +19,7 @@ import (
 	"time"
 
 	"github.com/hajimehoshi/go-mp3"
+	skAudio "github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
 )
 
 // TargetSampleRate is the canonical rate every STT provider expects.
@@ -208,73 +207,8 @@ func decodeWAV(raw []byte, limits DecodeLimits) (*DecodedAudio, error) {
 	return decoded, enforceDecodedLimit(decoded, limits)
 }
 
-// parseWAV returns the S16LE data chunk of a PCM WAV file with its native
-// sample rate and channel count.
 func parseWAV(raw []byte) (pcm []byte, sampleRate, channels int, err error) {
-	if len(raw) < 44 || !bytes.Equal(raw[0:4], []byte("RIFF")) || !bytes.Equal(raw[8:12], []byte("WAVE")) {
-		return nil, 0, 0, errors.New("audio: invalid WAV header")
-	}
-
-	// Walk chunks starting at offset 12. We need the fmt chunk and the data chunk.
-	var (
-		haveFmt     bool
-		haveData    bool
-		audioFormat uint16
-		wavChannels uint16
-		wavRate     uint32
-		bps         uint16
-		dataStart   int
-		dataEnd     int
-	)
-	offset := 12
-	for offset+8 <= len(raw) {
-		id := string(raw[offset : offset+4])
-		size := int(binary.LittleEndian.Uint32(raw[offset+4 : offset+8]))
-		chunkStart := offset + 8
-		chunkEnd := chunkStart + size
-		if chunkEnd > len(raw) {
-			// Some WAV files over-report the data chunk size; clamp to payload.
-			chunkEnd = len(raw)
-		}
-		switch id {
-		case "fmt ":
-			if size < 16 {
-				return nil, 0, 0, errors.New("audio: malformed WAV fmt chunk")
-			}
-			audioFormat = binary.LittleEndian.Uint16(raw[chunkStart : chunkStart+2])
-			wavChannels = binary.LittleEndian.Uint16(raw[chunkStart+2 : chunkStart+4])
-			wavRate = binary.LittleEndian.Uint32(raw[chunkStart+4 : chunkStart+8])
-			bps = binary.LittleEndian.Uint16(raw[chunkStart+14 : chunkStart+16])
-			haveFmt = true
-		case "data":
-			dataStart = chunkStart
-			dataEnd = chunkEnd
-			haveData = true
-		}
-		// Chunks are word-aligned: odd sizes pad with one byte.
-		if size%2 == 1 {
-			chunkEnd++
-		}
-		offset = chunkEnd
-	}
-
-	if !haveFmt || !haveData {
-		return nil, 0, 0, errors.New("audio: WAV missing fmt or data chunk")
-	}
-	if audioFormat != 1 {
-		return nil, 0, 0, fmt.Errorf("audio: WAV audio format %d not supported (only PCM=1 is accepted)", audioFormat)
-	}
-	if bps != 16 {
-		return nil, 0, 0, fmt.Errorf("audio: WAV bit depth %d not supported (only 16-bit PCM is accepted)", bps)
-	}
-	if wavChannels == 0 || wavChannels > 8 {
-		return nil, 0, 0, fmt.Errorf("audio: WAV channel count %d out of range", wavChannels)
-	}
-	if wavRate == 0 {
-		return nil, 0, 0, errors.New("audio: WAV sample rate is zero")
-	}
-
-	return raw[dataStart:dataEnd], int(wavRate), int(wavChannels), nil
+	return skAudio.ParseWAV(raw)
 }
 
 // decodeMP3 uses hajimehoshi/go-mp3 (pure-Go) to produce S16LE PCM at the
@@ -336,94 +270,8 @@ func normalize(pcm []byte, srcRate, srcCh int) ([]byte, error) {
 	return normalizeTo(pcm, srcRate, srcCh, TargetSampleRate)
 }
 
-// normalizeTo downmixes multi-channel S16LE PCM to mono and resamples it to
-// dstRate.
 func normalizeTo(pcm []byte, srcRate, srcCh, dstRate int) ([]byte, error) {
-	if len(pcm) == 0 {
-		return nil, errors.New("audio: normalize: empty PCM buffer")
-	}
-	if srcCh < 1 {
-		return nil, fmt.Errorf("audio: normalize: invalid channel count %d", srcCh)
-	}
-
-	mono := pcm
-	if srcCh != 1 {
-		mono = downmixToMono(pcm, srcCh)
-	}
-	if srcRate == dstRate {
-		return mono, nil
-	}
-	return resampleLinear(mono, srcRate, dstRate), nil
-}
-
-// downmixToMono averages every N channels into a single S16LE mono stream.
-func downmixToMono(pcm []byte, channels int) []byte {
-	if channels <= 1 {
-		return pcm
-	}
-	frameBytes := channels * TargetBytesPerSample
-	frames := len(pcm) / frameBytes
-	out := make([]byte, frames*TargetBytesPerSample)
-	for f := 0; f < frames; f++ {
-		var sum int32
-		base := f * frameBytes
-		for c := 0; c < channels; c++ {
-			o := base + c*TargetBytesPerSample
-			s := int16(binary.LittleEndian.Uint16(pcm[o : o+2])) // #nosec G115 -- PCM sample reinterpretation intentionally preserves two's-complement bits.
-			sum += int32(s)
-		}
-		avg := sum / int32(channels) // #nosec G115 -- channel count is validated positive and tiny for decoded audio.
-		if avg > math.MaxInt16 {
-			avg = math.MaxInt16
-		} else if avg < math.MinInt16 {
-			avg = math.MinInt16
-		}
-		binary.LittleEndian.PutUint16(out[f*TargetBytesPerSample:], uint16(int16(avg))) // #nosec G115 -- PCM sample reinterpretation intentionally preserves two's-complement bits.
-	}
-	return out
-}
-
-// resampleLinear is a naïve linear-interpolation resampler. Good enough for
-// speech at 16 kHz; production-grade sinc resampling is a v1.1 item if STT
-// quality regresses. Keeping it pure-Go avoids pulling in SoX/libsamplerate.
-func resampleLinear(mono []byte, srcRate, dstRate int) []byte {
-	if srcRate == dstRate {
-		return mono
-	}
-	srcSamples := len(mono) / TargetBytesPerSample
-	if srcSamples < 2 {
-		return mono
-	}
-	dstSamples := int(int64(srcSamples) * int64(dstRate) / int64(srcRate))
-	if dstSamples < 1 {
-		return nil
-	}
-	out := make([]byte, dstSamples*TargetBytesPerSample)
-	ratio := float64(srcRate) / float64(dstRate)
-	for i := 0; i < dstSamples; i++ {
-		srcIdxF := float64(i) * ratio
-		srcIdx := int(srcIdxF)
-		frac := srcIdxF - float64(srcIdx)
-		if srcIdx >= srcSamples-1 {
-			srcIdx = srcSamples - 1
-			frac = 0
-		}
-		s0 := int16(binary.LittleEndian.Uint16(mono[srcIdx*TargetBytesPerSample:])) // #nosec G115 -- PCM sample reinterpretation intentionally preserves two's-complement bits.
-		var s1 int16
-		if srcIdx+1 < srcSamples {
-			s1 = int16(binary.LittleEndian.Uint16(mono[(srcIdx+1)*TargetBytesPerSample:])) // #nosec G115 -- PCM sample reinterpretation intentionally preserves two's-complement bits.
-		} else {
-			s1 = s0
-		}
-		v := float64(s0)*(1-frac) + float64(s1)*frac
-		if v > math.MaxInt16 {
-			v = math.MaxInt16
-		} else if v < math.MinInt16 {
-			v = math.MinInt16
-		}
-		binary.LittleEndian.PutUint16(out[i*TargetBytesPerSample:], uint16(int16(v))) // #nosec G115 -- v is clamped to the int16 PCM range above.
-	}
-	return out
+	return skAudio.NormalizePCM16Mono(pcm, srcRate, srcCh, dstRate)
 }
 
 func pcmDurationMs(pcm []byte) int64 {

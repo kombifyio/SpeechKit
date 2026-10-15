@@ -107,50 +107,5 @@ func (s *sqlStore) enforceAudioRetention() {
 	if s.audioRetentionDays <= 0 {
 		return
 	}
-	cutoff := s.dialect.timeArg(time.Now().Add(-time.Duration(s.audioRetentionDays) * 24 * time.Hour))
-
-	tx, err := s.db.BeginTx(context.Background(), nil) //nolint:contextcheck // background goroutine should not be bound to request context
-	if err != nil {
-		slog.Warn("store: begin retention tx", "err", err)
-		return
-	}
-	defer tx.Rollback() //nolint:errcheck // deferred rollback, error not actionable
-
-	rows, err := tx.QueryContext(context.Background(), //nolint:contextcheck // background goroutine should not be bound to request context
-		s.dialect.rebind(`SELECT owner_kind AS kind, owner_id AS id, path
-		 FROM audio_assets
-		 WHERE path <> '' AND created_at < ?
-		 ORDER BY created_at ASC, id ASC`),
-		cutoff,
-	)
-	if err != nil {
-		slog.Warn("store: query retention rows", "err", err)
-		return
-	}
-	defer rows.Close() //nolint:errcheck // deferred rows close, error not actionable
-
-	for rows.Next() {
-		var kind, path string
-		var id int64
-		if err := rows.Scan(&kind, &id, &path); err != nil {
-			slog.Warn("store: scan retention row", "err", err)
-			continue
-		}
-		if path == "" {
-			continue
-		}
-		if err := s.removeManagedFile(path); err != nil {
-			slog.Warn("store: remove retained audio", "path", path, "err", err)
-			continue
-		}
-		if err := deleteAudioAsset(context.Background(), tx, s.dialect.name, kind, id, path); err != nil { //nolint:contextcheck // background goroutine should not be bound to request context
-			slog.Warn("store: delete retained audio asset", "kind", kind, "id", id, "err", err)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		slog.Warn("store: retention rows error", "err", err)
-	}
-	if err := tx.Commit(); err != nil {
-		slog.Warn("store: commit retention tx", "err", err)
-	}
+	s.removeAudioCreatedBefore(time.Now().Add(-time.Duration(s.audioRetentionDays) * 24 * time.Hour))
 }

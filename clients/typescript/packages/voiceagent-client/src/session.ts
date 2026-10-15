@@ -332,7 +332,9 @@ export class VoiceAgentSession {
         this.finish(safeReason(frame.reason));
         return;
       case "interrupted":
-        this.muted = false;
+        // A provider barge-in can already be in flight when cancel() is sent.
+        // Only the server's identified cancel ACK releases that playback fence.
+        if (frame.provider_metadata?.reason === "client_cancel") this.muted = false;
         this.invalidateTools();
         this.hooks.onInterrupted?.(frame);
         return;

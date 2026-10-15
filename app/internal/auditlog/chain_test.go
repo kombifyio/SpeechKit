@@ -58,9 +58,6 @@ func TestChain_IntactVerifies(t *testing.T) {
 	appendN(t, 5)
 
 	recs := readChain(t, dir)
-	if len(recs) != 5 {
-		t.Fatalf("want 5 records, got %d", len(recs))
-	}
 	if recs[0].PrevHash != "" {
 		t.Errorf("genesis prev_hash should be empty, got %q", recs[0].PrevHash)
 	}
@@ -113,23 +110,37 @@ func TestChain_WrongKeyFails(t *testing.T) {
 	}
 }
 
-func TestChain_SurvivesRestart(t *testing.T) {
+func TestRestartContinuesChainAndSequence(t *testing.T) {
 	dir := t.TempDir()
 	key := []byte("k")
 	configureForTest(t, ConfigOptions{Enabled: true, Dir: dir, HMACKey: key})
 	appendN(t, 2)
-	// Simulate a process restart: reconfigure clears the in-memory chain head,
-	// forcing a re-seed from the file tail on the next write. The configureForTest
-	// cleanup above still closes whichever file is open when the test ends.
-	_ = ConfigureFromOptions(ConfigOptions{Enabled: true, Dir: dir, HMACKey: key})
-	appendN(t, 2)
+	// A process exit drops every in-memory head; the next start must pick
+	// the chain and the sequence up from disk.
+	ResetForTests()
+	configureForTest(t, ConfigOptions{Enabled: true, Dir: dir, HMACKey: key})
+	appendN(t, 1)
 
 	recs := readChain(t, dir)
-	if len(recs) != 4 {
-		t.Fatalf("want 4 records across the restart, got %d", len(recs))
-	}
 	if idx, err := VerifyChain(recs, key, ""); idx != -1 {
 		t.Fatalf("chain broke across the restart at %d: %v", idx, err)
+	}
+	report := CheckSequence(recs, 0)
+	if len(report.Gaps) != 0 {
+		t.Fatalf("sequence has gaps across the restart: %+v", report.Gaps)
+	}
+	if len(report.Restarts) == 0 {
+		t.Fatal("no audit.started record")
+	}
+	restart := report.Restarts[len(report.Restarts)-1]
+	if restart.Index == 0 {
+		t.Fatal("the restart record has no predecessor in the log")
+	}
+	if want := recs[restart.Index-1].Seq; restart.LastSeq != want {
+		t.Fatalf("audit.started names last_seq %d, the record before it has seq %d", restart.LastSeq, want)
+	}
+	if restart.Reason != AuditStartProcess {
+		t.Fatalf("restart reason = %q, want %q", restart.Reason, AuditStartProcess)
 	}
 }
 

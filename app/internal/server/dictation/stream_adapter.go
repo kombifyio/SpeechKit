@@ -19,6 +19,7 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/server/wssession"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	speechcustomize "github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 	speechstorage "github.com/kombifyio/SpeechKit/pkg/speechkit/storage"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 )
@@ -27,6 +28,9 @@ import (
 // flush its buffered tail before the segment is force-closed. Deepgram's
 // Finalize keeps the connection open, so the drain needs a deadline.
 const segmentFlushTimeout = 3 * time.Second
+
+// Full-recording recognition may outlive a live socket's short flush window.
+const completeCaptureTimeout = 10 * time.Minute
 
 // providerFinalizeTimeout bounds the Finalize control write itself.
 const providerFinalizeTimeout = 5 * time.Second
@@ -72,11 +76,15 @@ type StreamAdapter struct {
 
 // streamSegment tracks one active provider stream.
 type streamSegment struct {
-	id         uint64
-	stream     speechkit.DictationStream
-	cancel     context.CancelFunc
-	done       chan struct{} // closed when the receive loop exits
-	finalizing atomic.Bool
+	id            uint64
+	stream        speechkit.DictationStream
+	cancel        context.CancelFunc
+	done          chan struct{} // closed when the receive loop exits
+	finalizing    atomic.Bool
+	audioBytes    atomic.Int64
+	maxAudioBytes int64
+	outputMu      sync.Mutex
+	terminal      bool // outputMu owns every transcript and terminal frame.
 	// bytesPerSecond of the negotiated PCM format, for the audio budget.
 	bytesPerSecond int64
 	replacements   []speechcustomize.Replacement
@@ -223,14 +231,23 @@ func (a *StreamAdapter) readPump(ctx context.Context, done chan<- struct{}) {
 				a.sendJSON(ctx, StreamSessionEndFrame{Type: StreamMsgSessionEnd, Reason: StreamEndReasonMaxAudio})
 				return
 			}
+			if cur.maxAudioBytes > 0 && cur.audioBytes.Load()+int64(len(data)) > cur.maxAudioBytes {
+				a.finishSegment(ctx, cur, StreamErrAudioTooLong, "Complete recording exceeds the decoded audio duration limit.")
+				cur.endNow()
+				cur = nil
+				continue
+			}
 			if err := cur.stream.SendPCM(ctx, data); err != nil {
 				if ctx.Err() != nil {
 					return
 				}
-				slog.Warn("dictation stream: send audio failed", "err", err)
-				a.sendError(ctx, StreamErrProviderStreamFailed, err.Error())
+				code, message := captureFailureDetails(err, StreamErrProviderStreamFailed, "Audio upload failed.")
+				slog.Warn("dictation stream: send audio failed", "code", code)
+				a.finishSegment(ctx, cur, code, message)
 				cur.endNow()
 				cur = nil
+			} else {
+				cur.audioBytes.Add(int64(len(data)))
 			}
 		case websocket.MessageText:
 			var env streamEnvelope
@@ -263,6 +280,12 @@ func (a *StreamAdapter) readPump(ctx context.Context, done chan<- struct{}) {
 					a.sendError(ctx, StreamErrNoActiveSegment, "no segment to finalize")
 					continue
 				}
+				if cur.audioBytes.Load() == 0 {
+					a.finishSegment(ctx, cur, StreamErrEmptyTranscript, "No audio was recorded.")
+					cur.endNow()
+					cur = nil
+					continue
+				}
 				a.finalizeSegment(ctx, cur)
 			case StreamMsgPing:
 				a.sendJSON(ctx, StreamPongFrame{Type: StreamMsgPong})
@@ -285,11 +308,6 @@ func (a *StreamAdapter) startSegment(ctx context.Context, id uint64, start Strea
 	if ok, reason := start.ValidFormat(); !ok {
 		a.sendError(ctx, StreamErrFormatUnsupported, reason)
 		return nil, errors.New(reason)
-	}
-	if !a.Router.HasDictationStreaming() {
-		a.sendError(ctx, StreamErrStreamingUnavailable,
-			"no streaming-capable STT provider is configured; fall back to POST /v1/dictation/transcribe")
-		return nil, errors.New("streaming unavailable")
 	}
 	// Provider precedence per the voice-preferences contract: an explicit
 	// provider_profile_id in the start frame wins; otherwise default from the
@@ -315,7 +333,25 @@ func (a *StreamAdapter) startSegment(ctx context.Context, id uint64, start Strea
 		replacements = rules
 		streamOpts = request.DictationStreamOptions(streamOpts)
 	}
-	stream, err := a.Router.StartDictationStream(segCtx, streamOpts, format)
+	var stream speechkit.DictationStream
+	if !streamOpts.InterimResults {
+		if resolver, ok := a.Router.(interface {
+			DictationBatchProvider(speechkit.DictationStreamOptions) (stt.STTProvider, bool)
+		}); ok {
+			if provider, batchOnly := resolver.DictationBatchProvider(streamOpts); batchOnly {
+				stream = a.completeCapture(segCtx, nil, providerCaptureTranscriber{provider}, streamOpts, format)
+			}
+		}
+	}
+	var err error
+	if stream == nil {
+		if !a.Router.HasDictationStreaming() {
+			segCancel()
+			a.sendError(ctx, StreamErrStreamingUnavailable, "No streaming-capable STT provider is configured; use POST /v1/dictation/transcribe.")
+			return nil, errors.New("streaming unavailable")
+		}
+		stream, err = a.Router.StartDictationStream(segCtx, streamOpts, format)
+	}
 	if err != nil {
 		segCancel()
 		// No provider could serve this format (the router already tried them
@@ -327,9 +363,19 @@ func (a *StreamAdapter) startSegment(ctx context.Context, id uint64, start Strea
 		if errors.Is(err, speechkit.ErrUnsupportedAudioFormat) {
 			code = StreamErrFormatUnsupported
 		}
-		slog.Warn("dictation stream: provider stream start failed", "err", err, "code", code)
-		a.sendError(ctx, code, err.Error())
+		slog.Warn("dictation stream: provider stream start failed", "code", code)
+		a.sendError(ctx, code, "The selected speech provider could not start this recording.")
 		return nil, err
+	}
+	if !speechkit.IsCompleteCaptureStream(stream) {
+		batch, ok := a.Router.(Transcriber)
+		if !ok {
+			segCancel()
+			_ = stream.Close()
+			a.sendError(ctx, StreamErrStreamingUnavailable, "complete-recording transcription is unavailable; use POST /v1/dictation/transcribe")
+			return nil, errors.New("complete-recording transcription unavailable")
+		}
+		stream = a.completeCapture(segCtx, stream, batch, streamOpts, format)
 	}
 	seg := &streamSegment{
 		id:             id,
@@ -339,9 +385,24 @@ func (a *StreamAdapter) startSegment(ctx context.Context, id uint64, start Strea
 		done:           make(chan struct{}),
 		bytesPerSecond: int64(format.SampleRateHz) * int64(format.Channels) * 2, // S16 = 2 bytes/sample
 	}
+	if a.Customization != nil && a.Customization.decodeLimits.MaxDecodedAudioSeconds > 0 {
+		seg.maxAudioBytes = int64(a.Customization.decodeLimits.MaxDecodedAudioSeconds) * seg.bytesPerSecond
+	}
+	a.publishSegment(ctx, seg, StreamReadyFrame{Type: StreamMsgReady, SegmentID: id})
 	go a.receiveSegment(segCtx, seg)
-	a.sendJSON(ctx, StreamReadyFrame{Type: StreamMsgReady, SegmentID: id})
 	return seg, nil
+}
+
+func (a *StreamAdapter) completeCapture(ctx context.Context, drafts speechkit.DictationStream, batch Transcriber, opts speechkit.DictationStreamOptions, format speaker.AudioFormat) *completeRecordingStream {
+	maxBytes := int64(25) << 20
+	if a.Customization != nil {
+		maxBytes = a.Customization.maxBytes
+	}
+	capture := newCompleteRecordingStream(ctx, drafts, batch, opts, format, maxBytes)
+	if a.Customization != nil {
+		capture.maxAudioSeconds = a.Customization.decodeLimits.MaxDecodedAudioSeconds
+	}
+	return capture
 }
 
 // finalizeSegment flushes the provider stream and arms the drain deadline.
@@ -351,14 +412,20 @@ func (a *StreamAdapter) finalizeSegment(ctx context.Context, seg *streamSegment)
 	if !seg.finalizing.CompareAndSwap(false, true) {
 		return // already finalizing
 	}
+	// Recognition has its own bounded deadline. Waiting for it is active
+	// work, rather than an idle microphone session.
+	a.idle.Pause()
 	finalizeCtx, cancel := context.WithTimeout(ctx, providerFinalizeTimeout)
 	defer cancel()
 	if err := seg.stream.Finalize(finalizeCtx); err != nil {
-		slog.Warn("dictation stream: provider finalize failed", "err", err)
+		code, _ := captureFailureDetails(err, StreamErrProviderStreamFailed, "")
+		slog.Warn("dictation stream: provider finalize failed", "code", code)
+		seg.cancel()
+		return
 	}
-	// Deepgram keeps the connection open after Finalize; bound the drain so
-	// segment_done is deterministic even when nothing was buffered.
-	seg.armFlushTimer(segmentFlushTimeout)
+	// Full-recording STT needs its own recognition budget, rather than the
+	// short drain window of an ordinary provider socket.
+	seg.armFlushTimer(completeCaptureTimeout)
 }
 
 // receiveSegment pumps provider events to the client until the segment ends.
@@ -367,8 +434,9 @@ func (a *StreamAdapter) receiveSegment(ctx context.Context, seg *streamSegment) 
 		seg.stopFlushTimer()
 		seg.cancel()
 		if err := seg.stream.Close(); err != nil {
-			slog.Debug("dictation stream: provider stream close", "err", err)
+			slog.Debug("dictation stream: provider stream close", "code", "provider_close_failed")
 		}
+		a.idle.Resume()
 		close(seg.done)
 	}()
 
@@ -378,25 +446,28 @@ func (a *StreamAdapter) receiveSegment(ctx context.Context, seg *streamSegment) 
 			finalizing := seg.finalizing.Load()
 			switch {
 			case finalizing:
-				// Flush drain complete (EOF, cancel-by-deadline, or provider
-				// close) — the segment ends cleanly.
-				a.sendJSON(ctx, StreamSegmentDoneFrame{Type: StreamMsgSegmentDone, SegmentID: seg.id})
+				// An absent complete transcript is a failure, never a successful
+				// empty segment that discards the user's recording.
+				code, message := captureFailureDetails(err, StreamErrProviderStreamFailed, "Complete-recording transcription did not finish.")
+				a.finishSegment(ctx, seg, code, message)
 			case ctx.Err() != nil, errors.Is(err, context.Canceled):
 				// Session shutdown; terminal frames are the read pump's job.
 			case errors.Is(err, io.EOF):
 				// Provider ended the stream without a client finalize (e.g.
 				// provider-side inactivity timeout). Tell the client so it
 				// can restart or fall back to batch.
-				a.sendError(ctx, StreamErrProviderStreamClosed, "provider closed the stream")
-				a.sendJSON(ctx, StreamSegmentDoneFrame{Type: StreamMsgSegmentDone, SegmentID: seg.id})
+				a.finishSegment(ctx, seg, StreamErrProviderStreamClosed, "The speech provider closed this recording.")
 			default:
-				slog.Warn("dictation stream: provider receive failed", "err", err)
-				a.sendError(ctx, StreamErrProviderStreamFailed, err.Error())
-				a.sendJSON(ctx, StreamSegmentDoneFrame{Type: StreamMsgSegmentDone, SegmentID: seg.id})
+				slog.Warn("dictation stream: provider receive failed", "code", StreamErrProviderStreamFailed)
+				a.finishSegment(ctx, seg, StreamErrProviderStreamFailed, "The speech provider could not transcribe this recording.")
 			}
 			return
 		}
 		a.idle.Reset()
+		if event.IsFinal && strings.TrimSpace(event.Text) == "" {
+			a.finishSegment(ctx, seg, StreamErrEmptyTranscript, "No speech was recognized in the complete recording.")
+			return
+		}
 		if event.IsFinal && len(seg.replacements) > 0 {
 			applied, applyErr := internalcustomize.Apply(event.Text, seg.replacements, speechcustomize.StagePostSTT)
 			if applyErr != nil {
@@ -407,14 +478,37 @@ func (a *StreamAdapter) receiveSegment(ctx context.Context, seg *streamSegment) 
 			}
 		}
 		if event.Text != "" || len(event.Words) > 0 {
-			a.sendJSON(ctx, streamTranscriptFromEvent(seg.id, event))
+			a.publishSegment(ctx, seg, streamTranscriptFromEvent(seg.id, event))
 		}
 		if event.IsFinal && seg.finalizing.Load() {
 			// The flushed tail arrived — the segment is complete.
-			a.sendJSON(ctx, StreamSegmentDoneFrame{Type: StreamMsgSegmentDone, SegmentID: seg.id})
+			a.finishSegment(ctx, seg, "", "")
 			return
 		}
 	}
+}
+
+func (a *StreamAdapter) publishSegment(ctx context.Context, seg *streamSegment, frame any) {
+	seg.outputMu.Lock()
+	defer seg.outputMu.Unlock()
+	if !seg.terminal {
+		a.sendJSON(ctx, frame)
+	}
+}
+
+// Send and receive failures can race. The segment output fence chooses one
+// terminal owner and rejects every later transcript or duplicate completion.
+func (a *StreamAdapter) finishSegment(ctx context.Context, seg *streamSegment, code, message string) {
+	seg.outputMu.Lock()
+	defer seg.outputMu.Unlock()
+	if seg.terminal {
+		return
+	}
+	seg.terminal = true
+	if code != "" {
+		a.sendError(ctx, code, message)
+	}
+	a.sendJSON(ctx, StreamSegmentDoneFrame{Type: StreamMsgSegmentDone, SegmentID: seg.id})
 }
 
 // sessionPreferredProfile returns the STT provider preference captured on

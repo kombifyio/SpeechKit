@@ -3,15 +3,28 @@
 package auditlog
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/sys/windows/svc/eventlog"
+
+	"github.com/kombifyio/SpeechKit/app/internal/productid"
 )
 
-const eventSourceName = "kombify SpeechKit"
+// eventSourceName is the registered product's Event Log source, its display
+// name ("kombify SpeechKit" for the reference client), or
+// productid.ErrNoIdentity.
+func eventSourceName() (string, error) {
+	p, err := productid.Current()
+	if err != nil {
+		return "", err
+	}
+	return p.DisplayName(), nil
+}
 
 // eventID 1000 is used for all SpeechKit audit events; the rec.Event
 // string distinguishes the type. Microsoft recommends 0–65535 range;
@@ -23,8 +36,8 @@ var (
 	eventLogHandle *eventlog.Log // nil when sink disabled
 )
 
-// InstallEventLogSource registers the "kombify SpeechKit" Event Log
-// source. Idempotent: calling when already registered is a no-op
+// InstallEventLogSource registers the product's Event Log source.
+// Idempotent: calling when already registered is a no-op
 // (eventlog.InstallAsEventCreate returns an error containing
 // "already exists" for re-registration — we treat that as success).
 //
@@ -35,7 +48,11 @@ var (
 // Non-admin users cannot register; their AuditConfig.EventLogEnabled
 // will silently fail OpenEventLog at startup (logged at slog.Warn).
 func InstallEventLogSource() error {
-	err := eventlog.InstallAsEventCreate(eventSourceName, eventlog.Info|eventlog.Warning|eventlog.Error)
+	source, err := eventSourceName()
+	if err != nil {
+		return err
+	}
+	err = eventlog.InstallAsEventCreate(source, eventlog.Info|eventlog.Warning|eventlog.Error)
 	if err != nil {
 		// Treat "already installed" as success — idempotent re-registration.
 		if isAlreadyInstalledError(err) {
@@ -66,9 +83,13 @@ func OpenEventLog() error {
 	if eventLogHandle != nil {
 		return nil // already open
 	}
-	elog, err := eventlog.Open(eventSourceName)
+	source, err := eventSourceName()
 	if err != nil {
-		return fmt.Errorf("eventlog.Open(%q): %w", eventSourceName, err)
+		return err
+	}
+	elog, err := eventlog.Open(source)
+	if err != nil {
+		return fmt.Errorf("eventlog.Open(%q): %w", source, err)
 	}
 	eventLogHandle = elog
 	return nil
@@ -85,9 +106,9 @@ func CloseEventLog() {
 	}
 }
 
-// emitToEventLog writes one audit Record to the Windows Event Log.
-// Called from AppendEvent when eventLogHandle is non-nil. Failures
-// are silently dropped — the file sink already has the record.
+// emitToEventLog writes one audit Record to the Windows Event Log, best
+// effort: failures are dropped (the file sink has the record). Used when
+// forward_required is off.
 func emitToEventLog(rec Record) {
 	eventLogMu.Lock()
 	h := eventLogHandle
@@ -95,13 +116,46 @@ func emitToEventLog(rec Record) {
 	if h == nil {
 		return
 	}
+	_ = writeEventLog(h, rec)
+}
+
+func writeEventLog(h *eventlog.Log, rec Record) error {
 	line, err := json.Marshal(rec)
 	if err != nil {
-		return
+		return err
 	}
 	if rec.Outcome == OutcomeFailure {
-		_ = h.Warning(eventID, string(line))
-	} else {
-		_ = h.Info(eventID, string(line))
+		return h.Warning(eventID, string(line))
 	}
+	return h.Info(eventID, string(line))
+}
+
+// eventLogForwarder is the Event Log as a forward-required sink. ReportEvent
+// returns once the Event Log service has the record; Windows Event
+// Forwarding takes it off the device from there.
+type eventLogForwarder struct{ h *eventlog.Log }
+
+func (eventLogForwarder) Name() string { return "event_log" }
+
+func (eventLogForwarder) Bound() time.Duration { return EventLogForwardBound }
+
+func (f eventLogForwarder) Forward(ctx context.Context, rec Record) error {
+	done := make(chan error, 1)
+	go func() { done <- writeEventLog(f.h, rec) }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// eventLogSink returns the open Event Log sink, or nil.
+func eventLogSink() Forwarder {
+	eventLogMu.Lock()
+	defer eventLogMu.Unlock()
+	if eventLogHandle == nil {
+		return nil
+	}
+	return eventLogForwarder{h: eventLogHandle}
 }

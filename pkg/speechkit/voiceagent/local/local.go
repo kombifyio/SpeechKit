@@ -286,6 +286,15 @@ func (p *Provider) sessionCallbacks(thin voiceagent.Callbacks) live.Callbacks {
 	}
 
 	origErr := out.OnError
+	origTurnErr := out.OnTurnError
+	out.OnTurnError = func(err error) {
+		if origTurnErr != nil {
+			origTurnErr(err)
+		}
+		if thin.OnTurnError != nil {
+			thin.OnTurnError(err)
+		}
+	}
 	out.OnError = func(err error) {
 		if origErr != nil {
 			origErr(err)

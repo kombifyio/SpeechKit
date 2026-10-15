@@ -9,6 +9,55 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.76.6](https://github.com/kombifyio/SpeechKit/compare/v0.76.5...v0.76.6) (2026-10-15)
+
+### Highlights
+
+- **Export meetings anywhere**: Meeting Mode can hand a finished meeting to any note destination: a file, a note app or your own target, rendered as Markdown or XHTML.
+- **Control where traffic can go**: Network scope now limits outgoing connections too: device-only, local network or open, with model downloads and update checks only when you allow them.
+- **Restrict providers, keep your notes**: Hosts can allow only named providers, and ephemeral retention keeps the notes you typed while sweeping recordings.
+- **Complete dictation transcripts**: Deepgram dictation can transcribe the finished recording instead of the live window, so words at chunk boundaries and at the end are no longer lost.
+
+
+
+### Bug Fixes
+
+* **ci:** declare existing quality gate secret inputs ([#930](https://github.com/kombifyio/SpeechKit/issues/930)) ([5ca08f3](https://github.com/kombifyio/SpeechKit/commit/5ca08f3b1977364ed864be49a9ebc9ffb57caec1))
+* **deps:** record the go.work.sum lines the macOS bundle build adds ([#926](https://github.com/kombifyio/SpeechKit/issues/926)) ([3e87781](https://github.com/kombifyio/SpeechKit/commit/3e877818294cd7e2d6a887bd43700c146414138a))
+* real fixes for the red scheduled Security, live-gates box-evidence and model-freshness runs ([#927](https://github.com/kombifyio/SpeechKit/issues/927)) ([c4ed724](https://github.com/kombifyio/SpeechKit/commit/c4ed7241283c27dba4c0739a1932004c5ccceb43))
+* validate the assist example's LLM endpoint and key; build sk-browser-smoke against chromedp v0.21.0 ([#929](https://github.com/kombifyio/SpeechKit/issues/929)) ([c81f7a5](https://github.com/kombifyio/SpeechKit/commit/c81f7a56b2682877b4df3de4516e6ac98bdea75f))
+* **voice:** preserve complete dictation and independent sessions ([#928](https://github.com/kombifyio/SpeechKit/issues/928)) ([d2d4296](https://github.com/kombifyio/SpeechKit/commit/d2d4296ac410f2319f7699fe75730135d233113e))
+
+## [0.76.5](https://github.com/kombifyio/SpeechKit/compare/v0.76.4...v0.76.5) (2026-10-15)
+
+### Highlights
+
+- **Export meetings anywhere**: Meeting Mode can hand a finished meeting to any note destination: a file, a note app or your own target, rendered as Markdown or XHTML.
+- **Control where traffic can go**: Network scope now limits outgoing connections too: device-only, local network or open, with model downloads and update checks only when you allow them.
+- **Restrict providers, keep your notes**: Hosts can allow only named providers, and ephemeral retention keeps the notes you typed while sweeping recordings.
+- **Complete dictation transcripts**: Deepgram dictation can transcribe the finished recording instead of the live window, so words at chunk boundaries and at the end are no longer lost.
+
+
+
+### Bug Fixes
+
+* **deps:** move livekit server-sdk-go to v2.19.0 to match protocol v1.52.1 ([#874](https://github.com/kombifyio/SpeechKit/issues/874)) ([0393ade](https://github.com/kombifyio/SpeechKit/commit/0393ade556f2bbe060618c47ccec5776e5af29ef))
+* **deps:** update dependency @wailsio/runtime to ^3.0.0-beta.27 ([#625](https://github.com/kombifyio/SpeechKit/issues/625)) ([311d446](https://github.com/kombifyio/SpeechKit/commit/311d4464bd43e30744cc4fa359517879ec75c559))
+* **deps:** update module github.com/pion/webrtc/v4 to v4.2.22 ([#640](https://github.com/kombifyio/SpeechKit/issues/640)) ([ade9935](https://github.com/kombifyio/SpeechKit/commit/ade99351a96c338986323675f770a841fca0beda))
+* **deps:** update module github.com/wailsapp/wails/v3 to v3.0.0-beta.27 ([#626](https://github.com/kombifyio/SpeechKit/issues/626)) ([f0c490d](https://github.com/kombifyio/SpeechKit/commit/f0c490df7ff52598613c32bbda32f8f5381f7026))
+* **dictation:** commit the transcript of the complete recording ([#859](https://github.com/kombifyio/SpeechKit/issues/859)) ([73268d6](https://github.com/kombifyio/SpeechKit/commit/73268d65afb830c4c7457c6d787fbb852b20011c))
+* **l10n:** fill missing zh-Hans catalog keys ([#917](https://github.com/kombifyio/SpeechKit/issues/917)) ([86d54c9](https://github.com/kombifyio/SpeechKit/commit/86d54c9efed10513f538048aa526b2ca200099c5))
+* **meeting:** withdraw an unanswered meeting offer and let the idle pill close ([#865](https://github.com/kombifyio/SpeechKit/issues/865)) ([7bcffdf](https://github.com/kombifyio/SpeechKit/commit/7bcffdf70651b2167acbbefb6534a95571fe447b))
+* **onboarding:** repeat setup safely with focused provider choices ([#818](https://github.com/kombifyio/SpeechKit/issues/818)) ([a5a182b](https://github.com/kombifyio/SpeechKit/commit/a5a182ba6e2870ef617d9dd5d4f10be5b4b1d43f))
+* **release:** make the OSS export build (providerpolicy, subjectrights decoupled) ([#922](https://github.com/kombifyio/SpeechKit/issues/922)) ([07c9b44](https://github.com/kombifyio/SpeechKit/commit/07c9b4460133cd8091781f604bcd34404bc359d8))
+* **server:** erase wake-word audio from the upload directory by default ([#915](https://github.com/kombifyio/SpeechKit/issues/915)) ([8071515](https://github.com/kombifyio/SpeechKit/commit/8071515abbf02d5af08f86658f8e9901a057b4fe))
+
+
+### Release documentation
+
+* **release:** curate SpeechKit 0.76.5 highlights ([#911](https://github.com/kombifyio/SpeechKit/issues/911)) ([ab80afd](https://github.com/kombifyio/SpeechKit/commit/ab80afd6b60a07187660f93b39f15c0f4ef14f3a))
+* **release:** curate SpeechKit 0.77.0 highlights ([#908](https://github.com/kombifyio/SpeechKit/issues/908)) ([12a24a0](https://github.com/kombifyio/SpeechKit/commit/12a24a0f032ac85fc5426cf57666b7385d050c37))
+
 ## [0.76.4](https://github.com/kombifyio/SpeechKit/compare/v0.76.3...v0.76.4) (2026-10-05)
 
 ### Highlights
@@ -541,6 +590,48 @@ Notes cover changes after VERSION 0.70.0 (00b17c502201393702b34091f46c9b25a4df8c
 * **release:** bind website refresh to verified public package ([#467](https://github.com/kombifyio/SpeechKit/issues/467)) ([cb4701b](https://github.com/kombifyio/SpeechKit/commit/cb4701ba5246394acb3c616c9083b7fb04244eb2))
 
 ## [Unreleased]
+
+### Host kit
+
+* **A Host-stable tier for managed desktop clients.** The desktop host
+  building blocks (product identity, the configuration owner, process
+  start-up, the local control plane, Microsoft sign-in and Microsoft 365,
+  meeting capture and notebooks, dictation, hotkeys, text injection, the
+  tray, updates, downloads and provider assembly) now form one tier with an
+  API compatibility gate. A breaking change to it needs an explicit approval
+  and a callout in this section naming the known managed consumers. The
+  tier builds on the Wails v3.0.0-beta.27 pin. It is not part of the
+  open-source SDK and carries no SemVer promise for SDK users.
+* **The host kit no longer links Assist, the Voice Agent or text-to-speech.**
+  A managed client that builds on the tier links only what it uses.
+  `ai/flows` no longer forwards `AssistGenerator`: the adapters from the
+  generation flows to the Assist and Voice Agent contracts moved to the
+  reference clients. `providers` builds text-to-speech through the new
+  `Deps.TTS` builder (nil: no text-to-speech) and holds it as the
+  `TTSRouter` interface: `Runtime.TTS`, `BuildTTS` and `ReleaseTTS` return
+  it, and `BuildTTSRouter`, `Deps.PiperBinary` and `ErrNoPiperResolver` are
+  gone. `foundry.Discover` and `foundry.Deps` take a `VoiceLister` (nil:
+  discovery lists deployments only). `settingsview.ConfigView` no longer
+  carries the Piper section (`PiperTTS`, `PiperVoice`). `notebook.Deps`
+  takes the package's own `Summarizer` (transcript and locale in, summary
+  out), and `notebook.ExtractSummary` is the extract it falls back to.
+  `hotkeys` names its modes (`ModeDictate`, `ModeAssist`, `ModeVoiceAgent`,
+  `OrderedModes`), and the dictation vocabulary helpers are the new
+  `transcription` package. `downloads.StatusOptions` takes the local LLM
+  runtime probe (`LocalLLMRuntime`, `ErrLocalLLMRuntimeNotBundled`);
+  without it the built-in language models report their runtime as not part
+  of the app.
+* **Meeting screenshots need a user gesture.** A full-monitor capture
+  takes a gesture: `meetingsnapshot.Orchestrator.CaptureMonitor` takes a
+  `Gesture` that only the shortcut driver makes (`NewGesture`), and a host
+  can allow picked windows only (`Deps.PickerOnly`), refuse the windows of
+  listed applications (`Deps.Processes`, `Deps.DeniedProcesses`) and audit
+  every saved screenshot (`Deps.Audit`). The snapshot routes of `notebook`
+  capture through the window picker: `notebook.Deps.Screen` is replaced by
+  `Deps.Snapshots` (a `SnapshotCapturer`, which the orchestrator
+  implements), and the foreground-monitor capturer (`screencap.Capturer`,
+  `screencap.New`) is gone. Known consumer: the managed root in this
+  repository, which registers no snapshot routes.
 
 ## [0.70.0] - 2026-09-10
 

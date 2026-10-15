@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -20,6 +21,13 @@ type RecordingSessionStore interface {
 	DeleteRecordingSession(ctx context.Context, id int64) error
 	// SetRecordingSessionPinned keeps one meeting out of the retention sweep.
 	SetRecordingSessionPinned(ctx context.Context, id int64, pinned bool) error
+}
+
+// RecordingSessionChannelStore is an optional extension for backends that can
+// drop one capture channel's segments from a session, which replacing an
+// imported or pasted transcript needs.
+type RecordingSessionChannelStore interface {
+	DeleteRecordingSessionSegmentsByChannel(ctx context.Context, sessionID int64, channel string) (int64, error)
 }
 
 // RecordingSessionSearchStore is an optional extension: a text search over a
@@ -140,6 +148,11 @@ const (
 	RecordingSessionEnhancementCancelled RecordingSessionEnhancementStatus = "cancelled"
 )
 
+// RecordingSessionEnhancementStageInterrupted marks a write-up a restart cut
+// short. Startup recovery sets it on the row (status partial) and resumes the
+// write-up with a new row.
+const RecordingSessionEnhancementStageInterrupted = "interrupted"
+
 // RecordingSessionEnhancement is one written-up version of a meeting.
 type RecordingSessionEnhancement struct {
 	ID           int64  `json:"id"`
@@ -220,6 +233,10 @@ const (
 	// items Microsoft 365 Copilot wrote for the meeting, kept as JSON in
 	// ContentJSON next to SpeechKit's own review.
 	RecordingSessionImportCopilotRecap RecordingSessionImportKind = "copilot_recap"
+	// RecordingSessionImportTeamsPreflight is the one preflight a meeting runs
+	// against Microsoft 365 when its notebook opens. Its ContentJSON holds the
+	// outcome; it imports nothing and is never due.
+	RecordingSessionImportTeamsPreflight RecordingSessionImportKind = "teams_preflight"
 )
 
 // RecordingSessionImportStatus is where one import stands.
@@ -272,6 +289,53 @@ type RecordingSessionImportStore interface {
 	// ListDueRecordingSessionImports returns waiting imports whose next
 	// attempt is due at now, oldest first, in the caller's scope.
 	ListDueRecordingSessionImports(ctx context.Context, now time.Time, limit int) ([]RecordingSessionImport, error)
+}
+
+// RecordingSessionExportStatus is where the export of one meeting to one
+// target stands.
+type RecordingSessionExportStatus string
+
+const (
+	// RecordingSessionExportPending: queued or running.
+	RecordingSessionExportPending RecordingSessionExportStatus = "pending"
+	// RecordingSessionExportSynced: the destination holds Fingerprint.
+	RecordingSessionExportSynced RecordingSessionExportStatus = "synced"
+	// RecordingSessionExportFailed: the last push failed; LastErrorKind
+	// says why. ExternalID stays when the external object exists.
+	RecordingSessionExportFailed RecordingSessionExportStatus = "failed"
+)
+
+// RecordingSessionExport records the push of one meeting to one export
+// target (export.Receipt plus its sync state). It holds identifiers only,
+// never content: ExternalID and URL name the external object, Fingerprint
+// the document version it holds.
+type RecordingSessionExport struct {
+	ID            int64                        `json:"id"`
+	SessionID     int64                        `json:"sessionId"`
+	TargetID      string                       `json:"targetId"`
+	DestinationID string                       `json:"destinationId,omitempty"`
+	ExternalID    string                       `json:"externalId,omitempty"`
+	URL           string                       `json:"url,omitempty"`
+	Fingerprint   string                       `json:"fingerprint,omitempty"`
+	Status        RecordingSessionExportStatus `json:"status"`
+	LastErrorKind string                       `json:"lastErrorKind,omitempty"`
+	PushedAt      time.Time                    `json:"pushedAt,omitzero"`
+	CreatedAt     time.Time                    `json:"createdAt"`
+	UpdatedAt     time.Time                    `json:"updatedAt"`
+}
+
+// RecordingSessionExportStore is an optional extension for backends that
+// persist export records. One row exists per session and target.
+type RecordingSessionExportStore interface {
+	UpsertRecordingSessionExport(ctx context.Context, item RecordingSessionExport) (RecordingSessionExport, error)
+	ListRecordingSessionExports(ctx context.Context, sessionID int64) ([]RecordingSessionExport, error)
+}
+
+// PendingRecordingSessionExports is an optional extension that lists the
+// export records still pending in the caller's scope, so a host can resume
+// an export a crash interrupted.
+type PendingRecordingSessionExports interface {
+	ListPendingRecordingSessionExports(ctx context.Context) ([]RecordingSessionExport, error)
 }
 
 type RecordingSessionKind string
@@ -352,6 +416,10 @@ type RecordingSession struct {
 	// RetentionPinned keeps this meeting even once it is past the retention
 	// window.
 	RetentionPinned bool `json:"retentionPinned,omitempty"`
+	// NotebookID links the session to one entry of the notebook index; 0 is
+	// no notebook. Deleting the notebook clears the link and keeps the
+	// session.
+	NotebookID int64 `json:"notebookId,omitempty"`
 }
 
 // Meeting capture records who a segment came from without acoustic
@@ -383,4 +451,62 @@ type RecordingSessionSegment struct {
 	StartedMs int64     `json:"startedMs"`
 	EndedMs   int64     `json:"endedMs"`
 	CreatedAt time.Time `json:"createdAt"`
+}
+
+// NotebookDestinationKind names where a notebook's pages are written.
+type NotebookDestinationKind string
+
+// NotebookDestinationOneNote is a OneNote section: NotebookID and SectionID
+// are the Graph ids of the notebook and the section the pages go to.
+const NotebookDestinationOneNote NotebookDestinationKind = "onenote"
+
+// ErrNotebookInvalid reports a notebook that cannot be stored as given: no
+// display name, an unknown destination kind or a destination without its ids.
+var ErrNotebookInvalid = errors.New("store: invalid notebook")
+
+// NotebookDestination is the one external place a notebook syncs to.
+type NotebookDestination struct {
+	Kind NotebookDestinationKind `json:"kind"`
+	// NotebookID and SectionID are the destination's own ids (for OneNote,
+	// the Graph notebook and section ids).
+	NotebookID string `json:"notebookId"`
+	SectionID  string `json:"sectionId"`
+	// SiteID is the SharePoint site whose notebooks hold the destination;
+	// empty is the signed-in user's own notebooks (their OneDrive).
+	SiteID string `json:"siteId,omitempty"`
+	// DisplayPath is the human-readable location, such as
+	// "Work notebook / Meetings", shown instead of the ids.
+	DisplayPath string `json:"displayPath,omitempty"`
+}
+
+// Notebook is one entry of the device's notebook index: a name the user gave
+// it and the destination it is linked to. Recording sessions reference it
+// through RecordingSession.NotebookID.
+type Notebook struct {
+	ID           int64               `json:"id"`
+	DisplayName  string              `json:"displayName"`
+	Destination  NotebookDestination `json:"destination"`
+	LastSyncedAt time.Time           `json:"lastSyncedAt,omitempty"`
+	CreatedAt    time.Time           `json:"createdAt"`
+	UpdatedAt    time.Time           `json:"updatedAt"`
+}
+
+// NotebookStore is an optional extension for backends that keep the notebook
+// index. Every method acts on the caller's scope; an id outside it answers
+// sql.ErrNoRows.
+type NotebookStore interface {
+	CreateNotebook(ctx context.Context, notebook Notebook) (Notebook, error)
+	GetNotebook(ctx context.Context, id int64) (*Notebook, error)
+	ListNotebooks(ctx context.Context) ([]Notebook, error)
+	// UpdateNotebook renames or relinks a notebook: DisplayName and
+	// Destination replace the stored values.
+	UpdateNotebook(ctx context.Context, notebook Notebook) (Notebook, error)
+	// MarkNotebookSynced records the time of the last successful sync.
+	MarkNotebookSynced(ctx context.Context, id int64, at time.Time) error
+	// DeleteNotebook removes the index entry. The sessions that referenced
+	// it stay and lose the reference.
+	DeleteNotebook(ctx context.Context, id int64) error
+	// SetRecordingSessionNotebook links a session to a notebook; 0 clears
+	// the link.
+	SetRecordingSessionNotebook(ctx context.Context, sessionID, notebookID int64) error
 }

@@ -16,6 +16,7 @@ import (
 
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 )
 
@@ -66,7 +67,7 @@ func New(opts Options) (*Client, error) {
 		if timeout == 0 {
 			timeout = 30 * time.Second
 		}
-		httpClient = &http.Client{Timeout: timeout}
+		httpClient = netsec.NewClient(netsec.ClientOptions{Timeout: timeout})
 	}
 	userAgent := strings.TrimSpace(opts.UserAgent)
 	if userAgent == "" {

@@ -217,3 +217,23 @@ func (s NetworkScope) EndpointPolicyFor(class EndpointClass) EndpointPolicy {
 		return EndpointPolicy{Allowed: false, ReasonID: NetworkScopeReasonCloudProvider}
 	}
 }
+
+// EgressPolicy returns the process-wide [netsec.Policy] a host installs with
+// [netsec.Configure] for this scope. Open is unrestricted; local_network
+// allows loopback and private addresses; device_only (and any unknown scope,
+// failing closed) allows loopback only, because the only network traffic it
+// permits is to children SpeechKit manages itself. allowSetupTraffic lets
+// clients marked netsec.ClientOptions.SetupTraffic (model downloads, update
+// checks) through when the user opted in to setup traffic.
+func (s NetworkScope) EgressPolicy(allowSetupTraffic bool) netsec.Policy {
+	switch s {
+	case NetworkScopeOpen:
+		return netsec.Policy{}
+	case NetworkScopeLocalNetwork:
+		v := s.EndpointPolicyFor(EndpointClassLocalService).Validation
+		return netsec.Policy{Validation: &v, AllowSetupTraffic: allowSetupTraffic}
+	default:
+		v := s.EndpointPolicyFor(EndpointClassManagedLoopback).Validation
+		return netsec.Policy{Validation: &v, AllowSetupTraffic: allowSetupTraffic}
+	}
+}

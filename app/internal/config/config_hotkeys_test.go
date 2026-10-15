@@ -118,7 +118,7 @@ func TestSaveRoundTripNewFields(t *testing.T) {
 	cfg.UI.OverlayFreeX = 864
 	cfg.UI.OverlayFreeY = 512
 
-	if err := Save(path, cfg); err != nil {
+	if err := save(path, cfg); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 

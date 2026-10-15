@@ -164,7 +164,12 @@ const ModelFreshnessSLA = 7 * 24 * time.Hour
 // gpt-realtime-2, gemini-3.8-live (GA) replaces the 3.1 Live preview and
 // Universal-3.6 Pro Realtime becomes the AssemblyAI streaming default. The
 // retired ids and their successors are listed in RetiredModels.
-const modelRegistryVerifiedAt = "2026-09-30"
+//
+// 2026-10-15 pass against the vendors' model pages (the SourceURL of each
+// row): every id is still listed and none is deprecated. Gemini 3.8 Live
+// Extended Thinking is now listed as stable, so its row moves from preview to
+// GA.
+const modelRegistryVerifiedAt = "2026-10-15"
 
 // foundryRegistryVerifiedAt is the day the Microsoft Foundry rows were checked
 // against MS Learn model-availability docs (separate vendor-doc pass).
@@ -173,7 +178,14 @@ const modelRegistryVerifiedAt = "2026-09-30"
 // gpt-realtime-2.1 family is GA on Foundry and gpt-realtime-2 is a preview
 // that auto-upgrades to it; Voice Live dropped gpt-realtime-2 from its native
 // brains and added gpt-5.6-terra, gpt-5.6-luna and azure-realtime.
-const foundryRegistryVerifiedAt = "2026-09-30"
+//
+// 2026-10-15 pass against MS Learn: gpt-realtime-2.1 and -mini (2026-07-07)
+// are still the GA Realtime 2.x models, gpt-live-1 is documented for
+// /openai/v1/live/sessions, MAI-Transcribe-2 is listed (MAI-Transcribe-1 is
+// deprecated, not used here), and Voice Live still offers gpt-realtime-2.1,
+// gpt-realtime-2.1-mini, gpt-5.6-terra, gpt-5.6-luna, azure-realtime and
+// phi4-mm-realtime (preview).
+const foundryRegistryVerifiedAt = "2026-10-15"
 
 // MissingFreshnessReports lists default/recommended registry rows that still
 // lack LastVerifiedAt.
@@ -345,7 +357,7 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			ProfileID:            "realtime.google.gemini-native-audio",
 			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "Gemini 3.8 Live Extended Thinking",
-			Lifecycle:            speechkit.ModelLifecyclePreview,
+			Lifecycle:            speechkit.ModelLifecycleGA,
 			SourceURL:            "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-live-extended-thinking",
 			ReleasedAt:           "2026-09-15",
 			LastVerifiedAt:       modelRegistryVerifiedAt,
@@ -398,7 +410,7 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Mode:                 speechkit.ModeVoiceAgent,
 			Name:                 "GPT Realtime 2.1 mini",
 			Lifecycle:            speechkit.ModelLifecycleGA,
-			SourceURL:            "https://developers.openai.com/api/docs/models/gpt-realtime-2.1",
+			SourceURL:            "https://developers.openai.com/api/docs/models/gpt-realtime-2.1-mini",
 			ReleasedAt:           "2026-07-06",
 			LastVerifiedAt:       modelRegistryVerifiedAt,
 			MultilanguageCapable: true,

@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
 // Canonical network scope values, mirrored from pkg/speechkit for TOML/docs.
@@ -44,6 +45,16 @@ type PrivacyConfig struct {
 	// survives the work. Missing/empty means retain (backwards compatible);
 	// unknown values make config loading fail rather than being guessed.
 	RetentionScope string `toml:"retention_scope"`
+
+	// RetentionTTLDays is a hard upper bound, in days, on stored content.
+	// Under either scope nothing of class recording or screen capture older
+	// than it survives (meeting transcripts, digests, imported Teams
+	// transcripts, screen captures, audio, Voice Agent conversations); under
+	// ephemeral the meetings themselves with their notes and write-ups, and
+	// dictation history and quick notes, go too. Pinning exempts content from
+	// the retention-days settings only, never from the TTL. 0 (default)
+	// means no TTL; negative values make config loading fail.
+	RetentionTTLDays int `toml:"retention_ttl_days"`
 }
 
 // NetworkScope resolves the effective scope for enforcement points. Invalid
@@ -103,6 +114,37 @@ func (c *Config) RetentionScope() framework.RetentionScope {
 	return framework.NormalizeRetentionScope(c.Privacy.RetentionScope)
 }
 
+// ProviderAllowedUnderRetention reports whether the provider surface (the
+// adapter identifier, e.g. "deepgram", and a provideropts.Modality* value)
+// may be used under the effective retention scope, with the stable
+// disabled-reason ID when it may not. Under retain everything is allowed;
+// under ephemeral only a surface whose option manifest asserts no-store —
+// a per-request flag SpeechKit sends, or a provider that keeps nothing by
+// default — is. A surface without a manifest cannot assert anything and is
+// refused.
+func (c *Config) ProviderAllowedUnderRetention(provider, modality string) (bool, string) {
+	return c.RetentionScope().AllowsProviderRetention(providerRetention(provider, modality))
+}
+
+// providerRetention maps a provider surface's declared no-store position onto
+// the framework's retention promise.
+func providerRetention(provider, modality string) framework.ProviderRetention {
+	manifest, ok := provideropts.FindManifest(provider, modality)
+	if !ok {
+		return framework.ProviderRetentionUnknown
+	}
+	support, ok := manifest.SupportByID()[provideropts.OptionNoStore]
+	if !ok || !support.Implemented {
+		return framework.ProviderRetentionUnknown
+	}
+	switch support.Status {
+	case provideropts.SupportNative, provideropts.SupportProviderDefault:
+		return framework.ProviderRetentionNoStore
+	default:
+		return framework.ProviderRetentionUnknown
+	}
+}
+
 // NormalizePrivacyConfig canonicalizes the [privacy] section and returns an
 // error for unknown scope values. Load and Save both call it, so a config
 // file with a typo'd scope is rejected instead of being reinterpreted.
@@ -120,5 +162,8 @@ func NormalizePrivacyConfig(cfg *Config) error {
 		return fmt.Errorf("[privacy] retention_scope: %w", err)
 	}
 	cfg.Privacy.RetentionScope = string(retention)
+	if cfg.Privacy.RetentionTTLDays < 0 {
+		return fmt.Errorf("[privacy] retention_ttl_days: %d is negative (0 means no TTL)", cfg.Privacy.RetentionTTLDays)
+	}
 	return nil
 }

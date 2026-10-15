@@ -22,20 +22,25 @@ network_scope = "open"
 # downloads and app updates from official sources. No audio, transcripts or
 # prompts ever ride on setup traffic.
 allow_setup_traffic = false
-# retention_scope is a separate policy axis from network_scope. The config
-# value and policy predicates exist, but store cleanup and provider admission
-# do not consume them yet. "ephemeral" is NOT an enforced zero-retention mode:
-# it does not sweep recordings or automatically block providers that retain
-# content. Keep "retain"; use existing retention settings and explicit erasure.
+# retention_scope is a separate policy axis from network_scope: what may
+# outlive the work that produced it (docs/privacy/retention-scope.md).
 #   retention_scope = "retain"     Recordings are durable and disappear only
-#                                  through the retention settings below, a
-#                                  deletion, or an erasure request (default).
-#   retention_scope = "ephemeral"  Policy target only: sweep raw material at
-#                                  session end, keep the generated write-up,
-#                                  and require provider no-store. Not wired.
-# Unknown strings are rejected on Device-Target config load/save. The policy
-# normalizer defaults invalid input to "ephemeral"; that is not enforcement.
+#                                  through the retention settings below, the
+#                                  TTL, a deletion, or an erasure request
+#                                  (default).
+#   retention_scope = "ephemeral"  A meeting's transcript, digests, imported
+#                                  Teams transcript and screenshots are swept
+#                                  once its write-up and import are over; notes,
+#                                  write-ups and dictation history stay; no
+#                                  audio is written. Provider no-store
+#                                  admission is not wired yet.
+# Unknown strings are rejected on Device-Target config load/save.
 retention_scope = "retain"
+# retention_ttl_days is a hard upper bound by age, pinned content included:
+# recordings and screenshots older than it are deleted under either scope;
+# under "ephemeral" old meetings with their notes and write-ups, dictation
+# history and quick notes go too. 0 means no TTL.
+retention_ttl_days = 0
 
 [general]
 language = "de"                    # Default transcription language
@@ -63,9 +68,9 @@ auto_stop_silence_ms = 1500
 fast_mode_silence_ms = 1500
 dictate_silence_timeout_sec = 3  # Seconds of silence before toggle dictation auto-stops. 0 disables.
 max_recording_seconds = 600      # Hard cap on one dictation/Assist recording, even during continuous speech. Meetings are not capped.
-dictation_intermediate_segment_ms = 6000 # Minimum utterance duration before segment_batch emits a pause-bounded live segment.
-dictation_processing_mode = "auto" # auto | final_full | segment_batch | provider_stream. auto = provider-native live streaming when the selected STT profile supports it (lowest latency), else final_full.
-dictation_live_commit = "passage" # immediate | phrase | passage. Live field inject: passage waits ~2 sentences (or a pause) so Deepgram/AssemblyAI can clean a chunk first. Overlay drafts stay word-level.
+dictation_intermediate_segment_ms = 6000 # Minimum utterance duration before a meeting emits a pause-bounded live segment.
+dictation_processing_mode = "auto" # auto | final_full. Dictation always inserts the transcript of the complete recording, once, when the recording ends. auto also shows a live draft in the overlay; final_full does not. The former segment_batch and provider_stream values count as auto.
+dictation_live_commit = "passage" # immediate | phrase | passage. Meetings only: how live finals are grouped into notes. Dictation ignores it.
 model_download_dir = ""            # Blank = %LOCALAPPDATA%/SpeechKit/models. Set a dedicated folder for local model downloads.
 
 [audio]
@@ -141,6 +146,12 @@ auto_enhance = true              # Write the meeting up as soon as it ends.
 screenshot_enabled = true        # Show the screenshot quick action in the meeting UI.
 screenshot_hotkey = "ctrl+alt+s" # Global shortcut; captures the monitor under the cursor while a meeting is live. "none" disables it.
 screenshot_hotkey_enabled = true # Arm the global screenshot shortcut during meetings.
+# screenshot_denied_processes = ["keepass.exe"] # Applications whose windows a screenshot never captures (file name, case-insensitive).
+# capture_channels = ["mic", "system"] # Sources to record: "mic", "system" or both (default). ["mic"] opens no loopback capture and skips echo suppression.
+
+[onenote]
+enabled = false                     # Write meeting notes to OneNote (each user signs in with their own Microsoft 365 account).
+allowed_notebook_scope = "personal" # "personal" (the user's own notebooks) or the Graph id of one SharePoint site.
 
 [local]
 enabled = true
@@ -160,6 +171,20 @@ utility_model = "gemma4:e4b"
 assist_model = "gemma4:e4b"
 agent_model = "gemma4:e4b"
 idle_stop_minutes = 15               # Pause the local model server after this many idle minutes to free its memory; the next request wakes it. 0 keeps it running
+
+# Where model files come from (docs/compliance/ENTERPRISE-DEPLOYMENT.md,
+# "Models source"). The Models\Source Group Policy value overrides it.
+#   source = "public"   Download from the public hosts named in
+#                       THIRD-PARTY-NOTICES.md (default).
+#   source = "bundled"  Never download: use only the model files already in the
+#                       models directory or shipped with the installer.
+#   source = "https://mirror.example/models"
+#                       Download every artifact from an internal mirror at
+#                       <mirror>/<path of the public URL>, checked against the
+#                       same pinned SHA-256. Must be https.
+# An unusable value behaves as "bundled".
+[models]
+source = "public"
 
 [vps]
 enabled = false
@@ -249,12 +274,13 @@ event_log_enabled = false      # mirror to Windows Event Log
 [feedback]
 save_audio = true         # Legacy compat only; [store] is the preferred config surface
 audio_retention_days = 7  # Mirrored from [store] while legacy readers still exist
-db_path = ""              # Auto: %APPDATA%/SpeechKit/feedback.db
+db_path = ""              # Auto: %LOCALAPPDATA%/SpeechKit/feedback.db
 max_audio_storage_mb = 500
 
 [store]
 backend = "sqlite"        # Local mode default
-sqlite_path = ""          # Auto: %APPDATA%/SpeechKit/feedback.db (audio files live in sibling audio/)
+data_root = ""            # Pins the folder for database, recordings, snapshots and wake-word clips. Blank = %LOCALAPPDATA%/SpeechKit (portable: <exe>/data). Local paths only; a network path is refused.
+sqlite_path = ""          # Auto: <data root>/feedback.db (audio files live in sibling audio/); wins over data_root for the database
 postgres_dsn = ""         # Required when backend = "postgres"
 save_audio = true         # Persist raw WAV files locally
 audio_retention_days = 7  # 0 disables automatic deletion; applies even after save_audio is turned off
@@ -523,6 +549,11 @@ vad_silence_duration_ms = 700
 # STT, LLM, TTS, and Realtime model assignments per provider.
 # API keys are resolved from environment variables.
 # ──────────────────────────────────────────────
+
+# [providers]
+# allowed = []   # Provider allowlist (local, ollama, foundry, github_copilot).
+#                # Machine policy (Providers\Allowed); enforced at provider
+#                # construction in a later slice. Empty by default.
 
 # [providers.openai]
 # enabled = false

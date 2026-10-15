@@ -1,9 +1,10 @@
-package flows
+package flowadapt
 
 import (
 	"context"
 	"errors"
 
+	"github.com/kombifyio/SpeechKit/app/internal/ai/flows"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/cascaded"
 )
 
@@ -13,11 +14,11 @@ import (
 // public cascaded package) so pkg/speechkit carries no AI-runtime
 // dependency.
 type cascadedAgent struct {
-	flow *Flow[AgentInput, AgentOutput]
+	flow *flows.Flow[flows.AgentInput, flows.AgentOutput]
 }
 
 // NewCascadedAgent wraps an agent flow so it satisfies cascaded.Agent.
-func NewCascadedAgent(flow *Flow[AgentInput, AgentOutput]) cascaded.Agent {
+func NewCascadedAgent(flow *flows.Flow[flows.AgentInput, flows.AgentOutput]) cascaded.Agent {
 	return &cascadedAgent{flow: flow}
 }
 
@@ -25,7 +26,7 @@ func (a *cascadedAgent) Run(ctx context.Context, input cascaded.AgentInput) (cas
 	if a.flow == nil {
 		return cascaded.AgentOutput{}, errors.New("cascaded: agent flow is nil")
 	}
-	out, err := a.flow.Run(ctx, AgentInput{
+	out, err := a.flow.Run(ctx, flows.AgentInput{
 		Utterance:         input.Utterance,
 		Locale:            input.Locale,
 		Selection:         input.Selection,

@@ -101,6 +101,7 @@ func run() error {
 			mu.Unlock()
 		},
 		OnError:      func(err error) { fmt.Fprintln(os.Stderr, "session error:", err) },
+		OnTurnError:  func(err error) { fmt.Fprintln(os.Stderr, "turn failed; you can speak again:", err) },
 		OnSessionEnd: func() { signalTurnDone() },
 	}
 

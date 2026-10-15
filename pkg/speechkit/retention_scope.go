@@ -36,7 +36,8 @@ const (
 	// transcript has to be readable for the rolling digest engine, and a
 	// process that dies mid-meeting must not take the recording with it — and
 	// is swept when the meeting or session ends. What survives is the
-	// generated result (a Meeting Review), not the raw material behind it.
+	// generated result (a Meeting Review) and what the user wrote on purpose
+	// (their notes and settings), not the raw material behind it.
 	//
 	// On the vendor side this scope also refuses any provider surface that
 	// cannot assert no-store, because a promise that stops at the device would
@@ -76,7 +77,10 @@ const (
 	// most sensitive artifact and may warrant its own rule later.
 	ArtifactClassScreenCapture ArtifactClass = "screen_capture"
 
-	// ArtifactClassNote is what the user typed themselves during a meeting.
+	// ArtifactClassNote is what the user typed themselves: the notes taken
+	// during a meeting, a quick note. Like a setting it is written on purpose,
+	// so the ephemeral scope keeps it; the scope exists to drop recordings,
+	// not the user's own words.
 	ArtifactClassNote ArtifactClass = "note"
 
 	// ArtifactClassReview is a generated result the user is meant to keep and
@@ -151,10 +155,15 @@ func (s RetentionScope) Durable(class ArtifactClass) (bool, string) {
 		// not a record of what they said. Dropping them would erase settings
 		// under the banner of privacy.
 		return true, ""
+	case ArtifactClassNote:
+		// A note is what the user typed on purpose, like a setting. The
+		// scope exists to drop recordings; sweeping the user's own words
+		// with the transcript would punish them for taking notes.
+		return true, ""
 	case ArtifactClassReview:
 		// The generated write-up is the point of having recorded at all, and
-		// it holds the least raw material. It stays; the transcript, notes,
-		// digests and screen captures behind it do not.
+		// it holds the least raw material. It stays; the transcript, digests
+		// and screen captures behind it do not.
 		return true, ""
 	default:
 		return false, RetentionScopeReasonEphemeral

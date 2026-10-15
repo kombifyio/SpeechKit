@@ -152,12 +152,21 @@ export function createVoiceAgentUiController(
   const listeners = new Set<(state: SpeechKitVoiceSessionState) => void>();
   const levelListeners = new Set<(level: number, source: "input" | "output") => void>();
   let disposed = false;
-  let active = false;
-  let session: BrowserSession | null = null;
-  let detachMic: (() => void) | null = null;
-  let disposeMicMeter: (() => void) | null = null;
-  let userBuffer = "";
-  let agentBuffer = "";
+  interface Attempt {
+    abort: AbortController;
+    stream?: MediaStream;
+    session?: BrowserSession;
+    detachMic?: () => void;
+    disposeMicMeter?: () => void;
+    userBuffer: string;
+    agentBuffer: string;
+    interrupting: boolean;
+    awaitingInterruptAck: boolean;
+  }
+  let attempt: Attempt | null = null;
+
+  const isCurrent = (current: Attempt): boolean =>
+    !disposed && attempt === current && !current.abort.signal.aborted;
 
   const diag = (message: string): void => options.onDiagnostic?.(message);
 
@@ -177,37 +186,32 @@ export function createVoiceAgentUiController(
   }
 
   function cleanup(): void {
-    detachMic?.();
-    detachMic = null;
-    disposeMicMeter?.();
-    disposeMicMeter = null;
-    const closing = session;
-    session = null;
-    active = false;
-    if (closing) {
-      try {
-        closing.flushPlayback();
-        closing.close();
-      } catch {
-        /* socket already gone */
-      }
-    }
+    const closing = attempt;
+    // Fence callbacks before aborting: the transport may close synchronously.
+    attempt = null;
+    if (!closing) return;
+    closing.abort.abort();
+    try { closing.detachMic?.(); } catch { /* release the other media resources */ }
+    releaseMediaStream(closing.stream);
+    try { closing.disposeMicMeter?.(); } catch { /* continue transport cleanup */ }
+    try { closing.session?.flushPlayback(); } catch { /* playback already gone */ }
+    try { closing.session?.close(); } catch { /* socket already gone */ }
     emitLevel(0, "input");
     emitLevel(0, "output");
   }
 
-  async function startSession(): Promise<void> {
-    state = createSpeechKitVoiceSessionState(contract);
-    userBuffer = "";
-    agentBuffer = "";
+  async function startSession(current: Attempt): Promise<void> {
+    if (!isCurrent(current)) return;
     // Robustness: never mint a server session (ticket, provider cost) for a
     // microphone the browser already blocks or cannot provide.
     if (!options.getAudioStream) {
       const permission = await checkMicrophonePermission();
+      if (!isCurrent(current)) return;
       if (permission === "denied" || permission === "unsupported") {
         const code =
           permission === "denied" ? "microphone_permission_denied" : "microphone_unsupported";
         diag(`microphone ${permission}`);
+        cleanup();
         emit({ type: "voice.denied", error: denialFromError(code, permission === "denied") });
         return;
       }
@@ -217,6 +221,8 @@ export function createVoiceAgentUiController(
     try {
       stream = await (options.getAudioStream ?? defaultAudioStream)();
     } catch (err) {
+      if (!isCurrent(current)) return;
+      cleanup();
       diag(`microphone failed: ${(err as Error)?.message ?? String(err)}`);
       emit({
         type: "voice.denied",
@@ -224,53 +230,98 @@ export function createVoiceAgentUiController(
       });
       return;
     }
+    // getUserMedia cannot be aborted. A late grant belongs to the old attempt.
+    if (!isCurrent(current)) {
+      releaseMediaStream(stream);
+      return;
+    }
+    current.stream = stream;
 
     diag(`minting session at ${options.serverUrl}…`);
     try {
-      session = await openBrowserSession({
+      const opened = await openBrowserSession({
         serverUrl: options.serverUrl,
+        signal: current.abort.signal,
         ...(options.token !== undefined ? { token: options.token } : {}),
         ...(options.basePath !== undefined ? { basePath: options.basePath } : {}),
         start: options.start ?? {},
-        onPlaybackLevel: (level) => emitLevel(level, "output"),
+        onPlaybackLevel: (level) => { if (isCurrent(current)) emitLevel(level, "output"); },
         hooks: {
-          onState: (agentState) => diag(`agent state: ${agentState}`),
+          onState: (agentState) => { if (isCurrent(current)) diag(`agent state: ${agentState}`); },
           onUserTranscript: (text, done) => {
-            userBuffer = accumulateTranscript(userBuffer, text);
+            if (!isCurrent(current)) return;
+            current.userBuffer = accumulateTranscript(current.userBuffer, text);
             if (done) {
-              emit({ type: "voice.transcript_final", text: userBuffer, final: true });
-              userBuffer = "";
+              emit({ type: "voice.transcript_final", text: current.userBuffer, final: true });
+              current.userBuffer = "";
             } else {
-              emit({ type: "voice.transcript_draft", text: userBuffer });
+              emit({ type: "voice.transcript_draft", text: current.userBuffer });
             }
           },
           onAgentTranscript: (text, done) => {
-            agentBuffer = accumulateTranscript(agentBuffer, text);
-            emit({ type: "voice.agent_turn", output_text: agentBuffer, final: done });
-            if (done) agentBuffer = "";
+            if (!isCurrent(current)) return;
+            current.agentBuffer = accumulateTranscript(current.agentBuffer, text);
+            emit({ type: "voice.agent_turn", output_text: current.agentBuffer, final: done });
+            if (done) current.agentBuffer = "";
           },
-          onAudio: (chunk) => session?.playChunk(chunk),
-          onInterrupted: () => {
-            session?.flushPlayback();
+          onAudio: (chunk) => { if (isCurrent(current)) current.session?.playChunk(chunk); },
+          onInterrupted: (frame) => {
+            if (!isCurrent(current)) return;
+            current.session?.flushPlayback();
+            current.agentBuffer = "";
+            // cancel() calls this hook synchronously, then the wire ACK calls
+            // it again. Both flush audio; the user action is emitted once below.
+            if (current.interrupting) return;
+            if (frame.provider_metadata?.reason === "client_cancel") {
+              current.awaitingInterruptAck = false;
+              return;
+            }
             emit({ type: "voice.barge_in", reason_code: "user_spoke_during_tts" });
           },
           onError: (err) => {
+            if (!isCurrent(current)) return;
             const message = err instanceof Error ? err.message : `${err.code}: ${err.message}`;
             diag(`error: ${message}`);
+            if (!(err instanceof Error) && err.fatal !== true) {
+              // A failed turn does not end the admitted microphone/session.
+              current.userBuffer = "";
+              current.agentBuffer = "";
+              current.session?.flushPlayback();
+              emit({ type: "voice.denied", error: denialFromError("session_error", true) });
+              if (isCurrent(current)) emit({ type: "voice.capture_started" });
+              return;
+            }
             cleanup();
             emit({ type: "voice.denied", error: denialFromError("session_error", true) });
           },
           onClose: (reason) => {
+            if (!isCurrent(current)) return;
             diag(`session closed: ${reason}`);
-            if (active) {
-              cleanup();
-              emit({ type: "voice.tts_finished" });
-            }
+            cleanup();
+            emit({ type: "voice.tts_finished" });
           }
         }
       });
+      if (!isCurrent(current)) {
+        opened.close();
+        return;
+      }
+      current.session = opened;
+      const detachMic = opened.attachMicrophone(stream);
+      // A host audio adapter may fail synchronously while attaching capture.
+      if (!isCurrent(current)) {
+        detachMic();
+        return;
+      }
+      current.detachMic = detachMic;
+      current.disposeMicMeter = createMicLevelMeter(stream, (level) => {
+        if (isCurrent(current)) emitLevel(level, "input");
+      });
+      diag(`session ${opened.ticket.session_id} live`);
+      emit({ type: "voice.capture_started" });
     } catch (err) {
-      releaseMediaStream(stream);
+      if (!isCurrent(current)) return;
+      cleanup();
       diag(`connect failed: ${(err as Error).message}`);
       emit({
         type: "voice.denied",
@@ -278,24 +329,26 @@ export function createVoiceAgentUiController(
       });
       return;
     }
-
-    detachMic = session.attachMicrophone(stream);
-    disposeMicMeter = createMicLevelMeter(stream, (level) => emitLevel(level, "input"));
-    active = true;
-    diag(`session ${session.ticket.session_id} live`);
-    emit({ type: "voice.capture_started" });
   }
 
   return {
     contract,
     start(_mode?: SpeechKitVoiceMode) {
-      if (active || disposed) return;
-      return startSession();
+      if (attempt || disposed) return;
+      const current: Attempt = {
+        abort: new AbortController(), userBuffer: "", agentBuffer: "",
+        interrupting: false, awaitingInterruptAck: false
+      };
+      attempt = current;
+      // Offer Stop throughout permission/mint setup, without claiming capture yet.
+      state = { ...createSpeechKitVoiceSessionState(contract), status: "processing" };
+      for (const listener of listeners) listener(state);
+      return startSession(current);
     },
     stop() {
-      if (!active) return;
-      emit({ type: "voice.capture_stopped" });
+      if (!attempt) return;
       cleanup();
+      emit({ type: "voice.capture_stopped" });
       emit({ type: "voice.tts_finished" });
     },
     cancel() {
@@ -303,10 +356,16 @@ export function createVoiceAgentUiController(
       emit({ type: "voice.cancelled", reason_code: "user_cancelled" });
     },
     interrupt() {
-      // Local barge-in affordance: drop queued playback and mark the turn.
-      // Provider-driven barge-in additionally arrives via onInterrupted.
-      session?.flushPlayback();
-      emit({ type: "voice.barge_in", reason_code: "user_interrupt_button" });
+      const current = attempt;
+      const session = current?.session;
+      if (!current || !session || current.awaitingInterruptAck) return;
+      // The client flushes via onInterrupted, cancels the provider reply and
+      // mutes late downlink audio until the server acknowledges interruption.
+      current.awaitingInterruptAck = true;
+      current.interrupting = true;
+      try { session.session.cancel(); }
+      finally { current.interrupting = false; }
+      if (isCurrent(current)) emit({ type: "voice.barge_in", reason_code: "user_interrupt_button" });
     },
     subscribe(listener) {
       listeners.add(listener);
@@ -321,8 +380,8 @@ export function createVoiceAgentUiController(
       return () => levelListeners.delete(listener);
     },
     dispose() {
-      cleanup();
       disposed = true;
+      cleanup();
       listeners.clear();
       levelListeners.clear();
     }

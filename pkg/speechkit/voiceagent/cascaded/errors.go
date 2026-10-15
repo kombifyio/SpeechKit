@@ -1,5 +1,23 @@
 package cascaded
 
+// turnError preserves the machine-readable reason without exposing upstream
+// diagnostics through the public live session's error callback.
+type turnError struct{ code string }
+
+func (e turnError) Error() string { return FailureMessage(e.code) }
+func (e turnError) Code() string  { return e.code }
+
+// IsTerminalFailure identifies outcomes that require a new authorized session
+// or a new processor. Server and embedded adapters share this classification.
+func IsTerminalFailure(code string) bool {
+	switch SafeFailureCode(code) {
+	case "auth_expired", "auth_required", "permission_denied", "capability_lease_denied", "internal_panic":
+		return true
+	default:
+		return false
+	}
+}
+
 // SafeFailureCode restricts untrusted provider reasons to the public outcomes
 // understood by voice clients. A syntactically valid identifier can still
 // contain credentials or transcript fragments, so syntax alone is insufficient.

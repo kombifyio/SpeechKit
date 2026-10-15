@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/keybase/go-keychain"
+
+	"github.com/kombifyio/SpeechKit/app/internal/productid"
 )
 
 // keychainMissingEntitlement is errSecMissingEntitlement (-34018), which
@@ -89,6 +91,12 @@ func requireUsableKeychain(t *testing.T, what string, fn func() ([]byte, error))
 	return answer.key
 }
 
+// keychainService and keychainMasterKeyLabel are the test binary's own item
+// names (productid.ForTests), never the product's.
+var keychainService = productid.ForTests.BundleID
+
+const keychainMasterKeyLabel = "SpeechKit test secrets master key"
+
 // testKeychainAccount keeps the test off the account the product uses, so a
 // developer running the suite never overwrites or deletes the master key that
 // protects their real secrets. The cleanup is bounded for the same reason the
@@ -116,7 +124,7 @@ func TestKeychainStoreRoundTripsASecretAcrossStoreInstances(t *testing.T) {
 	// Provision the master key before the environment is redirected, so a
 	// runner without a usable keychain skips instead of hanging.
 	requireUsableKeychain(t, "provision the keychain master key", func() ([]byte, error) {
-		return loadOrCreateKeychainMasterKey(keychainService, account)
+		return loadOrCreateKeychainMasterKey(keychainService, keychainMasterKeyLabel, account)
 	})
 
 	redirectSecretsDir(t)
@@ -124,7 +132,7 @@ func TestKeychainStoreRoundTripsASecretAcrossStoreInstances(t *testing.T) {
 		t.Fatalf("Store: %v", err)
 	}
 
-	raw, err := os.ReadFile(secretFilePath("api-key")) // #nosec G304 -- test reads the path created by secretFilePath.
+	raw, err := os.ReadFile(mustSecretFilePath(t, "api-key")) // #nosec G304 -- test reads the path created by secretFilePath.
 	if err != nil {
 		t.Fatalf("read stored secret: %v", err)
 	}
@@ -188,8 +196,21 @@ func TestKeychainStoreReportsUnavailableSecureStore(t *testing.T) {
 		return nil, keychain.AddItem(item)
 	})
 
-	_, err := loadOrCreateKeychainMasterKey(keychainService, account)
+	_, err := loadOrCreateKeychainMasterKey(keychainService, keychainMasterKeyLabel, account)
 	if !errors.Is(err, ErrSecureStoreUnavailable) {
 		t.Fatalf("error = %v, want ErrSecureStoreUnavailable", err)
+	}
+}
+
+// The reference client keeps the Keychain item earlier releases created, so
+// its master key, and every secret sealed under it, survives the upgrade.
+func TestReferenceKeepsTheKeychainItemName(t *testing.T) {
+	productid.UseForTest(t, productid.Reference)
+	service, label, err := keychainNames()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if service != "com.kombify.speechkit" || label != "kombify SpeechKit secrets master key" {
+		t.Fatalf("keychain item = %q / %q", service, label)
 	}
 }

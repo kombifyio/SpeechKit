@@ -18,7 +18,7 @@ func TestSaveRoundTrip(t *testing.T) {
 	cfg.UI.Visualizer = "circle"
 	cfg.UI.Design = "kombify"
 
-	if err := Save(path, cfg); err != nil {
+	if err := save(path, cfg); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -54,7 +54,7 @@ func TestSaveRoundTripAssistModels(t *testing.T) {
 	cfg.LocalLLM.AssistModel = "gemma4:e4b"
 	cfg.HuggingFace.AssistModel = "Qwen/Qwen3.8-27B"
 
-	if err := Save(path, cfg); err != nil {
+	if err := save(path, cfg); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -140,7 +140,7 @@ func TestSaveRoundTripShortcutLocaleAliases(t *testing.T) {
 		},
 	}
 
-	if err := Save(path, cfg); err != nil {
+	if err := save(path, cfg); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 

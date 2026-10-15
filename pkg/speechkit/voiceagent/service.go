@@ -55,6 +55,9 @@ type Callbacks struct {
 	// OnError receives session errors, including the failure that ends a
 	// session.
 	OnError func(error)
+	// OnTurnError receives safe guidance for a failed turn. The session remains
+	// available for another turn; this is separate from a terminal OnError.
+	OnTurnError func(error)
 }
 
 // Provider is the backend a [Service] delegates to. SpeechKit's in-process

@@ -2,10 +2,13 @@ package cascaded
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/livecontract"
 )
@@ -24,7 +27,7 @@ func liveDeps() Deps {
 	return Deps{
 		STT:   &fakeSTT{text: "hello"},
 		Agent: &fakeAgent{response: "world"},
-		TTS:   &fakeTTS{audio: []byte{0, 0}},
+		TTS:   &fakeTTS{audio: audio.PCMToWAV([]byte{0, 0}), format: "wav"},
 	}
 }
 
@@ -113,6 +116,148 @@ func TestLiveProviderSendToolResponseIsNoop(t *testing.T) {
 	p := newTestLiveProvider(t, liveDeps())
 	if err := p.SendToolResponse(live.ToolResponse{ID: "tool-1", Name: "noop"}); err != nil {
 		t.Fatalf("SendToolResponse: %v", err)
+	}
+}
+
+// A synthesized file must never be played as raw samples. The live contract
+// preserves the speech duration and amplitude at 24 kHz, regardless of WAV input.
+func TestLiveProviderConvertsSynthesizedSpeechForPlayback(t *testing.T) {
+	pcm := make([]byte, audio.SampleRate*audio.BytesPerSample)
+	for i := 0; i < len(pcm); i += audio.BytesPerSample {
+		binary.LittleEndian.PutUint16(pcm[i:], 1000)
+	}
+	p := newTestLiveProvider(t, Deps{
+		STT: &fakeSTT{text: "hello"}, Agent: &fakeAgent{response: "world"},
+		TTS: &fakeTTS{audio: audio.PCMToWAV(pcm), format: "wav"},
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := p.Connect(ctx, live.LiveConfig{Locale: "en"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.SendText("hello"); err != nil {
+		t.Fatal(err)
+	}
+	var playback []byte
+	for {
+		msg, err := p.Receive(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if msg.TurnError != nil {
+			t.Fatal(msg.TurnError)
+		}
+		playback = append(playback, msg.Audio...)
+		if msg.Done {
+			break
+		}
+	}
+	duration := time.Duration(len(playback)) * time.Second / (OutputSampleRate * audio.BytesPerSample)
+	if duration != time.Second {
+		t.Fatalf("playback duration = %v, want the original second of speech", duration)
+	}
+	for i := 0; i < len(playback); i += audio.BytesPerSample {
+		if sample := binary.LittleEndian.Uint16(playback[i:]); sample != 1000 {
+			t.Fatalf("speech amplitude changed: sample %d = %d", i/audio.BytesPerSample, sample)
+		}
+	}
+}
+
+// A failed local turn used to disappear at the adapter and strand the session.
+// The public callback must receive safe guidance and the next turn must work.
+func TestLiveProviderTurnFailureLeavesSessionUsable(t *testing.T) {
+	agent := &fakeAgent{response: "world", err: errors.New("private upstream diagnostic")}
+	p := newTestLiveProvider(t, Deps{STT: &fakeSTT{text: "hello"}, Agent: agent})
+	errorsSeen := make(chan error, 1)
+	output := make(chan string, 1)
+	session := live.NewSession(p, live.Callbacks{
+		OnError:     func(err error) { t.Errorf("recoverable failure ended the session: %v", err) },
+		OnTurnError: func(err error) { errorsSeen <- err },
+		OnOutputTranscript: func(text string, done bool) {
+			if done {
+				output <- text
+			}
+		},
+	})
+	t.Cleanup(session.Stop)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := session.Start(ctx, live.LiveConfig{Locale: "en"}, live.IdleConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.SendText("first turn"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-errorsSeen:
+		var coded CodedError
+		if !errors.As(err, &coded) || coded.Code() != "turn_failed" || strings.Contains(err.Error(), "private upstream") {
+			t.Fatalf("unsafe or unclassified turn error: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("failed turn never reached the public error callback")
+	}
+	if session.CurrentState() != live.StateListening {
+		t.Fatalf("failed turn left session in %v", session.CurrentState())
+	}
+	agent.mu.Lock()
+	agent.err = nil
+	agent.mu.Unlock()
+	if err := session.SendText("next turn"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case text := <-output:
+		if text != "world" {
+			t.Fatalf("next turn output = %q", text)
+		}
+	case <-ctx.Done():
+		t.Fatal("session did not recover for the next turn")
+	}
+}
+
+type authorityFailure string
+
+func (e authorityFailure) Error() string { return "private authority diagnostic" }
+func (e authorityFailure) Code() string  { return string(e) }
+
+// Losing authority is terminal on the embedded path just as on the server.
+func TestLiveProviderAuthorityFailureEndsSession(t *testing.T) {
+	p := newTestLiveProvider(t, Deps{
+		STT: &fakeSTT{text: "hello"}, Agent: &fakeAgent{err: authorityFailure("auth_expired")},
+	})
+	errorsSeen := make(chan error, 1)
+	ended := make(chan struct{}, 1)
+	session := live.NewSession(p, live.Callbacks{
+		OnError:      func(err error) { errorsSeen <- err },
+		OnTurnError:  func(err error) { t.Errorf("expired authority remained recoverable: %v", err) },
+		OnSessionEnd: func() { ended <- struct{}{} },
+	})
+	t.Cleanup(session.Stop)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := session.Start(ctx, live.LiveConfig{Locale: "en"}, live.IdleConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.SendText("unauthorized turn"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-errorsSeen:
+		var coded CodedError
+		if !errors.As(err, &coded) || coded.Code() != "auth_expired" || strings.Contains(err.Error(), "private") {
+			t.Fatalf("unsafe or unclassified authority error: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("authority denial did not reach the terminal error callback")
+	}
+	select {
+	case <-ended:
+		if session.CurrentState() != live.StateInactive {
+			t.Fatalf("session remained active: %v", session.CurrentState())
+		}
+	case <-ctx.Done():
+		t.Fatal("authority denial did not end the session")
 	}
 }
 

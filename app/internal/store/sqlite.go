@@ -71,6 +71,12 @@ var sqliteMigration028 string
 //go:embed migrations/sqlite/029_recording_session_imports.sql
 var sqliteMigration029 string
 
+//go:embed migrations/sqlite/031_recording_session_exports.sql
+var sqliteMigration031 string
+
+//go:embed migrations/sqlite/032_notebooks.sql
+var sqliteMigration032 string
+
 // SQLiteStore implements Store using a local SQLite database via
 // modernc.org/sqlite (pure Go, no CGo required). All query logic lives in the
 // embedded *sqlStore; this type only owns connection setup and migrations.
@@ -85,7 +91,11 @@ var _ Store = (*SQLiteStore)(nil)
 func NewSQLiteStore(cfg StoreConfig) (*SQLiteStore, error) {
 	dbPath := cfg.SQLitePath
 	if dbPath == "" {
-		dbPath = filepath.Join(runtimepath.DataDir(), "feedback.db")
+		contentDir, err := runtimepath.ContentDir()
+		if err != nil {
+			return nil, err
+		}
+		dbPath = filepath.Join(contentDir, "feedback.db")
 	}
 
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o700); err != nil {
@@ -110,8 +120,11 @@ func NewSQLiteStore(cfg StoreConfig) (*SQLiteStore, error) {
 		transcriptionModelHints: normalizeTranscriptionModelHints(cfg.TranscriptionModelHints),
 		defaultScope:            speechstorage.NormalizeScope(cfg.DefaultScope),
 		scopePolicy:             normalizedScopePolicy(cfg.ScopePolicy),
+		retentionScope:          normalizeStoreRetentionScope(cfg.RetentionScope),
+		retentionTTLDays:        max(cfg.RetentionTTLDays, 0),
+		onRetentionSweep:        cfg.OnRetentionSweep,
 		// SQLite keeps its audio next to the database file, and with the
-		// default path that is DataDir/audio, the same folder the Postgres
+		// default path that is ContentDir/audio, the same folder the Postgres
 		// backend uses. A file the other backend's database references is
 		// an orphan only from this store's point of view, so the sweep runs
 		// only for SQLite and only while no Postgres DSN is configured. The

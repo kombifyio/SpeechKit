@@ -224,12 +224,15 @@ func developerPack() speechcustomize.Pack {
 		aliasReplacement(templateID, version, "cloudflare", "cloud flare", "Cloudflare", 100, tag),
 		aliasReplacement(templateID, version, "websocket", "web socket", "WebSocket", 100, tag),
 		aliasReplacement(templateID, version, "oauth", "o auth", "OAuth", 100, tag),
-		regexReplacement(templateID, version, "clear-dot", "", `(^|[^\pL\pN_])([A-Za-z0-9_]+)\s+(?:dot|punkt)\s+([A-Za-z0-9_]+)([^\pL\pN_]|$)`, `${1}${2}.${3}${4}`, 90, tag),
+		// Only words that are spoken as symbol names are rewritten. "punkt",
+		// "gleich", "equals", "pfeil" and "arrow" used to be triggers too, and
+		// in ordinary German dictation they replaced real words ("nicht gleich
+		// nur" became "nicht = nur", "wichtiger Punkt ist" "wichtiger.ist").
+		// The standard template still joins "punkt"/"dot" between digits.
+		regexReplacement(templateID, version, "clear-dot", "", `(^|[^\pL\pN_])([A-Za-z0-9_]+)\s+dot\s+([A-Za-z0-9_]+)([^\pL\pN_]|$)`, `${1}${2}.${3}${4}`, 90, tag),
 		regexReplacement(templateID, version, "clear-slash", "", `(^|[^\pL\pN_])([A-Za-z0-9_.-]+)\s+(?:slash|schraegstrich|schrägstrich)\s+([A-Za-z0-9_.-]+)([^\pL\pN_]|$)`, `${1}${2}/${3}${4}`, 90, tag),
 		regexReplacement(templateID, version, "clear-underscore", "", `(^|[^\pL\pN_])([A-Za-z0-9.-]+)\s+(?:underscore|unterstrich)\s+([A-Za-z0-9.-]+)([^\pL\pN_]|$)`, `${1}${2}_${3}${4}`, 90, tag),
 		regexReplacement(templateID, version, "clear-dash", "", `(^|[^\pL\pN_])([A-Za-z0-9_.]+)\s+(?:dash|bindestrich)\s+([A-Za-z0-9_.]+)([^\pL\pN_]|$)`, `${1}${2}-${3}${4}`, 90, tag),
-		regexReplacement(templateID, version, "clear-arrow", "", `(^|[^\pL\pN_])([A-Za-z0-9_.-]+)\s+(?:arrow|pfeil)\s+([A-Za-z0-9_.-]+)([^\pL\pN_]|$)`, `${1}${2} -> ${3}${4}`, 80, tag),
-		regexReplacement(templateID, version, "clear-equals", "", `(^|[^\pL\pN_])([A-Za-z0-9_.-]+)\s+(?:equals|gleich)\s+([A-Za-z0-9_.-]+)([^\pL\pN_]|$)`, `${1}${2} = ${3}${4}`, 80, tag),
 	}
 	return speechcustomize.Pack{
 		SchemaVersion: speechcustomize.PackSchemaVersion,

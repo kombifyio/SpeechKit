@@ -42,9 +42,15 @@ func (p *Provider) StartServer(ctx context.Context) error {
 		return err
 	}
 
-	port, err := chooseServerPort(ctx, p.Port)
+	// The child listens on a private ephemeral port; the keyed proxy owns the
+	// provider's own port (see authProxy).
+	port, err := chooseServerPort(ctx, 0)
 	if err != nil {
 		return err
+	}
+	proxy, err := startAuthProxy(ctx, p.Port, port)
+	if err != nil {
+		return fmt.Errorf("start whisper-server: %w", err)
 	}
 	identity, err := newServerIdentity()
 	if err != nil {
@@ -98,22 +104,23 @@ func (p *Provider) StartServer(ctx context.Context) error {
 		p.log().Warn("whisper-server model path contains non-ASCII characters that cannot be passed through argv safely; move the model to an ASCII-only path if startup fails", "model", p.ModelPath)
 	}
 	if err := cmd.Start(); err != nil {
+		proxy.close()
 		identity.remove()
 		return fmt.Errorf("start whisper-server: %w", err)
 	}
 	// Hand the child to the OS so it cannot outlive this process when the
 	// host dies without running its cleanup path (crash, taskkill, dev-loop
 	// rebuild). Assignment failing does not make the child unusable.
-	//nolint:staticcheck // SA4023: build-tag artifact; the !windows && !darwin stub always returns ErrUnsupportedPlatform, other platforms may return nil.
-	if err := procguard.Adopt(cmd); err != nil {
+	procguard.AdoptOrReport(cmd, func(err error) {
 		p.log().Warn("whisper-server not adopted into the kill-on-exit job", "error", err, "pid", cmd.Process.Pid)
-	}
+	})
 	processDone := make(chan struct{})
 	p.processMu.Lock()
 	if p.generation != generation {
 		p.processMu.Unlock()
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
+		proxy.close()
 		identity.remove()
 		return fmt.Errorf("whisper-server startup generation changed unexpectedly")
 	}
@@ -121,9 +128,8 @@ func (p *Provider) StartServer(ctx context.Context) error {
 	p.processDone = processDone
 	p.processErr = nil
 	p.identity = identity
-	if p.Port == 0 {
-		p.activeBaseURL = fmt.Sprintf("http://127.0.0.1:%d", port)
-	}
+	p.proxy = proxy
+	p.activeBaseURL = proxy.baseURL
 	stopAfterPublish := p.stopRequested || ctx.Err() != nil
 	p.processMu.Unlock()
 	go p.waitForProcess(ctx, cmd, processDone, generation)
@@ -224,6 +230,8 @@ func (p *Provider) recordProcessExit(ctx context.Context, cmd *exec.Cmd, done ch
 		// The identity directory belongs to the child that just exited.
 		defer p.identity.remove()
 		p.identity = nil
+		defer p.proxy.close()
+		p.proxy = nil
 		p.ready.Store(false)
 		p.cmd = nil
 		if expected {

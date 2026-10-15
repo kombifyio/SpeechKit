@@ -34,7 +34,15 @@ import (
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 )
+
+// DenyAllProfileID is the AllowedProfiles entry [PolicyFrom] emits when a
+// provider allowlist names no profile of the catalog. It matches no profile,
+// so the policy admits nothing instead of reading an empty AllowedProfiles as
+// "all"; [speechkit.ValidateRuntimePolicy] rejects it as unknown, which is
+// the intended fail-closed answer.
+const DenyAllProfileID = "policy.deny.all"
 
 // Load reads and decodes the SpeechKit TOML config at path over [Defaults],
 // applies [Normalize], and returns the host-facing ModeSettings together with
@@ -44,11 +52,12 @@ import (
 // an empty path is not resolved to the app's per-user config location; the
 // host decides where its configuration lives.
 //
-// The returned policy enables exactly the modes turned on in config and allows
-// fallback profiles only when the config actually pins one. It leaves
-// AllowedProfiles and FixedProfiles empty (meaning "all") so the host can
-// tighten the policy further before calling
-// [speechkit.ValidateModeSettingsForPolicy].
+// The returned policy enables exactly the modes turned on in config, allows
+// fallback profiles only when the config actually pins one, and restricts
+// AllowedProfiles to the providers a [providers] allowed list names (see
+// [PolicyFrom]). Without that list it leaves AllowedProfiles and
+// FixedProfiles empty (meaning "all") so the host can tighten the policy
+// further before calling [speechkit.ValidateModeSettingsForPolicy].
 func Load(path string) (speechkit.ModeSettings, speechkit.RuntimePolicy, error) {
 	cfg, err := LoadConfig(path)
 	if err != nil {
@@ -130,11 +139,14 @@ func ModeSettingsFrom(cfg *Config) speechkit.ModeSettings {
 	}
 }
 
-// PolicyFrom derives a permissive RuntimePolicy from a [Config]: it enables
-// the modes turned on in [general] and allows fallbacks only if any mode pins
-// a fallback profile. AllowedProfiles and FixedProfiles are left empty
-// (meaning "all"), so a host can lock the policy down further. A nil cfg
-// yields the zero RuntimePolicy.
+// PolicyFrom derives a RuntimePolicy from a [Config]: it enables the modes
+// turned on in [general] and allows fallbacks only if any mode pins a
+// fallback profile. A non-empty [providers] allowed list is expanded through
+// [catalog.DefaultCatalog] into AllowedProfiles (the profiles of the named
+// providers); when it names no catalog profile, AllowedProfiles is
+// [DenyAllProfileID]. Without an allowlist AllowedProfiles stays empty
+// (meaning "all"). FixedProfiles is left empty, so a host can lock the policy
+// down further. A nil cfg yields the zero RuntimePolicy.
 //
 // Note: if config enables no modes at all, EnabledModes is empty, which
 // SpeechKit treats as "all modes enabled". Set an explicit policy if you need a
@@ -160,9 +172,30 @@ func PolicyFrom(cfg *Config) speechkit.RuntimePolicy {
 		normalizeSelection(cfg.ModelSelection.VoiceAgent).FallbackProfileID != ""
 
 	return speechkit.RuntimePolicy{
-		EnabledModes:   modes,
-		AllowFallbacks: allowFallbacks,
+		EnabledModes:    modes,
+		AllowedProfiles: allowedProfilesFor(cfg.Providers.Allowed),
+		AllowFallbacks:  allowFallbacks,
 	}
+}
+
+// allowedProfilesFor expands a provider allowlist into profile ids; nil for
+// no allowlist.
+func allowedProfilesFor(providers []string) []string {
+	named := false
+	for _, provider := range providers {
+		if strings.TrimSpace(provider) != "" {
+			named = true
+			break
+		}
+	}
+	if !named {
+		return nil
+	}
+	ids := catalog.DefaultCatalog().ProfileIDsForProviders(providers)
+	if len(ids) == 0 {
+		return []string{DenyAllProfileID}
+	}
+	return ids
 }
 
 // normalizeSelection trims and canonicalises both profile IDs and drops the

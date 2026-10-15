@@ -62,6 +62,8 @@ func wireDictationStream(cfg *config.Config, app *App) {
 		VocabularyHints:           dictationHintsFromDictionary(cfg.Vocabulary.Dictionary),
 		RecognitionOptions:        config.SpeechDefaultsValues(cfg),
 		ProviderOptionsByProvider: config.ProviderOptionOverridesByProvider(cfg, provideropts.ModalitySTT),
+		MaxUploadMB:               cfg.Server.MaxUploadMB,
+		MaxDecodedAudioSeconds:    cfg.Server.MaxDecodedAudioSeconds,
 		PublicURL:                 cfg.Server.PublicURL,
 		AllowedOrigins:            cfg.Server.CORSAllowedOrigins,
 		TrustedProxyCIDRs:         cfg.Server.TrustedProxyCIDRs,

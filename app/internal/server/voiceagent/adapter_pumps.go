@@ -287,7 +287,7 @@ func (a *Adapter) admitProviderOutput(ctx context.Context, result providerReceiv
 		a.suppressDownlink.set(false)
 		a.writeMu.Unlock()
 		code := cascaded.SafeFailureCode(msg.ErrorCode)
-		fatal := code == "auth_expired" || code == "auth_required" || code == "permission_denied" || code == "capability_lease_denied" || code == "internal_panic"
+		fatal := cascaded.IsTerminalFailure(code)
 		a.sendErrorWithFatal(ctx, code, cascaded.FailureMessage(code), fatal)
 		if fatal {
 			if code == "auth_expired" {

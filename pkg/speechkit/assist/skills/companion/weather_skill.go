@@ -14,6 +14,7 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/assist"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/assist/shortcuts"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
 
 // WeatherSkill answers "what's the weather in <city>" / "wie wird das
@@ -35,7 +36,7 @@ type WeatherSkill struct {
 // tests or alternative providers.
 func NewWeatherSkill() *WeatherSkill {
 	return &WeatherSkill{
-		client:      &http.Client{Timeout: 5 * time.Second},
+		client:      netsec.NewClient(netsec.ClientOptions{Timeout: 5 * time.Second}),
 		geocodeURL:  "https://geocoding-api.open-meteo.com/v1/search",
 		forecastURL: "https://api.open-meteo.com/v1/forecast",
 	}

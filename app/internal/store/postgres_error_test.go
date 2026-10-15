@@ -196,9 +196,6 @@ func TestPostgresStorePureHelpers(t *testing.T) {
 	if err := store.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if got := defaultAudioDir(); got == "" {
-		t.Fatal("defaultAudioDir returned empty path")
-	}
 }
 
 func TestPostgresHelperCoverageTargets(t *testing.T) {

@@ -42,7 +42,7 @@ const recordingSessionSelectSQL = `SELECT id, external_id, kind, status, capture
 		started_at, ended_at, capture_started_at, capture_paused_at, capture_stopped_at,
 		summary_updated_at, created_at, updated_at,
 		COALESCE(owner_user_id, ''), COALESCE(owner_org_id, ''), COALESCE(owner_source, ''),
-		retention_pinned
+		retention_pinned, notebook_id
 	FROM recording_sessions`
 
 type recordingSessionRow interface {
@@ -54,6 +54,7 @@ func scanRecordingSession(row recordingSessionRow) (*RecordingSession, error) {
 	var endedAt, captureStartedAt, capturePausedAt, captureStoppedAt, summaryUpdatedAt sql.NullTime
 	var kind, status, captureStatus, summaryStatus string
 	var retentionPinned boolValue
+	var notebookID sql.NullInt64
 	if err := row.Scan(
 		&session.ID,
 		&session.ExternalID,
@@ -81,6 +82,7 @@ func scanRecordingSession(row recordingSessionRow) (*RecordingSession, error) {
 		&session.OwnerOrgID,
 		&session.OwnerSource,
 		&retentionPinned,
+		&notebookID,
 	); err != nil {
 		return nil, err
 	}
@@ -100,6 +102,7 @@ func scanRecordingSession(row recordingSessionRow) (*RecordingSession, error) {
 		session.SummaryUpdatedAt = summaryUpdatedAt.Time
 	}
 	session.RetentionPinned = bool(retentionPinned)
+	session.NotebookID = notebookID.Int64
 	session.Kind = RecordingSessionKind(kind)
 	session.Status = RecordingSessionStatus(status)
 	session.CaptureStatus = normalizeRecordingSessionCaptureStatus(RecordingSessionCaptureStatus(captureStatus))

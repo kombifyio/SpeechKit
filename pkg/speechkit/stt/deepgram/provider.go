@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,6 +77,8 @@ type Provider struct {
 	// slog.Default() at log time.
 	Logger *slog.Logger
 	client *http.Client
+	// uploadClient carries complete-capture uploads; see completeCaptureClient.
+	uploadClient *http.Client
 }
 
 // log returns the provider's logger, or the default logger when none is set.
@@ -106,6 +109,8 @@ func New(opts Options) *Provider {
 		UseVocabularyKeyterms: true,
 	}
 	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 90 * time.Second, DialValidation: &p.Validation})
+	p.uploadClient = netsec.NewSafeHTTPClient(netsec.ClientOptions{DisableKeepAlives: true, DialValidation: &p.Validation})
+	p.uploadClient.Timeout = 0
 	return p
 }
 
@@ -144,7 +149,7 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 	languageSource := deepgramLanguageSource(resolved)
 	speakerOpts := resolved.Speaker
 
-	endpoint, err := p.deepgramListenEndpoint(model, resolved)
+	endpoint, err := p.deepgramListenEndpoint(model, resolved, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -257,13 +262,20 @@ func (p *Provider) Health(ctx context.Context) error {
 	return nil
 }
 
-func (p *Provider) deepgramListenEndpoint(model string, resolved stt.ResolvedTranscribeOptions) (string, error) {
+// deepgramListenEndpoint builds the Listen REST URL. raw describes a
+// headerless PCM body; nil means the body carries its own container (WAV).
+func (p *Provider) deepgramListenEndpoint(model string, resolved stt.ResolvedTranscribeOptions, raw *speaker.AudioFormat) (string, error) {
 	endpoint, err := netsec.BuildEndpoint(stt.FirstNonEmptyTrimmed(p.BaseURL, deepgramBaseURL), "v1/listen", p.Validation)
 	if err != nil {
 		return "", fmt.Errorf("deepgram endpoint: %w", err)
 	}
 	q := url.Values{}
 	q.Set("model", model)
+	if raw != nil {
+		q.Set("encoding", deepgramEncoding(raw.Encoding))
+		q.Set("sample_rate", strconv.Itoa(raw.SampleRateHz))
+		q.Set("channels", strconv.Itoa(raw.Channels))
+	}
 	if resolved.Punctuation {
 		q.Set("punctuate", "true")
 	}

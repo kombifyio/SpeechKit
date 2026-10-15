@@ -17,6 +17,11 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/server/onboarding"
 )
 
+// optionalPublicPaths lets other files in this package register routes that
+// verify their own service token, which the bearer/OIDC chain cannot. The list
+// stays empty when no such file is built into the binary.
+var optionalPublicPaths []func() []string
+
 func serverPublicPaths() []string {
 	paths := []string{"/healthz"}
 	if envBoolDefault(config.ServerDetailedReadinessPublicEnv, true) {
@@ -24,6 +29,9 @@ func serverPublicPaths() []string {
 	}
 	if envBoolDefault(config.ServerOperatorUIPublicEnv, true) && envBoolDefault(config.ServerOnboardingUIEnv, true) {
 		paths = append(paths, "/")
+	}
+	for _, extra := range optionalPublicPaths {
+		paths = append(paths, extra()...)
 	}
 	return paths
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -42,14 +43,31 @@ type ClientOptions struct {
 	// before opening a TCP connection. Use this for any client that might reach
 	// user-configurable provider, model download, or update URLs.
 	DialValidation *ValidationOptions
+
+	// SetupTraffic marks a client that carries only setup traffic (model
+	// downloads and update checks; no audio, transcripts, prompts or
+	// credentials). While [Policy.AllowSetupTraffic] is true such a client is
+	// not bound by [Policy.Validation]; DialValidation still applies.
+	SetupTraffic bool
 }
 
-// NewSafeHTTPClient returns an *http.Client with explicit TLS 1.2+ minimum,
-// sensible timeouts, optional dial-target validation, and a transport wrapper
-// that stores redacted request headers in context for logging paths that opt in.
+// NewSafeHTTPClient is the original name of [NewClient] and behaves the same.
+func NewSafeHTTPClient(opts ClientOptions) *http.Client {
+	return NewClient(opts)
+}
+
+// NewClient returns an *http.Client with explicit TLS 1.2+ minimum,
+// sensible timeouts, dial-target validation, and a transport wrapper that
+// stores redacted request headers in context for logging paths that opt in.
+//
+// Every dial is checked at dial time against the process-wide [Policy]
+// installed by [Configure] (so a client built before Configure is still
+// bound by it) and, when set, against opts.DialValidation as well; both must
+// pass. While either is active the environment proxy is ignored, because a
+// proxy resolves the target outside this process.
 //
 // The client is safe to share across goroutines.
-func NewSafeHTTPClient(opts ClientOptions) *http.Client {
+func NewClient(opts ClientOptions) *http.Client {
 	timeout := opts.Timeout
 	if timeout == 0 {
 		timeout = 30 * time.Second
@@ -58,6 +76,9 @@ func NewSafeHTTPClient(opts ClientOptions) *http.Client {
 	if minTLS == 0 {
 		minTLS = tls.VersionTLS12
 	}
+	// The pointer is kept, not copied: providers adjust their Validation field
+	// after construction and the dial must see the current value.
+	local := opts.DialValidation
 
 	inner := opts.InnerTransport
 	if inner == nil {
@@ -65,17 +86,22 @@ func NewSafeHTTPClient(opts ClientOptions) *http.Client {
 			Timeout:   10 * time.Second,
 			KeepAlive: 30 * time.Second,
 		}
-		dialContext := dialer.DialContext
-		proxy := http.ProxyFromEnvironment
-		if opts.DialValidation != nil {
-			dialContext = restrictedDialContext(dialer, opts.DialValidation)
-			// Environment proxies resolve the target host outside this process,
-			// which would bypass resolve-time IP validation.
-			proxy = nil
+		// Environment proxies resolve the target host outside this process,
+		// which would bypass resolve-time IP validation, so a client with its
+		// own validation never uses one; the rest ignore it only while the
+		// process-wide policy is active.
+		var proxy func(*http.Request) (*url.URL, error)
+		if local == nil {
+			proxy = func(req *http.Request) (*url.URL, error) {
+				if len(activeValidations(nil, opts.SetupTraffic)) > 0 {
+					return nil, nil
+				}
+				return http.ProxyFromEnvironment(req)
+			}
 		}
 		inner = &http.Transport{
 			Proxy:                 proxy,
-			DialContext:           dialContext,
+			DialContext:           guardedDialContext(dialer, local, opts.SetupTraffic),
 			ForceAttemptHTTP2:     true,
 			MaxIdleConns:          100,
 			IdleConnTimeout:       90 * time.Second,
@@ -88,33 +114,57 @@ func NewSafeHTTPClient(opts ClientOptions) *http.Client {
 		}
 	}
 
-	client := &http.Client{
+	return &http.Client{
 		Timeout:   timeout,
 		Transport: &RedactingRoundTripper{Base: inner},
-	}
-	if opts.DialValidation != nil {
-		// Re-validate every redirect hop with the same option set. Dial-time
+		// Re-validate every redirect hop with the active option sets. Dial-time
 		// IP validation already guards each connection, but rejecting the
 		// redirect URL up front keeps http->https downgrades, userinfo
 		// smuggling, and public-host redirects out of the request path.
-		validation := *opts.DialValidation
-		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 10 {
 				return fmt.Errorf("netsec: stopped after 10 redirects")
 			}
-			if err := ValidateProviderURL(req.URL.String(), validation); err != nil {
-				return fmt.Errorf("netsec: redirect target rejected: %w", err)
+			for _, v := range activeValidations(local, opts.SetupTraffic) {
+				if err := ValidateProviderURL(req.URL.String(), v); err != nil {
+					return fmt.Errorf("netsec: redirect target rejected: %w", err)
+				}
 			}
 			return nil
-		}
+		},
 	}
-	return client
 }
 
-func restrictedDialContext(dialer *net.Dialer, validation *ValidationOptions) func(context.Context, string, string) (net.Conn, error) {
+// activeValidations lists the option sets a dial or redirect must satisfy:
+// the process-wide policy first, then the caller's own.
+func activeValidations(local *ValidationOptions, setupTraffic bool) []ValidationOptions {
+	var out []ValidationOptions
+	pol := currentPolicy()
+	if g := pol.Validation; g != nil && (!setupTraffic || !pol.AllowSetupTraffic) {
+		out = append(out, *g)
+	}
+	if local != nil {
+		out = append(out, *local)
+	}
+	return out
+}
+
+// guardedDialContext validates the actual resolved target IPs against every
+// active option set before opening a connection. With no option set active it
+// is a plain dial.
+func guardedDialContext(dialer *net.Dialer, local *ValidationOptions, setupTraffic bool) func(context.Context, string, string) (net.Conn, error) {
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
-		if validation == nil {
+		validations := activeValidations(local, setupTraffic)
+		if len(validations) == 0 {
 			return dialer.DialContext(ctx, network, address)
+		}
+		check := func(ip net.IP) error {
+			for _, v := range validations {
+				if err := ValidateResolvedIP(ip, v); err != nil {
+					return err
+				}
+			}
+			return nil
 		}
 
 		host, port, err := net.SplitHostPort(address)
@@ -122,9 +172,8 @@ func restrictedDialContext(dialer *net.Dialer, validation *ValidationOptions) fu
 			return nil, fmt.Errorf("netsec: split dial address %q: %w", address, err)
 		}
 
-		opts := *validation
 		if ip := net.ParseIP(host); ip != nil {
-			if err := ValidateResolvedIP(ip, opts); err != nil {
+			if err := check(ip); err != nil {
 				return nil, fmt.Errorf("netsec: dial target %s: %w", address, err)
 			}
 			return dialer.DialContext(ctx, network, address)
@@ -139,7 +188,7 @@ func restrictedDialContext(dialer *net.Dialer, validation *ValidationOptions) fu
 		}
 
 		for _, addr := range resolved {
-			if err := ValidateResolvedIP(addr.IP, opts); err != nil {
+			if err := check(addr.IP); err != nil {
 				return nil, fmt.Errorf("netsec: resolved %s to %s: %w", host, addr.String(), err)
 			}
 		}

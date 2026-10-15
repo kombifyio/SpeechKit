@@ -110,6 +110,12 @@ type Config struct {
 	OrderedAgentModels     []OrderedModelSelection
 	UseOrderedAssistModels bool
 	UseOrderedAgentModels  bool
+
+	// AllowProvider is the host's provider allowlist. When set, a model of a
+	// provider it refuses is never constructed (newModel returns an error
+	// wrapping ErrProviderNotAllowed with the reason id). Nil allows every
+	// provider.
+	AllowProvider func(provider string) (bool, string)
 }
 
 type OrderedModelSelection struct {

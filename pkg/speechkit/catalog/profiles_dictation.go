@@ -224,7 +224,7 @@ func dictationProviderProfiles() []speechkit.ProviderProfile {
 			Source:         "Deepgram",
 			Description:    "Deepgram-hosted Nova-3 transcription. Low-latency streaming + batch STT; the recommended first-level cloud transcription path for kombify reference deployments.",
 			License:        "proprietary",
-			Capabilities:   []speechkit.Capability{speechkit.CapabilityTranscription, speechkit.CapabilitySTT, speechkit.CapabilityAudioInput, speechkit.CapabilityDictionaryPrompt, speechkit.CapabilityNativeDictationStream},
+			Capabilities:   []speechkit.Capability{speechkit.CapabilityTranscription, speechkit.CapabilitySTT, speechkit.CapabilityAudioInput, speechkit.CapabilityDictionaryPrompt, speechkit.CapabilityNativeDictationStream, speechkit.CapabilityCompleteCaptureStream},
 			AdapterKind:    "deepgram_stt",
 			AllowInference: true,
 			Recommended:    true,

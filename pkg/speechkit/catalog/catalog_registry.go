@@ -151,3 +151,21 @@ func (c *Catalog) Filter(policy speechkit.RuntimePolicy) []speechkit.ProviderPro
 	}
 	return speechkit.FilterProviderProfiles(c.profiles, policy)
 }
+
+// ProfileIDsForProviders returns the ids of the profiles whose provider
+// (see [ProviderIDForProfile]) the provider ids in providers name, compared by
+// [ProviderFamily], in catalog order. A host expands a provider allowlist into
+// [speechkit.RuntimePolicy.AllowedProfiles] with it. The result is empty, never
+// nil, when nothing matches.
+func (c *Catalog) ProfileIDsForProviders(providers []string) []string {
+	ids := []string{}
+	if c == nil {
+		return ids
+	}
+	for _, profile := range c.profiles {
+		if ProviderInAllowlist(ProviderIDForProfile(profile), providers) {
+			ids = append(ids, profile.ID)
+		}
+	}
+	return ids
+}

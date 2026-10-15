@@ -54,7 +54,7 @@ func (p *Provider) waitForInferenceReady(ctx context.Context) error {
 	warmupCtx, cancel := context.WithTimeout(ctx, whisperWarmupTimeout)
 	defer cancel()
 
-	warmupClient := netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: whisperWarmupTimeout, DialValidation: &p.Validation})
+	warmupClient := p.keyed(netsec.NewClient(netsec.ClientOptions{Timeout: whisperWarmupTimeout, DialValidation: &p.Validation}))
 	return p.waitForInferenceReadyWithClient(warmupCtx, warmupClient, whisperWarmupRetries, whisperWarmupInterval)
 }
 
@@ -70,7 +70,7 @@ func (p *Provider) waitForInferenceReadyWithClient(ctx context.Context, client *
 		interval = time.Millisecond
 	}
 	if client == nil {
-		client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second, DialValidation: &p.Validation})
+		client = p.keyed(netsec.NewClient(netsec.ClientOptions{Timeout: 30 * time.Second, DialValidation: &p.Validation}))
 	}
 
 	endpoint := fmt.Sprintf("%s/v1/audio/transcriptions", p.serverURL())

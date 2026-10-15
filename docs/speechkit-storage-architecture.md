@@ -79,3 +79,38 @@ Additional cloud backends should:
 ## Export And Import
 
 Exports should include scope metadata alongside scoped records. Imports can either preserve the source scope, map records to the local default scope, or be rejected by the host backend policy when required scope data is missing.
+
+## Data location (desktop)
+
+The reference desktop client keeps user content (the SQLite database with its
+WAL and SHM files, `audio/`, `snapshots/`, `wakeword-activations/`) under one
+data root and everything else (configuration, install state, secrets) in the
+roaming profile directory.
+
+| Install | Data root |
+|---|---|
+| Windows installed | `%LOCALAPPDATA%\SpeechKit` (earlier releases: `%APPDATA%\SpeechKit`) |
+| Windows portable | `<exe>\data` |
+| macOS | `~/Library/Application Support/SpeechKit` |
+| `[store] data_root` set | that folder; a network path (UNC or mapped drive) is refused and the default is used |
+
+Roaming profiles, FSLogix and UE-V copy Roaming AppData to file servers, which
+is why content moved out of it. `sqlite_path`, when set, still names the
+database file and wins for it; audio and snapshots stay beside the database.
+
+Migration (`app/internal/datalocation`) runs at start on Windows installs. When
+the old roaming root holds content, the database set is copied through a
+staging directory and committed by renaming the database file last, the
+directories are renamed (same volume) or copied through a `.part` sibling, and
+the old copies are removed only after everything is in place. It never runs
+twice at once (lock file in the new root), skips a database another process
+holds open (the old root stays in use, the reason is logged as
+`desktop.startup.data_root`), rolls back on any failure, and leaves
+`data-moved.txt` in the old root. Stored absolute paths under the old root
+(`sqlite_path`, `[feedback] db_path`) are rewritten in `config.toml`.
+
+At start the client reports whether the volume under the data root is
+BitLocker protected as `bitlocker` (`protected`, `unprotected`, `unknown`) in
+`GET /features` and in the `desktop.startup.bitlocker` log line. It is
+read through the `System.Volume.BitLockerProtection` shell property, which a
+standard user may read; nothing is enforced yet. macOS reports `unknown`.

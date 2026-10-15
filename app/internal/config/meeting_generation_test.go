@@ -59,7 +59,7 @@ func TestMigratedMeetingSettingsDropTheLegacyKeyOnSave(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Save(path, cfg); err != nil {
+	if err := save(path, cfg); err != nil {
 		t.Fatal(err)
 	}
 	written, err := os.ReadFile(path) // #nosec G304 -- test temp file

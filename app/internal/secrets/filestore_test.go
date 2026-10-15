@@ -24,10 +24,19 @@ func redirectSecretsDir(t *testing.T) {
 	t.Setenv("HOME", root)
 	t.Setenv("USERPROFILE", root)
 
-	dir := filepath.Dir(secretFilePath("probe"))
+	dir := filepath.Dir(mustSecretFilePath(t, "probe"))
 	if rel, err := filepath.Rel(root, dir); err != nil || strings.HasPrefix(rel, "..") {
 		t.Skipf("secrets dir %q is outside the test root; refusing to touch the real store", dir)
 	}
+}
+
+func mustSecretFilePath(t *testing.T, name string) string {
+	t.Helper()
+	path, err := secretFilePath(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func TestFileStoreRoundTripsThroughInjectedProtection(t *testing.T) {
@@ -44,7 +53,7 @@ func TestFileStoreRoundTripsThroughInjectedProtection(t *testing.T) {
 	if err := store.Store(" api-key ", " secret-value "); err != nil {
 		t.Fatalf("Store: %v", err)
 	}
-	raw, err := os.ReadFile(secretFilePath("api-key")) // #nosec G304 -- test reads the path created by secretFilePath.
+	raw, err := os.ReadFile(mustSecretFilePath(t, "api-key")) // #nosec G304 -- test reads the path created by secretFilePath.
 	if err != nil {
 		t.Fatalf("read stored secret: %v", err)
 	}
@@ -85,7 +94,7 @@ func TestFileStorePropagatesProtectionErrors(t *testing.T) {
 	if err := store.Store("api-key", "secret"); !errors.Is(err, protectErr) {
 		t.Fatalf("Store error = %v, want the protector's error", err)
 	}
-	path := secretFilePath("api-key")
+	path := mustSecretFilePath(t, "api-key")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("create secrets dir: %v", err)
 	}

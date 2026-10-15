@@ -11,6 +11,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/kombifyio/SpeechKit/app/internal/productid"
 	skclient "github.com/kombifyio/SpeechKit/pkg/speechkit/client"
 )
 
@@ -22,6 +23,11 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:8090", "HTTP listen address when --transport=http")
 	mcpToken := flag.String("mcp-token", "", "Bearer token required by the MCP HTTP transport")
 	flag.Parse()
+	// The MCP server shares the reference client's data directory and secret
+	// store.
+	if err := productid.Register(productid.Reference); err != nil {
+		log.Fatal(err)
+	}
 
 	opts := serverOptions{
 		modes:     parseModes(*modeFlag),

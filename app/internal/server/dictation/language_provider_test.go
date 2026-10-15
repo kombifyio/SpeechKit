@@ -12,6 +12,7 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/deepgram"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -42,27 +43,9 @@ func newDeepgramListenStub(t *testing.T) *deepgramStub {
 	stub := &deepgramStub{}
 	stub.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		stub.record(r.URL.Query())
+		_, _ = io.Copy(io.Discard, r.Body)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"results":{"channels":[{"alternatives":[{"transcript":"hallo welt","confidence":0.9}]}]}}`))
-	}))
-	t.Cleanup(stub.Close)
-	return stub
-}
-
-// newDeepgramStreamStub serves the realtime endpoint: it records the handshake
-// query and then holds the socket open, which is all the adapter needs to
-// report `ready`.
-func newDeepgramStreamStub(t *testing.T) *deepgramStub {
-	t.Helper()
-	stub := &deepgramStub{}
-	stub.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		stub.record(r.URL.Query())
-		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
-		if err != nil {
-			return
-		}
-		defer conn.Close(websocket.StatusNormalClosure, "done") //nolint:errcheck // stub teardown
-		_, _, _ = conn.Read(r.Context())
 	}))
 	t.Cleanup(stub.Close)
 	return stub
@@ -221,8 +204,7 @@ func TestBatchTranscribe_LanguageReachesProviderMultipart(t *testing.T) {
 
 // "auto" means "no explicit choice", so it must land on the same multilingual
 // default as an omitted language rather than on a provider-side default. The
-// streaming surface is deliberately absent here: it drops the language
-// parameter entirely for "auto" instead of sending the code-switching value.
+// streaming surface uses the same complete-capture request mapping.
 func TestBatchTranscribe_AutoResolvesToCodeSwitching(t *testing.T) {
 	t.Run("json", func(t *testing.T) {
 		stub := newDeepgramListenStub(t)
@@ -256,7 +238,7 @@ func TestStreamWS_LanguageReachesProvider(t *testing.T) {
 	for _, tt := range languagePrecedenceCases() {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv(wssession.EnvAllowEmptyOrigin, "1")
-			stub := newDeepgramStreamStub(t)
+			stub := newDeepgramListenStub(t)
 			manager := mustStreamManager(t)
 			handler := mustStreamHandler(t, manager, newStubbedDeepgramRouter(stub.URL, tt.providerLanguage), nil)
 			mux := http.NewServeMux()
@@ -273,9 +255,16 @@ func TestStreamWS_LanguageReachesProvider(t *testing.T) {
 			conn := dialStreamWS(t, ctx, server.URL, session.ID, ticket)
 			defer conn.Close(websocket.StatusNormalClosure, "") //nolint:errcheck
 
-			writeStreamJSON(t, ctx, conn, StreamStartFrame{Type: StreamMsgStart, Language: tt.requestLanguage})
+			writeStreamJSON(t, ctx, conn, StreamStartFrame{Type: StreamMsgStart, Language: tt.requestLanguage, InterimResults: boolPtr(false)})
 			if frame := readStreamJSON(t, ctx, conn); frame["type"] != StreamMsgReady {
 				t.Fatalf("expected ready, got %v", frame)
+			}
+			if err := conn.Write(ctx, websocket.MessageBinary, make([]byte, 640)); err != nil {
+				t.Fatal(err)
+			}
+			writeStreamJSON(t, ctx, conn, map[string]string{"type": StreamMsgFinalize})
+			if final := readStreamJSON(t, ctx, conn); final["type"] != StreamMsgTranscript || final["done"] != true {
+				t.Fatalf("expected whole-recording final, got %v", final)
 			}
 			if got := stub.language(); got != tt.want {
 				t.Fatalf("provider language = %q, want %q", got, tt.want)

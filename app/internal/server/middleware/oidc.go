@@ -14,6 +14,8 @@ import (
 
 	jose "github.com/go-jose/go-jose/v3"
 	"github.com/go-jose/go-jose/v3/jwt"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
 
 // oidcJWKSCacheTTL bounds how long a fetched JWKS is trusted before a refresh.
@@ -90,7 +92,7 @@ func NewOIDCValidator(cfg OIDCConfig) (*OIDCValidator, error) {
 	}
 	v.httpClient = cfg.HTTPClient
 	if v.httpClient == nil {
-		v.httpClient = &http.Client{Timeout: 10 * time.Second}
+		v.httpClient = netsec.NewClient(netsec.ClientOptions{Timeout: 10 * time.Second})
 	}
 	v.now = cfg.now
 	if v.now == nil {

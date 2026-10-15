@@ -421,6 +421,12 @@ describe("playChunk playback scheduling", () => {
     expect(onAudio).not.toHaveBeenCalled();
     socket.emit("message", { data: JSON.stringify({ type: "interrupted" }) });
     socket.emit("message", { data: pcm });
+    expect(onAudio).not.toHaveBeenCalled();
+    expect(context.sources.at(-1)).toBe(oldSource);
+    socket.emit("message", { data: JSON.stringify({
+      type: "interrupted", provider_metadata: { reason: "client_cancel" }
+    }) });
+    socket.emit("message", { data: pcm });
     expect(context.sources.at(-1)?.start).toHaveBeenCalledWith(0);
     expect(context.sources.at(-1)).not.toBe(oldSource);
     expect(onAudio).toHaveBeenCalledWith(pcm);

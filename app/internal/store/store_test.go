@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -25,11 +26,12 @@ func TestCloseIdempotent(t *testing.T) {
 }
 
 func TestNewWithEmptyPath(t *testing.T) {
-	// Point APPDATA to a temp dir so the default path lands somewhere safe.
-	tmpDir := t.TempDir()
-	original := os.Getenv("APPDATA")
-	t.Setenv("APPDATA", tmpDir)
-	defer os.Setenv("APPDATA", original)
+	// Point both profile directories at temp dirs so the default path lands
+	// somewhere safe. User content defaults to Local AppData on Windows and
+	// to the roaming/config directory elsewhere.
+	roaming, local := t.TempDir(), t.TempDir()
+	t.Setenv("APPDATA", roaming)
+	t.Setenv("LOCALAPPDATA", local)
 
 	s, err := New(StoreConfig{Backend: "sqlite", MaxAudioStorageMB: 100})
 	if err != nil {
@@ -37,10 +39,12 @@ func TestNewWithEmptyPath(t *testing.T) {
 	}
 	defer s.Close()
 
-	// Verify the database was created under the temp APPDATA.
-	expectedDir := filepath.Join(tmpDir, "SpeechKit")
-	if _, err := os.Stat(expectedDir); os.IsNotExist(err) {
-		t.Errorf("expected directory %s to exist", expectedDir)
+	root := roaming
+	if runtime.GOOS == "windows" {
+		root = local
+	}
+	if _, err := os.Stat(filepath.Join(root, "SpeechKit", "feedback.db")); err != nil {
+		t.Errorf("expected the database under %s: %v", root, err)
 	}
 }
 

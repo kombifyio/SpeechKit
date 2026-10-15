@@ -91,10 +91,9 @@ func startAppServer(ctx context.Context, binary, clientVersion string, logger *s
 	// Hand the child to the OS so it cannot outlive this process when the
 	// host dies without running its cleanup path (crash, taskkill, dev-loop
 	// rebuild). Assignment failing does not make the child unusable.
-	//nolint:staticcheck // SA4023: build-tag artifact; the !windows && !darwin stub always returns ErrUnsupportedPlatform, other platforms may return nil.
-	if err := procguard.Adopt(cmd); err != nil {
+	procguard.AdoptOrReport(cmd, func(err error) {
 		logger.Warn("codex app-server not adopted into the kill-on-exit job", "error", err, "pid", cmd.Process.Pid)
-	}
+	})
 
 	s := &appServerSession{
 		cmd:              cmd,

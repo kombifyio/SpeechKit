@@ -2,9 +2,69 @@ package live
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 )
+
+type failingWorkflowProvider struct {
+	*sessionTestProvider
+}
+
+func (p *failingWorkflowProvider) UpdateInstructions(context.Context, LiveConfig) error {
+	return errors.New("private upstream workflow failure")
+}
+
+func TestSessionWorkflowFailureRemainsRecoverable(t *testing.T) {
+	provider := &failingWorkflowProvider{newSessionTestProvider()}
+	turnErrors := make(chan error, 1)
+	terminalErrors := make(chan error, 1)
+	replies := make(chan dialogueEvent, 1)
+	session := NewSession(provider, Callbacks{
+		OnTurnError: func(err error) { turnErrors <- err },
+		OnError:     func(err error) { terminalErrors <- err },
+		OnOutputTranscript: func(text string, done bool) {
+			if done {
+				replies <- dialogueEvent{side: "agent", text: text}
+			}
+		},
+	})
+	if err := session.Start(context.Background(), LiveConfig{
+		Workflow: &WorkflowConfig{Steps: []WorkflowStep{
+			{ID: "open", Instruction: "Clarify the goal.", MaxTurns: 1},
+			{ID: "decide", Instruction: "Agree on the next step."},
+		}},
+	}, IdleConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	defer session.Stop()
+
+	provider.messages <- &LiveMessage{InputTranscript: "Let us begin.", InputTranscriptDone: true}
+	select {
+	case err := <-turnErrors:
+		var coded interface{ Code() string }
+		if !errors.As(err, &coded) || coded.Code() != "workflow_advance_failed" {
+			t.Fatalf("unexpected recoverable workflow failure: %v", err)
+		}
+		if strings.Contains(err.Error(), "private upstream") {
+			t.Fatalf("workflow error exposed provider details: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("workflow failure was not reported")
+	}
+
+	if err := session.SendText("Continue the conversation."); err != nil {
+		t.Fatalf("session could not continue: %v", err)
+	}
+	provider.messages <- &LiveMessage{OutputTranscript: "We can continue.", OutputTranscriptDone: true, Done: true}
+	waitForDialogueEvent(t, replies, "agent", "We can continue.")
+	select {
+	case err := <-terminalErrors:
+		t.Fatalf("recoverable workflow failure used terminal callback: %v", err)
+	default:
+	}
+}
 
 func TestSessionAppliesInitialWorkflowStep(t *testing.T) {
 	provider := newSessionTestProvider()

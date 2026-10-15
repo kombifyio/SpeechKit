@@ -171,7 +171,7 @@ func TestDataDir_Portable(t *testing.T) {
 		nil,
 	)
 	want := filepath.Join(exeDir, "data")
-	if got := DataDir(); got != want {
+	if got := must(t, DataDir); got != want {
 		t.Errorf("DataDir() portable = %q, want %q", got, want)
 	}
 }
@@ -184,7 +184,7 @@ func TestDataDir_InstalledUsesAppData(t *testing.T) {
 		nil,
 	)
 	want := filepath.Join(`C:\Users\test\AppData\Roaming`, "SpeechKit") //nolint:gocritic // filepathJoin: Windows path literal in test — intentional
-	if got := DataDir(); got != want {
+	if got := must(t, DataDir); got != want {
 		t.Errorf("DataDir() installed = %q, want %q", got, want)
 	}
 }
@@ -202,7 +202,7 @@ func TestDataDir_NoAppDataStaysInTheUserProfile(t *testing.T) {
 	userHomeDir = func() (string, error) { return filepath.Join("home", "user"), nil }
 	t.Cleanup(func() { userHomeDir = prevHome })
 
-	got := DataDir()
+	got := must(t, DataDir)
 	if !strings.HasPrefix(got, filepath.Join("home", "user")) {
 		t.Errorf("DataDir() with empty APPDATA = %q, want a path in the user profile", got)
 	}
@@ -235,7 +235,7 @@ func TestConfigFilePath_PortableUsesExecutableDir(t *testing.T) {
 		nil,
 	)
 	want := filepath.Join(exeDir, "config.toml")
-	if got := ConfigFilePath(); got != want {
+	if got := must(t, ConfigFilePath); got != want {
 		t.Fatalf("ConfigFilePath() = %q, want %q", got, want)
 	}
 }
@@ -249,7 +249,7 @@ func TestConfigFilePath_NonPortableUsesDataDir(t *testing.T) {
 		nil,
 	)
 	want := filepath.Join(appData, "SpeechKit", "config.toml")
-	if got := ConfigFilePath(); got != want {
+	if got := must(t, ConfigFilePath); got != want {
 		t.Fatalf("ConfigFilePath() = %q, want %q", got, want)
 	}
 }
@@ -262,7 +262,7 @@ func TestLocalDataDir_PortableMatchesDataDir(t *testing.T) {
 		mockStat(map[string]bool{filepath.Join(exeDir, "config.toml"): true}),
 		nil,
 	)
-	if got, want := LocalDataDir(), DataDir(); got != want {
+	if got, want := must(t, LocalDataDir), must(t, DataDir); got != want {
 		t.Errorf("LocalDataDir() portable = %q, want DataDir() %q", got, want)
 	}
 }
@@ -275,7 +275,7 @@ func TestLocalDataDir_InstalledUsesLocalAppData(t *testing.T) {
 		nil,
 	)
 	want := filepath.Join(`C:\Users\test\AppData\Local`, "SpeechKit") //nolint:gocritic // filepathJoin: Windows path literal in test — intentional
-	if got := LocalDataDir(); got != want {
+	if got := must(t, LocalDataDir); got != want {
 		t.Errorf("LocalDataDir() = %q, want %q", got, want)
 	}
 }
@@ -288,7 +288,7 @@ func TestLocalDataDir_NoLocalAppDataFallsBackToDataDir(t *testing.T) {
 		mockStat(map[string]bool{}),
 		nil,
 	)
-	if got, want := LocalDataDir(), DataDir(); got != want {
+	if got, want := must(t, LocalDataDir), must(t, DataDir); got != want {
 		t.Errorf("LocalDataDir() with no LOCALAPPDATA = %q, want DataDir() %q", got, want)
 	}
 }
@@ -301,7 +301,7 @@ func TestModelsDirUsesLocalDataDir(t *testing.T) {
 		nil,
 	)
 	want := filepath.Join(`C:\Users\test\AppData\Local`, "SpeechKit", "models") //nolint:gocritic // filepathJoin: Windows path literal in test — intentional
-	if got := ModelsDir(); got != want {
+	if got := must(t, ModelsDir); got != want {
 		t.Errorf("ModelsDir() = %q, want %q", got, want)
 	}
 }
@@ -315,7 +315,7 @@ func TestSecretsDir_PortableUnderData(t *testing.T) {
 		nil,
 	)
 	want := filepath.Join(exeDir, "data", "secrets")
-	if got := SecretsDir(); got != want {
+	if got := must(t, SecretsDir); got != want {
 		t.Errorf("SecretsDir() portable = %q, want %q", got, want)
 	}
 }
@@ -327,7 +327,7 @@ func TestSecretsDir_InstalledUsesUserConfigDir(t *testing.T) {
 		func() (string, error) { return `C:\Users\test\AppData\Roaming`, nil },
 	)
 	want := filepath.Join(`C:\Users\test\AppData\Roaming`, "SpeechKit", "secrets") //nolint:gocritic // filepathJoin: Windows path literal in test — intentional
-	if got := SecretsDir(); got != want {
+	if got := must(t, SecretsDir); got != want {
 		t.Errorf("SecretsDir() installed = %q, want %q", got, want)
 	}
 }
@@ -339,8 +339,8 @@ func TestSecretsDir_UserConfigDirErrorFallsBackToDataDir(t *testing.T) {
 		mockStat(map[string]bool{}),
 		func() (string, error) { return "", errors.New("no config dir") },
 	)
-	want := filepath.Join(DataDir(), "secrets")
-	if got := SecretsDir(); got != want {
+	want := filepath.Join(must(t, DataDir), "secrets")
+	if got := must(t, SecretsDir); got != want {
 		t.Errorf("SecretsDir() on UserConfigDir err = %q, want %q", got, want)
 	}
 }
@@ -352,8 +352,8 @@ func TestSecretsDir_UserConfigDirEmptyFallsBackToDataDir(t *testing.T) {
 		mockStat(map[string]bool{}),
 		func() (string, error) { return "  ", nil },
 	)
-	want := filepath.Join(DataDir(), "secrets")
-	if got := SecretsDir(); got != want {
+	want := filepath.Join(must(t, DataDir), "secrets")
+	if got := must(t, SecretsDir); got != want {
 		t.Errorf("SecretsDir() on empty UserConfigDir = %q, want %q", got, want)
 	}
 }

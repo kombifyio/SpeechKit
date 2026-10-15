@@ -62,6 +62,30 @@ const (
 	PrivacyDisabledRetentionEphemer MessageID = "sk.privacy.disabled.retention_ephemeral"
 	PrivacyDisabledProviderRetains  MessageID = "sk.privacy.disabled.provider_retains"
 
+	// Provider-allowlist disabled reasons (see PolicyReason* in
+	// pkg/speechkit): a provider the administrator's allowlist does not name,
+	// and a cloud provider a managed host refuses without a machine policy.
+	PolicyDisabledProvider        MessageID = "sk.policy.disabled.provider"
+	PolicyDisabledNoMachinePolicy MessageID = "sk.policy.disabled.no_machine_policy"
+
+	// Teams transcript preflight outcomes and the reasons a transcript paste is
+	// refused (see app/internal/desktop/microsoft365). One stable ID each; the
+	// control plane answers with the ID and the client localizes it.
+	MeetingPreflightReady                MessageID = "sk.meeting.preflight.ready"
+	MeetingPreflightNoTeamsMeeting       MessageID = "sk.meeting.preflight.no_teams_meeting"
+	MeetingPreflightSignedOut            MessageID = "sk.meeting.preflight.signed_out"
+	MeetingPreflightAdminConsentRequired MessageID = "sk.meeting.preflight.admin_consent_required"
+	MeetingPreflightTenantDisabled       MessageID = "sk.meeting.preflight.tenant_disabled"
+	MeetingPreflightDisabled             MessageID = "sk.meeting.preflight.disabled"
+	MeetingPreflightUnavailable          MessageID = "sk.meeting.preflight.unavailable"
+	MeetingPasteRefusedGrantMissing      MessageID = "sk.meeting.paste.refused.grant_missing"
+	MeetingPasteRefusedImportOff         MessageID = "sk.meeting.paste.refused.import_off"
+	MeetingPasteRefusedPasteOff          MessageID = "sk.meeting.paste.refused.paste_off"
+	MeetingPasteRefusedNotFinished       MessageID = "sk.meeting.paste.refused.not_finished"
+	MeetingPasteRefusedTranscriptPresent MessageID = "sk.meeting.paste.refused.transcript_present"
+	MeetingPasteRefusedTooLarge          MessageID = "sk.meeting.paste.refused.too_large"
+	MeetingPasteRefusedUnreadable        MessageID = "sk.meeting.paste.refused.unreadable"
+
 	// Meeting Mode screenshot status prose. These mirror the stable status
 	// codes emitted by app/internal/meetingsnapshot so the device UI can surface
 	// selecting/capturing/saving/saved/cancelled/error accessibly and
@@ -73,6 +97,34 @@ const (
 	MeetingSnapshotCancelled MessageID = "meeting.snapshot.cancelled"
 	MeetingSnapshotError     MessageID = "meeting.snapshot.error"
 	MeetingSnapshotProtected MessageID = "meeting.snapshot.protected"
+	MeetingSnapshotDenied    MessageID = "meeting.snapshot.denied"
+
+	// Notes export statuses (see app/host/meetingexport): one
+	// stable ID per state of the export of a meeting to a target such as
+	// OneNote, plus the warning a failed export carries while it keeps the
+	// meeting's raw material. None of them names a meeting or a destination.
+	ExportPending               MessageID = "sk.export.pending"
+	ExportSynced                MessageID = "sk.export.synced"
+	ExportSignedOut             MessageID = "sk.export.signed_out"
+	ExportConsentRequired       MessageID = "sk.export.consent_required"
+	ExportDestinationGone       MessageID = "sk.export.destination_gone"
+	ExportDestinationFull       MessageID = "sk.export.destination_full"
+	ExportDestinationNotAllowed MessageID = "sk.export.destination_not_allowed"
+	ExportTooLarge              MessageID = "sk.export.too_large"
+	ExportThrottled             MessageID = "sk.export.throttled"
+	ExportUnavailable           MessageID = "sk.export.unavailable"
+	ExportFailed                MessageID = "sk.export.failed"
+	ExportTargetUnavailable     MessageID = "sk.export.target_unavailable"
+	ExportNoDestination         MessageID = "sk.export.no_destination"
+	ExportReviewNotReady        MessageID = "sk.export.review_not_ready"
+	ExportKeptUntilSynced       MessageID = "sk.export.kept_until_synced"
+
+	// Headings the export renderers add to a page, in the review's language.
+	ExportLabelBrief       MessageID = "sk.export.label.brief"
+	ExportLabelNotes       MessageID = "sk.export.label.notes"
+	ExportLabelCitations   MessageID = "sk.export.label.citations"
+	ExportLabelScreenshots MessageID = "sk.export.label.screenshots"
+	ExportLabelScreenshot  MessageID = "sk.export.label.screenshot"
 )
 
 var messageIDs = []MessageID{
@@ -163,6 +215,22 @@ var messageIDs = []MessageID{
 	PrivacyRetentionEphemeralName,
 	PrivacyDisabledRetentionEphemer,
 	PrivacyDisabledProviderRetains,
+	PolicyDisabledProvider,
+	PolicyDisabledNoMachinePolicy,
+	MeetingPreflightReady,
+	MeetingPreflightNoTeamsMeeting,
+	MeetingPreflightSignedOut,
+	MeetingPreflightAdminConsentRequired,
+	MeetingPreflightTenantDisabled,
+	MeetingPreflightDisabled,
+	MeetingPreflightUnavailable,
+	MeetingPasteRefusedGrantMissing,
+	MeetingPasteRefusedImportOff,
+	MeetingPasteRefusedPasteOff,
+	MeetingPasteRefusedNotFinished,
+	MeetingPasteRefusedTranscriptPresent,
+	MeetingPasteRefusedTooLarge,
+	MeetingPasteRefusedUnreadable,
 	MeetingSnapshotSelecting,
 	MeetingSnapshotCapturing,
 	MeetingSnapshotSaving,
@@ -170,6 +238,27 @@ var messageIDs = []MessageID{
 	MeetingSnapshotCancelled,
 	MeetingSnapshotError,
 	MeetingSnapshotProtected,
+	MeetingSnapshotDenied,
+	ExportPending,
+	ExportSynced,
+	ExportSignedOut,
+	ExportConsentRequired,
+	ExportDestinationGone,
+	ExportDestinationFull,
+	ExportDestinationNotAllowed,
+	ExportTooLarge,
+	ExportThrottled,
+	ExportUnavailable,
+	ExportFailed,
+	ExportTargetUnavailable,
+	ExportNoDestination,
+	ExportReviewNotReady,
+	ExportKeptUntilSynced,
+	ExportLabelBrief,
+	ExportLabelNotes,
+	ExportLabelCitations,
+	ExportLabelScreenshots,
+	ExportLabelScreenshot,
 }
 
 var supportedLocales = []string{"en", "de", "es", "zh-Hans", "hi", "ar"}

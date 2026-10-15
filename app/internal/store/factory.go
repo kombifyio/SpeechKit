@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 
+	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
 	speechstorage "github.com/kombifyio/SpeechKit/pkg/speechkit/storage"
 )
 
@@ -26,6 +27,17 @@ type StoreConfig struct {
 	TranscriptionModelHints map[string]string
 	DefaultScope            speechstorage.Scope
 	ScopePolicy             speechstorage.ScopePolicy
+	// RetentionScope is the [privacy] retention scope. Under ephemeral the
+	// store writes no audio and sweeps a session's raw material once its work
+	// is over (see retention_sweep.go). Empty means retain.
+	RetentionScope framework.RetentionScope `toml:"-"`
+	// RetentionTTLDays is the [privacy] retention TTL: a hard upper bound by
+	// age that pinning does not lift. Zero means no TTL.
+	RetentionTTLDays int `toml:"-"`
+	// OnRetentionSweep receives the counts of every sweep the retention scope
+	// or the TTL performs, for the audit log. Optional; it may run on a
+	// background goroutine and during store construction.
+	OnRetentionSweep func(RetentionSweep) `toml:"-"`
 }
 
 // BackendFactory creates a Store from config.

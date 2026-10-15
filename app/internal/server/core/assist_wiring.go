@@ -10,12 +10,14 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/app/internal/ai"
+	"github.com/kombifyio/SpeechKit/app/internal/ai/flowadapt"
 	"github.com/kombifyio/SpeechKit/app/internal/ai/flows"
 	"github.com/kombifyio/SpeechKit/app/internal/config"
 	"github.com/kombifyio/SpeechKit/app/internal/ttswiring"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/assist"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/assist/shortcuts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/assist/skills"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
 )
 
@@ -78,7 +80,7 @@ func registerLocalLLMHealth(ctx context.Context, app *App) {
 	healthURL := localLLMHealthURL(app.Cfg.LocalLLM.BaseURL)
 	app.Health.SetReady("llm.local", StatusStarting, "probing")
 	go func() {
-		client := &http.Client{Timeout: 5 * time.Second}
+		client := netsec.NewClient(netsec.ClientOptions{Timeout: 5 * time.Second})
 		deadline := time.Now().Add(15 * time.Minute)
 		var lastErr error
 		for {
@@ -173,7 +175,7 @@ func buildAssistService(ctx context.Context, cfg *config.Config, app *App) (*ass
 	})
 
 	opts := assist.Options{
-		Generator: flows.AssistGenerator(app.AssistFlow),
+		Generator: flowadapt.AssistGenerator(app.AssistFlow),
 		Matcher:   catalog.Matcher(),
 		Executor:  catalog.Executor(),
 		// v0.38.0 multi-turn: each service gets its own in-memory
@@ -286,7 +288,11 @@ func agentFlowFromRuntime(rt *ai.Runtime) *flows.Flow[flows.AgentInput, flows.Ag
 // concerns that the server deliberately does not replicate.
 func buildGenkitRuntime(ctx context.Context, cfg *config.Config) (*ai.Runtime, []string, error) {
 	var notes []string
-	aiCfg := ai.Config{}
+	aiCfg := ai.Config{
+		AllowProvider: func(provider string) (bool, string) {
+			return cfg.ProviderConstructionAllowed(provider, "")
+		},
+	}
 	credential := func(target string) string {
 		key, _, err := config.ResolveProviderCredentialValue(cfg, target)
 		if err != nil {

@@ -16,6 +16,11 @@ type workflowState struct {
 	completed  bool
 }
 
+type workflowAdvanceError struct{}
+
+func (workflowAdvanceError) Error() string { return "The voice workflow could not advance." }
+func (workflowAdvanceError) Code() string  { return "workflow_advance_failed" }
+
 func prepareWorkflowStart(cfg LiveConfig) (LiveConfig, *workflowState) {
 	if cfg.Workflow == nil || len(cfg.Workflow.Steps) == 0 {
 		return cfg, nil
@@ -45,9 +50,10 @@ func (s *Session) recordWorkflowUserTurn(ctx context.Context) {
 		return
 	}
 	if err := s.AdvanceWorkflowStep(ctx, "max_turns"); err != nil {
-		s.log().Warn("voiceagent: workflow advance failed", "err", err)
-		if s.callbacks.OnError != nil {
-			s.callbacks.OnError(err)
+		failure := workflowAdvanceError{}
+		s.log().Warn("voiceagent: workflow advance failed", "code", failure.Code())
+		if s.callbacks.OnTurnError != nil {
+			s.callbacks.OnTurnError(failure)
 		}
 	}
 }

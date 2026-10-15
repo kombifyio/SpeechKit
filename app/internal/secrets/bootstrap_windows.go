@@ -7,12 +7,23 @@ import (
 	"strings"
 
 	"golang.org/x/sys/windows/registry"
+
+	"github.com/kombifyio/SpeechKit/app/internal/productid"
 )
 
-const (
-	bootstrapRegistryPath      = `Software\kombify\SpeechKit`
-	bootstrapRegistryValueName = "PendingHFInstallToken"
-)
+// bootstrapRegistryValueName is the value the installer leaves below the
+// product's HKCU\Software\<Vendor>\<Product> key.
+const bootstrapRegistryValueName = "PendingHFInstallToken"
+
+// bootstrapRegistryPath is the registered product's per-user key, or
+// productid.ErrNoIdentity.
+func bootstrapRegistryPath() (string, error) {
+	p, err := productid.Current()
+	if err != nil {
+		return "", err
+	}
+	return `Software\` + p.Vendor + `\` + p.Product, nil
+}
 
 var (
 	readBootstrapInstallToken  = readInstallBootstrapTokenFromRegistry
@@ -38,7 +49,11 @@ func MigrateInstallTokenBootstrap() (bool, error) {
 }
 
 func readInstallBootstrapTokenFromRegistry() (string, error) {
-	key, err := registry.OpenKey(registry.CURRENT_USER, bootstrapRegistryPath, registry.QUERY_VALUE)
+	path, err := bootstrapRegistryPath()
+	if err != nil {
+		return "", err
+	}
+	key, err := registry.OpenKey(registry.CURRENT_USER, path, registry.QUERY_VALUE)
 	if err != nil {
 		if errors.Is(err, registry.ErrNotExist) {
 			return "", nil
@@ -58,7 +73,11 @@ func readInstallBootstrapTokenFromRegistry() (string, error) {
 }
 
 func clearInstallBootstrapTokenFromRegistry() error {
-	key, err := registry.OpenKey(registry.CURRENT_USER, bootstrapRegistryPath, registry.SET_VALUE)
+	path, err := bootstrapRegistryPath()
+	if err != nil {
+		return err
+	}
+	key, err := registry.OpenKey(registry.CURRENT_USER, path, registry.SET_VALUE)
 	if err != nil {
 		if errors.Is(err, registry.ErrNotExist) {
 			return nil

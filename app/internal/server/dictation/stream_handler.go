@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/kombifyio/SpeechKit/app/internal/server/audio"
 	"github.com/kombifyio/SpeechKit/app/internal/server/httpx"
 	"github.com/kombifyio/SpeechKit/app/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/app/internal/server/wssession"
@@ -45,6 +46,9 @@ type StreamHandlerOptions struct {
 	VocabularyHints           customize.RecognitionHints
 	RecognitionOptions        provideropts.Values
 	ProviderOptionsByProvider map[string]provideropts.Values
+	// Batch fallback uses the same recording limits as the batch endpoint.
+	MaxUploadMB            int
+	MaxDecodedAudioSeconds int
 	// PublicURL overrides request-derived scheme/host in returned ws_url
 	// values (Docker/proxy deployments).
 	PublicURL         string
@@ -105,10 +109,14 @@ func NewStreamHandler(opts StreamHandlerOptions) (*StreamHandler, error) {
 		readLimit = defaultStreamWSReadLimitBytes
 	}
 	trustedProxies, _ := httpx.NewTrustedProxies(opts.TrustedProxyCIDRs)
+	maxCaptureBytes := int64(25) << 20
+	if opts.MaxUploadMB > 0 {
+		maxCaptureBytes = int64(opts.MaxUploadMB) << 20
+	}
 	return &StreamHandler{
 		manager:            opts.Manager,
 		router:             opts.Router,
-		customization:      &Handler{store: opts.Store, activeTemplates: append([]string(nil), opts.ActiveTemplateIDs...), vocabularyHints: opts.VocabularyHints, recognitionOptions: opts.RecognitionOptions.Clone(), providerOptionsByProvider: opts.ProviderOptionsByProvider},
+		customization:      &Handler{store: opts.Store, maxBytes: maxCaptureBytes, activeTemplates: append([]string(nil), opts.ActiveTemplateIDs...), vocabularyHints: opts.VocabularyHints, recognitionOptions: opts.RecognitionOptions.Clone(), providerOptionsByProvider: opts.ProviderOptionsByProvider, decodeLimits: audio.DecodeLimits{MaxDecodedAudioSeconds: opts.MaxDecodedAudioSeconds}},
 		publicURL:          strings.TrimSpace(opts.PublicURL),
 		allowedOrigins:     wssession.NormalizeAllowedOrigins(opts.AllowedOrigins),
 		idleTimeout:        idle,

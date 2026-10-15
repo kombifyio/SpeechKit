@@ -6,6 +6,9 @@ import (
 	"strings"
 )
 
+var _ RecordingSessionChannelStore = (*SQLiteStore)(nil)
+var _ RecordingSessionChannelStore = (*PostgresStore)(nil)
+
 func (s *sqlStore) AppendRecordingSessionSegment(ctx context.Context, sessionID int64, segment RecordingSessionSegment) (int64, error) {
 	scopeID, err := s.scopeID(ctx)
 	if err != nil {
@@ -170,4 +173,24 @@ func normalizeRecordingSessionSegment(segment RecordingSessionSegment) Recording
 		segment.EndedMs = segment.StartedMs
 	}
 	return segment
+}
+
+// DeleteRecordingSessionSegmentsByChannel removes the segments one capture
+// channel wrote into a session and returns how many went. Replacing a Teams
+// transcript uses it so the old cues do not stay next to the new ones.
+func (s *sqlStore) DeleteRecordingSessionSegmentsByChannel(ctx context.Context, sessionID int64, channel string) (int64, error) {
+	scopeID, err := s.scopeID(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if err := s.ensureRecordingSessionInScope(ctx, sessionID, scopeID); err != nil {
+		return 0, err
+	}
+	result, err := s.db.ExecContext(ctx, s.dialect.rebind(
+		`DELETE FROM recording_session_segments WHERE session_id = ? AND channel = ?`), sessionID, channel)
+	if err != nil {
+		return 0, fmt.Errorf("delete recording session segments: %w", err)
+	}
+	removed, _ := result.RowsAffected()
+	return removed, nil
 }

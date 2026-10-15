@@ -29,6 +29,12 @@ func Adopt(*exec.Cmd) error {
 	return fmt.Errorf("%w: no child-process guard for %s", ErrUnsupportedPlatform, runtime.GOOS)
 }
 
+// AdoptOrReport always reports: this platform cannot adopt a child, and
+// saying so is the honest answer (see [Adopt]).
+func AdoptOrReport(cmd *exec.Cmd, report func(error)) {
+	report(Adopt(cmd))
+}
+
 // Shutdown has nothing to terminate: Adopt never accepted a child.
 func Shutdown() {}
 

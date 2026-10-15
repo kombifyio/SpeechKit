@@ -14,6 +14,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/spf13/cobra"
 
+	"github.com/kombifyio/SpeechKit/app/internal/productid"
 	"github.com/kombifyio/SpeechKit/app/internal/server/discovery"
 	skclient "github.com/kombifyio/SpeechKit/pkg/speechkit/client"
 )
@@ -50,6 +51,11 @@ func (e exitError) Error() string {
 }
 
 func main() {
+	// The CLI shares the reference client's data directory and secret store.
+	if err := productid.Register(productid.Reference); err != nil {
+		writeLineIgnore(os.Stderr, err)
+		os.Exit(1)
+	}
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 

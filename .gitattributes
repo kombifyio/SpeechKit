@@ -6,3 +6,5 @@
 gradlew text eol=lf
 *.bat text eol=crlf
 Info.plist.template text eol=lf
+installer/admx/*.admx text eol=lf
+installer/admx/**/*.adml text eol=lf

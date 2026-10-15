@@ -116,6 +116,7 @@ dependencies {
     // Testing
     testImplementation(libs.junit.api)
     testRuntimeOnly(libs.junit.engine)
+    testRuntimeOnly(libs.junit.launcher)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.mockk)
     testImplementation(libs.turbine)

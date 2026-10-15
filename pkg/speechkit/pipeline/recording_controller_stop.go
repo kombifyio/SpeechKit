@@ -23,8 +23,10 @@ const noiseFloorRMS = 0.003
 // Stop ends the active session and queues its audio for transcription. After
 // the optional opts.TailDelay it closes the recorder and drops captures that
 // are too short, silent, or implausibly long for the wall-clock window (stale
-// device buffer). A provider-native stream that produced finals completes the
-// session itself; one that failed mid-session leaves the capture after its
+// device buffer). A provider-native stream that committed finals completes the
+// session itself, except that a session committing once (LiveCommitSession)
+// accepts only a complete-capture transcript and otherwise has the recording
+// transcribed; one that failed mid-session leaves the capture after its
 // last committed word to a single job; otherwise one full-capture job is
 // submitted (VAD segments when fragmenting or streaming is enabled) with
 // opts.Label in the log. It
@@ -93,6 +95,9 @@ func (c *RecordingController) Stop(opts speechkit.RecordingStopOptions) error {
 	wallDuration := c.clockNow().Sub(startedAt)
 	if isStaleCapturedAudio(dur, wallDuration) {
 		if nativeStream != nil {
+			// The buffer holds audio from before this recording, so the
+			// stream finals are the only transcript of what was just said.
+			nativeStream.recordingUnusable.Store(true)
 			if finals := c.finishNativeDictationStream(nativeStream, nil); finals > 0 {
 				c.onLog(fmt.Sprintf("Provider-stream dictation finalized with %d committed segment(s)", finals), "info")
 				return nil
@@ -103,17 +108,29 @@ func (c *RecordingController) Stop(opts speechkit.RecordingStopOptions) error {
 		return nil
 	}
 
+	// streamHeardSpeech marks a capture whose stream recognized speech that
+	// was kept as drafts: the recording is transcribed however short it is.
+	streamHeardSpeech := false
 	if len(pcm) < c.minPCMBytes {
 		if nativeStream != nil {
-			if finals := c.finishNativeDictationStream(nativeStream, pcm); finals > 0 {
+			finals := c.finishNativeDictationStream(nativeStream, pcm)
+			switch {
+			case finals > 0 && nativeStream.draftsOnly.Load():
+				streamHeardSpeech = true
+			case finals > 0:
 				c.onLog(fmt.Sprintf("Provider-stream dictation finalized with %d committed segment(s)", finals), "info")
 				return nil
 			}
 		}
-		c.onLog("Too short, skipped", "error")
-		c.onState("idle", "")
-		c.collector = nil
-		return nil
+		if !streamHeardSpeech {
+			c.onLog("Too short, skipped", "error")
+			c.onState("idle", "")
+			c.collector = nil
+			return nil
+		}
+		c.onLog("Transcribing the complete recording", "info")
+		nativeStream = nil
+		streamSegments = false
 	}
 
 	// Junk-capture gate: a very short capture whose audio never rises above
@@ -124,7 +141,7 @@ func (c *RecordingController) Stop(opts speechkit.RecordingStopOptions) error {
 	// level VAD can never discard a capture that contains actual audio.
 	// Provider-stream sessions are exempt: their finalization below owns
 	// the speech/no-speech verdict.
-	if nativeStream == nil && dur < shortNoSpeechGateSecs && speechkitaudio.PCMLevel(pcm) < noiseFloorRMS {
+	if nativeStream == nil && !streamHeardSpeech && dur < shortNoSpeechGateSecs && speechkitaudio.PCMLevel(pcm) < noiseFloorRMS {
 		c.onLog(fmt.Sprintf("No audio above noise floor in %.1fs capture, skipped", dur), "info")
 		c.onState("idle", "")
 		return nil
@@ -165,6 +182,10 @@ func (c *RecordingController) Stop(opts speechkit.RecordingStopOptions) error {
 		}
 		finals := c.finishNativeDictationStream(nativeStream, pcm)
 		switch {
+		case nativeStream.draftsOnly.Load():
+			// The stream's finals were drafts of a session that commits once;
+			// the commit is the transcript of the recording below.
+			c.onLog("Transcribing the complete recording", "info")
 		case finals > 0 && (nativeStream.failed.Load() || nativeStream.cutShort.Load()):
 			tail, offsetMs := c.uncommittedStreamAudio(nativeStream, pcm, finals)
 			if tail == nil {

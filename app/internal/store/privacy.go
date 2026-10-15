@@ -80,6 +80,9 @@ func (s *sqlStore) ExportScope(ctx context.Context, scope speechstorage.Scope) (
 			return nil, err
 		}
 	}
+	if export.Notebooks, err = s.listNotebooksByScopeID(ctx, scopeID); err != nil {
+		return nil, err
+	}
 	if export.DictionaryEntries, err = s.listUserDictionaryEntriesByScopeID(ctx, scopeID); err != nil {
 		return nil, err
 	}
@@ -100,7 +103,8 @@ func (s *sqlStore) ExportScope(ctx context.Context, scope speechstorage.Scope) (
 //  3. audio_assets
 //  4. voice_agent_session_turns, voice_agent_session_summary_items
 //  5. recording session children: segments, notes, snapshots, write-ups,
-//     summary batches, then recording_sessions
+//     summary batches, imports, exports, then recording_sessions and the
+//     notebook index
 //  6. voice_agent_sessions
 //  7. transcriptions
 //  8. quick_notes
@@ -169,7 +173,11 @@ func (s *sqlStore) DeleteScope(ctx context.Context, scope speechstorage.Scope) (
 		 WHERE session_id IN (SELECT id FROM recording_sessions WHERE scope_id = ?)`,
 		`DELETE FROM recording_session_imports
 		 WHERE session_id IN (SELECT id FROM recording_sessions WHERE scope_id = ?)`,
+		`DELETE FROM recording_session_exports
+		 WHERE session_id IN (SELECT id FROM recording_sessions WHERE scope_id = ?)`,
 		`DELETE FROM recording_sessions WHERE scope_id = ?`,
+		// The notebook index: names the user gave and where they sync to.
+		`DELETE FROM notebooks WHERE scope_id = ?`,
 		// 6–9. Owner tables
 		`DELETE FROM voice_agent_sessions WHERE scope_id = ?`,
 		`DELETE FROM transcriptions WHERE scope_id = ?`,

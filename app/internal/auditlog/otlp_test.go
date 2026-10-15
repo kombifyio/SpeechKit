@@ -1,6 +1,7 @@
 package auditlog
 
 import (
+	"context"
 	"testing"
 )
 
@@ -17,7 +18,7 @@ func TestConfigureOTLPNoEndpointIsNoOp(t *testing.T) {
 
 func TestEmitToOTLPNoOpWhenNotConfigured(t *testing.T) {
 	// otlpProvider is nil (no ConfigureOTLP call); must not panic.
-	emitToOTLP(Record{Event: EventProviderSelected})
+	emitToOTLP(context.Background(), Record{Event: EventProviderSelected})
 }
 
 func TestShutdownOTLPIdempotent(t *testing.T) {

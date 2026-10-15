@@ -103,6 +103,7 @@ dependencies {
 
     testImplementation(libs.junit.api)
     testRuntimeOnly(libs.junit.engine)
+    testRuntimeOnly(libs.junit.launcher)
 }
 
 // Kotlin 2.4 turned the kotlinOptions DSL from deprecated into an error.

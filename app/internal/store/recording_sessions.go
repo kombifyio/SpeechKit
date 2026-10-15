@@ -19,14 +19,20 @@ func (s *sqlStore) SaveRecordingSession(ctx context.Context, session RecordingSe
 	}
 	owner, _ := RecordOwnerFromContext(ctx)
 	session = normalizeRecordingSession(session)
+	if session.NotebookID > 0 {
+		if err := s.ensureNotebookInScope(ctx, session.NotebookID, scopeID); err != nil {
+			return 0, err
+		}
+	}
 
 	return s.dialect.insertReturningID(ctx, s.db,
 		`INSERT INTO recording_sessions (
 			scope_id, external_id, kind, status, capture_status, summary_status, summary_error,
 			title, language, language_base, provider, model, input_source, processing_mode,
 			summary, started_at, ended_at, capture_started_at, capture_paused_at,
-			capture_stopped_at, summary_updated_at, owner_user_id, owner_org_id, owner_source
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			capture_stopped_at, summary_updated_at, owner_user_id, owner_org_id, owner_source,
+			notebook_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		scopeID,
 		session.ExternalID,
 		string(session.Kind),
@@ -51,6 +57,7 @@ func (s *sqlStore) SaveRecordingSession(ctx context.Context, session RecordingSe
 		owner.UserID,
 		owner.OrgID,
 		owner.Source,
+		nullableInt64(session.NotebookID),
 	)
 }
 

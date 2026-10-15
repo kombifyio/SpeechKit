@@ -118,7 +118,7 @@ paste_combo = "ctrl+shift+v"
 	}
 	assertLoaded(cfg, "load")
 
-	if err := Save(path, cfg); err != nil {
+	if err := save(path, cfg); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
 	reloaded, err := Load(path)

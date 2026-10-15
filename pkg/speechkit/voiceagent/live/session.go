@@ -490,6 +490,16 @@ func (s *Session) receiveLoop(ctx context.Context) {
 }
 
 func (s *Session) handleLiveMessage(ctx context.Context, msg *LiveMessage, scheduleSpeakingSettle, stopSpeakingSettleTimer func()) bool {
+	if msg.TurnError != nil {
+		stopSpeakingSettleTimer()
+		if s.setListeningIfActive() {
+			s.resetIdleTimer()
+		}
+		if s.callbacks.OnTurnError != nil {
+			s.callbacks.OnTurnError(msg.TurnError)
+		}
+		return true
+	}
 	if msg.Interrupted {
 		s.handleInterruption(stopSpeakingSettleTimer)
 	}

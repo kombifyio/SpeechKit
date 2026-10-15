@@ -87,6 +87,8 @@ type Provider struct {
 	// identity is the current child's proof of identity (nil when the
 	// platform could not set one up).
 	identity *serverIdentity
+	// proxy is the keyed loopback door to the current child (nil when none).
+	proxy *authProxy
 }
 
 // Options configures [New].
@@ -116,7 +118,7 @@ func New(opts Options) *Provider {
 			RequireLocal:  true,
 		},
 	}
-	p.client = netsec.NewSafeHTTPClient(netsec.ClientOptions{Timeout: 30 * time.Second, DialValidation: &p.Validation})
+	p.client = p.keyed(netsec.NewClient(netsec.ClientOptions{Timeout: 30 * time.Second, DialValidation: &p.Validation}))
 	return p
 }
 
