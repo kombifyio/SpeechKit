@@ -162,11 +162,11 @@ func (s *Session) EndAudioStream() error {
 	if s.provider == nil {
 		return nil
 	}
-	if err := s.provider.SendAudioStreamEnd(); err != nil {
-		return err
-	}
+	// Mark Processing before the provider hears the end: a fast provider can
+	// answer Done from its receive loop before SendAudioStreamEnd returns, and
+	// a Processing mark landing after that Done would never be cleared.
 	s.setProcessingUnlessSpeaking()
-	return nil
+	return s.provider.SendAudioStreamEnd()
 }
 
 // SendText injects a user text turn into the live session.

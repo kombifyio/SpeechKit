@@ -9,6 +9,13 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.76.9](https://github.com/kombifyio/SpeechKit/compare/v0.76.8...v0.76.9) (2026-10-16)
+
+
+### Bug Fixes
+
+* **voice agent:** releasing the shortcut now always ends a hold-to-talk conversation promptly, even when the provider answers very quickly
+
 ## [0.76.8](https://github.com/kombifyio/SpeechKit/compare/v0.76.7...v0.76.8) (2026-10-16)
 
 
