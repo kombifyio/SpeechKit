@@ -9,6 +9,13 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.77.1](https://github.com/kombifyio/SpeechKit/compare/v0.77.0...v0.77.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **android:** keep Kotlin on 2.3 so Hilt can read the app classes ([#965](https://github.com/kombifyio/SpeechKit/issues/965)) ([b920ce4](https://github.com/kombifyio/SpeechKit/commit/b920ce4a1a532c50b9dc8ed39c798c375a048eaa))
+
 ## [0.77.0](https://github.com/kombifyio/SpeechKit/compare/v0.76.9...v0.77.0) (2026-10-16)
 
 ### Highlights

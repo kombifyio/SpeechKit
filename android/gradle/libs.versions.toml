@@ -1,6 +1,7 @@
 [versions]
 agp = "8.13.2"
-kotlin = "2.4.21"
+# Kotlin stays on 2.3: Hilt 2.58 (last release for AGP 8) cannot read Kotlin 2.4 metadata.
+kotlin = "2.3.21"
 coroutines = "1.11.0"
 # Hilt stays: 2.60.1 requires AGP >= 9.0.0, we are on 8.13.0.
 hilt = "2.58"
