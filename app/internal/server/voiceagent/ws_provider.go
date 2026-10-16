@@ -94,6 +94,12 @@ type LiveConfigFrame struct {
 	NativeLLMToken    string             `json:"-"`
 	NativeLLMModel    string             `json:"-"`
 	NativeConsent     NativeVoiceConsent `json:"-"`
+
+	// NativeClientDelegation asks a GPT-Live bridge for client delegation:
+	// the vendor hands every turn to the host, which answers it with the
+	// registered agent, and no backend Responses model reasons or runs tools.
+	NativeClientDelegation bool `json:"-"`
+
 	// FallbackModel is forwarded to providers that support same-provider
 	// fallback (when a provider supports a same-provider retry after the primary
 	// connect fails). Empty disables the fallback.

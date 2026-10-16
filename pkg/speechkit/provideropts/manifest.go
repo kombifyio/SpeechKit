@@ -45,6 +45,7 @@ func DefaultManifests() []ProviderOptionManifest {
 		geminiVoiceAgentManifest(),
 		openAIVoiceAgentManifest(),
 		openAILiveVoiceAgentManifest(),
+		xaiVoiceAgentManifest(),
 	}
 }
 
@@ -356,6 +357,23 @@ func openAILiveVoiceAgentManifest() ProviderOptionManifest {
 		unsupported(OptionTurnDetection, TypeBool, "Turn detection", "GPT-Live is full duplex; the session exposes no turn-detection control."),
 		unsupported(OptionLanguageHints, TypeStringList, "Language hints", "The GPT-Live session config has no language field."),
 		unsupported(OptionResume, TypeBool, "Session resume", "GPT-Live sessions are not resumable through this adapter."),
+	})
+}
+
+// xaiVoiceAgentManifest describes the Grok Voice adapter
+// (https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech).
+func xaiVoiceAgentManifest() ProviderOptionManifest {
+	const evidence = "https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech"
+	return manifest("xai", "xAI Grok Voice", ModalityVoiceAgent, []string{"realtime.xai.grok-voice"}, []OptionSupport{
+		native(OptionVoice, TypeString, "Voice", "session.voice", evidence),
+		native(OptionTurnDetection, TypeBool, "Turn detection", "session.turn_detection", evidence),
+		native(OptionContextPrompt, TypeString, "Context prompt", "session.instructions", evidence),
+		native(OptionReasoningEffort, TypeString, "Reasoning effort", "session.reasoning.effort", evidence),
+		unsupported(OptionEndpointingMs, TypeInt, "Silence duration", "Grok server VAD exposes no silence-duration tuning."),
+		unsupported(OptionLanguageHints, TypeStringList, "Language hints", "Grok transcription language hints are not exposed through the current SpeechKit adapter."),
+		unsupported(OptionResume, TypeBool, "Session resume", "Grok session resumption is not exposed through the current SpeechKit adapter."),
+		unsupported(OptionTranslation, TypeBool, "Translation", "Realtime translation is not exposed through the current SpeechKit xAI adapter."),
+		unsupported(OptionTranscriptionOnly, TypeBool, "Transcription only", "Grok transcription-only sessions are not exposed through the current SpeechKit adapter."),
 	})
 }
 

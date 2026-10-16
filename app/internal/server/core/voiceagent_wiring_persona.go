@@ -241,6 +241,8 @@ func realtimeCredentialTarget(provider string) string {
 		return "assemblyai"
 	case ProviderGemini:
 		return "google"
+	case ProviderXAI:
+		return "xai"
 	default:
 		return "openai"
 	}

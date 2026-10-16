@@ -69,6 +69,16 @@ type ProvidersConfig struct {
 	OpenRouter OpenRouterProviderConfig `toml:"openrouter"`
 	Cloudflare CloudflareProviderConfig `toml:"cloudflare"`
 	Foundry    FoundryProviderConfig    `toml:"foundry"`
+	XAI        XAIProviderConfig        `toml:"xai"`
+}
+
+// XAIProviderConfig configures xAI as an opt-in bring-your-own-key provider
+// for the Grok Voice realtime Voice Agent. It is never a default: the Grok
+// Voice provider is registered only when Enabled is set or the deployment
+// selects it as the Voice Agent provider.
+type XAIProviderConfig struct {
+	Enabled   bool   `toml:"enabled"`
+	APIKeyEnv string `toml:"api_key_env"`
 }
 
 // FoundryProviderConfig configures Microsoft Foundry (Azure AI Foundry) as a

@@ -66,7 +66,8 @@ type ExecutionMode string
 // Execution modes, the technical adapter behind a profile: the in-process
 // local runtime, a self-hosted OpenAI-compatible HTTP service, Hugging Face
 // routed inference, the vendor APIs of OpenAI, Groq, Google (opt-in BYOK),
-// Deepgram, AssemblyAI, OpenRouter and Foundry, and a local Ollama server.
+// Deepgram, AssemblyAI, OpenRouter, Foundry and xAI (opt-in BYOK), and a
+// local Ollama server.
 const (
 	ExecutionModeLocal          ExecutionMode = "local"
 	ExecutionModeSelfHostedHTTP ExecutionMode = "self_hosted_http"
@@ -79,6 +80,7 @@ const (
 	ExecutionModeOllama         ExecutionMode = "ollama_local"
 	ExecutionModeOpenRouter     ExecutionMode = "openrouter_api"
 	ExecutionModeFoundry        ExecutionMode = "foundry_api"
+	ExecutionModeXAI            ExecutionMode = "xai_api"
 )
 
 // Capability is a mode capability declared by a provider profile.

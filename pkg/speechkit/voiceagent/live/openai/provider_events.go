@@ -56,6 +56,11 @@ func (p *Provider) parseEvent(data []byte) (*live.LiveMessage, bool, error) {
 	if err := json.Unmarshal(data, &env); err != nil {
 		return nil, false, fmt.Errorf("openai realtime: decode event: %w", err)
 	}
+	if p.ParseEvent != nil {
+		if msg, handled, err := p.ParseEvent(env.Type, data); handled || err != nil {
+			return msg, msg == nil && err == nil, err
+		}
+	}
 	switch env.Type {
 	case "session.created":
 		// Server has accepted the connection. We sent session.update from

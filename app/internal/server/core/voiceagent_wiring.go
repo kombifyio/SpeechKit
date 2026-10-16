@@ -21,6 +21,7 @@ const (
 	ProviderGemini       = "gemini"
 	ProviderOpenAI       = "openai"
 	ProviderGPTLive      = "gpt-live"
+	ProviderXAI          = "xai"
 	ProviderDeepgram     = "deepgram"
 	ProviderAssemblyAI   = "assemblyai"
 	ProviderCascaded     = "cascaded"
@@ -53,10 +54,10 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 	// start frame ("laufend wechseln" without a redeploy). The switchable set
 	// is the configured default plus Deepgram (native), OpenAI gpt-realtime
 	// (native), AssemblyAI Voice Agent (native), Cascaded (STT router -> LLM
-	// -> TTS), and — only when the operator opted into [providers.google] —
-	// Gemini Live (native). Providers whose keys/deps are missing are skipped
+	// -> TTS), and — only when the operator opted into [providers.google] or
+	// [providers.xai] — Gemini Live and xAI Grok Voice (native). Providers whose keys/deps are missing are skipped
 	// and surfaced in the status line rather than failing the handler.
-	candidates := dedupeProviders(defaultProvider, ProviderDeepgram, ProviderGemini, ProviderOpenAI, ProviderGPTLive, ProviderAssemblyAI, ProviderCascaded, ProviderKombifyAgent)
+	candidates := dedupeProviders(defaultProvider, ProviderDeepgram, ProviderGemini, ProviderOpenAI, ProviderGPTLive, ProviderXAI, ProviderAssemblyAI, ProviderCascaded, ProviderKombifyAgent)
 	factories := make(map[string]vsserver.ProviderFactory, len(candidates))
 	statusByProvider := make(map[string]string, len(candidates))
 	for _, p := range candidates {
@@ -243,6 +244,18 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 			status = "degraded: no OpenAI API key; GPT-Live sessions will fail at upgrade"
 		}
 		return &gptLiveProviderFactory{backendModel: strings.TrimSpace(cfg.Providers.OpenAI.AgentModel)}, status, nil
+
+	case ProviderXAI:
+		// Opt-in BYOK, like Gemini Live: registered only when the operator
+		// enabled [providers.xai] or selected it as the Voice Agent provider.
+		if !cfg.Providers.XAI.Enabled && config.EffectiveVoiceAgentProvider(cfg) != ProviderXAI {
+			return nil, "unavailable: xAI is an opt-in provider and [providers.xai] is not enabled", errors.New("voiceagent: xai grok voice requires [providers.xai] enabled = true")
+		}
+		status := "ready (xai)"
+		if resolveRealtimeAPIKey(cfg, provider) == "" {
+			status = "degraded: no xAI API key; Grok Voice sessions will fail at upgrade"
+		}
+		return &xaiProviderFactory{}, status, nil
 
 	case ProviderDeepgram:
 		key := resolveRealtimeAPIKey(cfg, provider)

@@ -101,6 +101,10 @@ const (
 	// modelOpenAIGPTLive1 is OpenAI's full-duplex GPT-Live voice model (API
 	// launch 2026-09-10), served by the "gpt-live" adapter.
 	modelOpenAIGPTLive1 = "gpt-live-1"
+	// modelXAIGrokVoice3 is xAI's flagship Grok Voice speech-to-speech model
+	// (alias grok-voice-latest; grok-voice-2.0 is deprecated), served by the
+	// "xai" adapter.
+	modelXAIGrokVoice3 = "grok-voice-3.0"
 	// modelOpenRouterGPTTranscribe, modelOpenRouterGemini35Flash and
 	// modelOpenRouterGemini35FlashLite are OpenRouter slugs for the current
 	// vendor models.
@@ -168,7 +172,8 @@ const ModelFreshnessSLA = 7 * 24 * time.Hour
 // 2026-10-15 pass against the vendors' model pages (the SourceURL of each
 // row): every id is still listed and none is deprecated. Gemini 3.8 Live
 // Extended Thinking is now listed as stable, so its row moves from preview to
-// GA.
+// GA. xAI's speech-to-speech page lists grok-voice-3.0 as the flagship Grok
+// Voice model (grok-voice-latest aliases it, grok-voice-2.0 is deprecated).
 const modelRegistryVerifiedAt = "2026-10-15"
 
 // foundryRegistryVerifiedAt is the day the Microsoft Foundry rows were checked
@@ -425,6 +430,18 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Default:              true,
 			SourceURL:            "https://developers.openai.com/api/docs/models/gpt-live-1",
 			ReleasedAt:           "2026-09-10",
+			LastVerifiedAt:       modelRegistryVerifiedAt,
+			MultilanguageCapable: true,
+		},
+		{
+			Provider:             "xai",
+			ModelID:              modelXAIGrokVoice3,
+			ProfileID:            "realtime.xai.grok-voice",
+			Mode:                 speechkit.ModeVoiceAgent,
+			Name:                 "Grok Voice 3.0",
+			Lifecycle:            speechkit.ModelLifecycleGA,
+			Default:              true,
+			SourceURL:            "https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech",
 			LastVerifiedAt:       modelRegistryVerifiedAt,
 			MultilanguageCapable: true,
 		},

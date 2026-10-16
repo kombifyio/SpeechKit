@@ -208,6 +208,11 @@ type ToolResponse struct {
 
 	Scheduling   ToolResponseScheduling
 	WillContinue *bool
+	// FollowUpInstructions, when set, constrain the response a Realtime
+	// provider requests after the result (response.create instructions), so
+	// the follow-up is not a free generation. Empty keeps the session
+	// instructions.
+	FollowUpInstructions string
 }
 
 // ContinuousDuplexProvider is implemented by a [LiveProvider] whose protocol

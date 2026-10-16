@@ -48,6 +48,8 @@ func ProviderEnabled(cfg *Config, provider string, mode framework.Mode) bool {
 		return cfg.Providers.OpenRouter.Enabled
 	case "foundry", "foundry-voicelive", "foundry-gpt-live":
 		return cfg.Providers.Foundry.Enabled
+	case "xai":
+		return cfg.Providers.XAI.Enabled
 	case "openedai", "selfhosted":
 		return true
 	default:
@@ -102,6 +104,8 @@ func SetProviderEnabled(cfg *Config, provider string, enabled bool) error {
 		if enabled {
 			EnableAlwaysOnLLM(cfg)
 		}
+	case "xai":
+		cfg.Providers.XAI.Enabled = enabled
 	default:
 		return fmt.Errorf("%w %q", ErrUnsupportedProvider, provider)
 	}

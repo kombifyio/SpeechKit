@@ -27,7 +27,11 @@ type geminiLiveSession interface {
 
 // Provider implements live.LiveProvider using the Google GenAI Live API.
 type Provider struct {
-	mu         sync.RWMutex
+	mu sync.RWMutex
+	// writeMu serialises every write to the session: the genai Live session
+	// writes to a gorilla WebSocket, which panics on concurrent writes, and
+	// audio, text and tool responses are sent from different goroutines.
+	writeMu    sync.Mutex
 	client     *genai.Client
 	session    geminiLiveSession
 	resume     *live.ResumeHandle // live.Session resumption handle: DPAPI-at-rest on Windows, TTL-bounded everywhere.
@@ -136,6 +140,8 @@ func (g *Provider) SendAudio(chunk []byte) error {
 		return fmt.Errorf("gemini live: %w", live.ErrNotConnected)
 	}
 
+	g.writeMu.Lock()
+	defer g.writeMu.Unlock()
 	return session.SendRealtimeInput(genai.LiveRealtimeInput{
 		Audio: &genai.Blob{
 			MIMEType: "audio/pcm;rate=16000",
@@ -153,6 +159,8 @@ func (g *Provider) SendAudioStreamEnd() error {
 		return fmt.Errorf("gemini live: %w", live.ErrNotConnected)
 	}
 
+	g.writeMu.Lock()
+	defer g.writeMu.Unlock()
 	return session.SendRealtimeInput(genai.LiveRealtimeInput{
 		AudioStreamEnd: true,
 	})
@@ -250,6 +258,8 @@ func (g *Provider) SendText(text string) error {
 		return fmt.Errorf("gemini live: %w", live.ErrNotConnected)
 	}
 
+	g.writeMu.Lock()
+	defer g.writeMu.Unlock()
 	return session.SendRealtimeInput(genai.LiveRealtimeInput{
 		Text: text,
 	})
@@ -264,6 +274,8 @@ func (g *Provider) SendToolResponse(response live.ToolResponse) error {
 		return fmt.Errorf("gemini live: %w", live.ErrNotConnected)
 	}
 
+	g.writeMu.Lock()
+	defer g.writeMu.Unlock()
 	return session.SendToolResponse(genai.LiveToolResponseInput{
 		FunctionResponses: []*genai.FunctionResponse{
 			{

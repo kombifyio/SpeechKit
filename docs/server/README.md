@@ -259,7 +259,7 @@ deployment can sustain with headroom for `/readyz` and admin traffic.
 |---|---|---|---|---|---|
 | Dictation | `whisper.cpp` sidecar or local desktop STT | Whisper API | Native STT APIs | Whisper-compatible Groq STT | Google Cloud STT when selected |
 | Assist | local LLM sidecar / Ollama-style endpoint | Chat Completions / Responses models | AssemblyAI LLM Gateway | Groq chat models | — |
-| Voice Agent | cascaded self-hosted provider for server smoke/dev; no fully local native realtime audio provider in v1 | OpenAI Realtime when `[voice_agent].provider = "openai"` | Deepgram or AssemblyAI native Voice Agent | not a native realtime Voice Agent provider | Gemini Live when `[voice_agent].provider = "gemini"` |
+| Voice Agent | cascaded self-hosted provider for server smoke/dev; no fully local native realtime audio provider in v1 | OpenAI Realtime when `[voice_agent].provider = "openai"` | Deepgram or AssemblyAI native Voice Agent | not a native realtime Voice Agent provider | Gemini Live when `[voice_agent].provider = "gemini"`; xAI Grok Voice (opt-in BYOK, `[providers.xai]`, `XAI_API_KEY`) when `[voice_agent].provider = "xai"` |
 
 Missing-key behavior is explicit: HTTP session creation for Voice Agent still
 returns a session and ticket while the provider is degraded, so clients can
@@ -267,7 +267,7 @@ surface a precise provider error on WebSocket start. `/readyz` reports the
 selected provider as degraded, and the WebSocket emits a
 `provider_connect_failed` style error when the required key, such as
 `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, `ASSEMBLYAI_API_KEY`, or (opt-in)
-`GOOGLE_AI_API_KEY` for Gemini Live, is absent.
+`GOOGLE_AI_API_KEY` for Gemini Live or `XAI_API_KEY` for Grok Voice, is absent.
 
 ## Voice Agent workflows
 

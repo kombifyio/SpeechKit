@@ -89,8 +89,9 @@ type StartFrame struct {
 	// provider_unavailable error. This is what lets a tester switch backends
 	// per session ("laufend wechseln") without a server redeploy.
 	Provider string `json:"provider,omitempty"`
-	// MediaProvider selects native AssemblyAI or Deepgram conversation media
-	// for a registered-agent binding. Reasoning/tools stay with that agent.
+	// MediaProvider selects native conversation media for a registered-agent
+	// binding: assemblyai, deepgram, openai (GPT-Live client delegation),
+	// gemini or xai (one delegating function). Reasoning/tools stay with that agent.
 	// Empty retains the existing registered-agent transport for older clients.
 	MediaProvider string `json:"media_provider,omitempty"`
 	// TranscriptionMode selects AssemblyAI native speed versus accuracy.
@@ -135,6 +136,10 @@ type ToolResponseFrame struct {
 	ID       string         `json:"id"`
 	Name     string         `json:"name"`
 	Response map[string]any `json:"response"`
+	// Scheduling and FollowUpInstructions are host-only (never accepted from
+	// a client frame): see live.ToolResponse.
+	Scheduling           string `json:"-"`
+	FollowUpInstructions string `json:"-"`
 }
 
 // AdvanceStepFrame asks the server-side workflow runner to move from the

@@ -14,7 +14,7 @@ import "strings"
 
 // NormalizeVoiceAgentProviderName maps public aliases and catalog profile IDs
 // onto the canonical Voice Agent provider names ("gemini", "deepgram",
-// "assemblyai", "openai", "cascaded"). Unknown names pass through lower-cased
+// "assemblyai", "openai", "gpt-live", "xai", "cascaded"). Unknown names pass through lower-cased
 // with underscores dashed so unknown-provider errors echo a stable spelling.
 // Canonical table — app/internal/server/core and the WebSocket adapter delegate
 // here instead of keeping drift-prone copies.
@@ -34,6 +34,8 @@ func NormalizeVoiceAgentProviderName(provider string) string {
 		return "gpt-live"
 	case "foundry-gpt-live", "realtime.foundry.gpt-live-1":
 		return "foundry-gpt-live"
+	case "xai", "x-ai", "grok", "grok-voice", "xai-grok-voice", "realtime.xai.grok-voice":
+		return "xai"
 	case "cascaded", "local-cascaded", "pipeline", "pipeline-fallback", "voice-agent-cascaded", "voice-agent-cascaded-pipeline":
 		return "cascaded"
 	case "kombify-agent", "kombify-cloud", "registered-agent":
@@ -68,6 +70,7 @@ var voiceAgentProfileIDByProvider = map[string]string{
 	"deepgram":   "realtime.deepgram.voice-agent",
 	"assemblyai": "realtime.assemblyai.voice-agent",
 	"openai":     "realtime.openai.gpt-realtime-2",
+	"xai":        "realtime.xai.grok-voice",
 	"cascaded":   "realtime.builtin.pipeline",
 }
 

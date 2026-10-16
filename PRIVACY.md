@@ -147,6 +147,7 @@ When you enable cloud providers for speech-to-text (STT), text-to-speech (TTS), 
 | AssemblyAI | Audio (STT), Audio (Voice Agent) | https://www.assemblyai.com/legal/privacy-policy |
 | Groq | Audio (STT), Text (LLM) | https://groq.com/privacy-policy |
 | Google Cloud / Gemini (opt-in BYOK, your own credentials) | Audio (STT/TTS), Audio (Voice Agent) | https://policies.google.com/privacy |
+| xAI Grok Voice (opt-in BYOK, your own credentials) | Audio (Voice Agent) | https://x.ai/legal/privacy-policy |
 
 You choose which providers to enable. When all cloud providers are disabled, SpeechKit operates entirely offline using local models.
 
@@ -154,7 +155,7 @@ On managed Windows machines the Group Policy `Providers\EnforceLocalOnly`
 caps the network scope at `local_network` and pins speech-to-text to the
 on-device model for the life of the process; users cannot change it in Settings.
 
-**Voice Agent mode** streams audio in real time to the configured provider (e.g., OpenAI Realtime, Deepgram, or opt-in Google Gemini Live) via WebSocket. This audio stream is processed by the provider according to their privacy policy.
+**Voice Agent mode** streams audio in real time to the configured provider (e.g., OpenAI Realtime, Deepgram, or opt-in Google Gemini Live or xAI Grok Voice) via WebSocket. This audio stream is processed by the provider according to their privacy policy.
 
 ## 4. Local Storage
 

@@ -64,6 +64,22 @@ type registeredNativeProvider struct {
 	mu        sync.Mutex
 	closed    bool
 	binding   LiveConfigFrame
+	// Delegated vendors (see native_delegated.go) answer the vendor's own
+	// tool or delegation event in-process; heard is the caller's transcript
+	// since the last delegated turn and ctx the signed session lifetime.
+	ctx     context.Context
+	heardMu sync.Mutex
+	heard   string
+	// heardAt is the last transcript fragment, heardDone a transcript-done
+	// event since then, heardTaken a delegation that consumed the transcript
+	// before the vendor's turn ended.
+	heardAt    time.Time
+	heardDone  bool
+	heardTaken bool
+	// speakOpen admits vendor speech for the response to a delegation
+	// result; speakSeen notes that the response has started.
+	speakOpen bool
+	speakSeen bool
 	// Set before invoking Create. An interrupted invocation stays uncertain;
 	// only an intent known not to have crossed this boundary may be discarded.
 	createDispatched bool
@@ -82,9 +98,12 @@ func (p *registeredNativeProvider) Connect(ctx context.Context, cfg LiveConfigFr
 	if (cfg.DirectEndpoint == nil && (cfg.AgentTargetID == "" || cfg.CapabilityLease == "")) || cfg.AgentEndpoint == "" || cfg.OboSubjectToken == "" || secret == "" || cfg.VoiceSessionID == "" {
 		return errors.New("voiceagent: complete registered native binding is required")
 	}
-	parsed, err := url.Parse(p.sessions.publicURL)
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return errors.New("voiceagent: native callback requires configured public HTTPS URL")
+	delegated := delegatedNativeProvider(p.provider)
+	if !delegated {
+		parsed, err := url.Parse(p.sessions.publicURL)
+		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return errors.New("voiceagent: native callback requires configured public HTTPS URL")
+		}
 	}
 	expiresAt, err := voiceAuthorizationExpiry(cfg)
 	if err != nil || !time.Now().Before(expiresAt) {
@@ -151,22 +170,29 @@ func (p *registeredNativeProvider) Connect(ctx context.Context, cfg LiveConfigFr
 		callback.FirstResponsePrefix = "Hinweis: Du sprichst mit einem KI-Assistenten. "
 	}
 	p.sessionID = cfg.VoiceSessionID
-	p.sessions.mu.Lock()
-	p.sessions.callbacks[p.sessionID] = callback
-	p.sessions.mu.Unlock()
+	p.ctx = ctx
+	if !delegated {
+		p.sessions.mu.Lock()
+		p.sessions.callbacks[p.sessionID] = callback
+		p.sessions.mu.Unlock()
+	}
 	p.mu.Unlock()
 	// The signed lifetime ends media as well as callback authority. Receive's
 	// caller context may outlive the delegated credential.
 	context.AfterFunc(ctx, func() { _ = p.closeFor(ctx) })
 	go p.watchConsent(ctx, cfg, cancel)
-	callbackURL := wssession.WebSocketURL("", "", p.sessions.publicURL, true, "/voiceagent/sessions/"+url.PathEscape(p.sessionID)+"/llm")
-	cfg.NativeLLMBaseURL = strings.Replace(callbackURL, "wss://", "https://", 1)
-	cfg.NativeLLMToken = callbackToken
-	cfg.NativeLLMModel = cfg.AgentTargetID
-	if cfg.DirectEndpoint != nil {
-		cfg.NativeLLMModel = cfg.DirectEndpoint.Connection.Model
+	if delegated {
+		applyNativeDelegation(&cfg, p.provider)
+	} else {
+		callbackURL := wssession.WebSocketURL("", "", p.sessions.publicURL, true, "/voiceagent/sessions/"+url.PathEscape(p.sessionID)+"/llm")
+		cfg.NativeLLMBaseURL = strings.Replace(callbackURL, "wss://", "https://", 1)
+		cfg.NativeLLMToken = callbackToken
+		cfg.NativeLLMModel = cfg.AgentTargetID
+		if cfg.DirectEndpoint != nil {
+			cfg.NativeLLMModel = cfg.DirectEndpoint.Connection.Model
+		}
+		cfg.Tools = nil
 	}
-	cfg.Tools = nil
 	if p.provider == "assemblyai" {
 		if p.sessions.journal == nil {
 			_ = p.closeFor(ctx)
@@ -364,8 +390,20 @@ func (p *registeredNativeProvider) deleteResource(parent context.Context, resour
 
 func (p *registeredNativeProvider) Receive(ctx context.Context) (*LiveMessage, error) {
 	message, err := p.LiveProviderAdapter.Receive(ctx)
-	if message != nil && message.Interrupted {
-		_ = p.CancelResponse()
+	for {
+		if message != nil && message.Interrupted {
+			_ = p.CancelResponse()
+		}
+		if message == nil || err != nil || !delegatedNativeProvider(p.provider) {
+			break
+		}
+		// Delegated vendors bind turns at their delegation event instead of
+		// at a transcript final (native_delegated.go).
+		if !p.delegateTurns(message) {
+			return message, nil
+		}
+		// The message carried only a delegation or gated speech.
+		message, err = p.LiveProviderAdapter.Receive(ctx)
 	}
 	if message != nil && message.InputTranscriptDone && p.turns != nil {
 		eventID, _ := message.ProviderMetadata["item_id"].(string)

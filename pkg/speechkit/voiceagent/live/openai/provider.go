@@ -65,6 +65,11 @@ type Provider struct {
 	// is the resolved model and instructions the assembled host prompt. nil
 	// builds the GA OpenAI Realtime session shape.
 	BuildSession func(cfg live.LiveConfig, model, instructions string) map[string]any
+	// ParseEvent maps server events a Realtime-compatible host adds or
+	// renames before the OpenAI mapping runs. handled=false falls through to
+	// the OpenAI mapping; handled=true with a nil message swallows the event.
+	// nil maps OpenAI Realtime events only.
+	ParseEvent func(eventType string, data []byte) (msg *live.LiveMessage, handled bool, err error)
 	// Logger receives this provider's diagnostics. Nil falls back to
 	// slog.Default() at log time.
 	Logger *slog.Logger

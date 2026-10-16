@@ -37,7 +37,7 @@ func NormalizeProviderCredentialTarget(target string) string {
 	}
 	provider := catalog.NormalizeProviderID(target)
 	switch provider {
-	case "openai", "groq", "google", "deepgram", "assemblyai", "huggingface", "openrouter", "cloudflare", "foundry":
+	case "openai", "groq", "google", "deepgram", "assemblyai", "huggingface", "openrouter", "cloudflare", "foundry", "xai":
 		return provider
 	case "gpt-live":
 		return "openai"
@@ -72,6 +72,7 @@ func ProviderCredentialTargets() []string {
 		"openrouter",
 		"cloudflare",
 		"foundry",
+		"xai",
 	}
 }
 
@@ -121,6 +122,11 @@ func ProviderCredentialEnvName(cfg *Config, target string) string {
 			return strings.TrimSpace(cfg.Providers.Foundry.APIKeyEnv)
 		}
 		return AzureAIAPIKeyEnv
+	case "xai":
+		if cfg != nil && strings.TrimSpace(cfg.Providers.XAI.APIKeyEnv) != "" {
+			return strings.TrimSpace(cfg.Providers.XAI.APIKeyEnv)
+		}
+		return XAIAPIKeyEnv
 	default:
 		return ""
 	}
@@ -152,6 +158,8 @@ func SetProviderCredentialEnvName(cfg *Config, target, envName string) error {
 		cfg.Providers.Cloudflare.APITokenEnv = envName
 	case "foundry":
 		cfg.Providers.Foundry.APIKeyEnv = envName
+	case "xai":
+		cfg.Providers.XAI.APIKeyEnv = envName
 	default:
 		return fmt.Errorf("%w %q", ErrUnsupportedProvider, target)
 	}

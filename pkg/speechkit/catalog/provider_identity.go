@@ -30,6 +30,8 @@ func NormalizeProviderID(provider string) string {
 		return "google"
 	case "assembly-ai", "assemblyai":
 		return "assemblyai"
+	case "xai", "x-ai", "grok", "grok-voice":
+		return "xai"
 	case "openai-compatible", "openedai-speech", "openedai":
 		return "openedai"
 	default:
@@ -71,7 +73,8 @@ func ProviderIDForProfile(profile speechkit.ProviderProfile) string {
 
 // ProviderIDForExecutionMode maps a runtime execution mode to the canonical
 // provider id it implies ("local", "selfhosted", "huggingface", "openai",
-// "groq", "deepgram", "assemblyai", "ollama", "openrouter" or "foundry");
+// "groq", "deepgram", "assemblyai", "ollama", "openrouter", "foundry" or
+// "xai");
 // "" for a mode that does not imply a single provider.
 func ProviderIDForExecutionMode(mode speechkit.ExecutionMode) string {
 	switch mode {
@@ -97,6 +100,8 @@ func ProviderIDForExecutionMode(mode speechkit.ExecutionMode) string {
 		return "openrouter"
 	case speechkit.ExecutionModeFoundry:
 		return "foundry"
+	case speechkit.ExecutionModeXAI:
+		return "xai"
 	default:
 		return ""
 	}
@@ -164,6 +169,8 @@ func providerDisplayName(provider string) string {
 		return "Groq"
 	case "foundry":
 		return "Microsoft Foundry"
+	case "xai":
+		return "xAI"
 	case "foundry-voicelive":
 		return "Microsoft Foundry Voice Live"
 	case "gpt-live":
@@ -196,6 +203,7 @@ func providerOrderIndex(provider string) int {
 		"foundry",
 		"foundry-voicelive",
 		"foundry-gpt-live",
+		"xai",
 		"groq",
 		"cloudflare",
 		"piper",

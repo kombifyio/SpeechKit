@@ -84,6 +84,121 @@ func NewOpenAIHandler(ctx context.Context, agent TurnStreamer, token string, exp
 	return &OpenAIHandler{Agent: agent, Model: model, Token: token, ExpiresAt: expiresAt, Locale: locale, Context: ctx, admit: make(chan struct{}, 1), seen: make(map[[32]byte]struct{})}, nil
 }
 
+// ErrTurnRejected is returned by [OpenAIHandler.Answer] when the turn is not
+// admitted: expired or revoked authority, a turn already in flight, failed
+// revalidation, or an utterance that does not bind to a host-observed final.
+var ErrTurnRejected = errors.New("speechkit a2a: native turn rejected")
+
+// begin admits one turn under the handler's authority: deadline, single-flight
+// admission, session revocation and current-authority revalidation. A non-zero
+// status names the rejection; release must run when the turn ends.
+func (h *OpenAIHandler) begin(parent context.Context) (context.Context, func(), int) {
+	if !time.Now().Before(h.ExpiresAt) || h.Context.Err() != nil {
+		return nil, nil, http.StatusUnauthorized
+	}
+	ctx, cancel := context.WithDeadline(parent, h.ExpiresAt)
+	h.turnMu.Lock()
+	select {
+	case h.admit <- struct{}{}:
+		h.turnCancel = cancel
+	default:
+		h.turnMu.Unlock()
+		cancel()
+		return nil, nil, http.StatusConflict
+	}
+	h.turnMu.Unlock()
+	// The owning voice lifetime supplements the caller's context.
+	stop := context.AfterFunc(h.Context, cancel) //nolint:contextcheck // Session revocation must also cancel this turn.
+	release := func() {
+		stop()
+		cancel()
+		h.turnMu.Lock()
+		h.turnCancel = nil
+		h.turnMu.Unlock()
+		<-h.admit
+	}
+	if h.Revalidate != nil {
+		if err := h.Revalidate(ctx); err != nil {
+			release()
+			return nil, nil, http.StatusForbidden
+		}
+	}
+	return ctx, release, 0
+}
+
+// bind resolves utterance against a host-observed native final and consumes
+// its identity before execution, including uncertain failures, so vendor
+// history or a retried event can never create or replay a turn.
+func (h *OpenAIHandler) bind(ctx context.Context, utterance string) (string, int) {
+	if ctx.Err() != nil {
+		return "", http.StatusConflict
+	}
+	if h.BindTurn == nil {
+		return "", http.StatusServiceUnavailable
+	}
+	turnID, err := h.BindTurn(ctx, utterance)
+	if err != nil || turnID == "" {
+		return "", http.StatusConflict
+	}
+	digest := sha256.Sum256([]byte(turnID))
+	if _, replay := h.seen[digest]; replay || len(h.seen) >= 256 {
+		return "", http.StatusConflict
+	}
+	h.seen[digest] = struct{}{}
+	return turnID, 0
+}
+
+// stream runs the bound agent and emits the trusted disclosure once before
+// the first answer delta.
+func (h *OpenAIHandler) stream(ctx context.Context, utterance, turnID string, emit func(string) error) (cascaded.AgentOutput, error) {
+	return h.Agent.StreamTurn(ctx, cascaded.AgentInput{Utterance: utterance, Locale: h.Locale}, turnID, func(delta string) error {
+		if !h.disclosed && h.FirstResponsePrefix != "" {
+			if err := emit(h.FirstResponsePrefix); err != nil {
+				return err
+			}
+			h.disclosed = true
+		}
+		return emit(delta)
+	})
+}
+
+// Answer runs one turn in-process for native providers whose tool call or
+// delegation event (instead of an HTTP chat-completions callback) asks the
+// bound agent. It applies the same admission, revalidation, final-turn
+// binding, replay protection and disclosure as ServeHTTP and returns the
+// agent's complete answer. A failed agent turn is returned as an error and
+// never as speakable text.
+func (h *OpenAIHandler) Answer(ctx context.Context, utterance string) (string, error) {
+	utterance = strings.TrimSpace(utterance)
+	if utterance == "" {
+		return "", ErrTurnRejected
+	}
+	turnCtx, release, status := h.begin(ctx)
+	if status != 0 {
+		return "", fmt.Errorf("%w: status %d", ErrTurnRejected, status)
+	}
+	defer release()
+	turnID, status := h.bind(turnCtx, utterance)
+	if status != 0 {
+		return "", fmt.Errorf("%w: status %d", ErrTurnRejected, status)
+	}
+	// Nothing reaches the vendor until the turn succeeds, so the disclosure
+	// is prepended (and marked spoken) only to an answer that is delivered.
+	var answer strings.Builder
+	if _, err := h.Agent.StreamTurn(turnCtx, cascaded.AgentInput{Utterance: utterance, Locale: h.Locale}, turnID, func(delta string) error {
+		answer.WriteString(delta)
+		return nil
+	}); err != nil {
+		return "", err
+	}
+	text := answer.String()
+	if !h.disclosed && h.FirstResponsePrefix != "" {
+		text = h.FirstResponsePrefix + text
+		h.disclosed = true
+	}
+	return text, nil
+}
+
 func (h *OpenAIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if r.Method != http.MethodPost {
@@ -92,34 +207,17 @@ func (h *OpenAIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	authorization := r.Header.Get("Authorization")
 	credential := strings.TrimPrefix(authorization, "Bearer ")
-	if !strings.HasPrefix(authorization, "Bearer ") || subtle.ConstantTimeCompare([]byte(credential), []byte(h.Token)) != 1 || !time.Now().Before(h.ExpiresAt) || h.Context.Err() != nil {
+	if !strings.HasPrefix(authorization, "Bearer ") || subtle.ConstantTimeCompare([]byte(credential), []byte(h.Token)) != 1 {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-	ctx, cancel := context.WithDeadline(r.Context(), h.ExpiresAt)
-	h.turnMu.Lock()
-	select {
-	case h.admit <- struct{}{}:
-		h.turnCancel = cancel
-		defer func() { <-h.admit }()
-	default:
-		h.turnMu.Unlock()
-		cancel()
-		w.WriteHeader(http.StatusConflict)
+	ctx, release, status := h.begin(r.Context())
+	if status != 0 {
+		w.WriteHeader(status)
 		return
 	}
-	h.turnMu.Unlock()
-	defer func() { h.turnMu.Lock(); h.turnCancel = nil; h.turnMu.Unlock() }()
-	// The owning voice lifetime supplements the derived HTTP request context.
-	stop := context.AfterFunc(h.Context, cancel) //nolint:contextcheck // Session revocation must also cancel this request.
 	stopBody := context.AfterFunc(ctx, func() { _ = r.Body.Close() })
-	defer func() { stop(); stopBody(); cancel() }()
-	if h.Revalidate != nil {
-		if err := h.Revalidate(ctx); err != nil {
-			w.WriteHeader(http.StatusForbidden)
-			return
-		}
-	}
+	defer func() { stopBody(); release() }()
 	var input struct {
 		Stream   bool `json:"stream"`
 		Messages []struct {
@@ -147,27 +245,11 @@ func (h *OpenAIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	if ctx.Err() != nil {
-		w.WriteHeader(http.StatusConflict)
+	turnID, status := h.bind(ctx, utterance)
+	if status != 0 {
+		w.WriteHeader(status)
 		return
 	}
-	if h.BindTurn == nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		return
-	}
-	turnID, err := h.BindTurn(ctx, utterance)
-	if err != nil || turnID == "" {
-		w.WriteHeader(http.StatusConflict)
-		return
-	}
-	// Retain the canonical native identity before execution, including uncertain
-	// failures. Vendor-controlled history cannot create a fresh identity.
-	digest := sha256.Sum256([]byte(turnID))
-	if _, replay := h.seen[digest]; replay || len(h.seen) >= 256 {
-		w.WriteHeader(http.StatusConflict)
-		return
-	}
-	h.seen[digest] = struct{}{}
 	controller := http.NewResponseController(w)
 	w.Header().Set("Content-Type", "text/event-stream")
 	id := fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano())
@@ -185,13 +267,7 @@ func (h *OpenAIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		started = true
 		return controller.Flush()
 	}
-	_, err = h.Agent.StreamTurn(ctx, cascaded.AgentInput{Utterance: utterance, Locale: h.Locale}, turnID, func(delta string) error {
-		if !h.disclosed && h.FirstResponsePrefix != "" {
-			if err := write(map[string]string{"content": h.FirstResponsePrefix}, nil); err != nil {
-				return err
-			}
-			h.disclosed = true
-		}
+	_, err := h.stream(ctx, utterance, turnID, func(delta string) error {
 		return write(map[string]string{"content": delta}, nil)
 	})
 	if err != nil {

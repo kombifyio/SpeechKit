@@ -317,6 +317,9 @@ func defaults() *Config {
 				STTUseVocabularyKeyterms: true,
 				DiarizationModel:         "latest",
 			},
+			XAI: XAIProviderConfig{
+				APIKeyEnv: XAIAPIKeyEnv, //nolint:gosec // not a credential, field name triggers false positive
+			},
 			AssemblyAI: AssemblyAIProviderConfig{
 				APIKeyEnv:              AssemblyAIAPIKeyEnv, //nolint:gosec // not a credential, field name triggers false positive
 				STTModels:              "universal-3-5-pro,universal-2",

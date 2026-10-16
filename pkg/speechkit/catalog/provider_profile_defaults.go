@@ -54,7 +54,7 @@ func DefaultProviderAuthRequirement(profile speechkit.ProviderProfile) string {
 	case speechkit.ExecutionModeHFRouted:
 		return ProviderAuthToken
 	case speechkit.ExecutionModeOpenAI, speechkit.ExecutionModeGroq, speechkit.ExecutionModeGoogle, speechkit.ExecutionModeDeepgram,
-		speechkit.ExecutionModeAssemblyAI, speechkit.ExecutionModeOpenRouter, speechkit.ExecutionModeFoundry:
+		speechkit.ExecutionModeAssemblyAI, speechkit.ExecutionModeOpenRouter, speechkit.ExecutionModeFoundry, speechkit.ExecutionModeXAI:
 		return ProviderAuthAPIKey
 	default:
 		return ""
@@ -82,7 +82,8 @@ func DefaultProviderTransport(profile speechkit.ProviderProfile) string {
 	case speechkit.ExecutionModeOllama, speechkit.ExecutionModeSelfHostedHTTP:
 		return ProviderTransportHTTP
 	case speechkit.ExecutionModeHFRouted, speechkit.ExecutionModeOpenAI, speechkit.ExecutionModeGroq, speechkit.ExecutionModeGoogle,
-		speechkit.ExecutionModeDeepgram, speechkit.ExecutionModeAssemblyAI, speechkit.ExecutionModeOpenRouter, speechkit.ExecutionModeFoundry:
+		speechkit.ExecutionModeDeepgram, speechkit.ExecutionModeAssemblyAI, speechkit.ExecutionModeOpenRouter, speechkit.ExecutionModeFoundry,
+		speechkit.ExecutionModeXAI:
 		return ProviderTransportHTTPS
 	default:
 		return ""

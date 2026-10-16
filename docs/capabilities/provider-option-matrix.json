@@ -453,6 +453,25 @@
         "language_hints": "unsupported",
         "resume": "unsupported"
       }
+    },
+    {
+      "provider": "xai",
+      "modality": "voice_agent",
+      "profile_ids": [
+        "realtime.xai.grok-voice"
+      ],
+      "evidence_url": "https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech",
+      "supports": {
+        "voice": "native",
+        "turn_detection": "native",
+        "context_prompt": "native",
+        "reasoning_effort": "native",
+        "endpointing_ms": "unsupported",
+        "language_hints": "unsupported",
+        "resume": "unsupported",
+        "translation": "unsupported",
+        "transcription_only": "unsupported"
+      }
     }
   ]
 }

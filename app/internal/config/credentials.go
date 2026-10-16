@@ -17,6 +17,7 @@ const (
 	GoogleLegacySTTAPIKeyEnv        = "GOOGLE_STT_API_KEY"
 	DeepgramAPIKeyEnv               = "DEEPGRAM_API_KEY"
 	AssemblyAIAPIKeyEnv             = "ASSEMBLYAI_API_KEY"
+	XAIAPIKeyEnv                    = "XAI_API_KEY"
 )
 
 var (

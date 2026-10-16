@@ -69,6 +69,9 @@ func (p *Provider) SendToolResponse(response live.ToolResponse) error {
 	if err != nil {
 		return err
 	}
+	if p.takeDelegation(response.ID) {
+		return p.appendCommentary(conn, response)
+	}
 	output := response.Response
 	if output == nil {
 		output = map[string]any{}
@@ -91,6 +94,49 @@ func (p *Provider) SendToolResponse(response live.ToolResponse) error {
 		return nil
 	}
 	return writeJSON(context.Background(), conn, map[string]any{"type": "response.create"})
+}
+
+// appendCommentary answers a client delegation: the host's result is
+// appended as commentary GPT-Live speaks (paraphrased), split so each append
+// stays within the content limit. An error result is sent as its JSON so the
+// live model can say the request failed.
+func (p *Provider) appendCommentary(conn *websocket.Conn, response live.ToolResponse) error {
+	content, ok := response.Response["result"].(string)
+	if !ok {
+		raw, err := json.Marshal(response.Response)
+		if err != nil {
+			return fmt.Errorf("openai live: marshal delegation result: %w", err)
+		}
+		content = string(raw)
+	}
+	event := "session.commentary.append"
+	if response.Scheduling == live.ToolResponseSchedulingSilent {
+		// Settle the delegation without speech: thinking is context only.
+		event = "session.thinking.append"
+	}
+	runes := []rune(strings.TrimSpace(content))
+	for len(runes) > 0 {
+		n := min(len(runes), commentaryChunkRunes)
+		if err := writeJSON(context.Background(), conn, map[string]any{
+			"type":          event,
+			"delegation_id": response.ID,
+			"content":       string(runes[:n]),
+		}); err != nil {
+			return err
+		}
+		runes = runes[n:]
+	}
+	return nil
+}
+
+func (p *Provider) takeDelegation(id string) bool {
+	p.toolMu.Lock()
+	defer p.toolMu.Unlock()
+	if !p.delegations[id] {
+		return false
+	}
+	delete(p.delegations, id)
+	return true
 }
 
 // resolveToolCall marks callID answered and reports whether its delegation
@@ -217,6 +263,8 @@ func (p *Provider) parseEvent(data []byte) (*live.LiveMessage, error) {
 		return normalize(&live.LiveMessage{EventType: live.LiveEventOutputText, OutputTranscript: ev.Delta}, ev.Type), nil
 	case "response.event":
 		return p.parseResponseEvent(ev.DelegationID, ev.Event)
+	case "session.delegation.created":
+		return p.parseClientDelegation(data)
 	case "session.closed":
 		// Terminal event with the close reason
 		// (types/live/session_closed_event.py).
@@ -227,9 +275,42 @@ func (p *Provider) parseEvent(data []byte) (*live.LiveMessage, error) {
 		return nil, serverError(data)
 	default:
 		// session.started/updated, *.appended, input_audio.muted/unmuted,
-		// session.delegation.created, session.usage.updated, info.
+		// session.usage.updated, info.
 		return nil, nil
 	}
+}
+
+// parseClientDelegation reports a client delegation as a ClientDelegationTool
+// call when the host asked for client delegation. The event carries no task
+// text: the host answers from its own transcript state.
+func (p *Provider) parseClientDelegation(data []byte) (*live.LiveMessage, error) {
+	if !p.ClientDelegation {
+		return nil, nil
+	}
+	var ev struct {
+		Delegation struct {
+			ID     string `json:"id"`
+			Target string `json:"target"`
+		} `json:"delegation"`
+	}
+	if err := decode(data, &ev); err != nil {
+		return nil, err
+	}
+	if ev.Delegation.ID == "" || (ev.Delegation.Target != "" && ev.Delegation.Target != "client") {
+		return nil, nil
+	}
+	p.toolMu.Lock()
+	if p.delegations == nil {
+		p.delegations = map[string]bool{}
+	}
+	p.delegations[ev.Delegation.ID] = true
+	p.toolMu.Unlock()
+	msg := normalize(&live.LiveMessage{
+		EventType: live.LiveEventToolCall,
+		ToolCalls: []live.ToolCall{{ID: ev.Delegation.ID, Name: ClientDelegationTool, Args: map[string]any{}}},
+	}, "session.delegation.created")
+	msg.ProviderMetadata["delegation_id"] = ev.Delegation.ID
+	return msg, nil
 }
 
 // parseResponseEvent reads the nested Responses stream event of a

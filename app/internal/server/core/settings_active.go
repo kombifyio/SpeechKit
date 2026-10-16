@@ -185,6 +185,8 @@ func activeVoiceAgentModeSetting(cfg *config.Config) config.ServerModeSetting {
 		return serverModeSettingFromProvider("openai", framework.ModeVoiceAgent, firstNonEmpty(cfg.Providers.OpenAI.RealtimeModel, cfg.VoiceAgent.Model, liveDefaultModel(provider)))
 	case ProviderGPTLive:
 		return serverModeSettingFromProvider("gpt-live", framework.ModeVoiceAgent, firstNonEmpty(cfg.VoiceAgent.Model, liveDefaultModel(provider)))
+	case ProviderXAI:
+		return serverModeSettingFromProvider("xai", framework.ModeVoiceAgent, firstNonEmpty(cfg.VoiceAgent.Model, liveDefaultModel(provider)))
 	}
 	return serverModeSettingFromProvider("local", framework.ModeVoiceAgent, firstNonEmpty(cfg.LocalLLM.AgentModel, cfg.LocalLLM.Model))
 }

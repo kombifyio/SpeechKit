@@ -145,6 +145,15 @@ Core server surfaces:
   `GOOGLE_AI_API_KEY` and `[providers.google]`): profile
   `realtime.google.gemini-native-audio` with `gemini-3.8-live` (GA) and the
   `gemini-3.8-live-extended-thinking` preview.
+- xAI Grok Voice (opt-in BYOK only, never a default; needs the operator's own
+  `XAI_API_KEY` and `[providers.xai]`): profile `realtime.xai.grok-voice` with
+  `grok-voice-3.0` over the Realtime-compatible
+  `wss://api.x.ai/v1/realtime` protocol.
+- Registered-agent native media (`media_provider` on the start frame):
+  `assemblyai` and `deepgram` call the registered agent as their custom LLM;
+  `openai` (GPT-Live client delegation), `gemini` and `xai` (one delegating
+  function) hand every caller turn to the registered agent, which stays the
+  only reasoner and tool runner.
 - Retired model ids (for example `whisper-1`, `gpt-4o-transcribe`,
   `gpt-realtime-2`, `gemini-2.5-*`, Groq Llama 3.x) are listed with their
   successors in `catalog.RetiredModels`; persisted configs migrate on load.

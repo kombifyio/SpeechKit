@@ -24,6 +24,7 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openai"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openailive"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/voicelive"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/xai"
 )
 
 // ErrUnknownLiveProvider is wrapped by [NewProvider],
@@ -51,6 +52,7 @@ func DefaultProviderFactories() ProviderFactoryRegistry {
 		"foundry-voicelive": func() live.LiveProvider { return voicelive.New() },
 		"gpt-live":          func() live.LiveProvider { return openailive.New() },
 		"foundry-gpt-live":  func() live.LiveProvider { return openailive.NewFoundry() },
+		"xai":               func() live.LiveProvider { return xai.New() },
 	}
 }
 

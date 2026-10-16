@@ -240,6 +240,8 @@ func shouldUseCascadedVoiceAgent(cfg *Config) bool {
 		credential = "deepgram"
 	case "assemblyai":
 		credential = "assemblyai"
+	case "xai":
+		credential = "xai"
 	default:
 		// cascaded and kombify-agent need no cloud key; foundry-gpt-live
 		// signs in through Entra, which an env check cannot see.

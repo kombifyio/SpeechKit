@@ -148,7 +148,15 @@ func (p *Provider) SendToolResponse(response live.ToolResponse) error {
 	}); err != nil {
 		return err
 	}
-	return p.sendJSON(conn, map[string]any{"type": "response.create"})
+	if response.Scheduling == live.ToolResponseSchedulingSilent {
+		// The result joins the conversation without prompting a response.
+		return nil
+	}
+	create := map[string]any{"type": "response.create"}
+	if instructions := strings.TrimSpace(response.FollowUpInstructions); instructions != "" {
+		create["response"] = map[string]any{"instructions": instructions}
+	}
+	return p.sendJSON(conn, create)
 }
 
 // Close terminates the WebSocket. Idempotent.

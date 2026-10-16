@@ -65,6 +65,15 @@ const (
 	closeWriteTimeout = 2 * time.Second
 )
 
+// ClientDelegationTool names the kernel tool call that carries a client
+// delegation when [Provider.ClientDelegation] is set. Its ID is the
+// delegation id.
+const ClientDelegationTool = "client_delegation"
+
+// commentaryChunkRunes keeps each session.commentary.append under the
+// documented 500-token content limit.
+const commentaryChunkRunes = 1200
+
 // ErrBackendModelRequired is returned by Connect when the host offers tools
 // but no Responses backend model: GPT-Live runs tools only in its delegated
 // backend, never in the live voice model.
@@ -91,6 +100,14 @@ type Provider struct {
 	// (delegation.responses.instructions). The live model receives the
 	// kernel's assembled prompt as session.instructions.
 	BackendInstructions string
+	// ClientDelegation selects client delegation (session.delegation =
+	// {type: "client"}): GPT-Live hands each request to the host as a
+	// session.delegation.created event, which Receive reports as a
+	// [ClientDelegationTool] call, and SendToolResponse speaks the host's
+	// answer through session.commentary.append. It excludes BackendModel and
+	// tools, so no backend model reasons for the session
+	// (https://developers.openai.com/api/docs/guides/live-delegation).
+	ClientDelegation bool
 	// DialURL maps the resolved endpoint (cfg.Endpoint or DefaultEndpoint)
 	// to the URL to dial. nil dials it unchanged; the model never goes into
 	// the URL (types/live/session_config.py: model).
@@ -118,6 +135,8 @@ type Provider struct {
 	// delegation has a result (how-to/gpt-live-delegation.md).
 	toolMu  sync.Mutex
 	pending map[string]string
+	// delegations holds the client delegation ids awaiting a host answer.
+	delegations map[string]bool
 
 	closeMu sync.Mutex
 	closed  bool
@@ -195,6 +214,9 @@ func (p *Provider) Connect(ctx context.Context, cfg live.LiveConfig) error {
 	if strings.TrimSpace(cfg.APIKey) == "" && cfg.BearerToken == nil {
 		return fmt.Errorf("openai live: %w", live.ErrMissingAPIKey)
 	}
+	if p.ClientDelegation && (len(cfg.Tools) > 0 || strings.TrimSpace(p.BackendModel) != "") {
+		return errors.New("openai live: client delegation excludes tools and a backend model")
+	}
 	if len(cfg.Tools) > 0 && strings.TrimSpace(p.BackendModel) == "" {
 		return ErrBackendModelRequired
 	}
@@ -228,6 +250,7 @@ func (p *Provider) Connect(ctx context.Context, cfg live.LiveConfig) error {
 	p.closeMu.Unlock()
 	p.toolMu.Lock()
 	p.pending = map[string]string{}
+	p.delegations = map[string]bool{}
 	p.toolMu.Unlock()
 	return nil
 }
@@ -282,7 +305,9 @@ func (p *Provider) buildSession(cfg live.LiveConfig, model string) map[string]an
 	if instructions := assembleInstructions(cfg, resolved); instructions != "" {
 		session["instructions"] = instructions
 	}
-	if backend := strings.TrimSpace(p.BackendModel); backend != "" {
+	if p.ClientDelegation {
+		session["delegation"] = map[string]any{"type": "client"}
+	} else if backend := strings.TrimSpace(p.BackendModel); backend != "" {
 		responses := map[string]any{"model": backend}
 		if text := strings.TrimSpace(p.BackendInstructions); text != "" {
 			responses["instructions"] = text

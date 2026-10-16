@@ -273,6 +273,29 @@ func DefaultProviderDescriptors() []ProviderDescriptor {
 			EvidenceURL:     "https://learn.microsoft.com/azure/foundry/openai/how-to/gpt-live",
 		},
 		{
+			// xAI Grok Voice is an opt-in BYOK provider on the OpenAI
+			// Realtime event protocol: never picked by an intent that does
+			// not name it.
+			Provider:    "xai",
+			DisplayName: "xAI Grok Voice",
+			OptIn:       true,
+			ProfileID:   "realtime.xai.grok-voice",
+			Capabilities: []LiveCapabilityFlag{
+				LiveCapabilityRealtimeAudio,
+				LiveCapabilityToolCalling,
+				LiveCapabilityNativeContextPrompt,
+				LiveCapabilityReasoningEffort,
+				LiveCapabilityTranscript,
+				LiveCapabilityInterruptions,
+			},
+			Models:           liveModelsForProvider("xai"),
+			SupportedLocales: []string{"*"},
+			NativeOptions:    nativeLiveOptions("xai"),
+			AuthRequirement:  "api_key",
+			Transport:        "websocket",
+			EvidenceURL:      "https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech",
+		},
+		{
 			// Google is an opt-in BYOK provider: listed last and never picked
 			// by an intent that does not name it.
 			Provider:    "google",
@@ -375,6 +398,8 @@ func NormalizeProviderID(providerOrProfile string) string {
 		return "foundry-voicelive"
 	case "foundry-gpt-live", "realtime.foundry.gpt-live-1":
 		return "foundry-gpt-live"
+	case "xai", "x-ai", "grok", "grok-voice", "xai-grok-voice", "realtime.xai.grok-voice":
+		return "xai"
 	case "foundry", "foundry-realtime", "foundry-live", "foundry-api", "microsoft-foundry", "realtime.foundry.gpt-realtime-2":
 		return "foundry"
 	case "cascaded", "local-cascaded", "pipeline", "pipeline-fallback", "voice-agent-cascaded", "voice_agent.cascaded.pipeline":

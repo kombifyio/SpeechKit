@@ -95,6 +95,9 @@ func (b *geminiLiveBridge) SendToolResponse(frame vsserver.ToolResponseFrame) er
 		ID:       frame.ID,
 		Name:     frame.Name,
 		Response: frame.Response,
+
+		Scheduling:           live.ToolResponseScheduling(frame.Scheduling),
+		FollowUpInstructions: frame.FollowUpInstructions,
 	})
 }
 

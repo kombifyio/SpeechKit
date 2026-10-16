@@ -243,6 +243,11 @@ realtime_model = "gpt-realtime-2.1"  # Used when [voice_agent].provider = "opena
 # stt_model                   = "latest_long"
 # region                      = "europe-west3"
 
+# Opt-in bring-your-own-key xAI Grok Voice (Voice Agent only; never a default).
+# [providers.xai]
+# enabled     = true
+# api_key_env = "XAI_API_KEY"
+
 [providers.deepgram]
 enabled           = false
 api_key_env       = "DEEPGRAM_API_KEY"
@@ -318,6 +323,8 @@ enabled = true
 # provider selects the backend:
 #   "gemini"   — opt-in Google Gemini Live with your own GOOGLE_AI_API_KEY
 #                (needs [providers.google] enabled; never a default)
+#   "xai"      — opt-in xAI Grok Voice (grok-voice-3.0) with your own
+#                XAI_API_KEY (needs [providers.xai] enabled; never a default)
 #   "openai"   — OpenAI Realtime API (gpt-realtime-2.1 default; requires
 #                providers.openai.api_key_env populated). 16 kHz mic PCM is
 #                upsampled to 24 kHz inline by the kernel adapter.

@@ -9,6 +9,14 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.76.7](https://github.com/kombifyio/SpeechKit/compare/v0.76.6...v0.76.7) (2026-10-16)
+
+
+### Bug Fixes
+
+* **bootstrap:** project portable Agent Home context readiness ([#941](https://github.com/kombifyio/SpeechKit/issues/941)) ([265a3c5](https://github.com/kombifyio/SpeechKit/commit/265a3c5dccf759cbdf715cbfa409bf35d5520f7d))
+* **bootstrap:** reuse host Git authentication for Agent Home ([#944](https://github.com/kombifyio/SpeechKit/issues/944)) ([aaade89](https://github.com/kombifyio/SpeechKit/commit/aaade89a18bb840c45517e0f7eda7a873872d828))
+
 ## [0.76.6](https://github.com/kombifyio/SpeechKit/compare/v0.76.5...v0.76.6) (2026-10-15)
 
 ### Highlights

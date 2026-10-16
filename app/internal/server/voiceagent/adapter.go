@@ -206,8 +206,13 @@ func (a *Adapter) Run(parent context.Context) {
 	if a.Provider == nil {
 		requested := start.Provider
 		mediaProvider := normalizeProviderName(start.MediaProvider)
+		if mediaProvider == "openai" {
+			// OpenAI native media is GPT-Live with client delegation; the
+			// Realtime model would reason on its own.
+			mediaProvider = "gpt-live"
+		}
 		if mediaProvider != "" {
-			if a.Session == nil || (a.Session.VoiceAgentBinding.TargetAgentID == "" && a.Session.VoiceAgentBinding.DirectEndpoint == nil) || a.Session.VoiceBudget.ReservationID == "" || (mediaProvider != "assemblyai" && mediaProvider != "deepgram") || a.native == nil {
+			if a.Session == nil || (a.Session.VoiceAgentBinding.TargetAgentID == "" && a.Session.VoiceAgentBinding.DirectEndpoint == nil) || a.Session.VoiceBudget.ReservationID == "" || (mediaProvider != "assemblyai" && mediaProvider != "deepgram" && !delegatedNativeProvider(mediaProvider)) || a.native == nil {
 				a.sendFatalError(ctx, "native_voice_binding_required", "Reserve Voice quota and bind a registered agent before selecting native voice media.")
 				return
 			}

@@ -22,6 +22,7 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/deepgram"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openai"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openailive"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/xai"
 )
 
 func buildNativeVoiceConsentReader() vsserver.NativeConsentReader {
@@ -137,20 +138,37 @@ func mapKernelToolCalls(calls []live.ToolCall) []vsserver.ToolCall {
 type openaiProviderFactory struct{}
 
 func (f *openaiProviderFactory) NewProvider() vsserver.LiveProviderAdapter {
-	return &openaiLiveBridge{inner: openai.New()}
+	return &openaiLiveBridge{inner: openai.New(), keyLabel: "OpenAI"}
 }
 
-// openaiLiveBridge adapts the public openai.Provider to the narrow
+// xaiProviderFactory builds xAI Grok Voice sessions. Grok Voice speaks the
+// OpenAI Realtime event protocol, so it shares the Realtime bridge.
+type xaiProviderFactory struct{}
+
+func (f *xaiProviderFactory) NewProvider() vsserver.LiveProviderAdapter {
+	return &openaiLiveBridge{inner: xai.New(), keyLabel: "xAI"}
+}
+
+// realtimeProvider is the OpenAI Realtime protocol surface shared by
+// openai.Provider and the Realtime-compatible xai.Provider.
+type realtimeProvider interface {
+	live.LiveProvider
+	UpdateInstructions(context.Context, live.LiveConfig) error
+	CancelResponse() error
+}
+
+// openaiLiveBridge adapts a Realtime-protocol provider to the narrow
 // interface the WebSocket handler consumes. Kernel enum types are rebuilt from
 // string fields on vsserver.LiveConfigFrame.
 type openaiLiveBridge struct {
-	inner   *openai.Provider
-	pending []*live.LiveMessage
+	inner    realtimeProvider
+	keyLabel string
+	pending  []*live.LiveMessage
 }
 
 func (b *openaiLiveBridge) Connect(ctx context.Context, cfg vsserver.LiveConfigFrame) error {
 	if cfg.APIKey == "" {
-		return errors.New("voiceagent: no OpenAI API key configured for this deployment")
+		return errors.New("voiceagent: no " + b.keyLabel + " API key configured for this deployment")
 	}
 	liveCfg := live.LiveConfig{
 		Model:            cfg.Model,
@@ -218,6 +236,9 @@ func (b *openaiLiveBridge) SendToolResponse(frame vsserver.ToolResponseFrame) er
 		ID:       frame.ID,
 		Name:     frame.Name,
 		Response: frame.Response,
+
+		Scheduling:           live.ToolResponseScheduling(frame.Scheduling),
+		FollowUpInstructions: frame.FollowUpInstructions,
 	})
 }
 
@@ -263,6 +284,12 @@ func (b *gptLiveBridge) Connect(ctx context.Context, cfg vsserver.LiveConfigFram
 	if cfg.APIKey == "" {
 		return errors.New("voiceagent: no OpenAI API key configured for this deployment")
 	}
+	if cfg.NativeClientDelegation {
+		// A registered agent answers every delegation; no backend model
+		// may reason or run tools for this session.
+		b.inner.BackendModel = ""
+		b.inner.ClientDelegation = true
+	}
 	liveCfg := live.LiveConfig{
 		Model:            cfg.Model,
 		APIKey:           cfg.APIKey,
@@ -292,6 +319,9 @@ func (b *gptLiveBridge) SendToolResponse(frame vsserver.ToolResponseFrame) error
 		ID:       frame.ID,
 		Name:     frame.Name,
 		Response: frame.Response,
+
+		Scheduling:           live.ToolResponseScheduling(frame.Scheduling),
+		FollowUpInstructions: frame.FollowUpInstructions,
 	})
 }
 
@@ -389,6 +419,9 @@ func (b *assemblyAILiveBridge) SendToolResponse(frame vsserver.ToolResponseFrame
 		ID:       frame.ID,
 		Name:     frame.Name,
 		Response: frame.Response,
+
+		Scheduling:           live.ToolResponseScheduling(frame.Scheduling),
+		FollowUpInstructions: frame.FollowUpInstructions,
 	})
 }
 
@@ -561,6 +594,9 @@ func (b *deepgramLiveBridge) SendToolResponse(frame vsserver.ToolResponseFrame) 
 		ID:       frame.ID,
 		Name:     frame.Name,
 		Response: frame.Response,
+
+		Scheduling:           live.ToolResponseScheduling(frame.Scheduling),
+		FollowUpInstructions: frame.FollowUpInstructions,
 	})
 }
 
