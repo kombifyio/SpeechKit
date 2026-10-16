@@ -9,6 +9,20 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.77.0](https://github.com/kombifyio/SpeechKit/compare/v0.76.9...v0.77.0) (2026-10-16)
+
+### Highlights
+
+- **Grok Voice 3.0 for the Voice Agent**: xAI Grok Voice joins GPT-Live and Gemini Live as a realtime provider for the Voice Agent, selectable like the others.
+- **Native realtime voice for registered agents**: Registered agents can speak through GPT-Live, Gemini Live or Grok Voice directly, with the provider handling their audio natively.
+- **Releases that ship complete**: The self-hosted server image, the Android libraries and app, and the desktop bundle publish together with each release.
+
+
+
+### Bug Fixes
+
+* **android:** the Android libraries and app build again for the release by keeping Compose, Navigation and OkHttp on versions the current Android Gradle plugin supports
+
 ## [0.76.9](https://github.com/kombifyio/SpeechKit/compare/v0.76.8...v0.76.9) (2026-10-16)
 
 
