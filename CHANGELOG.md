@@ -9,6 +9,14 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.76.8](https://github.com/kombifyio/SpeechKit/compare/v0.76.7...v0.76.8) (2026-10-16)
+
+
+### Bug Fixes
+
+* **server:** the public server builds from the exported sources again, and the self-hosted Docker image, Android libraries and desktop bundle publish together with the release
+* **android:** keep the Android build on a Hilt version that matches the Android Gradle plugin in use
+
 ## [0.76.7](https://github.com/kombifyio/SpeechKit/compare/v0.76.6...v0.76.7) (2026-10-16)
 
 
