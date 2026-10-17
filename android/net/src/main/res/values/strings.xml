@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Default locale: English. Texts for a kombify plan denial, shared by every
+  surface that shows one (assistant, keyboard, Settings). The Gateway's own
+  user guidance wins when it sends some; these are the fallback.
+-->
+<resources>
+    <string name="plan_denial_title">Not in your kombify plan</string>
+    <string name="plan_denial_body">Your kombify plan does not include this voice feature. See plans to add it.</string>
+    <string name="plan_denial_budget_title">Voice minutes used up</string>
+    <string name="plan_denial_budget_body">Your hosted voice minutes for this period are used up. See plans or wait for the next reset.</string>
+    <string name="plan_denial_see_plans">See plans</string>
+</resources>

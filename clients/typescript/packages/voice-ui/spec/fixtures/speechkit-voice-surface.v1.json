@@ -9,7 +9,7 @@
   ],
   "modes": ["dictation", "assist", "voice_agent"],
   "capturePolicies": ["push_to_talk", "explicit_record", "hotkey_local", "wakeword_local", "device_agent"],
-  "transports": ["local_http", "gateway_http", "voiceagent_ws_ticket", "livekit_optional"],
+  "transports": ["local_http", "gateway_http", "voiceagent_ws_ticket", "dictation_stream_ws_ticket", "livekit_optional"],
   "surfaceContracts": [
     {
       "surface": "mobile",

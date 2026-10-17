@@ -45,3 +45,27 @@ func TestBuildRouter_PinsPreferredProfile(t *testing.T) {
 		t.Errorf("expected a pinning note; got %v", notes)
 	}
 }
+
+// xAI is opt-in and never a default: with no pinned profile it speaks only
+// after every other registered provider, local engines included; naming its
+// profile is what puts it first.
+func TestBuildRouter_XAIRegistersBehindEveryOtherProvider(t *testing.T) {
+	enabled := EnabledProviders{
+		XAI:              &XAIOpts{APIKey: "k"},
+		OpenAI:           &OpenAIOpts{APIKey: "k"},
+		SelfHostedOpenAI: &SelfHostedOpenAIOpts{BaseURL: "http://127.0.0.1:8880"},
+	}
+	r, ok, _ := BuildRouter(StrategyCloudFirst, enabled)
+	if !ok {
+		t.Fatal("expected an enabled router")
+	}
+	if last := r.providers[len(r.providers)-1].Name(); last != "xai" {
+		t.Fatalf("last provider = %q, want xai behind the local engine", last)
+	}
+
+	enabled.PreferredProfileID = "tts.xai.grok-voice"
+	r, _, _ = BuildRouter(StrategyCloudFirst, enabled)
+	if first := r.providers[0].Name(); first != "xai" {
+		t.Fatalf("first provider = %q, want an explicitly pinned xai", first)
+	}
+}

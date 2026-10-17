@@ -283,5 +283,35 @@ func ttsProviderProfiles() []speechkit.ProviderProfile {
 			Recommended:    true,
 			Experimental:   true,
 		},
+		{
+			// xAI is opt-in bring-your-own-key and never a default. The TTS API
+			// has no model parameter, so ModelID and the variant ModelIDs are
+			// voice_ids; GET /v1/tts/voices lists all of them and every voice
+			// speaks every supported language.
+			ID:            "tts.xai.grok-voice",
+			Mode:          speechkit.ModeTTS,
+			Name:          "Grok Voice (xAI)",
+			ProviderKind:  speechkit.ProviderKindDirectProvider,
+			ExecutionMode: speechkit.ExecutionModeXAI,
+			Provider:      "xai",
+			ModelID:       "eve",
+			Lifecycle:     speechkit.ModelLifecycleGA,
+			Source:        "xAI",
+			Description:   "Opt-in text to speech on xAI's Grok Voice (POST /v1/tts) with your own XAI_API_KEY: 28 multilingual voices, 20 languages with automatic language detection, MP3, WAV or PCM output. Never a default.",
+			License:       "proprietary",
+			Capabilities:  []speechkit.Capability{speechkit.CapabilityTTS},
+			AdapterKind:   "xai_tts",
+			EvidenceURL:   "https://docs.x.ai/developers/model-capabilities/audio/text-to-speech",
+			Variants: []speechkit.ModelVariant{
+				{ID: "xai.grok-voice.eve", Name: "Eve (female)", ModelID: "eve", Recommended: true},
+				{ID: "xai.grok-voice.ara", Name: "Ara (female)", ModelID: "ara"},
+				{ID: "xai.grok-voice.luna", Name: "Luna (female)", ModelID: "luna"},
+				{ID: "xai.grok-voice.rex", Name: "Rex (male)", ModelID: "rex"},
+				{ID: "xai.grok-voice.leo", Name: "Leo (male)", ModelID: "leo"},
+				{ID: "xai.grok-voice.sal", Name: "Sal (male)", ModelID: "sal"},
+			},
+			AllowInference: true,
+			Experimental:   true,
+		},
 	}
 }

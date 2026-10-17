@@ -453,6 +453,7 @@ func CloudCredentialEnvNames(cfg *Config) []string {
 		GoogleApplicationCredentialsEnvName(cfg),
 		ProviderCredentialEnvName(cfg, "openai"),
 		ProviderCredentialEnvName(cfg, "groq"),
+		ProviderCredentialEnvName(cfg, "xai"),
 		ProviderCredentialEnvName(cfg, "deepgram"),
 		ProviderCredentialEnvName(cfg, "assemblyai"),
 		ProviderCredentialEnvName(cfg, "huggingface"),

@@ -23,6 +23,7 @@ func TestBuildReturnsProviderPerExecutionMode(t *testing.T) {
 		{speechkit.ExecutionModeDeepgram, "deepgram"},
 		{speechkit.ExecutionModeAssemblyAI, "assemblyai"},
 		{speechkit.ExecutionModeOpenRouter, "openrouter"},
+		{speechkit.ExecutionModeXAI, "xai"},
 		{speechkit.ExecutionModeOllama, "ollama"},
 	}
 

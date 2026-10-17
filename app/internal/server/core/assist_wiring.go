@@ -319,6 +319,15 @@ func buildGenkitRuntime(ctx context.Context, cfg *config.Config) (*ai.Runtime, [
 			notes = append(notes, "Genkit: Groq provider registered")
 		}
 	}
+	if cfg.Providers.XAI.Enabled {
+		if key := credential("xai"); key != "" {
+			aiCfg.XAIAPIKey = key
+			aiCfg.XAIUtilityModel = cfg.Providers.XAI.UtilityModel
+			aiCfg.XAIAssistModel = cfg.Providers.XAI.AssistModel
+			aiCfg.XAIAgentModel = cfg.Providers.XAI.AgentModel
+			notes = append(notes, "Genkit: xAI provider registered")
+		}
+	}
 	if cfg.HuggingFace.Enabled {
 		if token := credential("huggingface"); token != "" {
 			aiCfg.HuggingFaceToken = token

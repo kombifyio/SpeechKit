@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -102,6 +103,21 @@ func buildSTTRouter(cfg *config.Config) (*stt.Router, []namedProvider, []string)
 			notes = append(notes, "Groq STT registered (model="+model+", source="+source+")")
 		} else {
 			notes = append(notes, "Groq STT disabled ("+source+" not set)")
+		}
+	}
+
+	// xAI Grok Voice Transcribe (opt-in BYOK cloud STT). Model defaults to
+	// grok-voice-transcribe-2.0 when unset. It is never a fallback: it serves
+	// dictation only when model_selection.dictate names an xAI profile, or a
+	// request names xAI through provider_profile_id.
+	if cfg.Providers.XAI.Enabled {
+		if key, source := credential("xai"); key != "" {
+			model := firstNonEmpty(cfg.Providers.XAI.STTModel, config.DefaultXAISTTModel)
+			selected := cfg.ModelSelection.Dictate.NamesProvider("xai")
+			enabled.XAI = &allproviders.XAIOpts{APIKey: key, Model: model, Selected: selected}
+			notes = append(notes, "xAI STT registered (model="+model+", source="+source+", selected="+strconv.FormatBool(selected)+")")
+		} else {
+			notes = append(notes, "xAI STT disabled ("+source+" not set)")
 		}
 	}
 

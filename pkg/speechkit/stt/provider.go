@@ -41,6 +41,19 @@ type STTProvider interface {
 	Health(ctx context.Context) error
 }
 
+// ExplicitOnlyProvider is an optional interface for an opt-in provider that
+// must never serve audio nobody directed at it. While ExplicitOnly reports
+// true, a [Router] skips the provider in every generic selection and fallback
+// loop (batch cloud routing, the dynamic strategy, the parallel race, realtime
+// dictation and speaker streams) and uses it only for a request whose
+// [TranscribeOpts.ProviderProfileID] (or stream equivalent) names it. A host
+// that registers the provider because the user selected it reports false, and
+// the provider then routes like any other cloud provider. A provider without
+// this method is never explicit-only, so existing providers behave unchanged.
+type ExplicitOnlyProvider interface {
+	ExplicitOnly() bool
+}
+
 // TranscribeOpts configures a single transcription request.
 type TranscribeOpts struct {
 	// VocabularyHints holds dictionary-derived bias; explicit hints remain separate.

@@ -244,6 +244,7 @@ func activeServerCredentialSettings(cfg *config.Config) config.ServerCredentialS
 		AssemblyAI:  activeCredential(cfg.Providers.AssemblyAI.Enabled, config.ProviderCredentialEnvName(cfg, "assemblyai")),
 		HuggingFace: activeCredential(cfg.HuggingFace.Enabled, config.ProviderCredentialEnvName(cfg, "huggingface")),
 		OpenRouter:  activeCredential(cfg.Providers.OpenRouter.Enabled, config.ProviderCredentialEnvName(cfg, "openrouter")),
+		XAI:         activeCredential(cfg.Providers.XAI.Enabled, config.ProviderCredentialEnvName(cfg, "xai")),
 	}
 }
 

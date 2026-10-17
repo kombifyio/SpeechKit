@@ -14,8 +14,8 @@ import (
 //
 // The adapter ids (Adapters, Drop) are the provider-policy ids:
 // "local", "huggingface", "openrouter", "vps", "ollama", "groq", "openai",
-// "deepgram", "assemblyai", "google" and "foundry" (Foundry and
-// FoundrySpeech).
+// "deepgram", "assemblyai", "google", "foundry" (Foundry and
+// FoundrySpeech) and "xai".
 type STTRouterSpec struct {
 	Strategy             stt.Strategy
 	PreferLocalUnderSecs float64
@@ -39,6 +39,8 @@ type STTRouterSpec struct {
 	Google        *GoogleSTTSpec
 	Foundry       *FoundrySTTSpec
 	FoundrySpeech *FoundrySpeechOpts
+	// XAI is the opt-in xAI Grok Voice Transcribe provider.
+	XAI *XAISTTSpec
 }
 
 // LocalSTTSpec is the host-managed whisper.cpp provider (registered, not
@@ -54,6 +56,16 @@ type LocalSTTSpec struct {
 type KeyedSTTSpec struct {
 	APIKey string
 	Model  string
+}
+
+// XAISTTSpec is the opt-in xAI Grok Voice Transcribe provider. Selected is
+// set when model_selection.dictate names an xAI profile; an unselected xAI
+// provider is registered but explicit-only: the router uses it only for a
+// request that names xAI and never as a fallback for other providers.
+type XAISTTSpec struct {
+	APIKey   string
+	Model    string
+	Selected bool
 }
 
 // EndpointSTTSpec is a provider on a host the user operates (a self-hosted
@@ -130,6 +142,7 @@ func (s *STTRouterSpec) Adapters() []string {
 	add("assemblyai", s.AssemblyAI != nil)
 	add("google", s.Google != nil)
 	add("foundry", s.Foundry != nil || s.FoundrySpeech != nil)
+	add("xai", s.XAI != nil)
 	return ids
 }
 
@@ -163,5 +176,7 @@ func (s *STTRouterSpec) Drop(adapter string) {
 	case "foundry":
 		s.Foundry = nil
 		s.FoundrySpeech = nil
+	case "xai":
+		s.XAI = nil
 	}
 }

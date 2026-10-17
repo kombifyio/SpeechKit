@@ -37,6 +37,7 @@ func mergeServerModelSettings(base, patch config.ServerModelSettings) config.Ser
 	base.Credentials.AssemblyAI = mergeServerCredentialSetting(base.Credentials.AssemblyAI, patch.Credentials.AssemblyAI)
 	base.Credentials.HuggingFace = mergeServerCredentialSetting(base.Credentials.HuggingFace, patch.Credentials.HuggingFace)
 	base.Credentials.OpenRouter = mergeServerCredentialSetting(base.Credentials.OpenRouter, patch.Credentials.OpenRouter)
+	base.Credentials.XAI = mergeServerCredentialSetting(base.Credentials.XAI, patch.Credentials.XAI)
 	if patch.Dictation.Dictionary != nil {
 		base.Dictation.Dictionary = patch.Dictation.Dictionary
 	}

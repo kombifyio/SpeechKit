@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -38,6 +39,8 @@ import androidx.compose.ui.unit.dp
 import io.kombify.speechkit.ime.R
 import io.kombify.speechkit.ime.VoicePanelController
 import io.kombify.speechkit.ime.VoicePanelState
+import io.kombify.speechkit.net.KombifyLinks
+import io.kombify.speechkit.net.R as NetR
 
 /**
  * The voice-only IME input view (B-M2 Stage 1): one big mic toggle, a live
@@ -215,13 +218,28 @@ private fun StatusArea(
             }
 
             is VoicePanelState.Error -> {
+                val context = LocalContext.current
+                val planDenied = VoicePanelController.isPlanDenialCode(state.code)
                 AssistChip(
-                    onClick = onRetry,
-                    enabled = state.retryable,
+                    // A plan denial cannot be retried away: the chip leads to the plans page.
+                    onClick = {
+                        if (planDenied) {
+                            KombifyLinks.open(context, KombifyLinks.PLANS_URL)
+                        } else {
+                            onRetry()
+                        }
+                    },
+                    enabled = planDenied || state.retryable,
                     label = {
                         Text(
                             text = "${errorLabel(state.code)} — " +
-                                stringResource(R.string.speechkit_ime_action_retry),
+                                stringResource(
+                                    if (planDenied) {
+                                        NetR.string.plan_denial_see_plans
+                                    } else {
+                                        R.string.speechkit_ime_action_retry
+                                    },
+                                ),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -264,6 +282,12 @@ private fun errorLabel(code: String): String = when (code) {
 
     VoicePanelController.ERROR_MIC_DENIED ->
         stringResource(R.string.speechkit_ime_error_mic_denied)
+
+    VoicePanelController.ERROR_PLAN_DENIED ->
+        stringResource(NetR.string.plan_denial_title)
+
+    VoicePanelController.ERROR_PLAN_BUDGET ->
+        stringResource(NetR.string.plan_denial_budget_title)
 
     else -> stringResource(R.string.speechkit_ime_error_generic)
 }

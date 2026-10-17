@@ -105,6 +105,14 @@ const (
 	// (alias grok-voice-latest; grok-voice-2.0 is deprecated), served by the
 	// "xai" adapter.
 	modelXAIGrokVoice3 = "grok-voice-3.0"
+	// modelXAIGrokVoiceTranscribe2 is xAI's speech-to-text model for
+	// POST /v1/stt, its only documented transcription model.
+	modelXAIGrokVoiceTranscribe2 = "grok-voice-transcribe-2.0"
+	// modelXAIGrok47 and modelXAIGrok43 are the xAI language models behind the
+	// opt-in Assist profile: the flagship and the cheaper tier (2 and 6 versus
+	// 1.25 and 2.50 USD per 1M input and output tokens).
+	modelXAIGrok47 = "grok-4.7"
+	modelXAIGrok43 = "grok-4.3"
 	// modelOpenRouterGPTTranscribe, modelOpenRouterGemini35Flash and
 	// modelOpenRouterGemini35FlashLite are OpenRouter slugs for the current
 	// vendor models.
@@ -191,6 +199,12 @@ const modelRegistryVerifiedAt = "2026-10-15"
 // gpt-realtime-2.1-mini, gpt-5.6-terra, gpt-5.6-luna, azure-realtime and
 // phi4-mm-realtime (preview).
 const foundryRegistryVerifiedAt = "2026-10-15"
+
+// xaiRegistryVerifiedAt is the day the xAI speech-to-text and Assist rows were
+// checked against docs.x.ai and the live GET /v1/language-models list:
+// grok-voice-transcribe-2.0 is the only transcription model, and grok-4.7 and
+// grok-4.3 are both listed and not deprecated.
+const xaiRegistryVerifiedAt = "2026-10-16"
 
 // MissingFreshnessReports lists default/recommended registry rows that still
 // lack LastVerifiedAt.
@@ -443,6 +457,43 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			Default:              true,
 			SourceURL:            "https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech",
 			LastVerifiedAt:       modelRegistryVerifiedAt,
+			MultilanguageCapable: true,
+		},
+		// xAI dictation and Assist rows. xAI is opt-in BYOK: Default marks the
+		// provider's own model for the mode, never a product default.
+		{
+			Provider:             "xai",
+			ModelID:              modelXAIGrokVoiceTranscribe2,
+			ProfileID:            "stt.xai.grok-transcribe",
+			Mode:                 speechkit.ModeDictation,
+			Name:                 "Grok Voice Transcribe 2.0",
+			Lifecycle:            speechkit.ModelLifecycleGA,
+			Default:              true,
+			SourceURL:            "https://docs.x.ai/developers/model-capabilities/audio/speech-to-text",
+			LastVerifiedAt:       xaiRegistryVerifiedAt,
+			MultilanguageCapable: true,
+		},
+		{
+			Provider:             "xai",
+			ModelID:              modelXAIGrok47,
+			ProfileID:            "assist.xai.grok",
+			Mode:                 speechkit.ModeAssist,
+			Name:                 "Grok 4.7",
+			Lifecycle:            speechkit.ModelLifecycleGA,
+			Default:              true,
+			SourceURL:            "https://docs.x.ai/developers/models",
+			LastVerifiedAt:       xaiRegistryVerifiedAt,
+			MultilanguageCapable: true,
+		},
+		{
+			Provider:             "xai",
+			ModelID:              modelXAIGrok43,
+			ProfileID:            "assist.xai.grok",
+			Mode:                 speechkit.ModeAssist,
+			Name:                 "Grok 4.3",
+			Lifecycle:            speechkit.ModelLifecycleGA,
+			SourceURL:            "https://docs.x.ai/developers/models",
+			LastVerifiedAt:       xaiRegistryVerifiedAt,
 			MultilanguageCapable: true,
 		},
 		// Microsoft Foundry serves the OpenAI realtime family through the

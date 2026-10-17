@@ -3,6 +3,8 @@ package io.kombify.speechkit.assistant.service
 import android.app.assist.AssistContent
 import android.app.assist.AssistStructure
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.service.voice.VoiceInteractionSession
 import android.service.voice.VoiceInteractionSessionService
@@ -23,7 +25,10 @@ import io.kombify.speechkit.domain.ConnectionProfileSource
 import io.kombify.speechkit.domain.describe
 import io.kombify.speechkit.log.VoiceLog
 import io.kombify.speechkit.net.DictationController
+import io.kombify.speechkit.net.KombifyLinks
+import io.kombify.speechkit.net.PlanDenial
 import io.kombify.speechkit.net.SpeechKitApiException
+import io.kombify.speechkit.net.userText
 import io.kombify.speechkit.ui.ServiceWindowOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +40,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -102,6 +108,7 @@ class SpeechKitVoiceSession(
                     state = state,
                     onRetry = ::startListening,
                     onDismiss = ::hide,
+                    onSeePlans = ::openPlans,
                 )
             }
         }
@@ -170,7 +177,12 @@ class SpeechKitVoiceSession(
                         try {
                             DictationController(profile, context = context).openSession()
                         } catch (e: SpeechKitApiException) {
-                            val next = recoveredListenProfile(profile, e, cloudRecovery) ?: throw e
+                            // The recovery blocks on the network and on a Companion
+                            // bind the system delivers on this very (main) thread:
+                            // run it on IO or it times out and freezes the overlay.
+                            val next = withContext(Dispatchers.IO) {
+                                recoveredListenProfile(profile, e, cloudRecovery)
+                            } ?: throw e
                             DictationController(next, context = context).openSession()
                         }
                     },
@@ -217,7 +229,12 @@ class SpeechKitVoiceSession(
                     "listen mint failed http=${e.httpStatus} code=${e.code}",
                     e,
                 )
-                _uiState.value = AssistantUiState.Error("Server ${e.httpStatus} (${e.code})")
+                val denial = e.denial
+                _uiState.value = if (denial != null) {
+                    planDenied(denial)
+                } else {
+                    AssistantUiState.Error("Server ${e.httpStatus} (${e.code})")
+                }
             } catch (e: Exception) {
                 VoiceLog.e(VoiceLog.ASSIST, "listen failed", e)
                 _uiState.value = AssistantUiState.Error(e.message ?: GENERIC_ERROR_MESSAGE)
@@ -225,13 +242,33 @@ class SpeechKitVoiceSession(
         }
     }
 
+    private fun planDenied(denial: PlanDenial): AssistantUiState.PlanDenied {
+        val text = denial.userText(context)
+        return AssistantUiState.PlanDenied(title = text.title, body = text.body)
+    }
+
+    /** Opens the plans page in the browser and closes the overlay. */
+    private fun openPlans() {
+        val opened = runCatching {
+            startAssistantActivity(Intent(Intent.ACTION_VIEW, Uri.parse(KombifyLinks.PLANS_URL)))
+        }.isSuccess
+        if (!opened) KombifyLinks.open(context, KombifyLinks.PLANS_URL)
+        hide()
+    }
+
     private suspend fun presentAssist(result: ActionResult) {
         _uiState.value = AssistantUiState.Executing("Assist")
-        _uiState.value = if (result.success) {
-            AssistantUiState.Result(result.responseText)
-        } else {
-            VoiceLog.w(VoiceLog.ASSIST, "assist failed")
-            AssistantUiState.Error(result.errorMessage ?: ACTION_FAILED_MESSAGE)
+        val denial = result.planDenial
+        _uiState.value = when {
+            result.success -> AssistantUiState.Result(result.responseText)
+            denial != null -> {
+                VoiceLog.w(VoiceLog.ASSIST, "assist denied by plan ${denial.errorCode}")
+                planDenied(denial)
+            }
+            else -> {
+                VoiceLog.w(VoiceLog.ASSIST, "assist failed")
+                AssistantUiState.Error(result.errorMessage ?: ACTION_FAILED_MESSAGE)
+            }
         }
 
         val spoken = result.responseText.trim()
@@ -271,4 +308,7 @@ sealed interface AssistantUiState {
     data class Executing(val actionName: String) : AssistantUiState
     data class Result(val text: String) : AssistantUiState
     data class Error(val message: String) : AssistantUiState
+
+    /** The user's kombify plan does not cover this request; the overlay offers the plans page. */
+    data class PlanDenied(val title: String, val body: String) : AssistantUiState
 }

@@ -1,7 +1,11 @@
 package io.kombify.speechkit.app.companion
 
+import android.content.Context
 import io.kombify.speechkit.domain.ConnectionMode
 import io.kombify.speechkit.domain.ConnectionProfile
+import io.kombify.speechkit.net.CloudBearer
+import io.kombify.speechkit.net.StoredServerProfile
+import kotlinx.coroutines.runBlocking
 
 /**
  * Companion is optional. A provisioned session is used when it exists.
@@ -28,21 +32,35 @@ fun shouldStartConnectOnResume(
 ): Boolean = requested && !alreadyConnected && !connecting
 
 /**
- * A 401 on the independently stored Gateway JWT. Companion may already have
- * failed; a refresh token is the remaining path. Tester/self-host bearers
- * are not this session.
+ * The one recovery path for a Cloud bearer the server rejected (401): the
+ * Companion session first, then this device's own refresh token. The renewed
+ * session is already persisted when this returns. A bearer that is neither
+ * (self-host, tester origin) is left alone and yields null.
+ *
+ * Blocks on the network and waits for the Companion bind, which the system
+ * delivers on the main thread: never call it on the main thread (it would
+ * time out and freeze the UI). Use `withContext(Dispatchers.IO)`.
  */
-fun recoverIndependentCloud(
+fun recoverCloudSession(
+    context: Context,
+    companion: CompanionProvisioner,
     failed: ConnectionProfile,
-    stored: ConnectionProfile.Server?,
-    refreshToken: String?,
-    refresh: (String) -> String?,
 ): ConnectionProfile.Server? {
-    val server = failed as? ConnectionProfile.Server ?: return null
-    if (stored == null || stored.bearerToken != server.bearerToken) return null
-    val token = refreshToken?.trim().orEmpty()
-    if (token.isEmpty()) return null
-    val access = refresh(token)?.trim().orEmpty()
-    if (access.isEmpty()) return null
-    return ConnectionProfile.Server(stored.baseUrl, access)
+    val fromCompanion = companion.recoverFromUnauthorized(failed) as? CompanionProvision.Session
+    if (fromCompanion != null) {
+        // Companion hands out an access token only. It must not erase the
+        // refresh token of this device's own sign-in.
+        val profile = fromCompanion.profile
+        StoredServerProfile.replaceCloudAccess(
+            context,
+            profile.baseUrl,
+            profile.bearerToken.orEmpty(),
+            fromCompanion.expiresAtEpochMs,
+        )
+        return profile
+    }
+    val rejected = (failed as? ConnectionProfile.Server)?.bearerToken ?: return null
+    val renewed = runBlocking { CloudBearer.recoverRejected(rejected) } ?: return null
+    val stored = StoredServerProfile.loadCloud(context) ?: return null
+    return ConnectionProfile.Server(stored.baseUrl, renewed)
 }

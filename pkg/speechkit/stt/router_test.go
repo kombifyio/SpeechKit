@@ -497,3 +497,43 @@ func TestRouterOnProviderSelectedIsPerInstance(t *testing.T) {
 		t.Fatalf("observer b saw %v, want only local-b", seenB)
 	}
 }
+
+// optInProvider is a provider that is explicit-only until its host marks it
+// selected.
+type optInProvider struct {
+	mockProvider
+	selected bool
+}
+
+func (p *optInProvider) ExplicitOnly() bool { return !p.selected }
+
+// An explicit-only provider never receives audio nobody directed at it: not as
+// the fallback of a failing provider, and not as the parallel race's cloud
+// side. A request that names it, or a host that marks it selected, uses it.
+func TestRouteExplicitOnlyProviderServesOnlyRequestsThatNameIt(t *testing.T) {
+	newRouter := func(selected bool) (*Router, *optInProvider) {
+		optIn := &optInProvider{mockProvider: mockProvider{name: "xai", text: "from xai", healthy: true}, selected: selected}
+		r := &Router{Strategy: StrategyCloudOnly}
+		r.AddCloud(&mockProvider{name: "deepgram", failNext: true, healthy: true})
+		r.AddCloud(optIn)
+		return r, optIn
+	}
+
+	r, optIn := newRouter(false)
+	if _, err := r.Route(context.Background(), []byte("pcm"), 1.0, TranscribeOpts{}); err == nil {
+		t.Fatal("the outage of the only generic provider reached an explicit-only provider")
+	}
+	if _, err := r.Route(context.Background(), []byte("pcm"), 1.0, TranscribeOpts{ProviderProfileID: "stt.deepgram.nova-3"}); err == nil || optIn.called != 0 {
+		t.Fatalf("another provider's preference reached the explicit-only provider (calls=%d, err=%v)", optIn.called, err)
+	}
+	res, err := r.Route(context.Background(), []byte("pcm"), 1.0, TranscribeOpts{ProviderProfileID: "stt.xai.grok-transcribe"})
+	if err != nil || res.Provider != "xai" {
+		t.Fatalf("a request naming the provider got (%v, %v), want xai", res, err)
+	}
+
+	r, _ = newRouter(true)
+	res, err = r.Route(context.Background(), []byte("pcm"), 1.0, TranscribeOpts{})
+	if err != nil || res.Provider != "xai" {
+		t.Fatalf("a selected provider did not serve as the fallback: (%v, %v)", res, err)
+	}
+}

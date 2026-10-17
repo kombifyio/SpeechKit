@@ -31,6 +31,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.kombify.speechkit.assistant.R
 import io.kombify.speechkit.assistant.service.AssistantUiState
+import io.kombify.speechkit.net.R as NetR
 
 /**
  * Voice assistant overlay UI.
@@ -45,6 +46,7 @@ fun AssistantOverlay(
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    onSeePlans: () -> Unit = {},
 ) {
     Card(
         modifier = modifier
@@ -80,6 +82,8 @@ fun AssistantOverlay(
                     is AssistantUiState.Executing -> ExecutingView(currentState.actionName)
                     is AssistantUiState.Result -> ResultView(currentState.text, onDismiss)
                     is AssistantUiState.Error -> ErrorView(currentState.message, onRetry, onDismiss)
+                    is AssistantUiState.PlanDenied ->
+                        PlanDeniedView(currentState.title, currentState.body, onSeePlans, onDismiss)
                 }
             }
         }
@@ -195,6 +199,43 @@ private fun ErrorView(message: String, onRetry: () -> Unit, onDismiss: () -> Uni
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onClick = onRetry) {
                 Text(stringResource(R.string.speechkit_assistant_action_retry))
+            }
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.speechkit_assistant_action_close))
+            }
+        }
+    }
+}
+
+/** The plan does not cover this request: say so, and lead to the plans page. */
+@Composable
+private fun PlanDeniedView(
+    title: String,
+    body: String,
+    onSeePlans: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        VoiceAuraOrb(state = VoiceAuraState.ERROR, sizeDp = 56, markRes = R.drawable.kombify_ai_mark)
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center,
+            fontWeight = FontWeight.Medium,
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = body,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onSeePlans) {
+                Text(stringResource(NetR.string.plan_denial_see_plans))
             }
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.speechkit_assistant_action_close))

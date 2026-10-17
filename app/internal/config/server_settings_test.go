@@ -221,6 +221,20 @@ func TestApplyServerModelSettings_AppliesDirectDictationProviders(t *testing.T) 
 			},
 		},
 		{
+			name:      "xai",
+			profileID: "stt.xai.grok-transcribe",
+			model:     "grok-voice-transcribe-2.0",
+			assertFunc: func(t *testing.T, cfg *Config) {
+				t.Helper()
+				if !cfg.Providers.XAI.Enabled || cfg.Providers.XAI.STTModel != "grok-voice-transcribe-2.0" {
+					t.Fatalf("xAI STT = enabled %v model %q", cfg.Providers.XAI.Enabled, cfg.Providers.XAI.STTModel)
+				}
+				if cfg.Providers.OpenAI.Enabled {
+					t.Fatal("selecting xAI dictation must not enable OpenAI")
+				}
+			},
+		},
+		{
 			name:      "deepgram",
 			profileID: "stt.deepgram.nova-3",
 			model:     "nova-3",
@@ -466,7 +480,7 @@ func TestSaveServerModelSettings_RejectsInvalidSecurityAndProviderSettings(t *te
 			settings: ServerModelSettings{
 				VoiceAgent: ServerVoiceAgentSettings{Provider: "shell"},
 			},
-			want: "voice_agent.provider must be cascaded, gemini/google, openai, deepgram, assemblyai, kombify-agent, or moshi",
+			want: "voice_agent.provider must be cascaded, gemini/google, openai, deepgram, assemblyai, xai, kombify-agent, or moshi",
 		},
 		{
 			name: "oversized raw credential value",

@@ -149,6 +149,13 @@ Core server surfaces:
   `XAI_API_KEY` and `[providers.xai]`): profile `realtime.xai.grok-voice` with
   `grok-voice-3.0` over the Realtime-compatible
   `wss://api.x.ai/v1/realtime` protocol.
+- xAI Grok text surfaces (opt-in BYOK only, never a default; same
+  `XAI_API_KEY` and `[providers.xai]`): dictation profile
+  `stt.xai.grok-transcribe` (`grok-voice-transcribe-2.0`, batch only), text to
+  speech profile `tts.xai.grok-voice` (Grok voice ids such as `eve`, `ara`,
+  `rex`; mp3, wav or pcm at 24 kHz) and Assist profile `assist.xai.grok`
+  (`grok-4.7` recommended, `grok-4.3` cheaper). Each surface is used only when
+  explicitly selected; xAI is never a fallback and has no default chat model.
 - Registered-agent native media (`media_provider` on the start frame):
   `assemblyai` and `deepgram` call the registered agent as their custom LLM;
   `openai` (GPT-Live client delegation), `gemini` and `xai` (one delegating

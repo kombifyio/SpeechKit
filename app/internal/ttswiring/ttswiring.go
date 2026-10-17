@@ -206,6 +206,28 @@ func ResolveEnabledProvidersWithAuth(cfg *config.Config, auth Auth) (tts.Enabled
 		}
 	}
 
+	// xAI Grok text-to-speech is opt-in BYOK and never a default or a
+	// fallback: the [providers.xai] switch only makes xAI available, and the
+	// voice is registered only when the user also named a tts.xai.* profile as
+	// the primary or fallback of [model_selection.tts]. Enabling xAI for
+	// Dictation or the Voice Agent therefore never makes Grok speak Assist
+	// replies.
+	if cfg.ModelSelection.TTS.NamesProvider("xai") {
+		switch {
+		case !cfg.Providers.XAI.Enabled:
+			notes = append(notes, "TTS: xAI is selected but [providers.xai] is not enabled; skipping")
+		case cloudAllowed && allowed("xai", true):
+			if apiKey := providerCredential(cfg, "xai"); apiKey != "" {
+				enabled.XAI = &tts.XAIOpts{
+					APIKey: apiKey,
+					Voice:  firstNonEmpty(cfg.Providers.XAI.TTSVoice, config.DefaultXAITTSVoice),
+				}
+			} else {
+				notes = append(notes, "TTS: xAI is selected but no XAI_API_KEY is stored")
+			}
+		}
+	}
+
 	if allowed("piper", cfg.TTS.Piper.Enabled) {
 		if voiceDir := strings.TrimSpace(cfg.TTS.Piper.VoiceDir); voiceDir == "" {
 			notes = append(notes, "TTS: Piper enabled but voice_dir is empty; skipping")

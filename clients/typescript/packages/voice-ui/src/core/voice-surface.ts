@@ -23,6 +23,7 @@ export const SPEECHKIT_TRANSPORTS = [
   "local_http",
   "gateway_http",
   "voiceagent_ws_ticket",
+  "dictation_stream_ws_ticket",
   "livekit_optional"
 ] as const;
 export const SPEECHKIT_VOICE_EVENT_TYPES = [

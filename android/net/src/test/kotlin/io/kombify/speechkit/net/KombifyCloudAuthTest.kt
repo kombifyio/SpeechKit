@@ -67,4 +67,20 @@ class KombifyCloudAuthTest {
         assertEquals("user-jwt", ready.tokens.accessToken)
         assertEquals("rt", ready.tokens.refreshToken)
     }
+
+    @Test
+    fun refreshTreatsAPolicyRefusalAsRejectedAndAServerFaultAsUnavailable() = runBlocking {
+        // A login rule that refuses the user answers access_denied: the
+        // session is over. A 5xx is only a bad moment.
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(403)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"error":"access_denied"}"""),
+        )
+        server.enqueue(MockResponse().setResponseCode(503))
+        val auth = auth()
+        assertEquals(CloudRefresh.Rejected, auth.refreshSession("rt-1"))
+        assertEquals(CloudRefresh.Unavailable, auth.refreshSession("rt-2"))
+    }
 }

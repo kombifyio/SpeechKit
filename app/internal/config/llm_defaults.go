@@ -24,6 +24,17 @@ const (
 	CloudflareAPITokenEnv                  = "CLOUDFLARE_API_TOKEN"
 )
 
+// xAI defaults. xAI stays an opt-in provider: these only fill the speech
+// slots, they never enable it. grok-voice-transcribe-2.0 is the Grok
+// speech-to-text model and "eve" a voice of GET /v1/tts/voices. There is no
+// default Grok language model: the Assist, utility and agent slots stay empty
+// until the user picks a Grok Assist profile, so enabling xAI never moves
+// Assist or summaries to Grok.
+const (
+	DefaultXAISTTModel = "grok-voice-transcribe-2.0"
+	DefaultXAITTSVoice = "eve"
+)
+
 // ApplyAssemblyAILLMDefaults fills Universal-3.5 Pro and LLM Gateway slots
 // whenever AssemblyAI is enabled — as the STT provider or as the Voice Agent
 // backend — and keeps streaming LLM on so Assist / summaries never start

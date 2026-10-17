@@ -147,7 +147,7 @@ When you enable cloud providers for speech-to-text (STT), text-to-speech (TTS), 
 | AssemblyAI | Audio (STT), Audio (Voice Agent) | https://www.assemblyai.com/legal/privacy-policy |
 | Groq | Audio (STT), Text (LLM) | https://groq.com/privacy-policy |
 | Google Cloud / Gemini (opt-in BYOK, your own credentials) | Audio (STT/TTS), Audio (Voice Agent) | https://policies.google.com/privacy |
-| xAI Grok Voice (opt-in BYOK, your own credentials) | Audio (Voice Agent) | https://x.ai/legal/privacy-policy |
+| xAI Grok (opt-in BYOK, your own credentials; nothing is sent to xAI until you enable it) | Audio (STT, Voice Agent), Text (TTS, LLM) | https://x.ai/legal/privacy-policy |
 
 You choose which providers to enable. When all cloud providers are disabled, SpeechKit operates entirely offline using local models.
 

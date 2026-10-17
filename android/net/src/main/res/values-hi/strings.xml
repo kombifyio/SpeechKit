@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="plan_denial_title">आपके kombify प्लान में शामिल नहीं है</string>
+    <string name="plan_denial_body">आपके kombify प्लान में यह वॉइस सुविधा शामिल नहीं है। इसे जोड़ने के लिए प्लान देखें।</string>
+    <string name="plan_denial_budget_title">वॉइस मिनट समाप्त हो गए</string>
+    <string name="plan_denial_budget_body">इस अवधि के आपके होस्टेड वॉइस मिनट समाप्त हो गए हैं। प्लान देखें या अगले रीसेट का इंतज़ार करें।</string>
+    <string name="plan_denial_see_plans">प्लान देखें</string>
+</resources>

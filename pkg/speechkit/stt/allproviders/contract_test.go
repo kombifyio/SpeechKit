@@ -8,6 +8,7 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/openaicompat"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/openrouter"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/vps"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/xai"
 	"net/http"
 	"strings"
 	"testing"
@@ -152,6 +153,18 @@ func TestSTTProviderContract(t *testing.T) {
 				return p
 			},
 			Success: jsonTextSuccess("transcribed via groq"),
+		},
+		{
+			Name:         "xai",
+			ExpectedName: "xai",
+			WantText:     "transcribed via xai",
+			NewProvider: func(baseURL string) stt.STTProvider {
+				p := xai.New(xai.Options{APIKey: "xai-test"})
+				p.BaseURL = baseURL
+				p.Validation = loopbackValidation
+				return p
+			},
+			Success: jsonTextSuccess("transcribed via xai"),
 		},
 		{
 			Name:         "ollama",

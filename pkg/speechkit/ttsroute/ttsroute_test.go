@@ -13,6 +13,7 @@ func TestPreferredProvider(t *testing.T) {
 		{"tts.openai.nova", "openai"},
 		{"tts.google.studio-o", "google"},
 		{"tts.huggingface.parler", "huggingface"},
+		{"tts.xai.grok-voice", "xai"},
 		{"tts.openedai.kokoro-v1", "kokoro"},
 		{"tts.kokoro.default", "kokoro"},
 		{"tts.local.kokoro-int8", "kokoro_local"},

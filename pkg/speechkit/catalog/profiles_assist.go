@@ -150,5 +150,30 @@ func assistProviderProfiles() []speechkit.ProviderProfile {
 			},
 			AllowInference: true,
 		},
+		{
+			// xAI is opt-in bring-your-own-key and never a default. Grok serves an
+			// OpenAI-compatible chat API at https://api.x.ai/v1 on the same
+			// XAI_API_KEY as xAI dictation, text to speech and Grok Voice.
+			ID:            "assist.xai.grok",
+			Mode:          speechkit.ModeAssist,
+			Name:          "Grok (xAI)",
+			ProviderKind:  speechkit.ProviderKindDirectProvider,
+			ExecutionMode: speechkit.ExecutionModeXAI,
+			Provider:      "xai",
+			ModelID:       modelXAIGrok47,
+			Lifecycle:     speechkit.ModelLifecycleGA,
+			Source:        "xAI",
+			Description:   "Opt-in Assist profile on xAI's Grok language models with your own XAI_API_KEY (OpenAI-compatible chat at https://api.x.ai/v1). Grok 4.7 is the flagship; Grok 4.3 is the cheaper tier. Never a default.",
+			License:       "proprietary",
+			Capabilities:  []speechkit.Capability{speechkit.CapabilityLLM, speechkit.CapabilityToolCalling, speechkit.CapabilitySessionSummary},
+			AdapterKind:   "genkit_llm",
+			EvidenceURL:   "https://docs.x.ai/developers/models",
+			Variants: []speechkit.ModelVariant{
+				{ID: "xai.grok-4.7", Name: "Grok 4.7", ModelID: modelXAIGrok47, Recommended: true, Description: "The most capable Grok model (500k context)."},
+				{ID: "xai.grok-4.3", Name: "Grok 4.3", ModelID: modelXAIGrok43, Description: "Cheaper and faster tier (1M context, about 40% lower input price)."},
+			},
+			AllowInference: true,
+			Experimental:   true,
+		},
 	}
 }

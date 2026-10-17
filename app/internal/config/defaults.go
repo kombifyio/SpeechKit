@@ -317,7 +317,13 @@ func defaults() *Config {
 				STTUseVocabularyKeyterms: true,
 				DiarizationModel:         "latest",
 			},
+			// xAI fills only its speech slots. The Grok language-model slots stay
+			// empty: they are set when the user picks a Grok Assist profile, so
+			// enabling xAI for dictation or the Voice Agent never moves
+			// summaries, Assist or the cascaded agent to Grok.
 			XAI: XAIProviderConfig{
+				STTModel:  DefaultXAISTTModel,
+				TTSVoice:  DefaultXAITTSVoice,
 				APIKeyEnv: XAIAPIKeyEnv, //nolint:gosec // not a credential, field name triggers false positive
 			},
 			AssemblyAI: AssemblyAIProviderConfig{

@@ -295,6 +295,7 @@ func serverSettingsSnapshot(app *App) map[string]any {
 				"groq":        providerConfigured(cfg, "groq", cfg.Providers.Groq.Enabled),
 				"google":      providerConfigured(cfg, "google", cfg.Providers.Google.Enabled),
 				"open_router": providerConfigured(cfg, "openrouter", cfg.Providers.OpenRouter.Enabled),
+				"xai":         providerConfigured(cfg, "xai", cfg.Providers.XAI.Enabled),
 			},
 		},
 		"voice_agent": map[string]any{

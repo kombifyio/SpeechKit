@@ -204,3 +204,31 @@ func TestResolveEnabledProvidersUsesGeminiSpeechForGeminiProfile(t *testing.T) {
 		t.Fatalf("gemini opts = %+v, want the default model and no Cloud TTS voice", *enabled.Gemini)
 	}
 }
+
+// xAI speech output is opt-in and never a default: a stored key and the
+// [providers.xai] switch (which dictation or the Voice Agent also use) must not
+// make Grok speak Assist replies. Only a tts.xai.* profile named as the primary
+// or the fallback of [model_selection.tts] registers it.
+func TestXAISpeechNeedsAnExplicitSelection(t *testing.T) {
+	t.Setenv("SPEECHKIT_TEST_XAI_KEY", "xai-test")
+	cfg := newCfg()
+	cfg.Providers.XAI.Enabled = true
+	cfg.Providers.XAI.APIKeyEnv = "SPEECHKIT_TEST_XAI_KEY"
+
+	enabled, _ := ResolveEnabledProviders(cfg)
+	if enabled.XAI != nil {
+		t.Fatal("xAI speech registered without being selected")
+	}
+
+	cfg.ModelSelection.TTS.FallbackProfileID = "tts.xai.grok-voice"
+	enabled, _ = ResolveEnabledProviders(cfg)
+	if enabled.XAI == nil || enabled.XAI.APIKey != "xai-test" {
+		t.Fatalf("selected xAI speech = %+v, want the stored key", enabled.XAI)
+	}
+
+	cfg.Providers.XAI.Enabled = false
+	enabled, _ = ResolveEnabledProviders(cfg)
+	if enabled.XAI != nil {
+		t.Fatal("xAI speech stayed registered after the xAI integration was disabled")
+	}
+}

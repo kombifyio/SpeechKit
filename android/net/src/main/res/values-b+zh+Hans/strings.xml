@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="plan_denial_title">你的 kombify 套餐不包含此功能</string>
+    <string name="plan_denial_body">你的 kombify 套餐不包含这项语音功能。查看套餐即可添加。</string>
+    <string name="plan_denial_budget_title">语音分钟已用完</string>
+    <string name="plan_denial_budget_body">本周期的托管语音分钟已用完。请查看套餐，或等待下次重置。</string>
+    <string name="plan_denial_see_plans">查看套餐</string>
+</resources>

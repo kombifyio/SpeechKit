@@ -90,6 +90,9 @@ func deploymentStatusSnapshot(app *App) map[string]any {
 			"groq": map[string]any{
 				"api_key": providerEnvStatus(cfg, "groq"),
 			},
+			"xai": map[string]any{
+				"api_key": providerEnvStatus(cfg, "xai"),
+			},
 			"deepgram": map[string]any{
 				"api_key": providerEnvStatus(cfg, "deepgram"),
 			},

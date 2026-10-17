@@ -67,6 +67,7 @@ func validateServerSettingsStringLengths(settings ServerModelSettings) error {
 		{"assemblyai.value", settings.Credentials.AssemblyAI.Value, 4096},
 		{"huggingface.value", settings.Credentials.HuggingFace.Value, 4096},
 		{"openrouter.value", settings.Credentials.OpenRouter.Value, 4096},
+		{"xai.value", settings.Credentials.XAI.Value, 4096},
 	}
 	for _, field := range fields {
 		if len(field.value) > field.limit {
@@ -147,10 +148,10 @@ func validateServerProviderURL(name, value string) error {
 
 func validateServerVoiceAgentProvider(provider string) error {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "", "cascaded", "gemini", "google", "openai", "deepgram", "assemblyai", "kombify-agent", "moshi":
+	case "", "cascaded", "gemini", "google", "openai", "deepgram", "assemblyai", "xai", "kombify-agent", "moshi":
 		return nil
 	default:
-		return fmt.Errorf("voice_agent.provider must be cascaded, gemini/google, openai, deepgram, assemblyai, kombify-agent, or moshi")
+		return fmt.Errorf("voice_agent.provider must be cascaded, gemini/google, openai, deepgram, assemblyai, xai, kombify-agent, or moshi")
 	}
 }
 
@@ -176,6 +177,7 @@ func validateServerCredentialSettings(settings ServerCredentialSettings) error {
 		{"assemblyai.env", settings.AssemblyAI.Env, 0},
 		{"huggingface.env", settings.HuggingFace.Env, 0},
 		{"openrouter.env", settings.OpenRouter.Env, 0},
+		{"xai.env", settings.XAI.Env, 0},
 	} {
 		if field.value != "" && !validEnvName(field.value) {
 			return fmt.Errorf("%s must be a valid environment variable name", field.name)

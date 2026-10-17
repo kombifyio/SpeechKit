@@ -294,5 +294,28 @@ func dictationProviderProfiles() []speechkit.ProviderProfile {
 			AllowInference: true,
 			Recommended:    true,
 		},
+		{
+			// xAI is opt-in bring-your-own-key: nothing is sent to xAI until the
+			// user enables it with their own XAI_API_KEY. Never a default.
+			ID:            "stt.xai.grok-transcribe",
+			Mode:          speechkit.ModeDictation,
+			Name:          "Grok Voice Transcribe (xAI)",
+			ProviderKind:  speechkit.ProviderKindDirectProvider,
+			ExecutionMode: speechkit.ExecutionModeXAI,
+			Provider:      "xai",
+			ModelID:       modelXAIGrokVoiceTranscribe2,
+			Lifecycle:     speechkit.ModelLifecycleGA,
+			Source:        "xAI",
+			Description:   "Opt-in batch transcription on xAI's Grok Voice Transcribe 2.0 (POST /v1/stt) with your own XAI_API_KEY: 38+ languages with automatic language detection, keyterm bias and inverse text normalization. Whole utterances only, no live stream. Never a default.",
+			License:       "proprietary",
+			Capabilities:  []speechkit.Capability{speechkit.CapabilityTranscription, speechkit.CapabilitySTT, speechkit.CapabilityAudioInput, speechkit.CapabilityDictionaryNativeHints},
+			EvidenceURL:   "https://docs.x.ai/developers/model-capabilities/audio/speech-to-text",
+			AdapterKind:   "xai_stt",
+			Variants: []speechkit.ModelVariant{
+				{ID: "xai.grok-voice-transcribe-2.0", Name: "Grok Voice Transcribe 2.0", ModelID: modelXAIGrokVoiceTranscribe2, Recommended: true},
+			},
+			AllowInference: true,
+			Experimental:   true,
+		},
 	}
 }

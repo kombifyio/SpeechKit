@@ -26,6 +26,7 @@ func MigrateRetiredModels(cfg *Config) {
 			&p.OpenAI.TTSModel, &p.OpenAI.RealtimeModel, &cfg.TTS.OpenAI.Model,
 		},
 		"groq":        {&p.Groq.STTModel, &p.Groq.UtilityModel, &p.Groq.AssistModel, &p.Groq.AgentModel},
+		"xai":         {&p.XAI.STTModel, &p.XAI.UtilityModel, &p.XAI.AssistModel, &p.XAI.AgentModel},
 		"google":      {&p.Google.UtilityModel, &p.Google.AssistModel, &p.Google.AgentModel},
 		"openrouter":  {&p.OpenRouter.STTModel, &p.OpenRouter.UtilityModel, &p.OpenRouter.AssistModel, &p.OpenRouter.AgentModel},
 		"huggingface": {&cfg.HuggingFace.Model, &cfg.HuggingFace.UtilityModel, &cfg.HuggingFace.AssistModel, &cfg.HuggingFace.AgentModel},

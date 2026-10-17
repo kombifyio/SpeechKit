@@ -15,6 +15,12 @@ type EnabledProviders struct {
 	Deepgram    *DeepgramOpts
 	HuggingFace *HuggingFaceOpts
 	Foundry     *FoundryOpts
+	// XAI registers xAI Grok Voice speech as the opt-in "xai" provider; a host
+	// sets it only for a user who explicitly selected xAI speech output with
+	// their own XAI_API_KEY. It is never a default: BuildRouter registers it
+	// after every other provider, so only an explicit PreferredProfileID moves
+	// it ahead of them.
+	XAI *XAIOpts
 	// FoundrySpeech routes Foundry speech output to the resource's Azure
 	// Speech surface (MAI-Voice) instead of the OpenAI-compatible route. Both
 	// adapters report the shared "foundry" provider id, so a host enables one
@@ -90,6 +96,13 @@ func BuildRouter(strategy Strategy, enabled EnabledProviders) (router *Router, o
 			providers = append(providers, local)
 			notes = append(notes, "TTS: self-hosted OpenAI-compatible server registered (url="+strings.TrimSpace(enabled.SelfHostedOpenAI.BaseURL)+")")
 		}
+	}
+	// xAI is opt-in and registers last, behind every local engine: only a
+	// host-resolved explicit selection sets it, and a pinned profile moves it
+	// to the front below.
+	if enabled.XAI != nil {
+		providers = append(providers, NewXAI(*enabled.XAI))
+		notes = append(notes, "TTS: xAI Grok Voice registered (voice="+enabled.XAI.Voice+")")
 	}
 
 	if len(providers) == 0 {

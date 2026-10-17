@@ -3,6 +3,7 @@ package io.kombify.speechkit.assistant.intent
 import android.content.Context
 import io.kombify.speechkit.assistant.R
 import io.kombify.speechkit.log.VoiceLog
+import io.kombify.speechkit.net.PlanDenial
 
 /**
  * Intent classification and routing for the voice assistant.
@@ -182,6 +183,8 @@ data class ActionResult(
     val responseText: String = "",
     val errorMessage: String? = null,
     val keepOpen: Boolean = false,
+    /** Set when the failure is the user's kombify plan, so the overlay can lead to the plans page. */
+    val planDenial: PlanDenial? = null,
 )
 
 /** Executes a specific intent type. */

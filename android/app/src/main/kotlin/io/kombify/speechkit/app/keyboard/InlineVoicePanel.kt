@@ -26,7 +26,7 @@ import helium314.keyboard.latin.SpeechKitVoiceBridge
 import helium314.keyboard.settings.SettingsActivity
 import io.kombify.speechkit.app.companion.CoinstallTurnClient
 import io.kombify.speechkit.app.companion.CoinstallTurnResult
-import io.kombify.speechkit.app.companion.CompanionProvision
+import io.kombify.speechkit.app.companion.recoverCloudSession
 import io.kombify.speechkit.app.companion.CompanionProvisioner
 import io.kombify.speechkit.app.ui.MainActivity
 import io.kombify.speechkit.audio.MicAudioCapture
@@ -636,6 +636,7 @@ class InlineVoicePanel(
             KeyboardAction.AgentDeepgram,
             KeyboardAction.AgentAssemblyAi,
             KeyboardAction.AgentOpenAi,
+            KeyboardAction.AgentXai,
             -> profileSource.currentProfile()
 
             // Nothing to bind to yet; the row renders it disabled.
@@ -684,8 +685,10 @@ class InlineVoicePanel(
             ).openSession()
         } catch (e: SpeechKitApiException) {
             if (e.httpStatus != 401) throw e
-            val recovered = companion.recoverFromUnauthorized(profile)
-            val next = (recovered as? CompanionProvision.Session)?.profile ?: throw e
+            // Companion first, then this device's own refresh token.
+            val next = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                recoverCloudSession(application, companion, profile)
+            } ?: throw e
             DictationController(
                 profile = next,
                 context = application,

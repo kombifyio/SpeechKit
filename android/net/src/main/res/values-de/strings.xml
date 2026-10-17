@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="plan_denial_title">Nicht in deinem kombify-Tarif</string>
+    <string name="plan_denial_body">Dein kombify-Tarif enthält diese Sprachfunktion nicht. Sieh dir die Tarife an, um sie hinzuzufügen.</string>
+    <string name="plan_denial_budget_title">Sprachminuten aufgebraucht</string>
+    <string name="plan_denial_budget_body">Deine gehosteten Sprachminuten für diesen Zeitraum sind aufgebraucht. Sieh dir die Tarife an oder warte auf das nächste Zurücksetzen.</string>
+    <string name="plan_denial_see_plans">Tarife ansehen</string>
+</resources>

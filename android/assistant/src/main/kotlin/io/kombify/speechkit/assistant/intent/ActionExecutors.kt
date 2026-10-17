@@ -9,6 +9,7 @@ import io.kombify.speechkit.assistant.R
 import io.kombify.speechkit.domain.ConnectionProfile
 import io.kombify.speechkit.domain.ConnectionProfileSource
 import io.kombify.speechkit.log.VoiceLog
+import io.kombify.speechkit.net.SpeechKitApiException
 import io.kombify.speechkit.net.SpeechKitServerApi
 
 /**
@@ -287,6 +288,7 @@ class GeneralQueryExecutor(
             ActionResult(
                 success = false,
                 errorMessage = e.message ?: ACTION_FAILED_MESSAGE,
+                planDenial = (e as? SpeechKitApiException)?.denial,
             )
         }
     }

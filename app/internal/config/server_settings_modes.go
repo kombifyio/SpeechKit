@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 
+	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 )
 
@@ -34,7 +35,11 @@ func applyDictationModeSetting(cfg *Config, mode ServerModeSetting) []string {
 		cfg.Local.Enabled = false
 		cfg.Routing.Strategy = "cloud-only"
 		cfg.VPS.Enabled = false
-		applyDirectDictationProvider(cfg, providerForModeSetting(mode), model)
+		provider := providerForModeSetting(mode)
+		applyDirectDictationProvider(cfg, provider, model)
+		if provider == "xai" {
+			selectXAIDictation(cfg, mode.ProfileID)
+		}
 		notes = append(notes, "server settings: Dictation uses direct provider")
 	case "cloud_provider":
 		cfg.Local.Enabled = false
@@ -100,6 +105,11 @@ func applyAssistModeSetting(cfg *Config, mode ServerModeSetting) []string {
 			cfg.Providers.Groq.Enabled = true
 			if model != "" {
 				cfg.Providers.Groq.AssistModel = model
+			}
+		case "xai":
+			cfg.Providers.XAI.Enabled = true
+			if model != "" {
+				cfg.Providers.XAI.AssistModel = model
 			}
 		default:
 			cfg.Providers.OpenAI.Enabled = true
@@ -179,6 +189,12 @@ func applyVoiceAgentModeSetting(cfg *Config, mode ServerModeSetting) []string {
 			if model != "" {
 				cfg.VoiceAgent.Model = model
 			}
+		case "xai":
+			cfg.VoiceAgent.Provider = "xai"
+			cfg.Providers.XAI.Enabled = true
+			if model != "" {
+				cfg.VoiceAgent.Model = model
+			}
 		default:
 			cfg.VoiceAgent.Provider = "openai"
 			cfg.Providers.OpenAI.Enabled = true
@@ -222,7 +238,7 @@ func applyVoiceAgentModeSetting(cfg *Config, mode ServerModeSetting) []string {
 
 func directVoiceAgentProviderForProfile(profileID string) string {
 	switch providerForProfileID(profileID) {
-	case "openai", "deepgram", "assemblyai":
+	case "openai", "deepgram", "assemblyai", "xai":
 		return providerForProfileID(profileID)
 	case "google":
 		return "gemini"
@@ -256,6 +272,21 @@ func providerForProfileID(profileID string) string {
 	return provider
 }
 
+// xaiDictationProfileID is the catalog profile of xAI Grok Voice Transcribe.
+const xaiDictationProfileID = "stt.xai.grok-transcribe"
+
+// selectXAIDictation names xAI as the Dictation selection. xAI is opt-in and
+// never a fallback: the STT router uses it for requests that do not name a
+// provider only when model_selection.dictate names it, so choosing it as the
+// Dictation provider must say so there too.
+func selectXAIDictation(cfg *Config, profileID string) {
+	profileID = framework.NormalizeProviderProfileID(cleanSetting(profileID))
+	if !strings.Contains(profileID, ".") {
+		profileID = xaiDictationProfileID
+	}
+	cfg.ModelSelection.Dictate.PrimaryProfileID = profileID
+}
+
 func applyDirectDictationProvider(cfg *Config, provider, model string) {
 	cfg.HuggingFace.Enabled = false
 	switch provider {
@@ -263,6 +294,11 @@ func applyDirectDictationProvider(cfg *Config, provider, model string) {
 		cfg.Providers.Groq.Enabled = true
 		if model != "" {
 			cfg.Providers.Groq.STTModel = model
+		}
+	case "xai":
+		cfg.Providers.XAI.Enabled = true
+		if model != "" {
+			cfg.Providers.XAI.STTModel = model
 		}
 	case "google":
 		cfg.Providers.Google.Enabled = true

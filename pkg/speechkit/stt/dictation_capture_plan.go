@@ -14,7 +14,7 @@ import (
 // without an unnecessary live handshake. Unknown or complete-capture profiles
 // retain normal startup; this is never a fallback after a provider failure.
 func (r *Router) DictationBatchProvider(opts speechkit.DictationStreamOptions) (STTProvider, bool) {
-	candidates := PrioritizeProviderProfile(r.dictationStreamingCandidates(), opts.ProviderProfileID)
+	candidates := PrioritizeProviderProfile(r.dictationStreamingCandidates(opts.ProviderProfileID), opts.ProviderProfileID)
 	if len(candidates) == 0 {
 		return nil, false
 	}

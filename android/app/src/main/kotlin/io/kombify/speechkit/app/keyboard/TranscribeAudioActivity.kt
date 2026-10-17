@@ -34,7 +34,11 @@ import io.kombify.speechkit.R
 import io.kombify.speechkit.app.ui.theme.SpeechKitTheme
 import io.kombify.speechkit.domain.ConnectionProfile
 import io.kombify.speechkit.domain.ConnectionProfileSource
+import io.kombify.speechkit.net.KombifyLinks
+import io.kombify.speechkit.net.R as NetR
+import io.kombify.speechkit.net.SpeechKitApiException
 import io.kombify.speechkit.net.SpeechKitServerApi
+import io.kombify.speechkit.net.userText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -110,6 +114,13 @@ class TranscribeAudioActivity : ComponentActivity() {
                         Ui.Idle, Ui.Working -> CircularProgressIndicator()
                         is Ui.Done -> Text(s.text, style = MaterialTheme.typography.bodyLarge)
                         is Ui.Failed -> Text(s.reason, color = MaterialTheme.colorScheme.error)
+                        is Ui.PlanDenied -> {
+                            Text(s.title, style = MaterialTheme.typography.titleSmall)
+                            Text(s.body, color = MaterialTheme.colorScheme.error)
+                            Button(onClick = { KombifyLinks.open(this@TranscribeAudioActivity, KombifyLinks.PLANS_URL) }) {
+                                Text(stringResource(NetR.string.plan_denial_see_plans))
+                            }
+                        }
                     }
                     Button(onClick = ::finish) { Text(stringResource(R.string.shortcuts_close)) }
                 }
@@ -158,6 +169,12 @@ class TranscribeAudioActivity : ComponentActivity() {
                 ).text.trim()
             }
             val text = transcript.getOrNull().orEmpty()
+            val denial = (transcript.exceptionOrNull() as? SpeechKitApiException)?.denial
+            if (denial != null) {
+                val message = denial.userText(this@TranscribeAudioActivity)
+                ui.value = Ui.PlanDenied(message.title, message.body)
+                return@launch
+            }
             if (text.isEmpty()) {
                 val reason = transcript.exceptionOrNull()?.message
                     ?: getString(R.string.transcribe_audio_empty)
@@ -218,6 +235,7 @@ class TranscribeAudioActivity : ComponentActivity() {
         data object Working : Ui()
         data class Done(val text: String) : Ui()
         data class Failed(val reason: String) : Ui()
+        data class PlanDenied(val title: String, val body: String) : Ui()
     }
 
     companion object {

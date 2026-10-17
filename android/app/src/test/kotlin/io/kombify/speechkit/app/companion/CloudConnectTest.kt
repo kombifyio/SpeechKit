@@ -25,35 +25,6 @@ class CloudConnectTest {
     }
 
     @Test
-    fun aCloudUnauthorizedRefreshesTheStoredGatewayBearer() {
-        val dead = ConnectionProfile.Server("https://api.kombify.io/v1/speechkit", "dead-jwt")
-        val recovered = recoverIndependentCloud(
-            failed = dead,
-            stored = dead,
-            refreshToken = "rt",
-            refresh = { "fresh-jwt" },
-        )
-        assertEquals(
-            ConnectionProfile.Server("https://api.kombify.io/v1/speechkit", "fresh-jwt"),
-            recovered,
-        )
-    }
-
-    @Test
-    fun aSelfHostUnauthorizedDoesNotUseTheCloudRefreshPath() {
-        val selfHost = ConnectionProfile.Server("http://192.168.1.20:8080", "sk-server-x")
-        val cloud = ConnectionProfile.Server("https://api.kombify.io/v1/speechkit", "user-jwt")
-        assertNull(
-            recoverIndependentCloud(
-                failed = selfHost,
-                stored = cloud,
-                refreshToken = "rt",
-                refresh = { "fresh-jwt" },
-            ),
-        )
-    }
-
-    @Test
     fun resumeDoesNotRestartConnectAfterCloudIsConnected() {
         assertEquals(
             false,

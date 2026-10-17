@@ -54,6 +54,7 @@ type Model interface {
 type Config struct {
 	OpenAIAPIKey     string
 	GroqAPIKey       string
+	XAIAPIKey        string
 	HuggingFaceToken string
 	OllamaBaseURL    string
 	LocalLLMBaseURL  string
@@ -69,6 +70,9 @@ type Config struct {
 	GroqUtilityModel            string
 	GroqAssistModel             string
 	GroqAgentModel              string
+	XAIUtilityModel             string
+	XAIAssistModel              string
+	XAIAgentModel               string
 	HFUtilityModel              string
 	HFAssistModel               string
 	HFAgentModel                string
@@ -336,6 +340,9 @@ func (r *Runtime) register(cfg Config, provider, model, tier string, destination
 	slog.Info(tier+" model registered", "provider", provider, "model", model)
 }
 
+// tierModelSpecs lists the models of a tier in fallback order. xAI is opt-in
+// and stays last in every tier: it never ranks ahead of a provider the user
+// enabled, and its model slots are empty until the user picks a Grok profile.
 func tierModelSpecs(cfg Config, tier string) []modelSpec {
 	switch tier {
 	case "utility":
@@ -349,6 +356,7 @@ func tierModelSpecs(cfg Config, tier string) []modelSpec {
 			{"assemblyai", cfg.AssemblyAIUtilityModel, cfg.AssemblyAIAPIKey != "" && cfg.AssemblyAIUtilityModel != ""},
 			{"cloudflare", cfg.CloudflareUtilityModel, cloudflareModelEnabled(cfg) && cfg.CloudflareUtilityModel != ""},
 			{"foundry", cfg.FoundryUtilityModel, foundryModelEnabled(cfg) && cfg.FoundryUtilityModel != ""},
+			{"xai", cfg.XAIUtilityModel, cfg.XAIAPIKey != "" && cfg.XAIUtilityModel != ""},
 		}
 	case "assist":
 		return []modelSpec{
@@ -361,6 +369,7 @@ func tierModelSpecs(cfg Config, tier string) []modelSpec {
 			{"assemblyai", cfg.AssemblyAIAssistModel, cfg.AssemblyAIAPIKey != "" && cfg.AssemblyAIAssistModel != ""},
 			{"cloudflare", cfg.CloudflareAssistModel, cloudflareModelEnabled(cfg) && cfg.CloudflareAssistModel != ""},
 			{"foundry", cfg.FoundryAssistModel, foundryModelEnabled(cfg) && cfg.FoundryAssistModel != ""},
+			{"xai", cfg.XAIAssistModel, cfg.XAIAPIKey != "" && cfg.XAIAssistModel != ""},
 		}
 	case "agent":
 		return []modelSpec{
@@ -373,6 +382,7 @@ func tierModelSpecs(cfg Config, tier string) []modelSpec {
 			{"assemblyai", cfg.AssemblyAIAgentModel, cfg.AssemblyAIAPIKey != "" && cfg.AssemblyAIAgentModel != ""},
 			{"cloudflare", cfg.CloudflareAgentModel, cloudflareModelEnabled(cfg) && cfg.CloudflareAgentModel != ""},
 			{"foundry", cfg.FoundryAgentModel, foundryModelEnabled(cfg) && cfg.FoundryAgentModel != ""},
+			{"xai", cfg.XAIAgentModel, cfg.XAIAPIKey != "" && cfg.XAIAgentModel != ""},
 		}
 	default:
 		return nil

@@ -38,6 +38,7 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/openaicompat"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/openrouter"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/vps"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/xai"
 )
 
 // BuildSpec carries the inputs needed to construct a cloud STT provider for a
@@ -49,7 +50,7 @@ type BuildSpec struct {
 	Provider      string
 	ModelID       string
 
-	APIKey  string // cloud API key (OpenAI/Groq/Google/Deepgram/AssemblyAI/OpenRouter/Foundry)
+	APIKey  string // cloud API key (OpenAI/Groq/Google/Deepgram/AssemblyAI/OpenRouter/Foundry/xAI)
 	Token   string // HuggingFace token
 	BaseURL string // Ollama base URL (optional; defaulted when empty) or Foundry OpenAI-compatible base (required)
 
@@ -251,6 +252,15 @@ var providerRegistry = map[string]providerDescriptor{
 			return p, nil
 		},
 	},
+	// xai is opt-in BYOK: a host builds it only for a user who enabled xAI with
+	// their own key. A BuildSpec names the profile the user applied, so the
+	// built provider is a selected one, not explicit-only.
+	"xai": {
+		Name: xai.ProviderName,
+		Build: func(spec BuildSpec) (stt.STTProvider, error) {
+			return xai.New(xai.Options{APIKey: spec.APIKey, Model: spec.ModelID, Selected: true}), nil
+		},
+	},
 	"ollama": {
 		Name: "ollama",
 		Build: func(spec BuildSpec) (stt.STTProvider, error) {
@@ -418,6 +428,18 @@ type (
 		Diarization bool
 	}
 
+	// XAIOpts configures the opt-in xAI Grok Voice Transcribe provider (bring
+	// your own key). Model defaults to "grok-voice-transcribe-2.0" when empty.
+	XAIOpts struct {
+		APIKey string
+		Model  string
+		// Selected marks xAI as chosen for dictation (model_selection.dictate
+		// names an xAI profile). Without it the provider is explicit-only: the
+		// router uses it only for a request whose ProviderProfileID names xAI
+		// and never as a fallback for other providers.
+		Selected bool
+	}
+
 	// OllamaOpts configures the Ollama provider. BaseURL defaults to
 	// "http://localhost:11434" and Model to the provider default when empty.
 	OllamaOpts struct {
@@ -450,7 +472,11 @@ type EnabledProviders struct {
 	// FoundrySpeech routes Foundry dictation to Azure Speech (MAI-Transcribe)
 	// instead of the OpenAI-compatible transcription route.
 	FoundrySpeech *FoundrySpeechOpts
-	Extra         []stt.STTProvider
+	// XAI registers xAI Grok Voice Transcribe; hosts set it only for a user
+	// who enabled xAI with their own key. It is explicit-only unless
+	// XAIOpts.Selected is set.
+	XAI   *XAIOpts
+	Extra []stt.STTProvider
 	// Secrets is handed to every constructed provider that resolves
 	// credentials lazily (currently Google streaming). Nil falls back to the
 	// process environment.
@@ -460,7 +486,7 @@ type EnabledProviders struct {
 // BuildRouter is the single source of truth for assembling an STT router from
 // a set of enabled providers: it constructs each enabled provider in a stable
 // order (cloud fallback order: HuggingFace, OpenRouter, VPS, Ollama, Groq,
-// OpenAI, Deepgram, AssemblyAI, Google, Foundry, then Extra), applies optional
+// OpenAI, Deepgram, AssemblyAI, Google, Foundry, xAI, then Extra), applies optional
 // model_selection pinning, and returns the router plus human-readable notes.
 // ok is false (router nil) when nothing is enabled.
 func BuildRouter(cfg RouterConfig, enabled EnabledProviders) (router *stt.Router, ok bool, notes []string) {
@@ -586,6 +612,15 @@ func BuildRouter(cfg RouterConfig, enabled EnabledProviders) (router *stt.Router
 			notes = append(notes, "STT: Microsoft Foundry registered (Azure Speech model="+p.Model+")")
 		} else {
 			notes = append(notes, "STT: Microsoft Foundry skipped (Speech host missing)")
+		}
+	}
+	if o := enabled.XAI; o != nil {
+		p := xai.New(xai.Options{APIKey: o.APIKey, Model: o.Model, Selected: o.Selected})
+		cloud = append(cloud, p)
+		if o.Selected {
+			notes = append(notes, "STT: xAI registered (model="+p.Model+")")
+		} else {
+			notes = append(notes, "STT: xAI registered for explicit requests only (model="+p.Model+")")
 		}
 	}
 	for _, p := range enabled.Extra {

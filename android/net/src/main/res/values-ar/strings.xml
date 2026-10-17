@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="plan_denial_title">غير مشمول في باقة kombify الخاصة بك</string>
+    <string name="plan_denial_body">لا تشمل باقة kombify الخاصة بك هذه الميزة الصوتية. اطّلع على الباقات لإضافتها.</string>
+    <string name="plan_denial_budget_title">انتهت الدقائق الصوتية</string>
+    <string name="plan_denial_budget_body">انتهت دقائقك الصوتية المستضافة لهذه الفترة. اطّلع على الباقات أو انتظر إعادة التعيين التالية.</string>
+    <string name="plan_denial_see_plans">عرض الباقات</string>
+</resources>

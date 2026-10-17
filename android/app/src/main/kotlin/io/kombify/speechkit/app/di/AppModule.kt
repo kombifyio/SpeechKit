@@ -14,13 +14,9 @@ import io.kombify.speechkit.shortcuts.DefaultShortcutResolver
 import io.kombify.speechkit.shortcuts.ShortcutResolver
 import io.kombify.speechkit.app.companion.BinderCoinstallTurnTransport
 import io.kombify.speechkit.app.companion.CoinstallTurnClient
-import io.kombify.speechkit.app.build.ShippedDefaults
-import io.kombify.speechkit.app.companion.CompanionProvision
 import io.kombify.speechkit.app.companion.CompanionProvisioner
-import io.kombify.speechkit.app.companion.recoverIndependentCloud
+import io.kombify.speechkit.app.companion.recoverCloudSession
 import io.kombify.speechkit.assistant.intent.CloudSessionRecovery
-import io.kombify.speechkit.net.KombifyCloudAuth
-import io.kombify.speechkit.net.StoredServerProfile
 import io.kombify.speechkit.assistant.intent.CompanionTurnExecutor
 import io.kombify.speechkit.store.RoomStore
 import io.kombify.speechkit.store.Store
@@ -59,44 +55,7 @@ object AppModule {
         @ApplicationContext context: Context,
         companion: CompanionProvisioner,
     ): CloudSessionRecovery =
-        CloudSessionRecovery { failed ->
-            val fromCompanion =
-                (companion.recoverFromUnauthorized(failed) as? CompanionProvision.Session)?.profile
-            if (fromCompanion != null) {
-                StoredServerProfile.saveKombifyCloud(
-                    context,
-                    fromCompanion.baseUrl,
-                    fromCompanion.bearerToken,
-                )
-                return@CloudSessionRecovery fromCompanion
-            }
-            val clientId = ShippedDefaults.cloudAuthClientId
-            val refreshed = recoverIndependentCloud(
-                failed = failed,
-                stored = StoredServerProfile.loadCloud(context),
-                refreshToken = StoredServerProfile.loadCloudRefreshToken(context),
-            ) { refreshToken ->
-                if (clientId.isEmpty()) {
-                    null
-                } else {
-                    runCatching {
-                        kotlinx.coroutines.runBlocking {
-                            KombifyCloudAuth(KombifyCloudAuth.Config(clientId = clientId))
-                                .refresh(refreshToken)
-                        }.accessToken
-                    }.getOrNull()
-                }
-            }
-            if (refreshed != null) {
-                StoredServerProfile.saveKombifyCloud(
-                    context,
-                    refreshed.baseUrl,
-                    refreshed.bearerToken,
-                    StoredServerProfile.loadCloudRefreshToken(context),
-                )
-            }
-            refreshed
-        }
+        CloudSessionRecovery { failed -> recoverCloudSession(context, companion, failed) }
 
     @Provides
     @Singleton

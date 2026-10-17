@@ -66,6 +66,7 @@ import io.kombify.speechkit.app.companion.ConnectCloudIntent
 import io.kombify.speechkit.app.companion.companionCloudProfile
 import io.kombify.speechkit.app.companion.shouldStartConnectOnResume
 import io.kombify.speechkit.net.KombifyCloudAuth
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import io.kombify.speechkit.coinstall.v1.CoinstallContract
 import io.kombify.speechkit.domain.ConnectionMode
@@ -693,45 +694,71 @@ private fun ServerConnectionCard(
                 )
                 persistMode(ConnectionMode.KOMBIFY_CLOUD)
                 onConnectSucceeded()
-                status = context.getString(R.string.settings_connection_cloud_connected)
+                // The state line above already says Connected; a stale success
+                // message here would outlive a later sign-out.
+                status = null
                 connecting = false
                 return@launch
             }
             val clientId = ShippedDefaults.cloudAuthClientId
             if (clientId.isEmpty()) {
-                status = context.getString(R.string.settings_connection_cloud_browser)
+                status = context.getString(R.string.settings_connection_cloud_no_client)
                 connecting = false
                 return@launch
             }
             val auth = KombifyCloudAuth(KombifyCloudAuth.Config(clientId = clientId))
-            val started = runCatching { auth.start() }.getOrNull()
+            val started = try {
+                auth.start()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
             if (started == null || started.verificationUriComplete.isEmpty()) {
-                status = context.getString(R.string.settings_connection_cloud_browser)
+                status = context.getString(R.string.settings_connection_cloud_network)
                 connecting = false
                 return@launch
             }
-            status = context.getString(R.string.settings_connection_cloud_waiting)
+            // The code stays on screen while the browser tab is open: it is what
+            // the user compares against the page kombify shows.
+            status = if (started.userCode.isNotEmpty()) {
+                context.getString(R.string.settings_connection_cloud_code, started.userCode)
+            } else {
+                context.getString(R.string.settings_connection_cloud_waiting)
+            }
             runCatching {
                 context.startActivity(
                     Intent(Intent.ACTION_VIEW, Uri.parse(started.verificationUriComplete))
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                 )
             }
-            val tokens = runCatching {
-                auth.waitForTokens(started) { delay(it) }
-            }.getOrNull()
-            if (tokens != null) {
-                StoredServerProfile.saveKombifyCloud(
-                    context,
-                    KombifyCloudAuth.DEFAULT_SERVER_URL,
-                    tokens.accessToken,
-                    tokens.refreshToken,
-                )
-                persistMode(ConnectionMode.KOMBIFY_CLOUD)
-                onConnectSucceeded()
-                status = context.getString(R.string.settings_connection_cloud_connected)
-            } else {
-                status = context.getString(R.string.settings_connection_cloud_browser)
+            val signIn = try {
+                auth.awaitSignIn(started) { delay(it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                KombifyCloudAuth.SignIn.Unreachable
+            }
+            status = when (signIn) {
+                is KombifyCloudAuth.SignIn.Done -> {
+                    val tokens = signIn.tokens
+                    StoredServerProfile.saveKombifyCloud(
+                        context,
+                        KombifyCloudAuth.DEFAULT_SERVER_URL,
+                        tokens.accessToken,
+                        tokens.refreshToken,
+                        System.currentTimeMillis() + tokens.expiresInSec * 1000L,
+                    )
+                    persistMode(ConnectionMode.KOMBIFY_CLOUD)
+                    onConnectSucceeded()
+                    null
+                }
+                KombifyCloudAuth.SignIn.Declined ->
+                    context.getString(R.string.settings_connection_cloud_declined)
+                KombifyCloudAuth.SignIn.Expired ->
+                    context.getString(R.string.settings_connection_cloud_expired)
+                KombifyCloudAuth.SignIn.Unreachable ->
+                    context.getString(R.string.settings_connection_cloud_network)
             }
             connecting = false
         }
@@ -744,6 +771,9 @@ private fun ServerConnectionCard(
     val connectLifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current
     DisposableEffect(connectCloudRequested, connectLifecycle) {
         val observer = LifecycleEventObserver { _, event ->
+            // The sign-in can end while the app is in the background (refresh
+            // token refused): re-read it so Settings never claims Connected.
+            if (event == Lifecycle.Event.ON_RESUME) modeTick += 1
             if (event == Lifecycle.Event.ON_RESUME &&
                 shouldStartConnectOnResume(
                     requested = connectCloudRequested,
@@ -783,7 +813,7 @@ private fun ServerConnectionCard(
                     mode == ConnectionMode.KOMBIFY_CLOUD && cloudSession != null ->
                         stringResource(R.string.settings_connection_cloud_connected)
                     mode == ConnectionMode.KOMBIFY_CLOUD ->
-                        stringResource(R.string.settings_connection_cloud_signed_out)
+                        stringResource(R.string.settings_connection_cloud_session_ended)
                     saved != null -> stringResource(R.string.settings_connection_state_server)
                     shippedUrl != null && shippedProfile != null ->
                         stringResource(R.string.settings_connection_state_shipped, shippedUrl)
@@ -792,9 +822,15 @@ private fun ServerConnectionCard(
                 },
                 style = MaterialTheme.typography.bodySmall,
             )
+            if (cloudConnectSupported && mode == ConnectionMode.KOMBIFY_CLOUD && cloudSession != null) {
+                CloudAccountSection(
+                    provisioner = provisioner,
+                    onSessionChanged = { modeTick += 1 },
+                )
+            }
             if (cloudConnectSupported) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    if (mode == ConnectionMode.KOMBIFY_CLOUD) {
+                    if (mode == ConnectionMode.KOMBIFY_CLOUD && cloudSession != null) {
                         TextButton(
                             onClick = {
                                 provisioner.forgetSession()
@@ -1014,6 +1050,7 @@ private fun VoiceAgentProviderCard() {
         KeyboardAgentPreferences.PROVIDER_DEEPGRAM to "Deepgram",
         KeyboardAgentPreferences.PROVIDER_ASSEMBLYAI to "AssemblyAI",
         KeyboardAgentPreferences.PROVIDER_OPENAI to "GPT",
+        KeyboardAgentPreferences.PROVIDER_XAI to "Grok",
     )
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

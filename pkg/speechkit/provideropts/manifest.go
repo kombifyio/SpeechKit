@@ -34,12 +34,14 @@ func DefaultManifests() []ProviderOptionManifest {
 		openRouterSTTManifest(),
 		huggingFaceSTTManifest(),
 		localSTTManifest(),
+		xaiSTTManifest(),
 		deepgramTTSManifest(),
 		openAITTSManifest(),
 		googleTTSManifest(),
 		geminiTTSManifest(),
 		huggingFaceTTSManifest(),
 		piperTTSManifest(),
+		xaiTTSManifest(),
 		deepgramVoiceAgentManifest(),
 		assemblyAIVoiceAgentManifest(),
 		geminiVoiceAgentManifest(),
@@ -228,6 +230,43 @@ func localSTTManifest() ProviderOptionManifest {
 		native(OptionPromptHint, TypeString, "Prompt hint", "prompt", "https://github.com/ggerganov/whisper.cpp"),
 		derived(OptionVocabularyBias, TypeBool, "Use vocabulary bias", "Dictionary terms are rendered into the prompt field.", "https://github.com/ggerganov/whisper.cpp"),
 		unsupported(OptionEndpointingMs, TypeInt, "Endpointing", "Local batch transcription uses SpeechKit VAD/recording controls."),
+	})
+}
+
+// xaiSTTManifest describes the xAI batch transcription adapter
+// (https://docs.x.ai/developers/model-capabilities/audio/speech-to-text).
+func xaiSTTManifest() ProviderOptionManifest {
+	const evidence = "https://docs.x.ai/developers/model-capabilities/audio/speech-to-text"
+	return manifest("xai", "xAI Grok Voice Transcribe", ModalitySTT, []string{"stt.xai.grok-transcribe"}, []OptionSupport{
+		languageOption("language", evidence,
+			"Multilanguage: OMIT the field; xAI then transcribes in the spoken language. Verified live 2026-10-16: German audio sent without a language still transcribes as German, but the answer labels it language=en, so SpeechKit never reads the answer's language field and reports the multilanguage sentinel instead."),
+		derived(OptionDetectLanguage, TypeBool, "Detect language", "Omit language so the model detects it.", evidence),
+		support(OptionSmartFormat, TypeBool, "Inverse text normalization", SupportNative, "format", evidence,
+			"Spoken forms become written forms (currency, numbers). xAI requires a language with it, so SpeechKit sends it only when a language is pinned."),
+		native(OptionFillerWords, TypeBool, "Filler words", "filler_words", evidence),
+		support(OptionVocabularyBias, TypeBool, "Use vocabulary bias", SupportNative, "keyterm", evidence,
+			"Dictionary terms are sent as keyterm fields."),
+		support(OptionKeyterms, TypeStringList, "Keyterms", SupportNative, "keyterm", evidence,
+			"One keyterm field per term; xAI accepts at most 100 terms of 50 characters, and SpeechKit drops longer terms."),
+		unsupported(OptionPromptHint, TypeString, "Prompt hint", "xAI takes keyterms, not a free-text prompt."),
+		unsupported(OptionSpeakerDiarization, TypeBool, "Speaker diarization", "xAI offers diarize on the REST endpoint; the SpeechKit adapter does not map it to speaker turns yet."),
+		unsupported(OptionTimestamps, TypeBool, "Word timestamps", "xAI returns word timings, but SpeechKit's word list carries per-word confidence, which xAI does not report."),
+		unsupported(OptionEndpointingMs, TypeInt, "Endpointing", "Batch transcription has no server endpointing control."),
+	})
+}
+
+// xaiTTSManifest describes the xAI Grok Voice text-to-speech adapter
+// (https://docs.x.ai/developers/model-capabilities/audio/text-to-speech).
+func xaiTTSManifest() ProviderOptionManifest {
+	const evidence = "https://docs.x.ai/developers/model-capabilities/audio/text-to-speech"
+	return manifest("xai", "xAI Grok Voice", ModalityTTS, []string{"tts.xai.grok-voice"}, []OptionSupport{
+		native(OptionVoice, TypeString, "Voice", "voice_id", evidence),
+		support(OptionLanguage, TypeString, "Language", SupportNative, "language", evidence,
+			"xAI requires the field: SpeechKit sends the closest supported BCP-47 code, or auto when the locale is unset or unsupported. Every voice speaks every language."),
+		support(OptionSpeed, TypeFloat, "Speed", SupportNative, "speed", evidence,
+			"xAI accepts 0.7 to 1.5; SpeechKit clamps to that range."),
+		support(OptionAudioFormat, TypeString, "Audio format", SupportNative, "output_format.codec", evidence,
+			"mp3, wav and pcm map to the same codec at 24 kHz; opus is not offered and falls back to mp3."),
 	})
 }
 

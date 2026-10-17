@@ -168,7 +168,7 @@ func TestToolCallRoundTripAndTurnRecording(t *testing.T) {
 		},
 	})
 
-	// Callbacks laufen auf der Receive-Loop-Goroutine — synchronisiert lesen.
+	// Callbacks run on the receive-loop goroutine; read them synchronized.
 	var cbMu sync.Mutex
 	var audioOut [][]byte
 	var interrupted bool

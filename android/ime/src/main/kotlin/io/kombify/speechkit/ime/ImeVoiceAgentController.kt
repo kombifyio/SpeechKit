@@ -223,6 +223,7 @@ class ImeVoiceAgentController(
                 VoiceLog.e(VoiceLog.AGENT, "ime conversation failed")
                 val setup = error as? VoiceAgentSetupException
                 val noServer = setup == null && error is IllegalStateException
+                val planCode = VoicePanelController.planDenialCode(error)
                 _state.value = _state.value.copy(
                     // Nothing finished: a missing server is a setup gap, not
                     // the end of a conversation. "Ended" reads as "Beendet".
@@ -240,7 +241,7 @@ class ImeVoiceAgentController(
                     } else if (noServer) {
                         ERROR_NO_SERVER
                     } else {
-                        "voice_session_failed"
+                        planCode ?: "voice_session_failed"
                     },
                 )
                 stop()
@@ -256,5 +257,9 @@ class ImeVoiceAgentController(
 
         /** Same refusal as dictation's, so both panels can share one label. */
         const val ERROR_MIC_DENIED = VoicePanelController.ERROR_MIC_DENIED
+
+        /** The mint was refused for plan reasons, same codes as dictation. */
+        const val ERROR_PLAN_DENIED = VoicePanelController.ERROR_PLAN_DENIED
+        const val ERROR_PLAN_BUDGET = VoicePanelController.ERROR_PLAN_BUDGET
     }
 }

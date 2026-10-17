@@ -145,6 +145,9 @@ func enabledProviders(spec models.STTRouterSpec) allproviders.EnabledProviders {
 			Diarization: o.Diarization,
 		}
 	}
+	if o := spec.XAI; o != nil {
+		enabled.XAI = &allproviders.XAIOpts{APIKey: o.APIKey, Model: o.Model, Selected: o.Selected}
+	}
 	return enabled
 }
 
@@ -179,6 +182,7 @@ func (s EnabledSet) Adapters() []string {
 	add("assemblyai", e.AssemblyAI != nil)
 	add("google", e.Google != nil)
 	add("foundry", e.Foundry != nil || e.FoundrySpeech != nil)
+	add("xai", e.XAI != nil)
 	for _, p := range e.Extra {
 		if p != nil {
 			ids = append(ids, p.Name())
@@ -217,6 +221,8 @@ func (s EnabledSet) Drop(adapter string) {
 	case "foundry":
 		e.Foundry = nil
 		e.FoundrySpeech = nil
+	case "xai":
+		e.XAI = nil
 	}
 	extra := e.Extra[:0:0]
 	for _, p := range e.Extra {

@@ -210,6 +210,7 @@ func ConservativeContextWindow(provider, model string) int {
 		strings.Contains(name, "gpt-5"),
 		strings.Contains(name, "gpt-6"),
 		strings.Contains(name, "gpt-oss"),
+		strings.Contains(name, "grok"),
 		strings.Contains(name, "gemini"):
 		return 32768
 	default:

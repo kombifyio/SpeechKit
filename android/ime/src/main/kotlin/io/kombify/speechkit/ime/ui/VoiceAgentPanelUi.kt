@@ -16,10 +16,14 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.kombify.speechkit.ime.ImeVoiceAgentController
 import io.kombify.speechkit.ime.R
+import io.kombify.speechkit.ime.VoicePanelController
+import io.kombify.speechkit.net.KombifyLinks
+import io.kombify.speechkit.net.R as NetR
 import io.kombify.speechkit.net.VoiceAgentErrorCodes
 import io.kombify.speechkit.net.VoiceAgentUiState
 import io.kombify.speechkit.voiceui.VoiceAuraOrb
@@ -109,6 +113,14 @@ fun VoiceAgentPanelUi(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
+                    if (VoicePanelController.isPlanDenialCode(state.errorCode)) {
+                        val context = LocalContext.current
+                        TextButton(
+                            onClick = { KombifyLinks.open(context, KombifyLinks.PLANS_URL) },
+                        ) {
+                            Text(stringResource(NetR.string.plan_denial_see_plans))
+                        }
+                    }
                 }
             }
 
@@ -176,6 +188,12 @@ private fun agentErrorLabel(code: String?, message: String?): String = when (cod
 
     ImeVoiceAgentController.ERROR_MIC_DENIED ->
         stringResource(R.string.speechkit_ime_error_mic_denied)
+
+    ImeVoiceAgentController.ERROR_PLAN_DENIED ->
+        stringResource(NetR.string.plan_denial_body)
+
+    ImeVoiceAgentController.ERROR_PLAN_BUDGET ->
+        stringResource(NetR.string.plan_denial_budget_body)
 
     "playback_failed", "playback_frame_invalid", "playback_device_failed", "playback_write_failed",
     "playback_stalled", "capture_failed", "voice_buffer_overflow" ->

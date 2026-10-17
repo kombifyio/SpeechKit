@@ -156,6 +156,7 @@ func applyServerCredentialSettings(cfg *Config, credentials ServerCredentialSett
 		{target: "assemblyai", credential: credentials.AssemblyAI},
 		{target: "huggingface", credential: credentials.HuggingFace},
 		{target: "openrouter", credential: credentials.OpenRouter},
+		{target: "xai", credential: credentials.XAI},
 	} {
 		notes = append(notes, applyServerProviderCredential(cfg, entry.target, entry.credential)...)
 	}

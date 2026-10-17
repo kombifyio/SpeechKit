@@ -95,6 +95,7 @@ func SanitizeServerModelSettings(settings ServerModelSettings) ServerModelSettin
 	settings.Credentials.AssemblyAI.Value = ""
 	settings.Credentials.HuggingFace.Value = ""
 	settings.Credentials.OpenRouter.Value = ""
+	settings.Credentials.XAI.Value = ""
 	return settings
 }
 

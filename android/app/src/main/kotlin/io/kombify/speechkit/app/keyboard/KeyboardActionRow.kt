@@ -23,6 +23,9 @@ enum class KeyboardAction(
     AgentDeepgram(agentProvider = "deepgram"),
     AgentAssemblyAi(agentProvider = "assemblyai"),
     AgentOpenAi(agentProvider = "openai"),
+
+    /** Grok Voice. Reached through the strip key when Settings selects it. */
+    AgentXai(agentProvider = "xai"),
     CompanionApp,
 }
 

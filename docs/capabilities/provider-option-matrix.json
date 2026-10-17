@@ -472,6 +472,42 @@
         "translation": "unsupported",
         "transcription_only": "unsupported"
       }
+    },
+    {
+      "provider": "xai",
+      "modality": "stt",
+      "profile_ids": [
+        "stt.xai.grok-transcribe"
+      ],
+      "evidence_url": "https://docs.x.ai/developers/model-capabilities/audio/speech-to-text",
+      "supports": {
+        "language": "native",
+        "detect_language": "derived",
+        "smart_format": "native",
+        "filler_words": "native",
+        "vocabulary_bias": "native",
+        "keyterms": "native",
+        "prompt_hint": "unsupported",
+        "speaker_diarization": "unsupported",
+        "timestamps": "unsupported",
+        "endpointing_ms": "unsupported",
+        "no_store": "unsupported"
+      }
+    },
+    {
+      "provider": "xai",
+      "modality": "tts",
+      "profile_ids": [
+        "tts.xai.grok-voice"
+      ],
+      "evidence_url": "https://docs.x.ai/developers/model-capabilities/audio/text-to-speech",
+      "supports": {
+        "voice": "native",
+        "language": "native",
+        "speed": "native",
+        "audio_format": "native",
+        "no_store": "unsupported"
+      }
     }
   ]
 }

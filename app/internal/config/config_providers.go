@@ -72,13 +72,25 @@ type ProvidersConfig struct {
 	XAI        XAIProviderConfig        `toml:"xai"`
 }
 
-// XAIProviderConfig configures xAI as an opt-in bring-your-own-key provider
-// for the Grok Voice realtime Voice Agent. It is never a default: the Grok
-// Voice provider is registered only when Enabled is set or the deployment
-// selects it as the Voice Agent provider.
+// XAIProviderConfig configures xAI as an opt-in bring-your-own-key provider:
+// Grok speech-to-text (Dictation), Grok language models (Assist, utility,
+// Voice Agent reasoning), Grok text-to-speech and the Grok Voice realtime
+// Voice Agent, all on one XAI_API_KEY. It is never a default and never a
+// fallback: Enabled only makes xAI available. Each surface then needs its own
+// explicit choice: a Grok Assist profile fills the language-model slots below
+// (they are empty by default), a model_selection.dictate profile or a request
+// naming an xAI profile uses Grok transcription, and a model_selection.tts
+// profile names Grok speech output.
 type XAIProviderConfig struct {
-	Enabled   bool   `toml:"enabled"`
-	APIKeyEnv string `toml:"api_key_env"`
+	Enabled      bool   `toml:"enabled"`
+	APIKeyEnv    string `toml:"api_key_env"`
+	STTModel     string `toml:"stt_model"`
+	UtilityModel string `toml:"utility_model"`
+	AssistModel  string `toml:"assist_model"`
+	AgentModel   string `toml:"agent_model"`
+	// TTSVoice is the Grok voice id spoken by xAI text-to-speech (for
+	// example "eve"); the voice list is served by GET /v1/tts/voices.
+	TTSVoice string `toml:"tts_voice"`
 }
 
 // FoundryProviderConfig configures Microsoft Foundry (Azure AI Foundry) as a

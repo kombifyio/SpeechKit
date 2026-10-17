@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="plan_denial_title">No incluido en tu plan de kombify</string>
+    <string name="plan_denial_body">Tu plan de kombify no incluye esta función de voz. Mira los planes para añadirla.</string>
+    <string name="plan_denial_budget_title">Minutos de voz agotados</string>
+    <string name="plan_denial_budget_body">Se agotaron tus minutos de voz alojados de este periodo. Mira los planes o espera al próximo reinicio.</string>
+    <string name="plan_denial_see_plans">Ver planes</string>
+</resources>

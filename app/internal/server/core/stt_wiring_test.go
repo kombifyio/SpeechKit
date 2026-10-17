@@ -12,6 +12,7 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/assemblyai"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/openaicompat"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/xai"
 )
 
 // Regression: Voice's shared router used OpenAI before the configured managed
@@ -178,6 +179,44 @@ func TestBuildSTTRouterUsesConfiguredGroqModel(t *testing.T) {
 	}
 	if !hasNote(notes, "Groq STT registered (model=whisper-large-v3") {
 		t.Fatalf("notes = %v, want Groq model note", notes)
+	}
+}
+
+// xAI is opt-in on the hosted server too: a key in the environment alone does
+// not register it; [providers.xai] enabled does, with the configured model.
+// Registered is still not selected: see the explicit-only check below.
+func TestBuildSTTRouterRegistersXAIOnlyWhenEnabled(t *testing.T) {
+	t.Setenv("XAI_API_KEY", "xai-key")
+	cfg := &config.Config{}
+
+	_, providers, _ := buildSTTRouter(cfg)
+	if findProvider[xai.Provider](providers, "stt.xai") != nil {
+		t.Fatalf("xAI registered without [providers.xai] enabled: %+v", providers)
+	}
+
+	cfg.Providers.XAI.Enabled = true
+	cfg.Providers.XAI.STTModel = "grok-voice-transcribe-2.0"
+	_, providers, notes := buildSTTRouter(cfg)
+	provider := findProvider[xai.Provider](providers, "stt.xai")
+	if provider == nil {
+		t.Fatalf("providers = %+v, want the xAI provider", providers)
+	}
+	if provider.Model != "grok-voice-transcribe-2.0" {
+		t.Fatalf("xAI model = %q, want grok-voice-transcribe-2.0", provider.Model)
+	}
+	if !hasNote(notes, "xAI STT registered (model=grok-voice-transcribe-2.0") {
+		t.Fatalf("notes = %v, want xAI model note", notes)
+	}
+
+	// Enabled alone never makes xAI a fallback for the other providers; only
+	// naming it in model_selection.dictate does.
+	if !provider.ExplicitOnly() {
+		t.Fatal("an enabled xAI with no dictation selection must stay explicit-only")
+	}
+	cfg.ModelSelection.Dictate.PrimaryProfileID = "stt.xai.grok-transcribe"
+	_, providers, _ = buildSTTRouter(cfg)
+	if selected := findProvider[xai.Provider](providers, "stt.xai"); selected == nil || selected.ExplicitOnly() {
+		t.Fatalf("xAI named in model_selection.dictate = %+v, want it selected", selected)
 	}
 }
 

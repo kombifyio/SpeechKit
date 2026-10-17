@@ -6,6 +6,7 @@ import io.kombify.speechkit.audio.AudioCapture
 import io.kombify.speechkit.ime.host.VoiceInputHost
 import io.kombify.speechkit.ime.host.isDictationBlocked
 import io.kombify.speechkit.log.VoiceLog
+import io.kombify.speechkit.net.PlanDenial
 import io.kombify.speechkit.net.SpeechKitApiException
 import io.kombify.speechkit.stt.streaming.DictationSegmentOptions
 import io.kombify.speechkit.stt.streaming.StreamingSttSession
@@ -200,10 +201,15 @@ class VoicePanelController(
                 .getOrElse { error ->
                     if (error is CancellationException) throw error
                     VoiceLog.w(VoiceLog.DICTATION, "voice panel session open failed", error)
+                    // A plan denial is not a hiccup: retrying cannot change it.
+                    // The panel offers the plans page instead.
+                    val planCode = planDenialCode(error)
                     _state.value = VoicePanelState.Error(
-                        code = (error as? SpeechKitApiException)?.code ?: ERROR_CONNECT_FAILED,
+                        code = planCode
+                            ?: (error as? SpeechKitApiException)?.code
+                            ?: ERROR_CONNECT_FAILED,
                         message = error.message ?: "session open failed",
-                        retryable = true,
+                        retryable = planCode == null,
                     )
                     return@launch
                 }
@@ -355,5 +361,21 @@ class VoicePanelController(
         const val ERROR_AUDIO_CAPTURE = "audio_capture_failed"
         const val ERROR_MIC_DENIED = "mic_permission_denied"
         const val ERROR_NOT_CONFIGURED = "not_configured"
+
+        /** The kombify plan does not include dictation (or the Gateway refused it for plan reasons). */
+        const val ERROR_PLAN_DENIED = "plan_denied"
+
+        /** The plan includes it, but the hosted voice minutes are used up. */
+        const val ERROR_PLAN_BUDGET = "plan_budget_exhausted"
+
+        /** Whether [code] is one of the plan denial codes: the panel offers the plans page, not a retry. */
+        fun isPlanDenialCode(code: String?): Boolean =
+            code == ERROR_PLAN_DENIED || code == ERROR_PLAN_BUDGET
+
+        /** The stable panel code for a plan denial, or null when [error] is something else. */
+        fun planDenialCode(error: Throwable): String? =
+            (error as? SpeechKitApiException)?.denial?.let { denial ->
+                if (denial.kind == PlanDenial.Kind.BUDGET) ERROR_PLAN_BUDGET else ERROR_PLAN_DENIED
+            }
     }
 }

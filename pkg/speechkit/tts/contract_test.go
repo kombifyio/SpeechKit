@@ -49,6 +49,17 @@ func TestTTSProviderContract(t *testing.T) {
 			Success: rawAudioSuccess("audio/mpeg"),
 		},
 		{
+			Name:         "xai",
+			ExpectedName: "xai",
+			NewProvider: func(baseURL string) tts.Provider {
+				p := tts.NewXAI(tts.XAIOpts{APIKey: "xai-test"})
+				p.BaseURL = baseURL
+				p.Validation = loopbackValidation
+				return p
+			},
+			Success: rawAudioSuccess("audio/mpeg"),
+		},
+		{
 			Name:         "google",
 			ExpectedName: "google",
 			NewProvider: func(baseURL string) tts.Provider {

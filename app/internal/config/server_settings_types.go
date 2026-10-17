@@ -65,6 +65,7 @@ type ServerCredentialSettings struct {
 	AssemblyAI  ServerProviderCredentialSettings `json:"assemblyai,omitempty"`
 	HuggingFace ServerProviderCredentialSettings `json:"huggingface,omitempty"`
 	OpenRouter  ServerProviderCredentialSettings `json:"openrouter,omitempty"`
+	XAI         ServerProviderCredentialSettings `json:"xai,omitempty"`
 }
 
 type ServerProviderCredentialSettings struct {

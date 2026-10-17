@@ -243,10 +243,17 @@ realtime_model = "gpt-realtime-2.1"  # Used when [voice_agent].provider = "opena
 # stt_model                   = "latest_long"
 # region                      = "europe-west3"
 
-# Opt-in bring-your-own-key xAI Grok Voice (Voice Agent only; never a default).
+# Opt-in bring-your-own-key xAI Grok, never a default. Enabling it makes the
+# Grok Voice Agent switchable; every other surface still needs an explicit
+# choice: Dictation and TTS only when [model_selection.dictate] or
+# [model_selection.tts] names an xai profile (stt.xai.grok-transcribe,
+# tts.xai.grok-voice), and never as a fallback; Assist only with an
+# assist_model (empty by default).
 # [providers.xai]
 # enabled     = true
 # api_key_env = "XAI_API_KEY"
+# stt_model   = "grok-voice-transcribe-2.0"
+# tts_voice   = "eve"
 
 [providers.deepgram]
 enabled           = false

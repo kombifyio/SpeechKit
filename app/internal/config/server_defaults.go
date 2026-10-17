@@ -263,6 +263,11 @@ func noConfiguredTTSSecret(cfg *Config) bool {
 	if cfg.TTS.HuggingFace.Enabled && ProviderCredentialAvailable(cfg, "huggingface") {
 		return false
 	}
+	// xAI counts only once the deployment selected Grok speech output and
+	// enabled xAI; a stored key alone must not keep TTS on for it.
+	if cfg.Providers.XAI.Enabled && cfg.ModelSelection.TTS.NamesProvider("xai") && ProviderCredentialAvailable(cfg, "xai") {
+		return false
+	}
 	// Local engines need no credential.
 	if cfg.TTS.Local.Enabled && strings.TrimSpace(cfg.TTS.Local.URL) != "" {
 		return false

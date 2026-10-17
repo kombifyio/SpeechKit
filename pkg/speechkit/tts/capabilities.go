@@ -29,3 +29,7 @@ func (*HuggingFace) Capabilities() []speechkit.Capability { return ttsCapabiliti
 // Capabilities implements [CapabilityReporter]; Piper reports
 // [speechkit.CapabilityTTS] only.
 func (*Piper) Capabilities() []speechkit.Capability { return ttsCapabilities() }
+
+// Capabilities implements [CapabilityReporter]; the opt-in xAI Grok Voice
+// provider reports [speechkit.CapabilityTTS] only.
+func (*XAI) Capabilities() []speechkit.Capability { return ttsCapabilities() }

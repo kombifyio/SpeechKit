@@ -19,6 +19,7 @@ import (
 const (
 	openAIBaseURL     = "https://api.openai.com/v1"
 	groqBaseURL       = "https://api.groq.com/openai/v1"
+	xaiBaseURL        = "https://api.x.ai/v1"
 	hfBaseURL         = "https://router.huggingface.co/hf-inference/v1"
 	openRouterBaseURL = "https://openrouter.ai/api/v1"
 	// assemblyAILLMGatewayBaseURL is the OpenAI-compatible AssemblyAI LLM
@@ -75,6 +76,8 @@ func newModel(cfg Config, provider, name string) (Model, error) {
 		return newOpenAICompatibleModel("openai", name, openAIBaseURL, newAIClient(&AICallValidation), AICallValidation, opts), nil
 	case "groq":
 		return newOpenAICompatibleModel("groq", name, groqBaseURL, newAIClient(&AICallValidation), AICallValidation, oaiCallOptions{AuthToken: cfg.GroqAPIKey}), nil
+	case "xai":
+		return newOpenAICompatibleModel("xai", name, xaiBaseURL, newAIClient(&AICallValidation), AICallValidation, oaiCallOptions{AuthToken: cfg.XAIAPIKey}), nil
 	case "huggingface":
 		return newOpenAICompatibleModel("huggingface", name, hfBaseURL, newAIClient(&AICallValidation), AICallValidation, oaiCallOptions{AuthToken: cfg.HuggingFaceToken}), nil
 	case "openrouter":

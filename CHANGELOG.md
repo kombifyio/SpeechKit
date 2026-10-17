@@ -9,6 +9,20 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.77.2](https://github.com/kombifyio/SpeechKit/compare/v0.77.1...v0.77.2) (2026-10-17)
+
+
+### Features
+
+* **cloud:** connect the kombify account and let the plan switch on cloud voice ([#972](https://github.com/kombifyio/SpeechKit/issues/972)) ([1aea4df](https://github.com/kombifyio/SpeechKit/commit/1aea4df59a4b4f6c96fc303d1ee5c55db75f4ef2))
+* **providers:** xAI Grok as a complete opt-in provider ([#977](https://github.com/kombifyio/SpeechKit/issues/977)) ([66be0f5](https://github.com/kombifyio/SpeechKit/commit/66be0f54d656ebc3417a01274fdede297b78dafa))
+
+
+### Bug Fixes
+
+* **cloud:** keep the session through refresh races and renew before voice sessions ([#973](https://github.com/kombifyio/SpeechKit/issues/973)) ([89c9f47](https://github.com/kombifyio/SpeechKit/commit/89c9f470586ebdd340d20dfb2fe32c7f7b3bb4df))
+* **ops,contract:** prod deploy guards and dictation_stream_ws_ticket transport ([#978](https://github.com/kombifyio/SpeechKit/issues/978)) ([4e1b593](https://github.com/kombifyio/SpeechKit/commit/4e1b5934a76435de84eb66962204c7669c71fc64))
+
 ## [0.77.1](https://github.com/kombifyio/SpeechKit/compare/v0.77.0...v0.77.1) (2026-10-16)
 
 

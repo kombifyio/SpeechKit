@@ -6,6 +6,7 @@ import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
 import helium314.keyboard.latin.App
 import helium314.keyboard.latin.SpeechKitVoiceBridge
+import io.kombify.speechkit.app.build.ShippedDefaults
 import io.kombify.speechkit.app.companion.CoinstallTurnClient
 import io.kombify.speechkit.app.companion.CompanionProvisioner
 import io.kombify.speechkit.app.keyboard.InlineVoicePanel
@@ -14,6 +15,11 @@ import io.kombify.speechkit.domain.ConnectionProfileSource
 import dagger.hilt.android.HiltAndroidApp
 import io.kombify.speechkit.BuildConfig
 import io.kombify.speechkit.log.VoiceLog
+import io.kombify.speechkit.net.CloudBearer
+import io.kombify.speechkit.net.CloudRefresh
+import io.kombify.speechkit.net.CloudTokenLifecycle
+import io.kombify.speechkit.net.KombifyCloudAuth
+import io.kombify.speechkit.net.StoredCloudSession
 import timber.log.Timber
 
 /**
@@ -48,6 +54,7 @@ class SpeechKitApplication : App() {
             })
         }
         VoiceLog.i(VoiceLog.NET, "app start debug=${BuildConfig.DEBUG}")
+        installCloudSessionLifecycle()
         SpeechKitStripLayout.apply(this)
         // Answer the keyboard's voice key in place. Registered once, for the
         // process lifetime: the panel itself is built per activation and takes
@@ -60,6 +67,30 @@ class SpeechKitApplication : App() {
             profileSource = entry.profileSource(),
             companion = entry.companionProvisioner(),
             companionTurns = entry.companionTurns(),
+        )
+    }
+
+    /**
+     * One token lifecycle for every process entry point (Settings, keyboard,
+     * assistant): requests ask it for the bearer, so the stored cloud
+     * session is renewed shortly before it expires and signed out when its
+     * refresh token is refused. Builds without a sign-in client id have no
+     * session to renew and leave bearers untouched.
+     */
+    private fun installCloudSessionLifecycle() {
+        val clientId = ShippedDefaults.cloudAuthClientId
+        val auth = if (clientId.isEmpty()) {
+            null
+        } else {
+            KombifyCloudAuth(KombifyCloudAuth.Config(clientId = clientId))
+        }
+        CloudBearer.install(
+            CloudTokenLifecycle(
+                store = StoredCloudSession(this),
+                refresher = { refreshToken ->
+                    auth?.refreshSession(refreshToken) ?: CloudRefresh.Unavailable
+                },
+            ),
         )
     }
 

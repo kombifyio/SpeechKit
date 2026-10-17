@@ -297,7 +297,7 @@ func (r *Router) StartSpeakerStream(ctx context.Context, opts speaker.Options, f
 // provider-native realtime dictation. It never changes batch routing; callers
 // choose this path explicitly per recording session.
 func (r *Router) StartDictationStream(ctx context.Context, opts speechkit.DictationStreamOptions, format speaker.AudioFormat) (speechkit.DictationStream, error) {
-	candidates := PrioritizeProviderProfile(r.dictationStreamingCandidates(), opts.ProviderProfileID)
+	candidates := PrioritizeProviderProfile(r.dictationStreamingCandidates(opts.ProviderProfileID), opts.ProviderProfileID)
 	var errs []error
 	for _, p := range candidates {
 		streamer, ok := speechkit.AsDictationStreamProvider(p)
@@ -320,6 +320,7 @@ func (r *Router) StartDictationStream(ctx context.Context, opts speechkit.Dictat
 
 func (r *Router) transcribeDynamic(ctx context.Context, audio []byte, durationSecs float64, opts TranscribeOpts) (*Result, error) {
 	local, cloud := r.snapshot()
+	cloud = withoutUnrequestedExplicitOnly(cloud, opts.ProviderProfileID)
 	online := r.checkInternet(ctx)
 	cloudAvailable := len(cloud) > 0
 	var errs []error
@@ -411,7 +412,7 @@ func (r *Router) streamingCandidates(opts speaker.Options) []STTProvider {
 			candidates = append(candidates, local)
 		}
 	}
-	return prioritizeSpeakerProfile(candidates, opts.ProviderProfileID)
+	return prioritizeSpeakerProfile(withoutUnrequestedExplicitOnly(candidates, opts.ProviderProfileID), opts.ProviderProfileID)
 }
 
 // HasDictationStreaming reports whether at least one configured provider
@@ -419,7 +420,7 @@ func (r *Router) streamingCandidates(opts speaker.Options) []STTProvider {
 // dictation. Server surfaces use this for capability discovery so clients can
 // fall back to batch transcription without a doomed stream attempt.
 func (r *Router) HasDictationStreaming() bool {
-	for _, p := range r.dictationStreamingCandidates() {
+	for _, p := range r.dictationStreamingCandidates("") {
 		if _, ok := speechkit.AsDictationStreamProvider(p); ok {
 			return true
 		}
@@ -427,7 +428,10 @@ func (r *Router) HasDictationStreaming() bool {
 	return false
 }
 
-func (r *Router) dictationStreamingCandidates() []STTProvider {
+// dictationStreamingCandidates lists the providers a realtime dictation
+// stream may use under the routing strategy; an explicit-only provider is
+// listed only when profileID names it.
+func (r *Router) dictationStreamingCandidates(profileID string) []STTProvider {
 	local, cloud := r.snapshot()
 	var candidates []STTProvider
 	switch r.Strategy {
@@ -443,7 +447,7 @@ func (r *Router) dictationStreamingCandidates() []STTProvider {
 			candidates = append(candidates, local)
 		}
 	}
-	return candidates
+	return withoutUnrequestedExplicitOnly(candidates, profileID)
 }
 
 func prioritizeSpeakerProfile(candidates []STTProvider, profileID string) []STTProvider {
@@ -468,6 +472,22 @@ func PrioritizeProviderProfile(candidates []STTProvider, profileID string) []STT
 		if !strings.EqualFold(candidate.Name(), want) {
 			out = append(out, candidate)
 		}
+	}
+	return out
+}
+
+// withoutUnrequestedExplicitOnly drops every [ExplicitOnlyProvider] that is
+// still explicit-only and that profileID does not name, so an opt-in provider
+// is reachable only by an explicit request and never as a generic fallback.
+// The input is not modified.
+func withoutUnrequestedExplicitOnly(candidates []STTProvider, profileID string) []STTProvider {
+	want := ProviderNameFromProfileID(profileID)
+	out := make([]STTProvider, 0, len(candidates))
+	for _, candidate := range candidates {
+		if explicit, ok := candidate.(ExplicitOnlyProvider); ok && explicit.ExplicitOnly() && !strings.EqualFold(candidate.Name(), want) {
+			continue
+		}
+		out = append(out, candidate)
 	}
 	return out
 }
@@ -540,10 +560,11 @@ func (r *Router) probeInternet(ctx context.Context) bool {
 // A per-request provider preference (opts.ProviderProfileID — profile ID or
 // bare provider name) moves the matching provider to the front; the remaining
 // providers stay as fallbacks, so an unsatisfiable preference degrades to the
-// configured order instead of failing the request.
+// configured order instead of failing the request. An [ExplicitOnlyProvider]
+// is the exception: it takes part only when the preference names it.
 func (r *Router) transcribeCloud(ctx context.Context, audio []byte, opts TranscribeOpts) (*Result, error) {
 	_, cloud := r.snapshot()
-	cloud = PrioritizeProviderProfile(cloud, opts.ProviderProfileID)
+	cloud = PrioritizeProviderProfile(withoutUnrequestedExplicitOnly(cloud, opts.ProviderProfileID), opts.ProviderProfileID)
 
 	var errs []error
 	for _, p := range cloud {

@@ -7,6 +7,8 @@ import android.content.Context
  *
  * Deepgram / AssemblyAI / GPT stay reachable from the expanded more-toolbar
  * for tester work; the always-visible strip only has room for one agent key.
+ * Grok (xAI) is reachable through that strip key when Settings selects it; it
+ * needs a server with Grok Voice enabled.
  */
 object KeyboardAgentPreferences {
 
@@ -17,6 +19,9 @@ object KeyboardAgentPreferences {
     const val PROVIDER_ASSEMBLYAI: String = "assemblyai"
     const val PROVIDER_OPENAI: String = "openai"
 
+    /** xAI Grok Voice; the server maps it to its realtime.xai.grok-voice profile. */
+    const val PROVIDER_XAI: String = "xai"
+
     fun provider(context: Context): String =
         storedOrDefault(
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString(KEY_PROVIDER, null),
@@ -24,7 +29,7 @@ object KeyboardAgentPreferences {
 
     /** Unset and unknown values are Deepgram. GPT is a More-toolbar choice. */
     fun storedOrDefault(stored: String?): String = when (stored) {
-        PROVIDER_DEEPGRAM, PROVIDER_ASSEMBLYAI, PROVIDER_OPENAI -> stored
+        PROVIDER_DEEPGRAM, PROVIDER_ASSEMBLYAI, PROVIDER_OPENAI, PROVIDER_XAI -> stored
         else -> PROVIDER_DEEPGRAM
     }
 
@@ -38,6 +43,7 @@ object KeyboardAgentPreferences {
     fun action(context: Context): KeyboardAction = when (provider(context)) {
         PROVIDER_ASSEMBLYAI -> KeyboardAction.AgentAssemblyAi
         PROVIDER_OPENAI -> KeyboardAction.AgentOpenAi
+        PROVIDER_XAI -> KeyboardAction.AgentXai
         else -> KeyboardAction.AgentDeepgram
     }
 }

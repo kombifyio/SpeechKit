@@ -167,10 +167,10 @@ var providerRuntimeRegistry = []ProviderRuntime{
 		UserConfigurable:   false,
 	},
 	{
-		// xAI is an opt-in BYOK provider for the Grok Voice realtime Voice
-		// Agent, served by speechkit-server ([providers.xai]). It is never a
-		// default and stays off the desktop Settings until the desktop app
-		// wires Grok Voice sessions.
+		// xAI is an opt-in BYOK provider with the user's own XAI_API_KEY:
+		// Grok speech-to-text (Dictation), Grok language models (Assist), the
+		// Grok Voice realtime Voice Agent and Grok text-to-speech
+		// ([providers.xai]). It is never a default.
 		Provider:           "xai",
 		DisplayName:        "xAI Grok",
 		ProviderKind:       framework.ProviderKindDirectProvider,
@@ -178,8 +178,8 @@ var providerRuntimeRegistry = []ProviderRuntime{
 		CredentialTarget:   "xai",
 		CredentialRequired: true,
 		SetupURL:           "https://console.x.ai",
-		SupportedModes:     []framework.Mode{framework.ModeVoiceAgent},
-		UserConfigurable:   false,
+		SupportedModes:     []framework.Mode{framework.ModeDictation, framework.ModeAssist, framework.ModeVoiceAgent, framework.ModeTTS},
+		UserConfigurable:   true,
 	},
 	{
 		// Piper is in the framework catalog as a Local Built-in TTS engine

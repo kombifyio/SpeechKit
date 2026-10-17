@@ -6,6 +6,7 @@ package config
 import (
 	"strings"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/hostconfig"
 )
 
@@ -54,6 +55,19 @@ type ModeModelSelection struct {
 	// configured under [server_connection]. Empty string is treated as
 	// ModeSourceLocal so existing configs keep behaving as before.
 	ModeSource string `toml:"mode_source"`
+}
+
+// NamesProvider reports whether the primary or the fallback profile belongs to
+// provider (a canonical provider id such as "xai"). It is how an opt-in
+// provider learns the user picked it for this mode: enabling a provider makes
+// it available, naming it here is the explicit choice.
+func (s ModeModelSelection) NamesProvider(provider string) bool {
+	for _, profileID := range []string{s.PrimaryProfileID, s.FallbackProfileID} {
+		if strings.TrimSpace(profileID) != "" && catalog.NormalizeProviderID(profileID) == provider {
+			return true
+		}
+	}
+	return false
 }
 
 // ServerConnectionConfig describes how the device/local-target reaches a

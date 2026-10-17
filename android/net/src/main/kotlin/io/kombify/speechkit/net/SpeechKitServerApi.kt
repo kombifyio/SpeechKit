@@ -75,17 +75,18 @@ data class BatchTranscribeResponse(
     val confidence: Double? = null,
 )
 
-@JsonClass(generateAdapter = true)
-internal data class ApiErrorEnvelope(val error: ApiErrorBody? = null)
-
-@JsonClass(generateAdapter = true)
-internal data class ApiErrorBody(val code: String = "", val message: String = "")
-
-/** Structured failure from the speechkit-server REST surface. */
+/**
+ * Structured failure from the speechkit-server REST surface.
+ *
+ * @param denial set when the Gateway refused the request because of the user's
+ *   kombify plan; surfaces turn it into one localized message with
+ *   [PlanDenial.text].
+ */
 class SpeechKitApiException(
     val httpStatus: Int,
     val code: String,
     message: String,
+    val denial: PlanDenial? = null,
 ) : IOException("$code (HTTP $httpStatus): $message")
 
 /**
@@ -103,7 +104,6 @@ class SpeechKitServerApi(
     private val batchAdapter = moshi.adapter(BatchTranscribeResponse::class.java)
     private val assistRequestAdapter = moshi.adapter(AssistProcessRequest::class.java)
     private val assistResponseAdapter = moshi.adapter(AssistProcessResponse::class.java)
-    private val errorAdapter = moshi.adapter(ApiErrorEnvelope::class.java)
 
     /** Mints a streaming session ticket. Requires auth per server config. */
     suspend fun createDictationStreamSession(): CreateStreamSessionResponse =
@@ -112,6 +112,7 @@ class SpeechKitServerApi(
                 Request.Builder()
                     .url(profile.endpoint("/v1/dictation/stream/sessions"))
                     .post(EMPTY_JSON.toRequestBody(JSON_MEDIA_TYPE)),
+                mintsSession = true,
             ).build()
             client.newCall(request).execute().use { response ->
                 val body = requireSuccess(response)
@@ -127,6 +128,7 @@ class SpeechKitServerApi(
                 Request.Builder()
                     .url(profile.endpoint("/v1/voiceagent/sessions"))
                     .post(EMPTY_JSON.toRequestBody(JSON_MEDIA_TYPE)),
+                mintsSession = true,
             ).build()
             client.newCall(request).execute().use { response ->
                 val body = requireSuccess(response)
@@ -226,8 +228,24 @@ class SpeechKitServerApi(
         }.getOrDefault(false)
     }
 
-    private fun authorized(builder: Request.Builder): Request.Builder {
-        profile.bearerToken?.takeIf { it.isNotBlank() }?.let {
+    /**
+     * Adds the bearer. A cloud-session bearer close to expiry is renewed first
+     * (see [CloudBearer]); any other bearer is sent as the profile has it.
+     *
+     * @param mintsSession true for the calls that open a hosted voice session:
+     *   the Gateway ends such a session when the bearer expires, so the bearer
+     *   must still have a long life left (see [CloudBearer.freshForSession]).
+     */
+    private suspend fun authorized(
+        builder: Request.Builder,
+        mintsSession: Boolean = false,
+    ): Request.Builder {
+        val bearer = if (mintsSession) {
+            CloudBearer.freshForSession(profile.bearerToken)
+        } else {
+            CloudBearer.fresh(profile.bearerToken)
+        }
+        bearer?.takeIf { it.isNotBlank() }?.let {
             builder.header("Authorization", "Bearer $it")
         }
         return builder
@@ -237,16 +255,16 @@ class SpeechKitServerApi(
     private fun requireSuccess(response: Response): String {
         val body = response.body?.string().orEmpty()
         if (response.isSuccessful) return body
-        val parsed = runCatching { errorAdapter.fromJson(body)?.error }.getOrNull()
-        val code = parsed?.code ?: "http_${response.code}"
+        val parsed = parseApiError(body, response.code)
         VoiceLog.w(
             VoiceLog.NET,
-            "http ${response.code} code=$code host=${profile.normalizedBaseUrl}",
+            "http ${response.code} code=${parsed.code} host=${profile.normalizedBaseUrl}",
         )
         throw SpeechKitApiException(
             httpStatus = response.code,
-            code = code,
-            message = parsed?.message ?: body.take(200).ifEmpty { response.message },
+            code = parsed.code,
+            message = parsed.message ?: body.take(200).ifEmpty { response.message },
+            denial = parsed.denial,
         )
     }
 

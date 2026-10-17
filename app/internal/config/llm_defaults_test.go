@@ -119,3 +119,23 @@ func TestApplyAssemblyAILLMDefaultsFollowsVoiceAgentProvider(t *testing.T) {
 		t.Fatal("a Deepgram voice agent must not pull in the AssemblyAI gateway")
 	}
 }
+
+// xAI is opt-in and never a default: enabling it for dictation, the Voice
+// Agent or speech output must leave every Grok language-model slot empty, so
+// no summary, Assist reply or cascaded-agent turn moves to Grok. Only picking
+// a Grok Assist profile fills the slot.
+func TestEnablingXAIFillsNoLanguageModelSlot(t *testing.T) {
+	cfg := defaults()
+	if err := SetProviderEnabled(cfg, "xai", true); err != nil {
+		t.Fatalf("SetProviderEnabled: %v", err)
+	}
+	EnableAlwaysOnLLM(cfg)
+
+	x := cfg.Providers.XAI
+	if !x.Enabled {
+		t.Fatal("xAI was not enabled")
+	}
+	if x.UtilityModel != "" || x.AssistModel != "" || x.AgentModel != "" {
+		t.Fatalf("enabling xAI filled language models: utility=%q assist=%q agent=%q", x.UtilityModel, x.AssistModel, x.AgentModel)
+	}
+}
