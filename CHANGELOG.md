@@ -9,6 +9,13 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.77.5](https://github.com/kombifyio/SpeechKit/compare/v0.77.4...v0.77.5) (2026-10-17)
+
+
+### Bug Fixes
+
+* **ota:** attach Box firmware after the completed fast-profile release ([#1008](https://github.com/kombifyio/SpeechKit/issues/1008)) ([62825b6](https://github.com/kombifyio/SpeechKit/commit/62825b684469b023ff04e661993d7c7d55087135))
+
 ## [0.77.4](https://github.com/kombifyio/SpeechKit/compare/v0.77.3...v0.77.4) (2026-10-17)
 
 
