@@ -18,6 +18,7 @@ import io.kombify.speechkit.app.companion.CompanionProvisioner
 import io.kombify.speechkit.app.companion.recoverCloudSession
 import io.kombify.speechkit.assistant.intent.CloudSessionRecovery
 import io.kombify.speechkit.assistant.intent.CompanionTurnExecutor
+import io.kombify.speechkit.net.StoredServerProfile
 import io.kombify.speechkit.store.RoomStore
 import io.kombify.speechkit.store.Store
 import javax.inject.Singleton
@@ -47,7 +48,18 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideCompanionTurnExecutor(client: CoinstallTurnClient): CompanionTurnExecutor = client
+    fun provideCompanionTurnExecutor(
+        @ApplicationContext context: Context,
+        client: CoinstallTurnClient,
+    ): CompanionTurnExecutor = object : CompanionTurnExecutor by client {
+        // An assistant's implicit general query follows the selected account.
+        // The keyboard's explicit Companion action keeps its separate client.
+        override fun hasSession(): Boolean =
+            StoredServerProfile.cloudSelected(context) &&
+                StoredServerProfile.loadCloud(context) != null &&
+                !StoredServerProfile.hasOwnCloudSession(context) &&
+                client.hasSession()
+    }
 
     @Provides
     @Singleton

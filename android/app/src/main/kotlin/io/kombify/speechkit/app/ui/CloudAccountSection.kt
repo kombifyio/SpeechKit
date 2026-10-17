@@ -67,7 +67,7 @@ internal fun CloudAccountSection(
 
     LaunchedEffect(reload) {
         state = AccountState.Loading
-        val session = provisioner.currentSession() ?: StoredServerProfile.loadCloud(context)
+        val session = StoredServerProfile.loadCloud(context)
         val token = session?.bearerToken
         if (session == null || token.isNullOrBlank()) {
             state = AccountState.SignedOut
@@ -87,8 +87,7 @@ internal fun CloudAccountSection(
             },
             // Signed out means no session is left, not that one renewal failed.
             sessionGone = {
-                provisioner.currentSession() == null &&
-                    StoredServerProfile.loadCloud(context)?.bearerToken.isNullOrBlank()
+                StoredServerProfile.loadCloud(context)?.bearerToken.isNullOrBlank()
             },
         )
         state = when (result) {

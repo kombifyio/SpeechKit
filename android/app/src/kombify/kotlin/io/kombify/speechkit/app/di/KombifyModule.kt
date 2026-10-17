@@ -50,19 +50,28 @@ object KombifyModule {
         @ApplicationContext context: Context,
         companion: CompanionProvisioner,
     ): ConnectionProfileSource {
-        if (StoredServerProfile.loadMode(context) == ConnectionMode.KOMBIFY_CLOUD) {
+        if (StoredServerProfile.loadMode(context) == ConnectionMode.KOMBIFY_CLOUD &&
+            StoredServerProfile.loadCloud(context) != null &&
+            !StoredServerProfile.hasOwnCloudSession(context)
+        ) {
             companion.warm()
         }
         return ConnectionProfileSource {
             val stored = StoredServerProfile.load(context)
             val shipped = ShippedDefaults.shippedProfile()
             val mode = StoredServerProfile.resolvedMode(context, stored, shipped)
+            val cloud = StoredServerProfile.loadCloud(context)
+            // Companion only maintains an explicitly connected bootstrap.
+            // A refused independent login clears cloud; it must stay signed out.
+            val companionCloud = if (cloud != null &&
+                !StoredServerProfile.hasOwnCloudSession(context)
+            ) companion.currentSession() else null
             resolveConnectionProfile(
                 mode = mode,
-                companion = companion.currentSession(),
+                companion = companionCloud,
                 stored = stored,
                 shipped = shipped,
-                cloud = StoredServerProfile.loadCloud(context),
+                cloud = companionCloud ?: cloud,
             )
         }
     }

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="{{.Locale}}" dir="{{.Direction}}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{index .Messages "sk.device.add.title"}} · SpeechKit</title>
+  <style>
+    :root{font-family:system-ui,sans-serif;color:#192128;background:#f3f5f2;color-scheme:light}
+    *{box-sizing:border-box}body{margin:0;padding:24px;min-height:100svh;display:grid;place-items:center}
+    main{width:min(100%,440px);padding:32px;border:1px solid #dce2da;border-radius:24px;background:#fff;box-shadow:0 16px 56px #1823140a}
+    .brand{font-size:14px;font-weight:650;letter-spacing:.04em;color:#56674e}h1{font-size:28px;line-height:1.15;letter-spacing:-.03em;margin:24px 0 16px}
+    p{line-height:1.6;color:#53604f}label{display:block;font-size:14px;font-weight:600;margin:28px 0 8px}
+    input{display:block;width:100%;padding:14px;border:1px solid #a8b4a1;border-radius:10px;font:600 24px ui-monospace,monospace;letter-spacing:.12em;text-align:center;text-transform:uppercase;direction:ltr}
+    button{display:block;width:100%;border:0;border-radius:10px;background:#344b2c;color:#fff;font:600 16px system-ui,sans-serif;padding:15px;margin-top:16px;cursor:pointer}
+    input:focus-visible,button:focus-visible{outline:3px solid #a5c48e;outline-offset:3px}.hint{font-size:13px}.error{color:#a52c28}
+  </style>
+</head>
+<body><main>
+  <div class="brand">kombify SpeechKit</div>
+  <h1>{{index .Messages "sk.device.add.title"}}</h1>
+  <p>{{index .Messages "sk.device.add.instructions"}}</p>
+  <form action="{{.VerificationURI}}" method="get">
+    <label for="device-code">{{index .Messages "sk.device.add.code"}}</label>
+    <input id="device-code" name="user_code" value="{{.Code}}" placeholder="XXXX-XXXX" pattern="[A-Za-z0-9]{4}-[A-Za-z0-9]{4}" maxlength="9" autocomplete="off" autocapitalize="characters" spellcheck="false" required aria-describedby="device-hint{{if .Invalid}} device-error{{end}}">
+    {{if .Invalid}}<p id="device-error" class="error" role="alert">{{index .Messages "sk.device.add.invalid"}}</p>{{end}}
+    <button type="submit">{{index .Messages "sk.device.add.confirm"}}</button>
+  </form>
+  <p id="device-hint" class="hint">{{index .Messages "sk.device.add.account"}}</p>
+  <p class="hint">{{index .Messages "sk.device.add.done"}}</p>
+</main></body>
+</html>

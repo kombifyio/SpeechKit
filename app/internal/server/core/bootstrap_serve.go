@@ -223,7 +223,7 @@ func serverMiddlewareChain(ctx context.Context, cfg *config.Config, app *App) (f
 	if err != nil {
 		return nil, fmt.Errorf("core.Run: %w", err)
 	}
-	return middleware.Chain(
+	chain := middleware.Chain(
 		middleware.Recover(),
 		middleware.RequestID(),
 		middleware.Logging(),
@@ -290,7 +290,13 @@ func serverMiddlewareChain(ctx context.Context, cfg *config.Config, app *App) (f
 			// budget overnight. Zero disables.
 			DemoDailyQuota: cfg.Server.DemoDailyQuota,
 		}),
-	), nil
+	)
+	if app.Preview != nil {
+		return func(next http.Handler) http.Handler {
+			return app.Preview.transport(chain(app.Preview.principal(next)))
+		}, nil
+	}
+	return chain, nil
 }
 
 func serverDurationDefault(seconds int, fallback time.Duration) time.Duration {

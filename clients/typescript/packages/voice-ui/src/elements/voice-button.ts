@@ -137,7 +137,7 @@ ${INDICATOR_CSS}
  * secondary segment exists only when the host sets the `agent` attribute;
  * without the `voice_agent` capability it renders locked and activation
  * surfaces the denial guidance instead of disappearing (fail-closed,
- * FEATURE-ENTITLEMENT-UX-STANDARD).
+ * ENTITLEMENTS-ARCHITECTURE.md §13).
  *
  * The primary segment carries the recording indicator (idle, requesting,
  * listening with live level bars, processing, speaking, error) and, while a

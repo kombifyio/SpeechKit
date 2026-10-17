@@ -1,0 +1,56 @@
+{
+  "en": {
+    "sk.device.add.title": "Add your Box",
+    "sk.device.add.instructions": "On your Box, start Cloud pairing. Enter the code shown on its display, then confirm to connect it to your kombify account.",
+    "sk.device.add.code": "Code on your Box",
+    "sk.device.add.confirm": "Confirm device",
+    "sk.device.add.account": "Continue securely with kombify. If you are already signed in on this phone, you can use that account.",
+    "sk.device.add.done": "Approve the device on the next screen. Your Box will confirm when it is connected.",
+    "sk.device.add.invalid": "Enter the eight-character code shown on your Box, including the hyphen."
+  },
+  "de": {
+    "sk.device.add.title": "Deine Box hinzufügen",
+    "sk.device.add.instructions": "Starte auf deiner Box die Cloud-Kopplung. Gib den Code vom Display ein und bestätige, um sie mit deinem kombify-Konto zu verbinden.",
+    "sk.device.add.code": "Code auf deiner Box",
+    "sk.device.add.confirm": "Gerät bestätigen",
+    "sk.device.add.account": "Weiter geht es sicher bei kombify. Wenn du auf diesem Handy bereits angemeldet bist, kannst du dieses Konto verwenden.",
+    "sk.device.add.done": "Bestätige das Gerät auf der nächsten Seite. Deine Box zeigt an, sobald sie verbunden ist.",
+    "sk.device.add.invalid": "Gib den achtstelligen Code auf deiner Box mit Bindestrich ein."
+  },
+  "es": {
+    "sk.device.add.title": "Añade tu Box",
+    "sk.device.add.instructions": "Inicia la vinculación con la nube en tu Box. Introduce el código de la pantalla y confirma para conectarla a tu cuenta de kombify.",
+    "sk.device.add.code": "Código de tu Box",
+    "sk.device.add.confirm": "Confirmar dispositivo",
+    "sk.device.add.account": "Continúa de forma segura con kombify. Si ya has iniciado sesión en este teléfono, puedes usar esa cuenta.",
+    "sk.device.add.done": "Aprueba el dispositivo en la siguiente pantalla. Tu Box confirmará cuando esté conectada.",
+    "sk.device.add.invalid": "Introduce el código de ocho caracteres de tu Box, incluido el guion."
+  },
+  "zh-Hans": {
+    "sk.device.add.title": "添加你的 Box",
+    "sk.device.add.instructions": "在 Box 上启动云端配对。输入屏幕上显示的代码，然后确认，将它连接到你的 kombify 账户。",
+    "sk.device.add.code": "Box 上的代码",
+    "sk.device.add.confirm": "确认设备",
+    "sk.device.add.account": "通过 kombify 安全继续。如果你已在此手机上登录，可以使用该账户。",
+    "sk.device.add.done": "在下一页批准此设备。连接成功后，Box 会显示确认信息。",
+    "sk.device.add.invalid": "请输入 Box 上显示的八位代码，包括连字符。"
+  },
+  "hi": {
+    "sk.device.add.title": "अपना Box जोड़ें",
+    "sk.device.add.instructions": "अपने Box पर क्लाउड पेयरिंग शुरू करें। स्क्रीन पर दिखा कोड दर्ज करें, फिर उसे अपने kombify खाते से जोड़ने की पुष्टि करें।",
+    "sk.device.add.code": "आपके Box पर दिखा कोड",
+    "sk.device.add.confirm": "डिवाइस की पुष्टि करें",
+    "sk.device.add.account": "kombify के साथ सुरक्षित रूप से आगे बढ़ें। यदि आप इस फ़ोन पर पहले से साइन इन हैं, तो उसी खाते का उपयोग कर सकते हैं।",
+    "sk.device.add.done": "अगली स्क्रीन पर डिवाइस को अनुमति दें। कनेक्ट होने पर आपका Box पुष्टि करेगा।",
+    "sk.device.add.invalid": "अपने Box पर दिखा आठ अक्षरों का कोड हाइफ़न सहित दर्ज करें।"
+  },
+  "ar": {
+    "sk.device.add.title": "أضف جهاز Box",
+    "sk.device.add.instructions": "ابدأ الاقتران بالسحابة على جهاز Box. أدخل الرمز الظاهر على شاشته، ثم أكّد لربطه بحسابك في kombify.",
+    "sk.device.add.code": "الرمز على جهاز Box",
+    "sk.device.add.confirm": "تأكيد الجهاز",
+    "sk.device.add.account": "تابع بأمان مع kombify. إذا كنت قد سجّلت الدخول على هذا الهاتف، فيمكنك استخدام الحساب نفسه.",
+    "sk.device.add.done": "وافق على الجهاز في الشاشة التالية. سيؤكد جهاز Box اكتمال الاتصال.",
+    "sk.device.add.invalid": "أدخل الرمز المكوّن من ثمانية أحرف أو أرقام الظاهر على جهاز Box مع الشرطة."
+  }
+}

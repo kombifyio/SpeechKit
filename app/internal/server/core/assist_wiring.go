@@ -156,7 +156,7 @@ func buildAssistService(ctx context.Context, cfg *config.Config, app *App) (*ass
 	haConfigured := haURL != "" && haToken != ""
 	switch {
 	case haConfigured:
-		notes = append(notes, "Assist: HomeAssistant bridge wired ("+haURL+")")
+		notes = append(notes, "Assist: HomeAssistant bridge wired ("+config.LogSafeURL(haURL)+")")
 	case haURL != "":
 		notes = append(notes, "Assist: HomeAssistant URL configured but token env unresolved; smart-home intents fail closed")
 	}
@@ -351,7 +351,7 @@ func buildGenkitRuntime(ctx context.Context, cfg *config.Config) (*ai.Runtime, [
 		aiCfg.LocalLLMUtilityModel = cfg.LocalLLM.UtilityModel
 		aiCfg.LocalLLMAssistModel = cfg.LocalLLM.AssistModel
 		aiCfg.LocalLLMAgentModel = cfg.LocalLLM.AgentModel
-		notes = append(notes, "Genkit: Local LLM registered ("+cfg.LocalLLM.BaseURL+")")
+		notes = append(notes, "Genkit: Local LLM registered ("+config.LogSafeURL(cfg.LocalLLM.BaseURL)+")")
 	}
 
 	rt, err := ai.Init(ctx, aiCfg)

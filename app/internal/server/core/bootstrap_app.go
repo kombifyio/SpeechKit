@@ -8,6 +8,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/app/internal/config"
 	"github.com/kombifyio/SpeechKit/app/internal/server/httpx"
+	"github.com/kombifyio/SpeechKit/app/internal/server/onboarding"
 )
 
 func newServerApp(cfg *config.Config, opts RunOptions) *App {
@@ -22,6 +23,7 @@ func newServerApp(cfg *config.Config, opts RunOptions) *App {
 
 func registerCoreEndpoints(app *App) {
 	registerHealth(app)
+	app.Mux.HandleFunc(onboarding.DeviceAddPath, onboarding.DeviceAddHandler)
 	registerTestUI(app)
 	registerAssistantUI(app)
 	registerServerSettings(app)

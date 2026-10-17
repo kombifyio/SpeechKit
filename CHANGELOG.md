@@ -9,6 +9,15 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.77.3](https://github.com/kombifyio/SpeechKit/compare/v0.77.2...v0.77.3) (2026-10-17)
+
+
+### Bug Fixes
+
+* **server:** keep credentials out of startup notes and set Secure on https-origin cookies ([#1000](https://github.com/kombifyio/SpeechKit/issues/1000)) ([c67d2f0](https://github.com/kombifyio/SpeechKit/commit/c67d2f041f8230dadf882b76a653b0ea10652f97))
+* **speechkit:** keep Cloud account ownership and add customer device pairing ([#1001](https://github.com/kombifyio/SpeechKit/issues/1001)) ([5e298e9](https://github.com/kombifyio/SpeechKit/commit/5e298e999852fea67595f95ddcd6572ad73c43ce))
+* **speechkit:** qualify device handoff and publish planned Box firmware ([#1002](https://github.com/kombifyio/SpeechKit/issues/1002)) ([6b1d222](https://github.com/kombifyio/SpeechKit/commit/6b1d2224d1469790ec000b838a6308d630b6bfb1))
+
 ## [0.77.2](https://github.com/kombifyio/SpeechKit/compare/v0.77.1...v0.77.2) (2026-10-17)
 
 

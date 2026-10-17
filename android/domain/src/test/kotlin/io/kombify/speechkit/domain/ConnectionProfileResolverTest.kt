@@ -22,6 +22,21 @@ class ConnectionProfileResolverTest {
     }
 
     @Test
+    fun independentlyConnectedSpeechKitAccountWinsOverAnotherCompanionAccount() {
+        val ownAccount = ConnectionProfile.Server(companion.baseUrl, "speechkit-account-jwt")
+        assertEquals(
+            ownAccount,
+            resolveConnectionProfile(
+                ConnectionMode.KOMBIFY_CLOUD,
+                companion = companion,
+                stored = typed,
+                shipped = hosted,
+                cloud = ownAccount,
+            ),
+        )
+    }
+
+    @Test
     fun originModeKeepsTheShippedTesterServerWhenCompanionIsPresent() {
         val profile = resolveConnectionProfile(
             ConnectionMode.SPEECHKIT_ORIGIN,

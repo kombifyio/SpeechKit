@@ -46,6 +46,24 @@ func (t TrustedProxies) RequestIsHTTPS(r *http.Request) bool {
 	return t.TrustsRequest(r)
 }
 
+// CookieSecure reports whether a cookie set on the response to r must carry
+// the Secure attribute: when RequestIsHTTPS holds, or when the browser's
+// Origin is on https. The Origin signal covers a TLS edge that is not listed
+// in trusted_proxy_cidrs, which would otherwise receive session cookies
+// without Secure. Browsers send Origin on every POST, so the login responses
+// that mint cookies see it; a forged Origin only makes the caller's own
+// cookie stricter. Forwarded headers from untrusted peers stay ignored, and
+// plain-HTTP loopback development keeps working without Secure.
+func (t TrustedProxies) CookieSecure(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if t.RequestIsHTTPS(r) {
+		return true
+	}
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(r.Header.Get("Origin"))), "https://")
+}
+
 func (t TrustedProxies) TrustsRequest(r *http.Request) bool {
 	ip := remoteIP(r)
 	if ip == nil {

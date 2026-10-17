@@ -188,7 +188,7 @@ func handleServerSettingsPatch(w http.ResponseWriter, r *http.Request, app *App)
 	}
 	if strings.TrimSpace(patch.AdminAuth.PasswordValue) != "" {
 		now := time.Now()
-		secure := serverRequestIsSecure(app, r)
+		secure := serverCookieIsSecure(app, r)
 		if cookie, err := middleware.NewAdminSessionCookie(app.Cfg.Server.AdminUsername, app.Cfg.Server.AdminPasswordHash, secure, now); err == nil && cookie != nil {
 			http.SetCookie(w, cookie)
 			// Audit S-13: pair the session cookie with the CSRF

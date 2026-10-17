@@ -655,7 +655,7 @@ private fun ServerConnectionCard(
         StoredServerProfile.resolvedMode(context, saved, shippedProfile)
     }
     val cloudSession = remember(modeTick) {
-        provisioner.currentSession() ?: StoredServerProfile.loadCloud(context)
+        StoredServerProfile.loadCloud(context)
     }
 
     fun persistMode(next: ConnectionMode) {
@@ -679,6 +679,12 @@ private fun ServerConnectionCard(
 
     fun connectCloud() {
         if (connecting) return
+        if (StoredServerProfile.hasOwnCloudSession(context)) {
+            persistMode(ConnectionMode.KOMBIFY_CLOUD)
+            onConnectSucceeded()
+            status = null
+            return
+        }
         connecting = true
         status = context.getString(R.string.settings_connection_testing)
         scope.launch {
@@ -687,11 +693,16 @@ private fun ServerConnectionCard(
             }.getOrDefault(CompanionProvision.Unavailable)
             val fromCompanion = companionCloudProfile(outcome)
             if (fromCompanion != null) {
-                StoredServerProfile.saveKombifyCloud(
+                val savedCompanion = StoredServerProfile.saveCompanionCloud(
                     context,
                     fromCompanion.baseUrl,
-                    fromCompanion.bearerToken,
+                    fromCompanion.bearerToken.orEmpty(),
                 )
+                if (!savedCompanion && !StoredServerProfile.hasOwnCloudSession(context)) {
+                    status = context.getString(R.string.settings_connection_cloud_network)
+                    connecting = false
+                    return@launch
+                }
                 persistMode(ConnectionMode.KOMBIFY_CLOUD)
                 onConnectSucceeded()
                 // The state line above already says Connected; a stale success

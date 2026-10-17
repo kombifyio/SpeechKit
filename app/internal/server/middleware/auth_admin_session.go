@@ -215,7 +215,7 @@ func verifyAdminSession(r *http.Request, username, passwordHash string) (Identit
 
 func (a authRuntime) setAdminSessionCookie(w http.ResponseWriter, r *http.Request, username, passwordHash string) {
 	expires := time.Now().Add(adminSessionTTL)
-	secure := a.trustedProxies.RequestIsHTTPS(r)
+	secure := a.trustedProxies.CookieSecure(r)
 	token := signAdminSessionToken(adminSessionClaims{
 		User:      username,
 		ExpiresAt: expires.Unix(),
@@ -250,7 +250,7 @@ func (a authRuntime) setAdminSessionCookie(w http.ResponseWriter, r *http.Reques
 }
 
 func (a authRuntime) clearAdminSessionCookie(w http.ResponseWriter, r *http.Request) {
-	secure := a.trustedProxies.RequestIsHTTPS(r)
+	secure := a.trustedProxies.CookieSecure(r)
 	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- deletion cookie mirrors the session cookie attributes for reliable expiry.
 		Name:     adminSessionCookieName,
 		Value:    "",

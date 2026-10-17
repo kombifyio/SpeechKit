@@ -177,7 +177,7 @@ func buildSTTRouter(cfg *config.Config) (*stt.Router, []namedProvider, []string)
 	if cfg.VPS.Enabled && strings.TrimSpace(cfg.VPS.URL) != "" {
 		key := config.ResolveSecret(cfg.VPS.APIKeyEnv)
 		enabled.VPS = &allproviders.VPSOpts{URL: cfg.VPS.URL, APIKey: key, Model: cfg.VPS.Model}
-		notes = append(notes, "VPS STT registered (url="+cfg.VPS.URL+", model="+firstNonEmpty(strings.TrimSpace(cfg.VPS.Model), "whisper-1")+")")
+		notes = append(notes, "VPS STT registered (url="+config.LogSafeURL(cfg.VPS.URL)+", model="+firstNonEmpty(strings.TrimSpace(cfg.VPS.Model), "whisper-1")+")")
 	}
 
 	// Local whisper.cpp. We DO register the provider so the router has a

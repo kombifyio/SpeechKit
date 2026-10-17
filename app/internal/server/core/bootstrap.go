@@ -75,6 +75,7 @@ type App struct {
 	Lifecycle     *lifecycle.Registry
 	SharedDeps    *lifecycle.SharedDepRegistry
 	Version       string
+	Preview       *previewRuntime
 	AuthState     *middleware.AuthState
 	STTRouter     *stt.Router
 	AssistService *assistpkg.Service
@@ -136,6 +137,13 @@ func dictationHintsFromDictionary(dictionary string) speechcustomize.Recognition
 func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	if cfg == nil {
 		return errors.New("core.Run: nil config")
+	}
+	preview, err := resolvePreviewRuntime(cfg)
+	if err != nil {
+		return err
+	}
+	if preview != nil {
+		return runPreview(ctx, cfg, opts, preview)
 	}
 
 	app := newServerApp(cfg, opts)

@@ -50,7 +50,7 @@ fun resolveConnectionProfile(
     cloud: ConnectionProfile.Server? = null,
 ): ConnectionProfile = when (mode) {
     ConnectionMode.KOMBIFY_CLOUD ->
-        companion ?: cloud ?: ConnectionProfile.SystemOnDevice()
+        cloud ?: companion ?: ConnectionProfile.SystemOnDevice()
     ConnectionMode.SELF_HOST ->
         stored ?: ConnectionProfile.SystemOnDevice()
     ConnectionMode.SPEECHKIT_ORIGIN ->

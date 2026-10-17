@@ -38,6 +38,9 @@ func serverPublicPaths() []string {
 
 func serverPublicRoutes() []middleware.PublicRoute {
 	routes := []middleware.PublicRoute{
+		// Customer handoff only: no operator UI, credentials or mutations.
+		{Path: onboarding.DeviceAddPath, Methods: []string{http.MethodGet, http.MethodHead}},
+		{Path: "/api" + onboarding.DeviceAddPath, Methods: []string{http.MethodGet, http.MethodHead}},
 		// Provider callbacks carry a session-only credential checked by the
 		// native voice handler, never the operator or owner's bearer token.
 		{PathPrefix: "/v1/voiceagent/sessions/", PathSuffix: "/llm/chat/completions", Methods: []string{http.MethodPost}},
@@ -237,7 +240,7 @@ func (h adminSessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid_admin_credentials"})
 		return
 	}
-	cookie, err := middleware.NewAdminSessionCookie(username, passwordHash, serverRequestIsSecure(h.app, r), time.Now())
+	cookie, err := middleware.NewAdminSessionCookie(username, passwordHash, serverCookieIsSecure(h.app, r), time.Now())
 	if err != nil || cookie == nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "admin_session_failed"})
@@ -258,6 +261,17 @@ func serverRequestIsSecure(app *App, r *http.Request) bool {
 	}
 	trustedProxies, _ := httpx.NewTrustedProxies(cidrs)
 	return trustedProxies.RequestIsHTTPS(r)
+}
+
+// serverCookieIsSecure reports whether an admin cookie on the response to r
+// must carry Secure (see httpx.TrustedProxies.CookieSecure).
+func serverCookieIsSecure(app *App, r *http.Request) bool {
+	var cidrs []string
+	if app != nil && app.Cfg != nil {
+		cidrs = app.Cfg.Server.TrustedProxyCIDRs
+	}
+	trustedProxies, _ := httpx.NewTrustedProxies(cidrs)
+	return trustedProxies.CookieSecure(r)
 }
 
 func writeHTML(w http.ResponseWriter, r *http.Request, html string) {

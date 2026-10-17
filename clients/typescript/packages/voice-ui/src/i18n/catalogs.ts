@@ -1,7 +1,7 @@
 /**
  * Message-ID catalogs for the Voice UI Kit (`sk.voice.*`). English is the
  * source of truth and fallback; the Wave 2 locale set is en, de, es, zh-Hans,
- * hi, and ar (LANGUAGE-LOCALIZATION-STANDARD). Seeded from the Floating Panel
+ * hi, and ar (KOMBIFY-DESIGN-SYSTEM-STANDARD.md §11). Seeded from the Floating Panel
  * `fp.voice.*` catalogs (machine-drafted, human review pending).
  *
  * The JSON copies in `locales/*.json` ship for native (Compose) spec parity —

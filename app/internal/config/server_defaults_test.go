@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestApplyServerRuntimeDefaults_OptInConfiguresSelfHostedStack(t *testing.T) {
 	t.Setenv(ServerSelfHostedDefaultsEnv, "true")
@@ -213,5 +216,24 @@ func TestApplyServerRuntimeDefaults_PrefersSpeechKitPostgresDSNEnv(t *testing.T)
 
 	if cfg.Store.PostgresDSN != overrideDSN {
 		t.Fatalf("Store.PostgresDSN = %q, want SpeechKit-specific env DSN", cfg.Store.PostgresDSN)
+	}
+}
+
+// Endpoint URLs from env reach the startup log; credentials embedded in them
+// must not.
+func TestApplyServerRuntimeDefaults_NotesOmitURLCredentials(t *testing.T) {
+	t.Setenv(ServerSelfHostedDefaultsEnv, "true")
+	t.Setenv("SPEECHKIT_SELFHOSTED_STT_URL", "https://op:stt-secret@stt.example.com/v1?api_key=query-secret")
+	t.Setenv("SPEECHKIT_SELFHOSTED_TTS_URL", "https://op:tts-secret@tts.example.com/v1")
+
+	notes := ApplyServerRuntimeDefaults(defaults())
+	joined := strings.Join(notes, "\n")
+	for _, secret := range []string{"stt-secret", "query-secret", "tts-secret"} {
+		if strings.Contains(joined, secret) {
+			t.Fatalf("startup notes leak %q: %s", secret, joined)
+		}
+	}
+	if !strings.Contains(joined, "stt.example.com") {
+		t.Fatalf("startup notes lost the non-secret endpoint hint: %s", joined)
 	}
 }

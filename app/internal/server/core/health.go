@@ -171,10 +171,17 @@ func registerHealth(app *App) {
 	app.Mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		body := map[string]any{
 			"status":  "ok",
 			"version": app.Version,
-		})
+		}
+		if app.Preview != nil {
+			body["revision"] = app.Preview.revision
+			body["release_channel"] = "preview"
+			body["execution_scope"] = previewExecutionScope()
+			body["capabilities"] = map[string]string{"providers": "disabled", "storage": "disabled", "customer_handoff": "enabled"}
+		}
+		_ = json.NewEncoder(w).Encode(body)
 	})
 
 	readyHandler := func(w http.ResponseWriter, r *http.Request) {

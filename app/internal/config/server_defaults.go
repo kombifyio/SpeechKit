@@ -34,7 +34,7 @@ func ApplyServerRuntimeDefaults(cfg *Config) []string {
 
 	if publicURL, envName := firstPresentEnv(serverPublicURLEnv); publicURL != "" && strings.TrimSpace(cfg.Server.PublicURL) == "" {
 		cfg.Server.PublicURL = strings.TrimRight(publicURL, "/")
-		notes = append(notes, "server public URL default from "+envName+": "+cfg.Server.PublicURL)
+		notes = append(notes, "server public URL default from "+envName+": "+LogSafeURL(cfg.Server.PublicURL))
 	}
 	if strings.TrimSpace(os.Getenv("SPEECHKIT_SERVER_PUBLIC_URL")) != "" {
 		notes = append(notes, "SPEECHKIT_SERVER_PUBLIC_URL was removed; use SPEECHKIT_PUBLIC_URL")
@@ -98,7 +98,7 @@ func ApplyServerRuntimeDefaults(cfg *Config) []string {
 	sttURL := envOrDefault("SPEECHKIT_SELFHOSTED_STT_URL", defaultServerSTTURL)
 	if strings.TrimSpace(cfg.VPS.URL) == "" {
 		cfg.VPS.URL = sttURL
-		notes = append(notes, "self-hosted STT default: "+sttURL)
+		notes = append(notes, "self-hosted STT default: "+LogSafeURL(sttURL))
 	}
 	if !cfg.VPS.Enabled {
 		cfg.VPS.Enabled = true
@@ -128,7 +128,7 @@ func ApplyServerRuntimeDefaults(cfg *Config) []string {
 	}
 	if localLLMBaseURLNeedsDefault(cfg.LocalLLM.BaseURL) {
 		cfg.LocalLLM.BaseURL = llmBaseURL
-		notes = append(notes, "self-hosted LLM default: "+llmBaseURL)
+		notes = append(notes, "self-hosted LLM default: "+LogSafeURL(llmBaseURL))
 	}
 	applyServerLocalLLMModelDefaults(&cfg.LocalLLM)
 
@@ -148,7 +148,7 @@ func ApplyServerRuntimeDefaults(cfg *Config) []string {
 		if voice := strings.TrimSpace(os.Getenv("SPEECHKIT_SELFHOSTED_TTS_VOICE")); voice != "" && strings.TrimSpace(cfg.TTS.Local.Voice) == "" {
 			cfg.TTS.Local.Voice = voice
 		}
-		notes = append(notes, "self-hosted TTS default: "+ttsURL)
+		notes = append(notes, "self-hosted TTS default: "+LogSafeURL(ttsURL))
 	}
 
 	if noConfiguredTTSSecret(cfg) {

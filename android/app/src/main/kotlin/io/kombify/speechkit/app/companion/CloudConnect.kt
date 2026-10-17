@@ -8,7 +8,7 @@ import io.kombify.speechkit.net.StoredServerProfile
 import kotlinx.coroutines.runBlocking
 
 /**
- * Companion is optional. A provisioned session is used when it exists.
+ * Companion is optional. It can bootstrap a session before SpeechKit signs in.
  * Pin mismatch, signed-out, and missing Companion are not connect failures:
  * SpeechKit signs in to kombify itself.
  */
@@ -33,7 +33,8 @@ fun shouldStartConnectOnResume(
 
 /**
  * The one recovery path for a Cloud bearer the server rejected (401): the
- * Companion session first, then this device's own refresh token. The renewed
+ * device's own refresh token when it owns the session, otherwise Companion.
+ * A refused independent login never switches to Companion's account. The renewed
  * session is already persisted when this returns. A bearer that is neither
  * (self-host, tester origin) is left alone and yields null.
  *
@@ -46,21 +47,44 @@ fun recoverCloudSession(
     companion: CompanionProvisioner,
     failed: ConnectionProfile,
 ): ConnectionProfile.Server? {
-    val fromCompanion = companion.recoverFromUnauthorized(failed) as? CompanionProvision.Session
-    if (fromCompanion != null) {
-        // Companion hands out an access token only. It must not erase the
-        // refresh token of this device's own sign-in.
-        val profile = fromCompanion.profile
-        StoredServerProfile.replaceCloudAccess(
-            context,
-            profile.baseUrl,
-            profile.bearerToken.orEmpty(),
-            fromCompanion.expiresAtEpochMs,
-        )
-        return profile
-    }
-    val rejected = (failed as? ConnectionProfile.Server)?.bearerToken ?: return null
-    val renewed = runBlocking { CloudBearer.recoverRejected(rejected) } ?: return null
-    val stored = StoredServerProfile.loadCloud(context) ?: return null
-    return ConnectionProfile.Server(stored.baseUrl, renewed)
+    val server = failed as? ConnectionProfile.Server ?: return null
+    val rejected = server.bearerToken ?: return null
+    return recoverCloudSession(
+        hasOwnSession = StoredServerProfile.hasOwnCloudSession(context),
+        recoverOwn = {
+            val renewed = runBlocking { CloudBearer.recoverRejected(rejected) }
+            val stored = StoredServerProfile.loadCloud(context)
+            if (renewed != null && stored != null) ConnectionProfile.Server(stored.baseUrl, renewed) else null
+        },
+        recoverCompanion = {
+            val cached = companion.currentSession()
+            if (cached != null && cached.normalizedBaseUrl == server.normalizedBaseUrl &&
+                cached.bearerToken != rejected
+            ) {
+                CompanionProvision.Session(cached)
+            } else {
+                companion.recoverFromUnauthorized(failed)
+            }
+        },
+        saveCompanion = { session ->
+            StoredServerProfile.saveCompanionCloud(
+                context,
+                session.profile.baseUrl,
+                session.profile.bearerToken.orEmpty(),
+                session.expiresAtEpochMs,
+                expectedAccessToken = rejected,
+            )
+        },
+    )
+}
+
+internal fun recoverCloudSession(
+    hasOwnSession: Boolean,
+    recoverOwn: () -> ConnectionProfile.Server?,
+    recoverCompanion: () -> CompanionProvision,
+    saveCompanion: (CompanionProvision.Session) -> Boolean,
+): ConnectionProfile.Server? {
+    if (hasOwnSession) return recoverOwn()
+    val session = recoverCompanion() as? CompanionProvision.Session ?: return null
+    return session.profile.takeIf { saveCompanion(session) }
 }

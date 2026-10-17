@@ -18,6 +18,7 @@ object StoredServerProfile {
     const val KEY_CLOUD_TOKEN = "cloud_server_token"
     const val KEY_CLOUD_REFRESH = "cloud_refresh_token"
     const val KEY_CLOUD_EXPIRES_AT = "cloud_access_expires_at"
+    const val KEY_CLOUD_OWNED = "cloud_owned"
 
     fun load(context: Context): ConnectionProfile.Server? {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -31,6 +32,8 @@ object StoredServerProfile {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         return ConnectionMode.fromWire(prefs.getString(KEY_CONNECTION_MODE, null))
     }
+
+    fun cloudSelected(context: Context): Boolean = loadMode(context) == ConnectionMode.KOMBIFY_CLOUD
 
     fun resolvedMode(
         context: Context,
@@ -66,6 +69,14 @@ object StoredServerProfile {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString(KEY_CLOUD_REFRESH, null)?.trim()?.ifEmpty { null }
 
+    /** Ownership survives an access-only login; refresh presence is only a legacy migration hint. */
+    fun hasOwnCloudSession(context: Context): Boolean = synchronized(cloudLock) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        !prefs.getString(KEY_CLOUD_URL, null).isNullOrBlank() &&
+            (prefs.getBoolean(KEY_CLOUD_OWNED, false) ||
+                !prefs.getString(KEY_CLOUD_REFRESH, null).isNullOrBlank())
+    }
+
     /**
      * @param expiresAtEpochMs when the access token stops being valid; 0 when
      *   the source did not say (Companion hands out a bearer with no expiry).
@@ -83,28 +94,55 @@ object StoredServerProfile {
             .putString(KEY_CLOUD_TOKEN, token?.trim().orEmpty())
             .putString(KEY_CLOUD_REFRESH, refreshToken?.trim().orEmpty())
             .putLong(KEY_CLOUD_EXPIRES_AT, expiresAtEpochMs)
+            .putBoolean(KEY_CLOUD_OWNED, true)
             .putString(KEY_CONNECTION_MODE, ConnectionMode.KOMBIFY_CLOUD.wire)
             .apply()
     }
 
     /**
-     * A renewed access token from Companion replaces the stored one; this
-     * device's own refresh token stays, so its own sign-in keeps working
-     * if Companion later has nothing to give.
+     * Updates an optional Companion session without replacing this device's
+     * independently signed-in account.
      */
     fun replaceCloudAccess(
         context: Context,
         url: String,
         token: String,
         expiresAtEpochMs: Long = 0L,
-    ) = synchronized(cloudLock) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
+    ) {
+        saveCompanionCloud(context, url, token, expiresAtEpochMs)
+    }
+
+    /**
+     * Companion may bootstrap an unowned session, but never mix its access
+     * token with an independent login's refresh token, including when that
+     * login finishes while provisioning is on the wire. Recovery also checks
+     * the rejected token so a late reply cannot resurrect a disconnected or
+     * newly connected session. Recovery updates cached credentials without
+     * changing the selected execution mode.
+     */
+    fun saveCompanionCloud(
+        context: Context,
+        url: String,
+        token: String,
+        expiresAtEpochMs: Long = 0L,
+        expectedAccessToken: String? = null,
+    ): Boolean = synchronized(cloudLock) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_CLOUD_OWNED, false) ||
+            !prefs.getString(KEY_CLOUD_REFRESH, null).isNullOrBlank()
+        ) return@synchronized false
+        if (expectedAccessToken != null &&
+            (prefs.getString(KEY_CLOUD_URL, null).isNullOrBlank() ||
+                prefs.getString(KEY_CLOUD_TOKEN, null) != expectedAccessToken)
+        ) return@synchronized false
+        val edit = prefs.edit()
             .putString(KEY_CLOUD_URL, url.trim())
             .putString(KEY_CLOUD_TOKEN, token.trim())
             .putLong(KEY_CLOUD_EXPIRES_AT, expiresAtEpochMs)
-            .putString(KEY_CONNECTION_MODE, ConnectionMode.KOMBIFY_CLOUD.wire)
-            .apply()
+        if (expectedAccessToken == null) {
+            edit.putString(KEY_CONNECTION_MODE, ConnectionMode.KOMBIFY_CLOUD.wire)
+        }
+        edit.commit()
     }
 
     /**
@@ -142,6 +180,7 @@ object StoredServerProfile {
             .remove(KEY_CLOUD_TOKEN)
             .remove(KEY_CLOUD_REFRESH)
             .remove(KEY_CLOUD_EXPIRES_AT)
+            .remove(KEY_CLOUD_OWNED)
             .apply()
     }
 
