@@ -21,8 +21,9 @@ const (
 	CloudBearerSecretName = "KOMBIFY_CLOUD_TOKEN"
 	// CloudServerURLEnv overrides the kombify Cloud server URL (staging or a
 	// local Gateway); CloudDefaultServerURL is the production value.
-	CloudServerURLEnv     = "SPEECHKIT_CLOUD_SERVER_URL"
-	CloudDefaultServerURL = "https://api.kombify.io/v1/speechkit"
+	CloudServerURLEnv      = "SPEECHKIT_CLOUD_SERVER_URL"
+	CloudDefaultServerURL  = "https://api.kombify.io/v1/speechkit"
+	CloudDefaultAuthDomain = "login.kombify.io"
 )
 
 // SecretPurpose names what a credential reference ("*_env" setting) is used

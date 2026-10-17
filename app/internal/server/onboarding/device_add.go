@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/kombifyio/SpeechKit/app/internal/cloudauth"
+	"github.com/kombifyio/SpeechKit/app/internal/config"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/localization"
 	"golang.org/x/text/language"
 )
@@ -25,7 +25,7 @@ var deviceAddMessages []byte
 var deviceCodePattern = regexp.MustCompile(`^[A-Z0-9]{4}-[A-Z0-9]{4}$`)
 var deviceAddTemplate = template.Must(template.New("device-add").Parse(deviceAddHTML))
 
-const deviceVerificationOrigin = "https://" + cloudauth.DefaultDomain
+const deviceVerificationOrigin = "https://" + config.CloudDefaultAuthDomain
 const deviceVerificationURI = deviceVerificationOrigin + "/activate"
 
 var deviceAddCatalog = func() map[string]map[string]string {
