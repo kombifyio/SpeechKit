@@ -9,6 +9,13 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## [0.77.6](https://github.com/kombifyio/SpeechKit/compare/v0.77.5...v0.77.6) (2026-10-17)
+
+
+### Release documentation
+
+* **release:** document the standalone Box and renewable WLAN updater ([#1010](https://github.com/kombifyio/SpeechKit/issues/1010)) ([7e22b3a](https://github.com/kombifyio/SpeechKit/commit/7e22b3a1a326f7e94049d93d2e5a8611372d3938))
+
 ## [0.77.5](https://github.com/kombifyio/SpeechKit/compare/v0.77.4...v0.77.5) (2026-10-17)
 
 
