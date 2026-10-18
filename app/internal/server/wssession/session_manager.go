@@ -41,6 +41,13 @@ var (
 	ErrGlobalLimitExceeded    = errors.New("ws session: global session limit exceeded")
 	ErrIdentityLimitExceeded  = errors.New("ws session: per-identity session limit exceeded")
 	ErrVoiceBudgetUnavailable = errors.New("ws session: voice budget expired or already claimed")
+	// ErrSessionOwnerMismatch rejects a renewal whose edge-verified subject
+	// or org differs from the session owner.
+	ErrSessionOwnerMismatch = errors.New("ws session: renewal identity does not own the session")
+	// ErrVoiceBudgetNotRenewable rejects a renewal for a session without a
+	// running, renewable Voice budget (pending, unreserved or bound to an
+	// agent authorization that renewal cannot extend).
+	ErrVoiceBudgetNotRenewable = errors.New("ws session: voice budget is not renewable")
 )
 
 // Identity is the caller's resolved identity from the auth middleware.
@@ -162,8 +169,11 @@ type ManagedSession struct {
 
 	VoiceAgentBinding VoiceAgentBinding
 	VoiceBudget       VoiceBudget
-	pendingFinalizer  func(*ManagedSession)
-	pendingTimer      *time.Timer
+	// voiceBudgetRenewer is installed by the running session adapter; it
+	// owns the live deadline, so only it may adopt a renewed reservation.
+	voiceBudgetRenewer func(VoiceBudget) error
+	pendingFinalizer   func(*ManagedSession)
+	pendingTimer       *time.Timer
 }
 
 // ClaimVoiceBudget consumes the admission once, including failed creates.
@@ -187,6 +197,45 @@ func (m *SessionManager) claimVoiceBudgetLocked(budget VoiceBudget) error {
 	}
 	m.voiceBudgetClaims[budget.ReservationID] = budget.ExpiresAt
 	return nil
+}
+
+// SetVoiceBudgetRenewer installs (or with nil removes) the live renewer of
+// an active session. VoiceBudget stays the immutable admission record.
+func (m *SessionManager) SetVoiceBudgetRenewer(id string, renew func(VoiceBudget) error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if s, ok := m.sessions[id]; ok && s.State == StateActive {
+		s.voiceBudgetRenewer = renew
+	}
+}
+
+// RenewVoiceBudget hands an edge-verified reservation to the live session
+// owned by exactly the same subject and org. The reservation is claimed
+// first, so a replayed grant fails with ErrVoiceBudgetUnavailable before any
+// other check; every other error leaves the claimed reservation unadopted.
+func (m *SessionManager) RenewVoiceBudget(id string, owner Identity, budget VoiceBudget) error {
+	m.mu.Lock()
+	if err := m.claimVoiceBudgetLocked(budget); err != nil {
+		m.mu.Unlock()
+		return err
+	}
+	s, ok := m.sessions[id]
+	var renew func(VoiceBudget) error
+	switch {
+	case !ok || s.State == StateClosed:
+		m.mu.Unlock()
+		return ErrSessionNotFound
+	case s.Owner.UserID != owner.UserID || s.Owner.OrgID != owner.OrgID:
+		m.mu.Unlock()
+		return ErrSessionOwnerMismatch
+	default:
+		renew = s.voiceBudgetRenewer
+	}
+	m.mu.Unlock()
+	if renew == nil {
+		return ErrVoiceBudgetNotRenewable
+	}
+	return renew(budget)
 }
 
 // State captures the session's manager-level lifecycle. The Framework kernel

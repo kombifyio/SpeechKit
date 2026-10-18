@@ -57,18 +57,25 @@ type Config struct {
 	TurnTimeout time.Duration
 	// Headers optionally mints per-turn headers; nil adds none.
 	Headers HeaderProvider
+	// Conversation is an optional host-bound capability; the remote agent's
+	// ordinary tool loop owns mode changes and canonical history selection.
+	Conversation *ConversationSession
 }
 
 // Agent implements [cascaded.Agent] by forwarding each utterance to a
 // registered A2A agent and returning the text parts of its answer. Build it
 // with [New]; it holds no per-turn state and is safe for concurrent use.
 type Agent struct {
-	endpoint      string
-	targetAgentID string
-	sessionID     string
-	client        *http.Client
-	headers       HeaderProvider
-	turnTimeout   time.Duration
+	endpoint         string
+	targetAgentID    string
+	sessionID        string
+	client           *http.Client
+	headers          HeaderProvider
+	turnTimeout      time.Duration
+	conversation     *ConversationSession
+	conversationTurn chan struct{}
+	speechWaiter     chan struct{}
+	panelRequests    map[string]struct{}
 }
 
 // New validates config and returns an [Agent]. It fails when Endpoint is
@@ -98,12 +105,16 @@ func New(config Config) (*Agent, error) {
 		turnTimeout = 60 * time.Second
 	}
 	return &Agent{
-		endpoint:      endpoint,
-		targetAgentID: strings.TrimSpace(config.TargetAgentID),
-		sessionID:     strings.TrimSpace(config.SessionID),
-		client:        &safeClient,
-		headers:       config.Headers,
-		turnTimeout:   turnTimeout,
+		endpoint:         endpoint,
+		targetAgentID:    strings.TrimSpace(config.TargetAgentID),
+		sessionID:        strings.TrimSpace(config.SessionID),
+		client:           &safeClient,
+		headers:          config.Headers,
+		turnTimeout:      turnTimeout,
+		conversation:     config.Conversation,
+		panelRequests:    make(map[string]struct{}),
+		conversationTurn: make(chan struct{}, 1),
+		speechWaiter:     make(chan struct{}, 1),
 	}, nil
 }
 
@@ -128,15 +139,82 @@ func (a *Agent) Stream(ctx context.Context, input cascaded.AgentInput, emit func
 // Empty keeps the historical generated request identity. The host must bind
 // turnID to one observed final utterance and never replay uncertain execution.
 func (a *Agent) StreamTurn(ctx context.Context, input cascaded.AgentInput, turnID string, emit func(string) error) (cascaded.AgentOutput, error) {
+	return a.streamTurn(ctx, input, turnID, emit, nil)
+}
+
+func (a *Agent) streamTurn(ctx context.Context, input cascaded.AgentInput, turnID string, emit func(string) error, command *VoiceModeCommand) (cascaded.AgentOutput, error) {
 	ctx, cancel := context.WithTimeout(ctx, a.turnTimeout)
 	defer cancel()
+	if a.conversation != nil {
+		if command != nil {
+			waitCtx, stopWaiting := context.WithTimeout(ctx, 2*time.Second)
+			select {
+			case a.conversationTurn <- struct{}{}:
+			case <-waitCtx.Done():
+				stopWaiting()
+				// Nothing was dispatched or consumed. This is distinguishable
+				// from an uncertain failure after the HTTP effect.
+				return cascaded.AgentOutput{}, ErrConversationBusy
+			}
+			waitErr := waitCtx.Err()
+			stopWaiting()
+			if waitErr != nil {
+				<-a.conversationTurn
+				return cascaded.AgentOutput{}, ErrConversationBusy
+			}
+		} else {
+			select {
+			case a.conversationTurn <- struct{}{}:
+			default:
+				// Retain one observed utterance during a short mode effect. The
+				// existing turn deadline/cancellation bounds this session-local wait.
+				select {
+				case a.speechWaiter <- struct{}{}:
+				default:
+					return cascaded.AgentOutput{}, ErrConversationBusy
+				}
+				select {
+				case a.conversationTurn <- struct{}{}:
+					<-a.speechWaiter
+				case <-ctx.Done():
+					<-a.speechWaiter
+					return cascaded.AgentOutput{}, ctx.Err()
+				}
+			}
+		}
+		defer func() { <-a.conversationTurn }()
+	}
+	if err := ctx.Err(); err != nil {
+		return cascaded.AgentOutput{}, err
+	}
+	if command != nil {
+		if _, consumed := a.panelRequests[command.RequestID]; consumed {
+			return cascaded.AgentOutput{}, errors.New("speechkit a2a: conversation command already consumed")
+		}
+		a.panelRequests[command.RequestID] = struct{}{}
+	}
 	utterance := strings.TrimSpace(input.Utterance)
-	if utterance == "" {
+	if utterance == "" && command == nil {
 		return cascaded.AgentOutput{}, errors.New("speechkit a2a: utterance is required")
 	}
 	requestID := "speechkit-" + fmt.Sprint(time.Now().UnixNano())
 	if turnID != "" {
 		requestID = turnID
+	}
+	sessionID := a.sessionID
+	speechkit := map[string]any{"targetAgentId": a.targetAgentID, "sessionId": sessionID, "locale": input.Locale}
+	if a.conversation != nil {
+		capability := a.conversation.Snapshot()
+		if command != nil {
+			requestID = voiceModeTransportID(capability.VoiceSessionID, command.RequestID)
+		}
+		sessionID = capability.ConversationSessionID
+		speechkit["sessionId"] = sessionID
+		speechkit["conversation_control"] = capability
+	}
+	parts := []map[string]any{{"kind": "text", "text": utterance}}
+	if command != nil {
+		parts = []map[string]any{{"kind": "data", "data": command}}
 	}
 	wire := map[string]any{
 		"jsonrpc": "2.0",
@@ -147,15 +225,11 @@ func (a *Agent) StreamTurn(ctx context.Context, input cascaded.AgentInput, turnI
 				"kind":      "message",
 				"role":      "user",
 				"messageId": requestID,
-				"contextId": a.sessionID,
-				"parts":     []map[string]any{{"kind": "text", "text": utterance}},
+				"contextId": sessionID,
+				"parts":     parts,
 			},
 			"metadata": map[string]any{
-				"speechkit": map[string]any{
-					"targetAgentId": a.targetAgentID,
-					"sessionId":     a.sessionID,
-					"locale":        input.Locale,
-				},
+				"speechkit": speechkit,
 			},
 		},
 	}
@@ -170,7 +244,7 @@ func (a *Agent) StreamTurn(ctx context.Context, input cascaded.AgentInput, turnI
 	req.Header.Set("content-type", "application/json")
 	req.Header.Set("accept", "text/event-stream, application/json")
 	if a.headers != nil {
-		headers, headerErr := a.headers(ctx, RequestContext{TargetAgentID: a.targetAgentID, SessionID: a.sessionID, RequestBody: append([]byte(nil), body...)})
+		headers, headerErr := a.headers(ctx, RequestContext{TargetAgentID: a.targetAgentID, SessionID: sessionID, RequestBody: append([]byte(nil), body...)})
 		if headerErr != nil {
 			code := "permission_denied"
 			var coded cascaded.CodedError
@@ -212,7 +286,54 @@ func (a *Agent) StreamTurn(ctx context.Context, input cascaded.AgentInput, turnI
 		return cascaded.AgentOutput{}, &TurnError{code: code}
 	}
 
-	text, err := readAnswerStream(response, emit)
+	var control func(any) error
+	controlSeen := false
+	if a.conversation != nil {
+		control = func(envelope any) error {
+			root, _ := envelope.(map[string]any)
+			result, _ := root["result"].(map[string]any)
+			metadata, _ := result["metadata"].(map[string]any)
+			if _, exists := metadata["io.kombify.voice_mode"]; !exists {
+				return nil
+			}
+			if root["id"] != requestID || controlSeen {
+				return errors.New("speechkit a2a: conversation response binding rejected")
+			}
+			if command != nil {
+				value, _ := metadata["io.kombify.voice_mode"].(map[string]any)
+				if value["request_id"] != command.RequestID || (value["status"] == "accepted" && value["mode"] != command.Mode) {
+					return errors.New("speechkit a2a: conversation command acknowledgement mismatch")
+				}
+			}
+			controlSeen = true
+			if err := a.projectConversation(ctx, envelope); err != nil {
+				return err
+			}
+			value, _ := metadata["io.kombify.voice_mode"].(map[string]any)
+			if command == nil && value["status"] == "rejected" {
+				// The authoritative denial is already delivered. Do not let a
+				// later model delta turn it into a spoken success promise.
+				return &TurnError{code: "permission_denied"}
+			}
+			return nil
+		}
+	}
+	var text string
+	if command != nil {
+		var envelope any
+		if err = json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&envelope); err == nil {
+			if rpcError(envelope) {
+				err = &TurnError{code: rpcErrorCode(envelope)}
+			} else {
+				err = control(envelope)
+			}
+		}
+		if err == nil && !controlSeen {
+			err = errors.New("speechkit a2a: conversation acknowledgement missing")
+		}
+	} else {
+		text, err = readAnswerStreamControlled(response, emit, control)
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return cascaded.AgentOutput{}, ctx.Err()
@@ -239,8 +360,12 @@ func validateEndpoint(raw string) (string, error) {
 }
 
 func readAnswerStream(response *http.Response, emit func(string) error) (string, error) {
+	return readAnswerStreamControlled(response, emit, nil)
+}
+
+func readAnswerStreamControlled(response *http.Response, emit func(string) error, control func(any) error) (string, error) {
 	if strings.Contains(strings.ToLower(response.Header.Get("content-type")), "text/event-stream") {
-		return readSSEAnswerStream(response.Body, emit)
+		return readSSEAnswerStreamControlled(response.Body, emit, control)
 	}
 	var envelope any
 	if err := json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(&envelope); err != nil {
@@ -248,6 +373,11 @@ func readAnswerStream(response *http.Response, emit func(string) error) (string,
 	}
 	if rpcError(envelope) {
 		return "", &TurnError{code: rpcErrorCode(envelope)}
+	}
+	if control != nil {
+		if err := control(envelope); err != nil {
+			return "", err
+		}
 	}
 	if text := strings.TrimSpace(answerText(envelope)); text != "" {
 		if len(text) > 128<<10 {
@@ -267,6 +397,10 @@ func readAnswerStream(response *http.Response, emit func(string) error) (string,
 // token deltas, so whitespace at a delta's edge belongs to the answer and is
 // trimmed only from the joined text.
 func readSSEAnswerStream(reader io.Reader, emit func(string) error) (string, error) {
+	return readSSEAnswerStreamControlled(reader, emit, nil)
+}
+
+func readSSEAnswerStreamControlled(reader io.Reader, emit func(string) error, control func(any) error) (string, error) {
 	// Bound the whole response, including metadata and ignored events, not
 	// only individual lines. An extra byte distinguishes truncation from EOF.
 	limited := &io.LimitedReader{R: reader, N: (4 << 20) + 1}
@@ -286,6 +420,11 @@ func readSSEAnswerStream(reader io.Reader, emit func(string) error) (string, err
 		if json.Unmarshal([]byte(data), &envelope) == nil {
 			if rpcError(envelope) {
 				return "", &TurnError{code: rpcErrorCode(envelope)}
+			}
+			if control != nil {
+				if err := control(envelope); err != nil {
+					return "", err
+				}
 			}
 			if text := answerText(envelope); text != "" {
 				if answers.Len()+len(text) > 128<<10 {

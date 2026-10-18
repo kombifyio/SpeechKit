@@ -2,7 +2,10 @@
 
 package voiceagent
 
-import "github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
+import (
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/a2a"
+)
 
 // Wire protocol constants and shapes for the Voice Agent WebSocket.
 //
@@ -20,13 +23,14 @@ import "github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 
 // Client-to-server message types.
 const (
-	MsgStart        = "start"
-	MsgAudioEnd     = "audio_end"
-	MsgText         = "text"
-	MsgToolResponse = "tool_response"
-	MsgPing         = "ping"
-	MsgStop         = "stop"
-	MsgAdvanceStep  = "advance_step"
+	MsgStart            = "start"
+	MsgAudioEnd         = "audio_end"
+	MsgText             = "text"
+	MsgToolResponse     = "tool_response"
+	MsgPing             = "ping"
+	MsgStop             = "stop"
+	MsgAdvanceStep      = "advance_step"
+	MsgConversationMode = "conversation_mode"
 	// MsgCancel is the client's tap-to-interrupt: stop relaying the CURRENT
 	// agent reply's downlink audio. Idempotent, no payload. The server also
 	// invokes the provider-native response cancel where the provider protocol
@@ -111,6 +115,22 @@ type StartFrame struct {
 	Speaker           *speaker.Options        `json:"speaker,omitempty"`
 	// Optional durable instruction layered on top of the role's prompt.
 	SystemPromptOverride string `json:"system_prompt_override,omitempty"`
+	// ConversationControl opts this client into typed assistant mode actions.
+	// Omission preserves existing clients. Session identities are server-owned.
+	ConversationControl *ConversationControlStart `json:"conversation_control,omitempty"`
+}
+
+type ConversationControlStart struct {
+	Version int    `json:"version"`
+	Mode    string `json:"mode"`
+}
+
+// ConversationModeFrame invokes the agent-owned command from a client button.
+type ConversationModeFrame struct {
+	Type      string `json:"type"`
+	Version   int    `json:"version"`
+	Mode      string `json:"mode"`
+	RequestID string `json:"request_id"`
 }
 
 // ActivityDetectionFrame maps to voiceagent.ActivityDetectionPolicy.
@@ -198,6 +218,7 @@ type SequenceStepFrame struct {
 type EventFrame struct {
 	Type string `json:"type"` // "event"
 	EventFrameFields
+	Conversation *a2a.VoiceModeReceipt `json:"conversation,omitempty"`
 }
 
 type InterruptedFrame struct {

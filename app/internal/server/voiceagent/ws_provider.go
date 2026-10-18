@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/a2a"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/responses"
 )
 
@@ -142,6 +143,7 @@ type LiveConfigFrame struct {
 	DirectEndpoint    *responses.Context
 	EndpointBinding   string
 	EndpointSignature string
+	Conversation      *a2a.ConversationSession
 }
 
 // LiveMessage is the subset of pkg/speechkit/voiceagent/live.LiveMessage the

@@ -78,6 +78,26 @@ export interface StartFrame {
   /** Speaker diarization / identification for this session. */
   speaker?: SpeakerOptions;
   system_prompt_override?: string;
+  /** Opt into agent-owned conversation commands; supported registered roots only. */
+  conversation_control?: { version: 1; mode: "oneshot" };
+}
+
+export interface ConversationModeFrame {
+  type: "conversation_mode";
+  version: 1;
+  mode: "oneshot" | "conversation";
+  request_id: string;
+}
+
+export interface VoiceModeReceipt {
+  version: 1;
+  mode: "oneshot" | "conversation";
+  voice_session_id: string;
+  conversation_session_id: string;
+  request_id: string;
+  status: "accepted" | "rejected";
+  code?: string;
+  session_projection?: { status: "ready" | "pending"; code?: string };
 }
 
 export interface TextFrame {
@@ -111,7 +131,7 @@ export interface SimpleClientFrame {
   type: "audio_end" | "ping" | "stop" | "cancel";
 }
 
-export type ClientFrame = StartFrame | TextFrame | ToolResponseFrame | AdvanceStepFrame | SimpleClientFrame;
+export type ClientFrame = StartFrame | TextFrame | ToolResponseFrame | AdvanceStepFrame | ConversationModeFrame | SimpleClientFrame;
 
 // ── Server → client frames ───────────────────────────────────────────────
 
@@ -136,7 +156,8 @@ export type LiveEventType =
   | "interrupted"
   | "turn_end"
   | "session_resumable"
-  | "session_end";
+  | "session_end"
+  | "conversation_mode";
 
 /**
  * Optional event metadata carried by server frames (additive within v1).
@@ -222,6 +243,7 @@ export interface SequenceStepFrame {
 export interface EventFrame extends ServerFrameMeta {
   type: "event";
   event_type: LiveEventType;
+  conversation?: VoiceModeReceipt;
 }
 
 export interface InterruptedFrame extends ServerFrameMeta {

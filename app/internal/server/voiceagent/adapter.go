@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/kombifyio/SpeechKit/app/internal/server/wssession"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/a2a"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 )
 
@@ -62,7 +64,11 @@ type Adapter struct {
 	// registered only after Connect succeeds, so pending tickets and failed
 	// provider handshakes are never billed.
 	OnUsage func(VoiceUsage)
-	Clock   func() time.Time
+	// SetVoiceBudgetRenewer, when set, publishes the live renewer of a
+	// reserved session (nil withdraws it). Renewal settles the previous
+	// reservation through OnUsage before the deadline moves.
+	SetVoiceBudgetRenewer func(func(wssession.VoiceBudget) error)
+	Clock                 func() time.Time
 
 	writeMu          sync.Mutex
 	providerClose    sync.Once
@@ -106,6 +112,15 @@ type Adapter struct {
 
 	mediaTransport string
 	mediaBridge    MediaBridge
+	conversation   *a2a.ConversationSession
+}
+
+// voiceSegmentUsage may run on a renewal goroutine, so it reads only the
+// immutable session record and the segment, never the adapter's provider.
+func (a *Adapter) voiceSegmentUsage(segment voiceBudgetSegment) VoiceUsage {
+	return VoiceUsage{SessionID: a.Session.ID, AISessionID: a.Session.AISessionID, Provider: segment.provider,
+		Duration: segment.duration, OwnerUserID: a.Session.Owner.UserID, OwnerOrgID: a.Session.Owner.OrgID,
+		ReservationID: segment.budget.ReservationID, Segment: segment.segment}
 }
 
 // Run blocks until the session ends. The first frame from the client MUST be
@@ -121,6 +136,7 @@ func (a *Adapter) Run(parent context.Context) {
 	defer cancel()
 	endReason := "error"
 	var connectedAt time.Time
+	var budget *voiceBudgetLease
 	// Reserved sessions settle through a trusted final receipt even when
 	// provider admission fails. Local sessions meter only successful connects.
 	defer func() {
@@ -128,8 +144,9 @@ func (a *Adapter) Run(parent context.Context) {
 			return
 		}
 		endedAt := a.now()
-		if expiry := a.Session.VoiceBudget.ExpiresAt; expiry > 0 && endedAt.After(time.Unix(expiry, 0)) {
-			endedAt = time.Unix(expiry, 0)
+		if budget != nil {
+			a.OnUsage(a.voiceSegmentUsage(budget.finish(endedAt)))
+			return
 		}
 		duration := time.Duration(0)
 		if !connectedAt.IsZero() && endedAt.After(connectedAt) {
@@ -139,26 +156,35 @@ func (a *Adapter) Run(parent context.Context) {
 		if a.Provider != nil {
 			provider = normalizeProviderName(a.Provider.Name())
 		}
-		a.OnUsage(VoiceUsage{SessionID: a.Session.ID, AISessionID: a.Session.AISessionID, Provider: provider,
-			Duration: duration, OwnerUserID: a.Session.Owner.UserID, OwnerOrgID: a.Session.Owner.OrgID,
-			ReservationID: a.Session.VoiceBudget.ReservationID})
+		a.OnUsage(a.voiceSegmentUsage(voiceBudgetSegment{budget: a.Session.VoiceBudget, provider: provider, duration: duration}))
 	}()
 	defer func() {
 		a.sendSessionEnd(context.WithoutCancel(parent), endReason)
 	}()
-	var budgetExpiry time.Time
 	if a.Session != nil && a.Session.VoiceBudget.ReservationID != "" {
-		budgetExpiry = time.Unix(a.Session.VoiceBudget.ExpiresAt, 0)
-		if !time.Now().Before(budgetExpiry) {
+		if !time.Now().Before(time.Unix(a.Session.VoiceBudget.ExpiresAt, 0)) {
 			a.sendFatalError(parent, "voice_budget_exhausted", "Reserve new Voice quota before starting voice media.")
 			endReason = "voice_budget_exhausted"
 			return
 		}
-		var deadlineCancel context.CancelFunc
-		ctx, deadlineCancel = context.WithDeadlineCause(ctx, budgetExpiry, errVoiceBudgetExpired)
-		defer deadlineCancel()
+		var expire context.CancelCauseFunc
+		ctx, expire = context.WithCancelCause(ctx)
+		budget = newVoiceBudgetLease(a.Session.VoiceBudget, func() { expire(errVoiceBudgetExpired) })
+		defer expire(nil)
+		// Registered-agent and own-endpoint sessions also end with their
+		// delegated authorization, which a budget renewal cannot extend.
+		if a.SetVoiceBudgetRenewer != nil && a.Session.VoiceAgentBinding.TargetAgentID == "" && a.Session.VoiceAgentBinding.DirectEndpoint == nil {
+			a.SetVoiceBudgetRenewer(func(next wssession.VoiceBudget) error {
+				previous, err := budget.renew(next, a.now())
+				if err == nil && a.OnUsage != nil {
+					a.OnUsage(a.voiceSegmentUsage(previous))
+				}
+				return err
+			})
+			defer a.SetVoiceBudgetRenewer(nil)
+		}
 	}
-	budgetEnded := func() bool { return !budgetExpiry.IsZero() && !time.Now().Before(budgetExpiry) }
+	budgetEnded := budget.ended
 	var authorizationExpiry time.Time
 	if a.Session != nil && (a.Session.VoiceAgentBinding.TargetAgentID != "" || a.Session.VoiceAgentBinding.DirectEndpoint != nil) {
 		var err error
@@ -282,6 +308,10 @@ func (a *Adapter) Run(parent context.Context) {
 			cfg.SystemPrompt, cfg.RefinementPrompt = "", ""
 		}
 	}
+	if err := a.configureConversation(ctx, start, &cfg); err != nil {
+		a.sendFatalError(ctx, "conversation_control_unsupported", "Conversation control requires a capable client and an authorized Companion session.")
+		return
+	}
 	// Merge server-executed tool definitions from the tool bridge into the
 	// provider config before Connect. Bounded and fail-open to tool-less:
 	// a slow or failing bridge never blocks or kills the voice session.
@@ -323,6 +353,9 @@ func (a *Adapter) Run(parent context.Context) {
 		return
 	}
 	connectedAt = a.now()
+	if budget != nil {
+		budget.markConnected(connectedAt, normalizeProviderName(a.Provider.Name()))
+	}
 	if transport == MediaTransportLiveKit {
 		bridge, err := a.MediaBridge.Start(ctx, MediaBridgeRequest{
 			SessionID: a.Session.ID,

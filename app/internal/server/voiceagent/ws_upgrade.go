@@ -94,6 +94,9 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 		OnUsage: func(usage VoiceUsage) {
 			h.reportVoiceUsage(session.BridgeCredential, usage)
 		},
+		SetVoiceBudgetRenewer: func(renew func(wssession.VoiceBudget) error) {
+			h.manager.SetVoiceBudgetRenewer(sessionID, renew)
+		},
 		OnClose: func() {
 			h.manager.Remove(sessionID)
 		},

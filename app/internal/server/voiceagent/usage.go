@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,10 +26,22 @@ type VoiceUsage struct {
 	Provider      string
 	Duration      time.Duration
 	ReservationID string
+	// Segment numbers the reservations a renewed session settled in order;
+	// each Cloud reservation settles exactly once under its own event.
+	Segment int
 	// Retained from the authenticated session owner, never from the expired
 	// bridge credential or a client-controlled usage payload.
 	OwnerUserID string
 	OwnerOrgID  string
+}
+
+// voiceUsageEventID keeps the first reservation's historical event and gives
+// every renewed reservation its own idempotency key.
+func voiceUsageEventID(usage VoiceUsage) string {
+	if usage.Segment > 0 {
+		return "voice-session:" + usage.SessionID + ":r" + strconv.Itoa(usage.Segment) + ":connected"
+	}
+	return "voice-session:" + usage.SessionID + ":connected"
 }
 
 type UsageReporter interface {
@@ -92,7 +105,7 @@ func (r *HTTPUsageReporter) report(ctx context.Context, usage VoiceUsage, author
 	event := map[string]any{
 		"tool": "SPEECHKIT",
 		"events": []map[string]any{{
-			"event_id": "voice-session:" + usage.SessionID + ":connected",
+			"event_id": voiceUsageEventID(usage),
 			"metric":   "audio_minutes",
 			"value":    usage.Duration.Minutes(),
 			"metadata": map[string]string{

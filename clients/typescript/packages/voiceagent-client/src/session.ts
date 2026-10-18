@@ -153,6 +153,11 @@ export class VoiceAgentSession {
     this.sendFrame({ type: "text", text });
   }
 
+  /** A button invokes the same agent-owned command as speech. Await its event receipt. */
+  setConversationMode(mode: "oneshot" | "conversation", requestId: string): void {
+    this.sendFrame({ type: "conversation_mode", version: 1, mode, request_id: requestId });
+  }
+
   sendAudioChunk(pcm16: ArrayBuffer | ArrayBufferView): void {
     // Never retain or upload microphone bytes before provider readiness.
     if (!this.isReady) return;

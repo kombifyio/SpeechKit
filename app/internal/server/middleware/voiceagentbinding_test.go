@@ -14,6 +14,42 @@ import (
 	"time"
 )
 
+func TestVerifiedVoiceAgentBindingCanonicalCompanionPair(t *testing.T) {
+	id := Identity{UserID: "auth0|owner", OrgID: "org_test"}
+	for _, change := range []string{"current", "target", "endpoint", "foreign", "query", "unsigned"} {
+		t.Run(change, func(t *testing.T) {
+			target, endpoint := "workbench-orchestrator", "https://api.kombify.io/a2a/agents/kombify-ai"
+			if change == "target" {
+				target = "other-agent"
+			}
+			if change == "endpoint" {
+				endpoint = "https://api.kombify.io/a2a/agents/other-agent"
+			}
+			if change == "foreign" {
+				endpoint = "https://foreign.example/a2a/agents/kombify-ai"
+			}
+			if change == "query" {
+				endpoint += "?target=other-agent"
+			}
+			request := httptest.NewRequest(http.MethodPost, "/v1/voiceagent/sessions", nil)
+			request.Header.Set(VoiceAgentTargetHeader, target)
+			request.Header.Set(VoiceAgentEndpointHeader, endpoint)
+			request.Header.Set(VoiceAgentLeaseHeader, "lease-token")
+			request.Header.Set(VoiceAgentHMACHeader, bindingHMAC("edge-secret", id, target, endpoint, "lease-token"))
+			if change == "unsigned" {
+				request.Header.Set(VoiceAgentHMACHeader, "not-a-signature")
+			}
+			binding, present, err := verifiedVoiceAgentBindingFromRequest(request, id, "edge-secret")
+			if !present || (err == nil) != (change == "current") {
+				t.Fatalf("unexpected binding: %v %v", present, err)
+			}
+			if change == "current" && (binding.TargetAgentID != target || binding.Endpoint != endpoint) {
+				t.Fatal("signed pair replaced")
+			}
+		})
+	}
+}
+
 func TestVerifiedVoiceAgentBindingRequiresCompleteValidEdgeDecision(t *testing.T) {
 	id := Identity{UserID: "auth0|owner", OrgID: "org_test"}
 	endpoint := "https://api.kombify.io/a2a/agents/kombify-ai"

@@ -52,18 +52,19 @@ func (s *nativeVoiceSessions) serveCallback(w http.ResponseWriter, r *http.Reque
 // Provider tools never replace the agent's tools/approvals or durable history.
 type registeredNativeProvider struct {
 	LiveProviderAdapter
-	sessions  *nativeVoiceSessions
-	provider  string
-	resource  store.VoiceProviderResource
-	sessionID string
-	cancel    context.CancelFunc
-	turns     *a2a.FinalTurnBinding
-	callback  *a2a.OpenAIHandler
-	closeOnce sync.Once
-	closeErr  error
-	mu        sync.Mutex
-	closed    bool
-	binding   LiveConfigFrame
+	sessions          *nativeVoiceSessions
+	provider          string
+	resource          store.VoiceProviderResource
+	sessionID         string
+	cancel            context.CancelFunc
+	turns             *a2a.FinalTurnBinding
+	callback          *a2a.OpenAIHandler
+	closeOnce         sync.Once
+	closeErr          error
+	mu                sync.Mutex
+	closed            bool
+	binding           LiveConfigFrame
+	conversationAgent *a2a.Agent
 	// Delegated vendors (see native_delegated.go) answer the vendor's own
 	// tool or delegation event in-process; heard is the caller's transcript
 	// since the last delegated turn and ctx the signed session lifetime.
@@ -133,11 +134,16 @@ func (p *registeredNativeProvider) Connect(ctx context.Context, cfg LiveConfigFr
 		agent, err = responses.New(responses.Config{URL: cfg.AgentEndpoint, Connection: cfg.DirectEndpoint.Connection,
 			Messages: cfg.DirectEndpoint.Messages, Surface: cfg.DirectEndpoint.Surface, Headers: headers})
 	} else {
-		agent, err = a2a.New(a2a.Config{Endpoint: cfg.AgentEndpoint, TargetAgentID: cfg.AgentTargetID, SessionID: firstNonBlank(cfg.AISessionID, cfg.VoiceSessionID), Headers: registeredAgentHeaders(cfg, secret)})
+		agent, err = a2a.New(a2a.Config{Endpoint: cfg.AgentEndpoint, TargetAgentID: cfg.AgentTargetID, SessionID: firstNonBlank(cfg.AISessionID, cfg.VoiceSessionID), Headers: registeredAgentHeaders(cfg, secret), Conversation: cfg.Conversation})
 	}
 	if err != nil {
 		p.cancel()
 		return err
+	}
+	if cfg.Conversation != nil {
+		p.mu.Lock()
+		p.conversationAgent, _ = agent.(*a2a.Agent)
+		p.mu.Unlock()
 	}
 	callbackToken := rand.Text() + rand.Text()
 	callback, err := a2a.NewOpenAIHandler(ctx, agent, callbackToken, expiresAt, cfg.Locale)
@@ -506,4 +512,12 @@ func (s *nativeVoiceSessions) cleanup(parent context.Context) {
 			slog.Warn("voiceagent: native cleanup acknowledgement pending")
 		}
 	}
+}
+
+// conversationBindingAllowed retains the hosted authorization decision at the
+// existing registered-native boundary, outside the generic control protocol.
+func (a *Adapter) conversationBindingAllowed(cfg *LiveConfigFrame) bool {
+	return cfg.DirectEndpoint == nil && registeredConversationTarget(cfg.AgentTargetID, cfg.AgentEndpoint) &&
+		a.Session != nil && a.Session.VoiceAgentBinding.TargetAgentID == cfg.AgentTargetID &&
+		a.Session.VoiceAgentBinding.Endpoint == cfg.AgentEndpoint
 }

@@ -1544,6 +1544,50 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /v1/voiceagent/sessions/{id}/renew:
+    post:
+      operationId: renewVoiceAgentSessionBudget
+      x-kombify-mcp: false
+      summary: Extend a live hosted session with a renewed Voice budget reservation
+      description: |
+        Hosted only (`require_voice_budget`). The client posts with a fresh
+        access token through the edge; the edge validates it, reserves new
+        Voice minutes and forwards the signed `X-Edge-Voice-Budget-*` grant,
+        bound to the token's subject and org. The server adopts it only for a
+        live session of that same owner whose current reservation has not
+        expired, settles the previous reservation, and moves the media
+        deadline. A grant it does not adopt is settled at zero.
+      tags: [voiceagent]
+      parameters:
+        - { $ref: '#/components/parameters/SessionID' }
+      responses:
+        '200':
+          description: Deadline extended.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session_id, budget_expires_at]
+                properties:
+                  session_id: { type: string }
+                  budget_expires_at: { type: string, format: date-time }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403':
+          description: No edge-verified grant, a replayed grant, or the renewing identity does not own the session.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Session not found or already closed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Session not live, its reservation already expired, the grant does not extend it, or the session is bound to an agent authorization that renewal cannot extend.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /v1/voiceagent/sessions/{id}:
     delete:
       operationId: deleteVoiceAgentSession

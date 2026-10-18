@@ -89,6 +89,8 @@ func (h *Handler) itemHandler(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case subresource == "llm/chat/completions" && r.Method == http.MethodPost:
 		h.native.serveCallback(w, r, sessionID)
+	case subresource == "renew" && r.Method == http.MethodPost:
+		h.renewSession(w, r, sessionID)
 	case subresource == "ws" && r.Method == http.MethodGet:
 		h.upgradeWS(w, r, sessionID)
 	case subresource == "livekit-token" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
@@ -254,6 +256,48 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt:     expires,
 		LiveKit:       liveKit,
 	})
+}
+
+type renewSessionResponse struct {
+	SessionID       string `json:"session_id"`
+	BudgetExpiresAt string `json:"budget_expires_at"`
+}
+
+// renewSession adopts a Gateway-reserved Voice budget for a live session.
+// The middleware already verified the edge identity and the budget HMAC over
+// that identity's subject and org; the manager requires the same owner. A
+// verified reservation this session does not adopt is settled at zero so
+// Cloud never keeps an orphan hold.
+func (h *Handler) renewSession(w http.ResponseWriter, r *http.Request, sessionID string) {
+	id := middleware.IdentityFromContext(r.Context())
+	budget := wssession.VoiceBudget(middleware.VoiceBudgetFromContext(r.Context()))
+	if id.Source != "edge_hmac" || id.UserID == "" || budget.ReservationID == "" {
+		httpx.WriteError(w, http.StatusForbidden, "voice_budget_required", "Reserve Voice quota through the edge before renewing a voice session.")
+		return
+	}
+	err := h.manager.RenewVoiceBudget(sessionID, Identity{UserID: id.UserID, OrgID: id.OrgID}, budget)
+	if err == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(renewSessionResponse{SessionID: sessionID,
+			BudgetExpiresAt: time.Unix(budget.ExpiresAt, 0).UTC().Format(time.RFC3339)})
+		return
+	}
+	if !errors.Is(err, wssession.ErrVoiceBudgetUnavailable) {
+		//nolint:contextcheck // Settlement must outlive the request; the reporter uses a bounded service context.
+		h.reportVoiceUsage("", VoiceUsage{SessionID: "renewal-" + budget.ReservationID, ReservationID: budget.ReservationID,
+			OwnerUserID: id.UserID, OwnerOrgID: id.OrgID})
+	}
+	switch {
+	case errors.Is(err, wssession.ErrVoiceBudgetUnavailable):
+		httpx.WriteError(w, http.StatusForbidden, "voice_budget_unavailable", "Reserve new Voice quota before renewing a voice session.")
+	case errors.Is(err, wssession.ErrSessionNotFound):
+		httpx.WriteError(w, http.StatusNotFound, "session_not_found", "No live voice session matches this renewal.")
+	case errors.Is(err, wssession.ErrSessionOwnerMismatch):
+		httpx.WriteError(w, http.StatusForbidden, "voice_session_owner_mismatch", "The renewing identity does not own this voice session.")
+	default:
+		httpx.WriteError(w, http.StatusConflict, "voice_budget_not_renewable", "This voice session cannot be extended; start a new session.")
+	}
 }
 
 func (h *Handler) listSessions(w http.ResponseWriter, r *http.Request) {

@@ -53,6 +53,7 @@ const CLIENT_TYPES = [
   "ping",
   "stop",
   "cancel",
+  "conversation_mode",
 ] as const;
 
 /** Frame types protocol.ts declares on the ServerFrame union. */

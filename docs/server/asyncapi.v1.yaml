@@ -87,6 +87,8 @@ channels:
         $ref: '#/components/messages/ToolResponseFrame'
       AdvanceStepFrame:
         $ref: '#/components/messages/AdvanceStepFrame'
+      ConversationModeFrame:
+        $ref: '#/components/messages/ConversationModeFrame'
       AudioEndFrame:
         $ref: '#/components/messages/AudioEndFrame'
       CancelFrame:
@@ -145,6 +147,7 @@ operations:
       - $ref: '#/channels/voiceAgentSession/messages/TextFrame'
       - $ref: '#/channels/voiceAgentSession/messages/ToolResponseFrame'
       - $ref: '#/channels/voiceAgentSession/messages/AdvanceStepFrame'
+      - $ref: '#/channels/voiceAgentSession/messages/ConversationModeFrame'
       - $ref: '#/channels/voiceAgentSession/messages/AudioEndFrame'
       - $ref: '#/channels/voiceAgentSession/messages/CancelFrame'
       - $ref: '#/channels/voiceAgentSession/messages/PingFrame'
@@ -207,6 +210,13 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/ToolResponseFrame'
+
+    ConversationModeFrame:
+      title: Conversation mode
+      summary: Invoke the authenticated agent-owned mode command from a capable client.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ConversationModeFrame'
 
     AdvanceStepFrame:
       title: Advance step
@@ -385,6 +395,13 @@ components:
         system_prompt_override:
           type: string
           description: Durable instruction layered on top of the role's prompt.
+        conversation_control:
+          type: object
+          required: [version, mode]
+          description: Opt into mode commands on a capable registered assistant. Session IDs remain server-owned.
+          properties:
+            version: { type: integer, const: 1 }
+            mode: { type: string, const: oneshot }
 
     SpeakerOptions:
       type: object
@@ -432,6 +449,33 @@ components:
         turn_coverage:
           type: string
           enum: ['', turn_includes_only_activity, turn_includes_all_input, turn_includes_audio_activity]
+
+    ConversationModeFrame:
+      type: object
+      required: [type, version, mode, request_id]
+      properties:
+        type: { type: string, const: conversation_mode }
+        version: { type: integer, const: 1 }
+        mode: { type: string, enum: [oneshot, conversation] }
+        request_id: { type: string, pattern: '^[A-Za-z0-9_.:-]{1,128}$' }
+
+    VoiceModeReceipt:
+      type: object
+      required: [version, mode, voice_session_id, conversation_session_id, request_id, status]
+      properties:
+        version: { type: integer, const: 1 }
+        mode: { type: string, enum: [oneshot, conversation] }
+        voice_session_id: { type: string, pattern: '^[A-Za-z0-9_.:-]{1,128}$' }
+        conversation_session_id: { type: string, pattern: '^[A-Za-z0-9_.:-]{1,128}$' }
+        request_id: { type: string, pattern: '^[A-Za-z0-9_.:-]{1,128}$' }
+        status: { type: string, enum: [accepted, rejected] }
+        code: { type: string }
+        session_projection:
+          type: object
+          required: [status]
+          properties:
+            status: { type: string, enum: [ready, pending] }
+            code: { type: string }
 
     TextFrame:
       type: object
@@ -530,6 +574,7 @@ components:
         - turn_end
         - session_resumable
         - session_end
+        - conversation_mode
 
     EventFrameFields:
       type: object
@@ -663,6 +708,8 @@ components:
       required: [type, event_type]
       properties:
         type: { type: string, const: event }
+        conversation:
+          $ref: '#/components/schemas/VoiceModeReceipt'
         ai_session_id: { type: string }
         event_type:
           $ref: '#/components/schemas/LiveEventType'

@@ -23,12 +23,13 @@ import (
 // RegisteredAgentProvider preserves SpeechKit's existing STT/TTS pipeline but
 // replaces its local LLM leg with the Gateway-authorized registered A2A agent.
 type RegisteredAgentProvider struct {
-	deps          CascadedDeps
-	signingSecret func() string
-	mu            sync.Mutex
-	inner         *CascadedProvider
-	expiresAt     time.Time
-	cancel        context.CancelFunc
+	deps              CascadedDeps
+	signingSecret     func() string
+	mu                sync.Mutex
+	inner             *CascadedProvider
+	expiresAt         time.Time
+	cancel            context.CancelFunc
+	conversationAgent *a2a.Agent
 }
 
 func NewRegisteredAgentProvider(deps CascadedDeps, signingSecret func() string) *RegisteredAgentProvider {
@@ -62,6 +63,7 @@ func (p *RegisteredAgentProvider) Connect(ctx context.Context, cfg LiveConfigFra
 		TargetAgentID: cfg.AgentTargetID,
 		SessionID:     firstNonBlank(cfg.AISessionID, cfg.VoiceSessionID),
 		Headers:       registeredAgentHeaders(cfg, secret),
+		Conversation:  cfg.Conversation,
 	})
 	if err != nil {
 		cancel()
@@ -77,6 +79,7 @@ func (p *RegisteredAgentProvider) Connect(ctx context.Context, cfg LiveConfigFra
 	}
 	p.mu.Lock()
 	p.inner = inner
+	p.conversationAgent = agent
 	p.expiresAt = expiresAt
 	p.cancel = cancel
 	p.mu.Unlock()
@@ -252,3 +255,9 @@ func (p *RegisteredAgentProvider) Name() string { return "kombify-agent" }
 // HandlesOwnTools reports that the remote agent runs its own tools, so the
 // server tool bridge is not used for this provider.
 func (p *RegisteredAgentProvider) HandlesOwnTools() bool { return true }
+
+// registeredConversationTarget preserves the catalog-selected hosted command
+// surface; the generic control protocol cannot select a target or endpoint.
+func registeredConversationTarget(target, endpoint string) bool {
+	return target == "workbench-orchestrator" && endpoint == "https://api.kombify.io/a2a/agents/kombify-ai"
+}

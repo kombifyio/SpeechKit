@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/a2a"
 )
 
 // fixturePath is the golden contract file shared with the TypeScript and
@@ -109,6 +110,9 @@ func TestVoiceAgentProtocol_GoldenFixtures(t *testing.T) {
 		},
 		SystemPromptOverride: "Antworte knapp und auf Deutsch.",
 	})
+	assertVoiceAgentWireEqual(t, frames, "conversation_mode", ConversationModeFrame{Type: MsgConversationMode, Version: 1, Mode: "conversation", RequestID: "mode-1"})
+	assertVoiceAgentWireEqual(t, frames, "event_conversation_mode", EventFrame{Type: MsgEvent, EventFrameFields: EventFrameFields{EventType: "conversation_mode"},
+		Conversation: &a2a.VoiceModeReceipt{Version: 1, Mode: "conversation", VoiceSessionID: "voice-1", ConversationSessionID: "chat-2", RequestID: "mode-1", Status: "accepted"}})
 	assertVoiceAgentWireEqual(t, frames, "text", TextFrame{
 		Type: MsgText,
 		Text: "Wie ist das Wetter in Berlin?",
@@ -213,14 +217,15 @@ func TestVoiceAgentProtocol_GoldenFixtures(t *testing.T) {
 func TestVoiceAgentFixture_CoversEveryMessageType(t *testing.T) {
 	protocolTypes := map[string]bool{
 		// client → server
-		MsgStart:        true,
-		MsgAudioEnd:     true,
-		MsgText:         true,
-		MsgToolResponse: true,
-		MsgPing:         true,
-		MsgStop:         true,
-		MsgAdvanceStep:  true,
-		MsgCancel:       true,
+		MsgStart:            true,
+		MsgAudioEnd:         true,
+		MsgText:             true,
+		MsgToolResponse:     true,
+		MsgPing:             true,
+		MsgStop:             true,
+		MsgAdvanceStep:      true,
+		MsgCancel:           true,
+		MsgConversationMode: true,
 		// server → client
 		MsgState:            true,
 		MsgInputTranscript:  true,

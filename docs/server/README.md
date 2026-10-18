@@ -217,6 +217,7 @@ Customization catalog endpoints:
 | Assist | HTTP POST | `/api/v1/assist/process` | ships |
 | Voice Agent | HTTP + WS | `/api/v1/voiceagent/sessions` + `/ws` | ships |
 | Voice Agent LiveKit token | HTTP GET | `/api/v1/voiceagent/sessions/{id}/livekit-token` | optional when `[server.livekit]` is enabled |
+| Voice Agent budget renewal | HTTP POST | `/api/v1/voiceagent/sessions/{id}/renew` | hosted (`require_voice_budget`) only |
 | Personas API | HTTP CRUD | `/api/v1/personas`, `/api/v1/roles`, `/api/v1/sequences` | ships |
 | Health | HTTP GET | `/healthz`, `/readyz` | ships |
 | Deployment status | HTTP GET/HEAD | `/api/v1/deployment/status` | auth-protected, redacted |
@@ -332,6 +333,14 @@ Under LiveKit media, WebSocket binary audio is rejected for the session.
 
 `GET /v1/voiceagent/sessions/{id}/livekit-token` refreshes the token for the
 session owner or an admin. The endpoint never returns LiveKit API secrets.
+
+Hosted sessions end when their Voice budget reservation expires; the edge
+bounds each reservation by the caller's access-token lifetime. Before that,
+the client sends `POST /v1/voiceagent/sessions/{id}/renew` with a fresh access
+token. The edge reserves new minutes for that token's subject; the server
+adopts the grant only for a live session of the same owner, settles the
+previous reservation and moves the deadline. Without an adopted grant the
+session ends at its current deadline.
 
 ## Authentication
 

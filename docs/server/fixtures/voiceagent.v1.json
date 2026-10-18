@@ -58,6 +58,11 @@
     "ping": { "type": "ping" },
     "stop": { "type": "stop" },
     "cancel": { "type": "cancel" },
+    "conversation_mode": { "type": "conversation_mode", "version": 1, "mode": "conversation", "request_id": "mode-1" },
+    "event_conversation_mode": {
+      "type": "event", "event_type": "conversation_mode",
+      "conversation": { "version": 1, "mode": "conversation", "voice_session_id": "voice-1", "conversation_session_id": "chat-2", "request_id": "mode-1", "status": "accepted" }
+    },
     "state_session_ready": {
       "type": "state",
       "event_type": "session_ready",

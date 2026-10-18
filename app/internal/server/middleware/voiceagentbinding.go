@@ -87,6 +87,11 @@ func verifiedVoiceAgentBindingFromRequest(r *http.Request, id Identity, secret s
 	}
 	parsed, err := url.Parse(endpoint)
 	expectedPath := "/a2a/agents/" + target
+	// The current catalog dispatches the kombify-ai harness through its dedicated
+	// Companion route. Both values remain covered by the binding HMAC below.
+	if target == "workbench-orchestrator" && endpoint == "https://api.kombify.io/a2a/agents/kombify-ai" {
+		expectedPath = "/a2a/agents/kombify-ai"
+	}
 	if instance != nil {
 		expectedPath = "/a2a/instances/" + instance[1]
 		if instanceAuth == "" || len(instanceAuth) > 16384 || strings.ContainsAny(instanceAuth, "\r\n") || expiry == "" {

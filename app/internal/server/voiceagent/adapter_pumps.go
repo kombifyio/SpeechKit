@@ -100,6 +100,13 @@ func (a *Adapter) readPump(ctx context.Context, done chan<- struct{}) {
 					slog.Warn("voiceagent: advance_step failed", "err", err)
 					a.sendError(ctx, "advance_step_failed", err.Error())
 				}
+			case MsgConversationMode:
+				var request ConversationModeFrame
+				if err := json.Unmarshal(data, &request); err != nil {
+					a.sendError(ctx, "invalid_frame", "Invalid conversation mode request.")
+					continue
+				}
+				a.requestConversationMode(ctx, request)
 			default:
 				// Unknown frames are tolerated (forward-compat); we log
 				// and ignore so a newer client doesn't break older servers.

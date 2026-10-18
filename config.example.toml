@@ -43,7 +43,7 @@ retention_scope = "retain"
 retention_ttl_days = 0
 
 [general]
-language = "de"                    # Default transcription language
+language = "multi"                 # Default transcription language. "multi" = multilingual (mixed German/English); set a locale such as "de" only to pin one language.
 dictate_hotkey = "ctrl+win"        # Dictation hotkey (hold-to-talk, speech-to-text only)
 assist_hotkey = "win+alt"          # Assist hotkey (one-shot utility mode). Blank disables the mode.
 voice_agent_hotkey = "ctrl+shift"  # Voice Agent hotkey (realtime dialogue mode). Blank disables the mode.
@@ -109,7 +109,7 @@ restore_delay_ms = 300      # Pause between paste and clipboard restore.
 # strategy = "type"              # clipboard | type
 
 [speech]
-language = "de"          # Canonical cross-provider speech language. general.language remains a compatibility alias.
+language = "multi"       # Canonical cross-provider speech language; "multi" (default) transcribes every language spoken. general.language remains a compatibility alias.
 detect_language = false  # When supported, omit/fill provider-native auto language detection.
 punctuation = true
 smart_format = true
