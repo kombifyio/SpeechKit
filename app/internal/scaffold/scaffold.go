@@ -87,6 +87,11 @@ type ScaffoldOptions struct {
 	// RunPostInit, when true, executes PostInitHook commands after files
 	// are written. Disabled by default; hosts opt in.
 	RunPostInit bool
+
+	// SkipEnvLookup, when true, ignores EnvHint so no value from the host
+	// process environment is resolved. Hosts serving remote callers (the
+	// MCP server) set it so host credentials never reach the result.
+	SkipEnvLookup bool
 }
 
 // GeneratedFile is one file the scaffolder produced. AbsPath is set only
@@ -195,7 +200,7 @@ func ScaffoldContext(ctx context.Context, opts ScaffoldOptions) (*Result, error)
 		in = os.Stdin
 	}
 
-	resolved, err := resolveVars(meta.Vars, opts.Vars, opts.Interactive, in, out)
+	resolved, err := resolveVars(meta.Vars, opts.Vars, opts.Interactive, !opts.SkipEnvLookup, in, out)
 	if err != nil {
 		return nil, err
 	}
@@ -262,14 +267,14 @@ func loadMeta(name string) (TemplateMeta, error) {
 	return meta, nil
 }
 
-func resolveVars(specs []VarSpec, overrides map[string]string, interactive bool, in io.Reader, out io.Writer) (map[string]string, error) {
+func resolveVars(specs []VarSpec, overrides map[string]string, interactive, useEnv bool, in io.Reader, out io.Writer) (map[string]string, error) {
 	resolved := map[string]string{}
 	for _, spec := range specs {
 		if v, ok := overrides[spec.Name]; ok && strings.TrimSpace(v) != "" {
 			resolved[spec.Name] = v
 			continue
 		}
-		if spec.EnvHint != "" {
+		if useEnv && spec.EnvHint != "" {
 			if env := os.Getenv(spec.EnvHint); env != "" {
 				resolved[spec.Name] = env
 				continue

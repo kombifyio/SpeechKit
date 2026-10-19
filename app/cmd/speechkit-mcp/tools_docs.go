@@ -92,8 +92,9 @@ func (a *speechkitMCP) scaffoldIntegration(ctx context.Context, req *mcp.CallToo
 		vars[key] = value
 	}
 	result, err := scaffold.ScaffoldContext(ctx, scaffold.ScaffoldOptions{
-		Template: template,
-		Vars:     vars,
+		Template:      template,
+		Vars:          vars,
+		SkipEnvLookup: true,
 	})
 	if err != nil {
 		return nil, nil, err

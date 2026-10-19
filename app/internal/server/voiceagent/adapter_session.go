@@ -106,9 +106,24 @@ func normalizeProviderName(provider string) string {
 	return config.NormalizeVoiceAgentProviderName(provider)
 }
 
+// maxStartStandby bounds how long an upgraded, ticket-authenticated socket may
+// stand by for its `start` frame. A device pre-dials the minted session so a
+// tap costs no network setup. The slot is already minted and counted, standby
+// connects no provider, carries no media and meters no budget (usage starts
+// at provider connect), and the caller's context still ends it at once on
+// budget or authorization expiry. Protocol-level ping/pong keeps the socket
+// open meanwhile; the first text frame must still be `start`.
+const maxStartStandby = 75 * time.Second
+
+func (a *Adapter) startStandby() time.Duration {
+	if a.StartStandby > 0 && a.StartStandby < maxStartStandby {
+		return a.StartStandby
+	}
+	return maxStartStandby
+}
+
 func (a *Adapter) waitForStart(ctx context.Context) (StartFrame, error) {
-	// Tight deadline so clients that never send `start` don't park a slot.
-	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	readCtx, cancel := context.WithTimeout(ctx, a.startStandby())
 	defer cancel()
 	// coder/websocket cancels the connection when Read's context ends. Keep the
 	// sole read alive until terminal delivery, then CloseNow releases it. Join

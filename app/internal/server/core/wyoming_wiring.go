@@ -48,8 +48,12 @@ func startWyoming(ctx context.Context, cfg *config.Config, app *App) {
 
 	cidrs, err := parseWyomingCIDRs(wcfg.AllowedClientCIDRs)
 	if err != nil {
-		slog.Warn("wyoming: invalid allowed_client_cidrs; connection restriction disabled", "err", err)
-		cidrs = nil
+		// Fail closed: a malformed allowlist must never widen access to every
+		// peer, so the listener stays down until the configuration is fixed.
+		slog.Warn("wyoming: invalid allowed_client_cidrs; not starting", "err", err)
+		app.Health.SetReadyWithOptions(componentID, StatusUnavailable,
+			"invalid allowed_client_cidrs", ComponentOptions{Blocking: false, Kind: "feature"})
+		return
 	}
 
 	opts := wyoming.Options{

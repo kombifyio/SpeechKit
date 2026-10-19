@@ -39,7 +39,10 @@ type Adapter struct {
 	Providers       map[string]ProviderFactory
 	DefaultProvider string
 	Persona         PersonaResolver
-	native          *nativeVoiceSessions
+	// StartStandby shortens the bounded wait for the start frame; zero or a
+	// longer value uses maxStartStandby.
+	StartStandby time.Duration
+	native       *nativeVoiceSessions
 	// MediaBridge starts an optional LiveKit media bridge for sessions that
 	// keep this WebSocket as control transport and move audio through LiveKit.
 	MediaBridge MediaBridgeFactory

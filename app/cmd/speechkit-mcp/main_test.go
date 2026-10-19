@@ -68,6 +68,27 @@ func TestAgentScaffoldIntegrationReturnsStarterFiles(t *testing.T) {
 	}
 }
 
+// Invariant: the docs-mode scaffold tool never resolves values from the host
+// process environment, so a host credential cannot reach an MCP caller.
+func TestAgentScaffoldIntegrationIgnoresHostEnvironment(t *testing.T) {
+	const marker = "scaffold-env-marker-value"
+	t.Setenv("SPEECHKIT_TOKEN", marker)
+	t.Setenv("SPEECHKIT_SERVER_URL", marker)
+	app := &speechkitMCP{opts: serverOptions{modes: map[string]bool{"docs": true}}, docs: loadDocs()}
+	result, structured, err := app.scaffoldIntegration(context.Background(), nil, scaffoldInput{})
+	if err != nil {
+		t.Fatalf("scaffoldIntegration: %v", err)
+	}
+	encoded, err := json.Marshal(structured)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	text, _ := json.Marshal(result)
+	if strings.Contains(string(encoded), marker) || strings.Contains(string(text), marker) {
+		t.Fatal("scaffold result contains a value from the host environment")
+	}
+}
+
 func TestValidateRequestUsesOpenAPISchema(t *testing.T) {
 	app := &speechkitMCP{opts: serverOptions{modes: map[string]bool{"test": true}}, docs: loadDocs()}
 	_, structured, err := app.validateRequest(context.Background(), nil, jsonValidationInput{

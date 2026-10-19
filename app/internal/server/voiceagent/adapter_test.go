@@ -302,3 +302,31 @@ func TestAdapter_ProviderConnectErrorReturnsError(t *testing.T) {
 		t.Fatalf("expected code=provider_connect_failed, got %q", ef.Code)
 	}
 }
+
+// A pre-dialed device socket stands by past the former 5 s start window,
+// connecting no provider until its start frame arrives. (Protocol pings are
+// answered by the server's pending read; the client needs no frames here.)
+func TestAdapter_PreDialedSocketStandsByForStart(t *testing.T) {
+	provider := newFakeProvider()
+	defer provider.Close() //nolint:errcheck
+	resolver := &fakeResolver{frame: LiveConfigFrame{Locale: "de"}}
+	env := startAdapterEnv(t, 0, provider, resolver)
+
+	deadline := time.Now().Add(6 * time.Second)
+	for time.Now().Before(deadline) {
+		provider.mu.Lock()
+		connected := provider.connectCfg != nil
+		provider.mu.Unlock()
+		if connected {
+			t.Fatal("provider connected before start")
+		}
+		time.Sleep(time.Second)
+	}
+
+	sendStart(t, env.conn, StartFrame{PersonaID: "default"})
+	var stateMsg StateFrame
+	readJSONFrame(t, env.conn, &stateMsg)
+	if stateMsg.Type != MsgState || stateMsg.EventType != EventSessionReady {
+		t.Fatalf("expected session_ready after standby, got %+v", stateMsg)
+	}
+}
