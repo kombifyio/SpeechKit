@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	wire "github.com/kombifyio/SpeechKit/pkg/speechkit/deviceagent"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
+	wire "github.com/kombifyio/SpeechKit/pkg/speechkit/x/deviceagent"
 )
 
 const testPairingToken = "pairing-token-0123456789abcdefghi"

@@ -11,7 +11,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/cascaded"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openailive"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/live/openailive"
 )
 
 // Delegated native media: GPT-Live (client delegation), Gemini Live (one

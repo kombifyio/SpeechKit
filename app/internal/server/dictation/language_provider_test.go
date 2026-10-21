@@ -11,7 +11,7 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/server/wssession"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/deepgram"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/deepgram"
 	"io"
 	"mime/multipart"
 	"net/http"

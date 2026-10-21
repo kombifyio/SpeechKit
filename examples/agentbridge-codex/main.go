@@ -3,7 +3,7 @@
 // codex CLI when installed and signed in, or against the fakecodex fixture:
 //
 //	go build -o fakecodex.exe ./tools/fakecodex
-//	FAKECODEX_SCRIPT=pkg/speechkit/agentbridge/codex/testdata/simple-turn.jsonl \
+//	FAKECODEX_SCRIPT=pkg/speechkit/x/agentbridge/codex/testdata/simple-turn.jsonl \
 //	  go run ./examples/agentbridge-codex -binary ./fakecodex.exe -prompt "hello"
 package main
 
@@ -15,8 +15,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/agentbridge"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/agentbridge/codex"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/agentbridge"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/agentbridge/codex"
 )
 
 func main() {

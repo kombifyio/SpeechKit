@@ -13,7 +13,7 @@ describe("locale resolution", () => {
     expect(resolveVoiceUiLocale("de-AT")).toBe("de");
     expect(resolveVoiceUiLocale("zh-Hans")).toBe("zh-Hans");
     expect(resolveVoiceUiLocale("ZH-hans")).toBe("zh-Hans");
-    expect(resolveVoiceUiLocale("zh-TW")).toBe("zh-Hans");
+    expect(resolveVoiceUiLocale("zh-TW")).toBe("en");
     expect(resolveVoiceUiLocale("fr-FR")).toBe("en");
     expect(resolveVoiceUiLocale(undefined)).toBe("en");
     expect(resolveVoiceUiLocale("ar-EG")).toBe("ar");

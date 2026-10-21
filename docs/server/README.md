@@ -358,14 +358,12 @@ Built-in auth is configured via `[server].auth_mode`:
   `allowed_tenants`; a template without tenants fails startup.
 - `none` — local development only. Do not expose a `none` deployment publicly.
 
-`/healthz` is always public liveness. By default, local and self-hosted installs
-also expose `/`, `/assistant`, `/readyz`, `/readyz/strict`, and the redacted
-settings snapshot without credentials so onboarding and browser smoke tests
-work before a client is configured. Public deployments can keep those handlers
-mounted while requiring normal bearer/edge authentication by setting
-`SPEECHKIT_SERVER_OPERATOR_UI_PUBLIC=false` and
-`SPEECHKIT_SERVER_DETAILED_READINESS_PUBLIC=false`. Disabling either public
-bypass does not disable the corresponding UI or readiness handler.
+`/healthz` is always public liveness. The operator HTML (`/`, `/assistant`,
+`/setup`) is **not** public unless `SPEECHKIT_SERVER_OPERATOR_UI_PUBLIC=true`
+(homelab onboarding). A hosted or internet-facing deployment keeps that flag
+off and serves product traffic only through its authenticated API origin.
+`/readyz` can stay public for probes unless
+`SPEECHKIT_SERVER_DETAILED_READINESS_PUBLIC=false`.
 
 `/setup` is public only during the first-run bootstrap window and only while
 `SPEECHKIT_SERVER_OPERATOR_UI_PUBLIC` permits the public UI. Once a server

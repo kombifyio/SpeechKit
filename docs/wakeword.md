@@ -18,7 +18,7 @@ Use the public packages when embedding wake-word behavior:
 - `pkg/speechkit/wakeword/sherpa` is the sherpa-onnx engine. Importing it
   registers the engine in cgo builds; `sherpa.NewDetector` returns
   `wakeword.ErrCgoRequired` without cgo.
-- `pkg/speechkit/wakeword/training` is the opt-in training-data capture and
+- `pkg/speechkit/x/wakeword/training` is the opt-in training-data capture and
   uploader around detections (off by default).
 
 The package boundary is intentionally host-neutral. Your host supplies audio
@@ -57,7 +57,7 @@ OpenWakeWord stays a separate sidecar, `speechkit-openwakeword.exe`, built from
 sidecars independent: the host starts them as subprocesses and communicates
 over the sidecar protocol instead of importing provider-specific runtime
 packages. Both sidecars record opt-in training clips through
-`pkg/speechkit/wakeword/training`.
+`pkg/speechkit/x/wakeword/training`.
 
 ## Agent Guidance
 

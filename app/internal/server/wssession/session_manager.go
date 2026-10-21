@@ -29,7 +29,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/responses"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/responses"
 )
 
 // Common errors reported by the session manager.

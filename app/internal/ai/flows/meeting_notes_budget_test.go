@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/app/internal/ai/generation"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/meeting"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/meeting"
 )
 
 // budgetGenerator answers extraction with a handful of facts per chunk and

@@ -10,9 +10,9 @@ import (
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/pipeline"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/pipeline"
 )
 
 type captureResult struct {

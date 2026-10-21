@@ -1,0 +1,4 @@
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+ignoreUntil = 2026-12-31
+reason = "Added 2026-10-21. The advisory declares golang.org/x/crypto/openpgp unmaintained by design, with introduced=0 and no fixed version. No package in this repository imports golang.org/x/crypto/openpgp (verified by grep over all Go sources), so it is a module-level flag only. Same reviewed finding as the root osv-scanner.toml, which OSV only applies to the root module's own manifests."

@@ -22,7 +22,7 @@ speaker options where a selected STT or streaming provider supports them.
 
 Meeting Mode is a reusable long-running recording workflow over the Dictation
 STT boundary, not an Assist or Voice Agent workflow. The public
-`pkg/speechkit/meeting` runtime owns the dual-channel capture state machine,
+`pkg/speechkit/x/meeting` runtime owns the dual-channel capture state machine,
 per-channel health, transcript timeline helpers, note templates, and anchor
 preservation. Hosts still own concrete capture devices, persistence, generation,
 Wails/windows, hotkeys, and HTTP/SSE adapters.
@@ -85,7 +85,7 @@ The mode-scoped service boundary is additive and does not replace the existing c
 Host products can embed individual modes without importing the Windows desktop host:
 
 - `pkg/speechkit/dictation.NewRuntime(...)` constructs a strict Dictation-only runtime from a host-provided `AudioRecorder`, `Transcriber`, optional output, optional store, and `RuntimePolicy`.
-- `pkg/speechkit/assist.NewService(...)` constructs an Assist service from host-provided deterministic tools and/or an Assist generator. `ModeBehaviorClean` rejects unmatched LLM generation. The ready-made deterministic tools are `pkg/speechkit/assist/skills` (`skills.New` returns the matcher/executor pair over the `pkg/speechkit/assist/shortcuts` codeword catalog); the desktop app and the self-host server wire Assist through exactly this constructor.
+- `pkg/speechkit/assist.NewService(...)` constructs an Assist service from host-provided deterministic tools and/or an Assist generator. `ModeBehaviorClean` rejects unmatched LLM generation. The ready-made deterministic tools are `pkg/speechkit/x/assist/skills` (`skills.New` returns the matcher/executor pair over the `pkg/speechkit/x/assist/shortcuts` codeword catalog); the desktop app and the self-host server wire Assist through exactly this constructor.
 - `pkg/speechkit/voiceagent.NewService(...)` constructs a Voice Agent service from a host-provided realtime provider.
 
 ### Capture integrity for live dictation
@@ -123,8 +123,8 @@ full mode runtime:
 | Hands-Free composition | `pkg/speechkit/companion` |
 | Speaker diarization/attribution contracts | `pkg/speechkit/speaker` |
 | Customization contracts and recognition hints | `pkg/speechkit/customize`, with replacement runtime implementation in `app/internal/customize` and the semantic standard in `docs/words-and-replacements-standard.md` |
-| Meeting capture runtime and note primitives | `pkg/speechkit/meeting` |
-| Server-connected mode calls | `pkg/speechkit/client` |
+| Meeting capture runtime and note primitives | `pkg/speechkit/x/meeting` |
+| Server-connected mode calls | `pkg/speechkit/x/client` |
 | Embedded Voice Agent tools/session harness | `pkg/speechkit/agentkit`, `pkg/speechkit/voiceagent/live` |
 
 Use `speechkit.RuntimePolicy` to constrain embedded deployments:
@@ -221,10 +221,10 @@ The current beta line keeps these public SDK packages additive against the exist
 
 - `pkg/speechkit/wakeword` exposes wake-word phrase catalogs, detection events, dispatching, `AutoEndPolicy`, and the engine-neutral `Detector`/`Pipeline` over the `Engine` contract (`RegisterEngine` is the extension point). The root package links no keyword-spotting engine, so a desktop host imports it without pulling native code; `NewDetector` returns `wakeword.ErrEngineUnavailable` until an engine is registered.
 - `pkg/speechkit/wakeword/sherpa` is the sherpa-onnx engine. Importing it registers the engine in cgo builds and `sherpa.NewDetector` selects it; builds without cgo still compile against the same surface, and `sherpa.NewDetector` then returns `wakeword.ErrCgoRequired`. The full list of packages with cgo or external-binary requirements is the [Native Requirements table](architecture/sdk-surface-boundary.md#native-requirements).
-- `pkg/speechkit/wakeword/training` exposes the opt-in training-data pipeline: `Capture` records pre-roll/post-roll audio around each detection as WAV plus a JSON `Record` sidecar, and `Uploader` sends labelled records to a SpeechKit server. Both default to off; hosts wire them beside the detector they run.
+- `pkg/speechkit/x/wakeword/training` exposes the opt-in training-data pipeline: `Capture` records pre-roll/post-roll audio around each detection as WAV plus a JSON `Record` sidecar, and `Uploader` sends labelled records to a SpeechKit server. Both default to off; hosts wire them beside the detector they run.
 - `pkg/speechkit/tts` exposes `Provider`, `ProviderKind`, `Router`, `Service`, `NewService`, synthesis options, and fallback strategy for SDK hosts that need spoken output without importing desktop internals.
 - `pkg/speechkit/companion.NewHandsFree(...)` composes wake detections, target-mode routing, host-provided transcript requests, Assist, Voice Agent activation, optional TTS, and Event-Bus publication for hands-free hosts. Set `Options.TargetMode` to `companion.TargetAssist`, `companion.TargetVoiceAgent`, or `companion.TargetDictationUIAssisted`.
-- `pkg/speechkit/assist.Service` supports multi-turn `SessionKey`, skill context storage (`InMemorySkillContextStore`), codeword routing, TTS routing with speech defaults and best-effort synthesis, host context composition (`ComposeContext`), and the optional `pkg/speechkit/assist/genkitadapter`. The Voice-Companion catalog is `pkg/speechkit/assist/skills`, its skills live in `pkg/speechkit/assist/skills/companion`, and the codeword resolver in `pkg/speechkit/assist/shortcuts`.
+- `pkg/speechkit/assist.Service` supports multi-turn `SessionKey`, skill context storage (`InMemorySkillContextStore`), codeword routing, TTS routing with speech defaults and best-effort synthesis, host context composition (`ComposeContext`), and the optional `pkg/speechkit/x/assist/genkitadapter`. The Voice-Companion catalog is `pkg/speechkit/x/assist/skills`, its skills live in `pkg/speechkit/x/assist/skills/companion`, and the codeword resolver in `pkg/speechkit/x/assist/shortcuts`.
 - `pkg/speechkit/speaker` exposes speaker options, normalized words/segments, diarization results, provider profiles, streaming audio formats, and `SpeakerFrame` for realtime attribution. Provider-specific adapters stay in internal STT/router packages.
 - `speechkit.Runtime.Events()` publishes additive Event-Bus events for wake detections, skill execution, companion sessions, Voice-Agent finalized turns, and TTS lifecycle.
 
@@ -250,8 +250,8 @@ double as the pkg.go.dev quick start:
 | `pkg/speechkit/stt` | `ExampleAsTranscriber` (provider → kernel bridge), `ExampleRouter` (local-only routing with a per-instance observer). |
 | `pkg/speechkit/assist` | `ExampleService_Process` (utility + LLM fallback), `ExampleService_Process_cleanMode` (no-LLM behaviour). |
 | `pkg/speechkit/tts` | `ExampleNewService` (router fallback + default voice), `ExampleNewRouter_localOnly`. |
-| `pkg/speechkit/client` | `ExampleNew` (bearer auth against `speechkit-server`), `ExampleHTTPError`. |
-| `pkg/speechkit/hostconfig` | `Example` (`Load`), `ExampleParse`, `ExampleModeSettingsFrom`. |
+| `pkg/speechkit/x/client` | `ExampleNew` (bearer auth against `speechkit-server`), `ExampleHTTPError`. |
+| `pkg/speechkit/x/hostconfig` | `Example` (`Load`), `ExampleParse`, `ExampleModeSettingsFrom`. |
 
 The CLI also ships Go-only scaffolds for agent-created companions:
 `go-assist-voice-companion`, `go-voice-agent-companion`, and
@@ -315,7 +315,7 @@ render setup and readiness flows without hard-coding provider-specific branches
 for OpenAI, Google STT, Deepgram, AssemblyAI, Hugging Face, OpenRouter, Ollama,
 or local runtimes.
 
-`pkg/speechkit` is the framework boundary and the source of truth for the three strict mode profiles: the root package holds the contracts, `pkg/speechkit/catalog` holds the shipped provider data, and `pkg/speechkit/pipeline` holds the capture/transcription engine. The Windows desktop host adapts those public profiles into its internal runtime catalog and appends host-only support profiles such as TTS, utility, and embedding models. That keeps the backend reusable for other hosts while allowing the Windows module to remain a full reference client.
+`pkg/speechkit` is the framework boundary and the source of truth for the three strict mode profiles: the root package holds the contracts, `pkg/speechkit/catalog` holds the shipped provider data, and `pkg/speechkit/x/pipeline` holds the capture/transcription engine. The Windows desktop host adapts those public profiles into its internal runtime catalog and appends host-only support profiles such as TTS, utility, and embedding models. That keeps the backend reusable for other hosts while allowing the Windows module to remain a full reference client.
 
 ## Mode Settings
 

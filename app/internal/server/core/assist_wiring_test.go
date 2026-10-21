@@ -8,9 +8,9 @@ import (
 
 	"github.com/kombifyio/SpeechKit/app/internal/config"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/assist/shortcuts"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/assist/skills"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/localization"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/assist/shortcuts"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/assist/skills"
 )
 
 func TestLocalLLMHealthURL_StripsOpenAIPath(t *testing.T) {

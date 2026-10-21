@@ -24,7 +24,7 @@ Hi Codex, read https://speechkit.cc/llms.txt and add a SpeechKit Assist Voice Co
 For a hands-free Voice Agent companion:
 
 ```text
-Hi Codex, read https://speechkit.cc/llms.txt and build a hands-free SpeechKit Voice Agent companion into this app. Use companion.TargetVoiceAgent for wake activation. Use pkg/speechkit/client when talking to a running speechkit-server, or pkg/speechkit/agentkit when embedding a Go Voice Agent harness. Keep persona/role/sequence config in the host, stream PCM 16 kHz S16LE mono into the session, and do not import app/internal/*.
+Hi Codex, read https://speechkit.cc/llms.txt and build a hands-free SpeechKit Voice Agent companion into this app. Use companion.TargetVoiceAgent for wake activation. Use pkg/speechkit/x/client when talking to a running speechkit-server, or pkg/speechkit/agentkit when embedding a Go Voice Agent harness. Keep persona/role/sequence config in the host, stream PCM 16 kHz S16LE mono into the session, and do not import app/internal/*.
 ```
 
 For a live-validatable native Android memo app:

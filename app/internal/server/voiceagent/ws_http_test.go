@@ -19,7 +19,7 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/server/httpx"
 	"github.com/kombifyio/SpeechKit/app/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/app/internal/server/wssession"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/responses"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/responses"
 )
 
 func TestCreateSessionRetainsOnlyExactSignedOwnEndpointConversation(t *testing.T) {

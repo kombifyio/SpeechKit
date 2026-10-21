@@ -4,7 +4,7 @@ package core
 
 import (
 	"github.com/kombifyio/SpeechKit/app/internal/config"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/deepgram"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/deepgram"
 )
 
 func deepgramOptionsFromConfig(cfg *config.Config) deepgram.Tuning {

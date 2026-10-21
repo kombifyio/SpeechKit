@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kombifyio/SpeechKit/app/internal/server/deviceagent/claimstore"
-	wire "github.com/kombifyio/SpeechKit/pkg/speechkit/deviceagent"
+	wire "github.com/kombifyio/SpeechKit/pkg/speechkit/x/deviceagent"
 )
 
 func TestDurableClaimLedgerReplaysAcrossBridgeRestartWithoutRedispatch(t *testing.T) {

@@ -9,8 +9,8 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/config"
 	"github.com/kombifyio/SpeechKit/app/internal/voiceagentprofile"
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/assist/skills"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/assist/skills"
 )
 
 func providerConfigured(cfg *config.Config, target string, enabled bool) map[string]any {

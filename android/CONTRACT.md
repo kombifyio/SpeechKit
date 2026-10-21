@@ -187,8 +187,8 @@ inheriting the default.
 
 | Kotlin | Go Source |
 |---|---|
-| `core/shortcuts/VoiceShortcuts.kt` :: `ShortcutResolver` | `pkg/speechkit/assist/shortcuts/resolver.go` :: `Resolver` |
-| `core/shortcuts/VoiceShortcuts.kt` :: `ShortcutAction` | `pkg/speechkit/assist/shortcuts/types.go` :: `Intent` constants |
+| `core/shortcuts/VoiceShortcuts.kt` :: `ShortcutResolver` | `pkg/speechkit/x/assist/shortcuts/resolver.go` :: `Resolver` |
+| `core/shortcuts/VoiceShortcuts.kt` :: `ShortcutAction` | `pkg/speechkit/x/assist/shortcuts/types.go` :: `Intent` constants |
 
 ### Configuration
 

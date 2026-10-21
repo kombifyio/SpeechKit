@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
-	wire "github.com/kombifyio/SpeechKit/pkg/speechkit/deviceagent"
+	wire "github.com/kombifyio/SpeechKit/pkg/speechkit/x/deviceagent"
 )
 
 const (

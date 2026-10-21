@@ -56,7 +56,7 @@ func TestPublicSDKDoesNotImportAppModule(t *testing.T) {
 // TestRootPackageImportsNoOpenTelemetry enforces boundary rule 7: the root
 // package holds contracts and value types only, so it must not pull
 // OpenTelemetry into every embedder. OTel-backed helpers live in
-// pkg/speechkit/telemetry.
+// pkg/speechkit/x/telemetry.
 func TestRootPackageImportsNoOpenTelemetry(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -74,7 +74,7 @@ func TestRootPackageImportsNoOpenTelemetry(t *testing.T) {
 		}
 		for _, imp := range file.Imports {
 			if p := strings.Trim(imp.Path.Value, `"`); strings.HasPrefix(p, "go.opentelemetry.io/") {
-				t.Errorf("%s imports %s; move OTel-dependent code to pkg/speechkit/telemetry (boundary rule 7)", name, p)
+				t.Errorf("%s imports %s; move OTel-dependent code to pkg/speechkit/x/telemetry (boundary rule 7)", name, p)
 			}
 		}
 	}

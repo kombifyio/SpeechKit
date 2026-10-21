@@ -14,8 +14,8 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/models/sttbatteries"
 	"github.com/kombifyio/SpeechKit/app/internal/providerpolicy"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/allproviders"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/openaicompat"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/allproviders"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/openaicompat"
 )
 
 // probeTimeout caps each provider Health() attempt. Cloud-API probes are

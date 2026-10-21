@@ -18,8 +18,8 @@ regexes = ['''sk-1234567890''']
 [[allowlists]]
 description = "OpenAI-compatible adapter parameter names, not literal committed secrets"
 paths = [
-  '''(^|.*/)pkg/speechkit/stt/openaicompat/provider\.go$''',
-  '''(^|.*/)pkg/speechkit/stt/vps/vps\.go$''',
+  '''(^|.*/)pkg/speechkit/x/stt/openaicompat/provider\.go$''',
+  '''(^|.*/)pkg/speechkit/x/stt/vps/vps\.go$''',
 ]
 regexes = ['''apiKey''']
 

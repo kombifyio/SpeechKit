@@ -25,7 +25,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/azurespeech"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/azurespeech"
 )
 
 // Default Foundry deployment names per modality. Foundry's `model` request

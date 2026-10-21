@@ -13,7 +13,7 @@ import (
 	"github.com/coder/websocket"
 	vsserver "github.com/kombifyio/SpeechKit/app/internal/server/voiceagent"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openai"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/live/openai"
 )
 
 func TestOpenAIBridgeWaitsForConfigurationAckAndPreservesControl(t *testing.T) {

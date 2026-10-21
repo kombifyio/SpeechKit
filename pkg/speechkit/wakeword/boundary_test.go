@@ -11,13 +11,14 @@ import (
 
 // TestRootAndTrainingLinkNoNativeEngine pins the reason the desktop host may
 // import this package: neither the root package nor wakeword/training may
-// import a native keyword-spotting binding. Engines live in subpackages such
+// import a native keyword-spotting binding (training moved to the nonstable
+// module at pkg/speechkit/x/wakeword/training). Engines live in subpackages such
 // as wakeword/sherpa and register themselves; a host that must not link
 // sherpa-onnx (the Wails desktop process) imports only the root.
 func TestRootAndTrainingLinkNoNativeEngine(t *testing.T) {
 	forbidden := []string{"sherpa-onnx-go", "onnxruntime_go"}
 	fset := token.NewFileSet()
-	for _, dir := range []string{".", "training"} {
+	for _, dir := range []string{".", filepath.Join("..", "x", "wakeword", "training")} {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			t.Fatalf("read %s: %v", dir, err)

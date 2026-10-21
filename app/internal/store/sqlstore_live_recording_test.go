@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/pipeline"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/pipeline"
 )
 
 type liveRecordingStore struct {

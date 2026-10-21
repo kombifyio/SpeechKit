@@ -22,12 +22,19 @@ import (
 // stays empty when no such file is built into the binary.
 var optionalPublicPaths []func() []string
 
+func operatorUIPublic() bool {
+	// Fail closed: the smoke/setup HTML is an operator surface. Homelab can
+	// opt in with SPEECHKIT_SERVER_OPERATOR_UI_PUBLIC=true. Hosted origin
+	// must never serve it to anonymous browsers.
+	return envBoolDefault(config.ServerOperatorUIPublicEnv, false)
+}
+
 func serverPublicPaths() []string {
 	paths := []string{"/healthz"}
 	if envBoolDefault(config.ServerDetailedReadinessPublicEnv, true) {
 		paths = append(paths, "/readyz", "/readyz/strict")
 	}
-	if envBoolDefault(config.ServerOperatorUIPublicEnv, true) && envBoolDefault(config.ServerOnboardingUIEnv, true) {
+	if operatorUIPublic() && envBoolDefault(config.ServerOnboardingUIEnv, true) {
 		paths = append(paths, "/")
 	}
 	for _, extra := range optionalPublicPaths {
@@ -77,7 +84,7 @@ func serverPublicRoutes() []middleware.PublicRoute {
 		{PathPrefix: "/v1/wakeword/models/", Methods: []string{http.MethodGet, http.MethodHead}},
 		{PathPrefix: "/v1/wakeword/files/", Methods: []string{http.MethodGet, http.MethodHead}},
 	}
-	if !envBoolDefault(config.ServerOperatorUIPublicEnv, true) {
+	if !operatorUIPublic() {
 		return routes
 	}
 
@@ -105,7 +112,7 @@ func serverPublicRoutes() []middleware.PublicRoute {
 }
 
 func serverBootstrapPaths() []string {
-	if !envBoolDefault(config.ServerOperatorUIPublicEnv, true) {
+	if !operatorUIPublic() {
 		return nil
 	}
 	return []string{"/setup", "/setup/"}
@@ -116,7 +123,7 @@ func serverAdminUIPaths() []string {
 }
 
 func serverBootstrapAuthRoutes() []middleware.PublicRoute {
-	if !envBoolDefault(config.ServerOperatorUIPublicEnv, true) {
+	if !operatorUIPublic() {
 		return nil
 	}
 	return []middleware.PublicRoute{
@@ -157,6 +164,10 @@ func (h testUIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !operatorUIPublic() && middleware.IdentityFromContext(r.Context()).Role == "" {
+		http.Error(w, "unauthenticated", http.StatusUnauthorized)
+		return
+	}
 
 	smokeToken := ""
 	if h.app != nil && h.app.AuthState != nil {
@@ -177,6 +188,10 @@ func (h setupUIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !operatorUIPublic() && middleware.IdentityFromContext(r.Context()).Role == "" {
+		http.Error(w, "unauthenticated", http.StatusUnauthorized)
 		return
 	}
 	// After bootstrap, setup remains available as an authenticated admin UI.

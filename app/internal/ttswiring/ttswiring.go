@@ -17,7 +17,7 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/ttsroute"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/ttsroute"
 )
 
 // geminiTTSModel returns the Gemini API speech model the Google voice output

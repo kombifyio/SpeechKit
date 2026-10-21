@@ -9,6 +9,44 @@ maintainers. The release linter
 (`npm run release:lint -- --version vX.Y.Z`) refuses internal tracker
 IDs, source paths, and other maintainer-only vocabulary.
 
+## Unreleased
+
+### Changed
+
+Developers can use the stable SDK independently of experimental integrations.
+Experimental integrations use a separate module. Voice agents now recognize
+their adapter names when resolving supported options. Command-line and MCP
+behavior is unchanged.
+
+## [0.77.9](https://github.com/kombifyio/SpeechKit/compare/v0.77.8...v0.77.9) (2026-10-21)
+
+
+### Features
+
+* **voiceagent:** flag replies that expect an answer with expects_reply on turn_end ([#1048](https://github.com/kombifyio/SpeechKit/issues/1048)) ([d126090](https://github.com/kombifyio/SpeechKit/commit/d126090b1f052c6021229e107224d77cccab6931))
+
+
+### Bug Fixes
+
+* **ci:** derive Go Quality packages from the shared list and clear the lint it surfaces ([#1059](https://github.com/kombifyio/SpeechKit/issues/1059)) ([bc63be0](https://github.com/kombifyio/SpeechKit/commit/bc63be03a2aacb5ea0ea72b26065e126b4820ccb))
+* **ci:** gate the HeliBoard fork on its reviewed upstream surface ([#1054](https://github.com/kombifyio/SpeechKit/issues/1054)) ([de51d2e](https://github.com/kombifyio/SpeechKit/commit/de51d2eea4b6af46ab2cfa3d3eb34083f20e706d))
+* **ci:** isolate inactive SpeechKit Delivery runs ([#1045](https://github.com/kombifyio/SpeechKit/issues/1045)) ([2131bd5](https://github.com/kombifyio/SpeechKit/commit/2131bd5628c0695a5e35ff0f0b32608f299b4453))
+* **ci:** regenerate client types and gate OpenAPI drift before merge ([#1053](https://github.com/kombifyio/SpeechKit/issues/1053)) ([cd2490d](https://github.com/kombifyio/SpeechKit/commit/cd2490db34b84c27b90dd75af765144dc8cc1eef))
+* **ci:** retry the NSIS install in the Windows install E2E ([#1057](https://github.com/kombifyio/SpeechKit/issues/1057)) ([66e7566](https://github.com/kombifyio/SpeechKit/commit/66e756603f3d1923e25079f8e0f46625e399a554))
+* **ci:** the affected gate no longer reads a large change set as documentation only ([#1047](https://github.com/kombifyio/SpeechKit/issues/1047)) ([6131690](https://github.com/kombifyio/SpeechKit/commit/613169073f16e45942cd6c6a9871401a8d651bf6))
+* **codeql:** honour suppressions and clear critical alerts ([#1042](https://github.com/kombifyio/SpeechKit/issues/1042)) ([becb7cf](https://github.com/kombifyio/SpeechKit/commit/becb7cf8425d4f423d8374a0a5c8a137dd5ca154))
+* **delivery:** record existing workflow secret bindings ([#1049](https://github.com/kombifyio/SpeechKit/issues/1049)) ([e2b9efe](https://github.com/kombifyio/SpeechKit/commit/e2b9efe87c5f354c1d92c5e3c4c5493f6a096e1d))
+* **deploy:** pin the Go 1.27.3 builder image the modules now require ([#1066](https://github.com/kombifyio/SpeechKit/issues/1066)) ([9a01090](https://github.com/kombifyio/SpeechKit/commit/9a01090a0583347405d5d2a2d03b2593fc0a2758))
+* **i18n:** adopt Paraglide for desktop and Voice UI ([#1046](https://github.com/kombifyio/SpeechKit/issues/1046)) ([5087969](https://github.com/kombifyio/SpeechKit/commit/5087969abe0444baf25d8c09ba2c74abc5e91d2d))
+* **release:** drop maintainer tracker ids from the public changelog export ([#1064](https://github.com/kombifyio/SpeechKit/issues/1064)) ([8926a5c](https://github.com/kombifyio/SpeechKit/commit/8926a5c74f8281d9caa1ad4ecc1c0d8c182269cf))
+* **release:** export the voiceagent reply and session-context helpers ([#1065](https://github.com/kombifyio/SpeechKit/issues/1065)) ([ef12f1a](https://github.com/kombifyio/SpeechKit/commit/ef12f1aef957cee425c70f8bf72816a4dc1a68bb))
+* **release:** keep published OSS assets immutable ([#1043](https://github.com/kombifyio/SpeechKit/issues/1043)) ([2d0cf03](https://github.com/kombifyio/SpeechKit/commit/2d0cf03bef1f3fc61da71a512d36fe12a1943a58))
+* **security:** Go 1.27.3, vite 8.3.5 in Cloudflare infra, per-module OSV ignore ([#1056](https://github.com/kombifyio/SpeechKit/issues/1056)) ([7ba8d89](https://github.com/kombifyio/SpeechKit/commit/7ba8d8982040cbfb3afdb2162443c8615d2c489b))
+* **server:** keep the operator HTML private unless the operator opts in ([#471](https://github.com/kombifyio/SpeechKit/issues/471)) ([0739eac](https://github.com/kombifyio/SpeechKit/commit/0739eace2d2151a02dc45608ac6a311f679d3ea8))
+* **voiceagent:** count imperative invitations as expecting a reply, keep polite closers final ([#1052](https://github.com/kombifyio/SpeechKit/issues/1052)) ([ce79641](https://github.com/kombifyio/SpeechKit/commit/ce796418f1b322779cb4d7f220303484e1623e03))
+* **voiceagent:** give tool-less sessions the local clock and stop them announcing checks they cannot do ([#1055](https://github.com/kombifyio/SpeechKit/issues/1055)) ([e397a7f](https://github.com/kombifyio/SpeechKit/commit/e397a7f43d6072e6dfc64f81a76ea5fa984c3532))
+* **voiceagent:** speak the session locale's native Aura-2 voice instead of a foreign default ([#1039](https://github.com/kombifyio/SpeechKit/issues/1039)) ([ed03e8c](https://github.com/kombifyio/SpeechKit/commit/ed03e8cbd035313821ec73663350597c01a3bfe2))
+
 ## [0.77.8](https://github.com/kombifyio/SpeechKit/compare/v0.77.7...v0.77.8) (2026-10-19)
 
 
@@ -637,6 +675,13 @@ Notes cover changes after VERSION 0.72.0 (a5999471f8d81f6082631a3c550d8e261b64d6
 Notes cover changes after VERSION 0.71.0 (1928f9295bcc67faf0a3a8b67150c75b9c5e58ab), the earliest available contiguous 0.71.x VERSION anchor, through selected source 715ff1d400b8e5b6fe18747c9fe5255f06df89aa.
 
 ## [0.71.0](https://github.com/kombifyio/SpeechKit/compare/00b17c502201393702b34091f46c9b25a4df8ca4...9d5d9b3e1f08b616874c0f30ba63b8504e35ab1b) (2026-09-16)
+
+
+### Highlights
+
+- **Notes that keep their moment**: Every meeting note is now its own bullet, stamped with the moment you wrote it, and the compact pill takes a quick note without opening the full window.
+- **Summaries that say what is wrong**: SpeechKit checks the summary provider before a meeting starts, explains why a summary is missing, and finishes the waiting summaries once you sign in again.
+- **SpeechKit without Google AI**: Dictation, voice output and the Voice Agent no longer use Google AI, and new setups start with other providers.
 
 
 ### Features

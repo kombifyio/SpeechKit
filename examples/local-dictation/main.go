@@ -16,10 +16,10 @@ import (
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/audio/capture"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/dictation"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/local"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/audio/capture"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/local"
 )
 
 type options struct {

@@ -10,7 +10,7 @@ import (
 
 	vsserver "github.com/kombifyio/SpeechKit/app/internal/server/voiceagent"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/gemini"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/live/gemini"
 )
 
 // ── Gemini Live provider factory + bridge ───────────────────────────────────

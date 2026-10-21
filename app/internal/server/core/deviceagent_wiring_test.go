@@ -17,8 +17,8 @@ import (
 
 	"github.com/kombifyio/SpeechKit/app/internal/config"
 	"github.com/kombifyio/SpeechKit/app/internal/server/middleware"
-	wire "github.com/kombifyio/SpeechKit/pkg/speechkit/deviceagent"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
+	wire "github.com/kombifyio/SpeechKit/pkg/speechkit/x/deviceagent"
 )
 
 const (

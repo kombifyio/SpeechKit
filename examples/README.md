@@ -11,7 +11,7 @@ not the entire desktop application.
 - `embed-tts/`: demonstrates `pkg/speechkit/tts` Provider, Router, Service, and provider-kind routing.
 - `embed-event-bus/`: publishes and consumes the additive wake, skill, companion, Voice-Agent, and TTS events.
 - `assist/in-process/`: fully in-process Assist — wires any OpenAI-compatible chat endpoint (local llama.cpp via `SPEECHKIT_LLM_BASE_URL`, or OpenAI) into `pkg/speechkit/assist.Service` with optional OpenAI TTS output, no SpeechKit server. The base URL must be https (plain http only on loopback), and `OPENAI_API_KEY` goes only to api.openai.com unless `SPEECHKIT_LLM_SEND_OPENAI_KEY_TO` names the host; see its README.
-- `meeting/synthetic-host/`: embeds the public `pkg/speechkit/meeting` runtime with an in-memory synthetic transcript adapter; no mic, STT provider, or cloud call.
+- `meeting/synthetic-host/`: embeds the public `pkg/speechkit/x/meeting` runtime with an in-memory synthetic transcript adapter; no mic, STT provider, or cloud call.
 - `voice-agent/game-instructor/`: end-to-end 15-minute Voice Agent embedded in a Go program (persona/role/sequence TOML + WebSocket client). Reference for the single-prompt "build a voice agent into my app" use case.
 - `voice-agent/in-process/`: fully in-process Voice Agent — constructs a `live.LiveProvider` (OpenAI Realtime) and drives a text dialogue with no SpeechKit server in the path.
 - `voice-agent/provider-switching/`: credential-free provider/profile/model selection using the public `pkg/speechkit/voiceagent/live` descriptors, `ProviderIntent`, and config helpers.
@@ -28,7 +28,7 @@ Add a SpeechKit Assist Voice Companion to this Go app. Use examples/embed-compan
 Voice Agent companion:
 
 ```text
-Build a hands-free SpeechKit Voice Agent companion into this app. Use companion.TargetVoiceAgent for wake activation and examples/voice-agent/game-instructor for the realtime session pattern. Use pkg/speechkit/client when talking to speechkit-server, or pkg/speechkit/agentkit when embedding a Go Voice Agent harness. Do not load the Windows client.
+Build a hands-free SpeechKit Voice Agent companion into this app. Use companion.TargetVoiceAgent for wake activation and examples/voice-agent/game-instructor for the realtime session pattern. Use pkg/speechkit/x/client when talking to speechkit-server, or pkg/speechkit/agentkit when embedding a Go Voice Agent harness. Do not load the Windows client.
 ```
 
 Dictation UI-assisted activation:

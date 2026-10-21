@@ -15,7 +15,7 @@ Hey AI Agent, go to speechkit.cc and build a small Go Meeting notes demo with sy
 ## Full prompt
 
 ```text
-Read https://speechkit.cc/llms.txt and the public SpeechKit SDK documentation. Build a small standalone Go Meeting notes demo in this workspace using github.com/kombifyio/SpeechKit/pkg/speechkit/meeting. Read the current examples/meeting/synthetic-host and the package API at the same public release tag before writing code, and pin that version in go.mod. Import public pkg/speechkit packages only.
+Read https://speechkit.cc/llms.txt and the public SpeechKit SDK documentation. Build a small standalone Go Meeting notes demo in this workspace using github.com/kombifyio/SpeechKit/pkg/speechkit/x/meeting. Read the current examples/meeting/synthetic-host and the package API at the same public release tag before writing code, and pin that version in go.mod. Import public pkg/speechkit packages only.
 
 Use meeting.New with a host-owned PipelineFactory for synthetic microphone and system channels. Have the adapter emit capture events and commit clearly labeled synthetic transcript lines using the existing example's segment lifecycle. Start a session, display its capture snapshots, pause/resume it, stop it, and render the transcript. Build a NotesDocument with a host-written Anchor and source segment references, apply the anchor so its wording is preserved, and export Markdown.
 
@@ -37,5 +37,5 @@ matrix. It does not emit `speechkit-one-shot-functional-result.json`.
 ## References
 
 - https://github.com/kombifyio/SpeechKit/tree/main/examples/meeting/synthetic-host
-- https://github.com/kombifyio/SpeechKit/tree/main/pkg/speechkit/meeting
+- https://github.com/kombifyio/SpeechKit/tree/main/pkg/speechkit/x/meeting
 - https://speechkit.cc/modes/meeting

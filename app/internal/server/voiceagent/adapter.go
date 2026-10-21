@@ -7,13 +7,14 @@ import (
 	"errors"
 	"log/slog"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/kombifyio/SpeechKit/app/internal/server/wssession"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/a2a"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/a2a"
 )
 
 // Adapter bridges a live WebSocket conversation to the Framework kernel's
@@ -39,6 +40,9 @@ type Adapter struct {
 	Providers       map[string]ProviderFactory
 	DefaultProvider string
 	Persona         PersonaResolver
+	// replyText follows the current reply for its expects_reply
+	// classification; only the ordered output path touches it.
+	replyText strings.Builder
 	// StartStandby shortens the bounded wait for the start frame; zero or a
 	// longer value uses maxStartStandby.
 	StartStandby time.Duration
@@ -311,7 +315,7 @@ func (a *Adapter) Run(parent context.Context) {
 			cfg.SystemPrompt, cfg.RefinementPrompt = "", ""
 		}
 	}
-	if err := a.configureConversation(ctx, start, &cfg); err != nil {
+	if err := a.configureConversation(start, &cfg); err != nil {
 		a.sendFatalError(ctx, "conversation_control_unsupported", "Conversation control requires a capable client and an authorized Companion session.")
 		return
 	}
@@ -320,6 +324,12 @@ func (a *Adapter) Run(parent context.Context) {
 	// a slow or failing bridge never blocks or kills the voice session.
 	if cfg.DirectEndpoint == nil {
 		a.mergeBridgeTools(ctx, &cfg)
+	}
+	// Server-prompted sessions learn the local time and, without tools, that
+	// they must not promise checks or actions they cannot perform. Agents and
+	// providers that bring their own prompt and tools keep theirs untouched.
+	if self, ok := a.Provider.(LiveSelfToolProvider); cfg.DirectEndpoint == nil && cfg.AgentTargetID == "" && (!ok || !self.HandlesOwnTools()) {
+		cfg.SystemPrompt = appendSessionContext(cfg.SystemPrompt, a.now(), start.Timezone, cfg.Locale, len(cfg.Tools) > 0)
 	}
 	connectTimeout := a.ConnectTimeout
 	if connectTimeout <= 0 {

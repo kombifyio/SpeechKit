@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/a2a"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/a2a"
 )
 
 // Sensitive provider boundary: a delegating vendor (Gemini Live here) never

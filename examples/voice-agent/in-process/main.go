@@ -34,7 +34,7 @@ import (
 	"time"
 
 	live "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openai"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/live/openai"
 )
 
 func main() {

@@ -105,10 +105,11 @@ func (p *LiveProvider) Close() error { return p.inner.Close() }
 func (p *LiveProvider) Name() string { return "local-cascaded" }
 
 func sessionConfigFromLive(cfg live.LiveConfig) SessionConfig {
+	resolved := live.ResolveLiveOptions("local-cascaded", "", cfg, nil, nil)
 	return SessionConfig{
-		Locale:           cfg.Locale,
-		Voice:            cfg.Voice,
-		SystemPrompt:     cfg.FrameworkPrompt,
+		Locale:           resolved.Locale,
+		Voice:            resolved.Voice,
+		SystemPrompt:     live.AppendContextPrompt(cfg.FrameworkPrompt, resolved.ContextPrompt),
 		RefinementPrompt: cfg.RefinementPrompt,
 		Speaker:          cfg.Speaker,
 	}

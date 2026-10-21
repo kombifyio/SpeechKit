@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/app/internal/server/deviceagent/claimstore"
-	wire "github.com/kombifyio/SpeechKit/pkg/speechkit/deviceagent"
+	wire "github.com/kombifyio/SpeechKit/pkg/speechkit/x/deviceagent"
 )
 
 func (b *Bridge) assist(w http.ResponseWriter, r *http.Request, binding deviceBinding) {

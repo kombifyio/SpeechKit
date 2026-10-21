@@ -1,6 +1,6 @@
 module github.com/kombifyio/SpeechKit/app
 
-go 1.27.2
+go 1.27.3
 
 replace github.com/kombifyio/SpeechKit => ../
 

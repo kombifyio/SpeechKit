@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/procguard"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/procguard"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
@@ -300,6 +300,7 @@ func ListPiperVoices(voiceDir string) ([]PiperVoiceInfo, error) {
 	if voiceDir == "" {
 		return nil, nil
 	}
+	// codeql[go/path-injection] operator-selected voice directory for a local settings preview of basenames
 	entries, err := os.ReadDir(voiceDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

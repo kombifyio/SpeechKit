@@ -6,7 +6,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/hostconfig"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/hostconfig"
 )
 
 func rejectRemovedConfigAliases(meta toml.MetaData) error {

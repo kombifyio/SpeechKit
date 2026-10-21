@@ -86,7 +86,7 @@ Core endpoints:
 go get github.com/kombifyio/SpeechKit
 ```
 
-Use `pkg/speechkit/client` when you want to call a running SpeechKit Server.
+Use `pkg/speechkit/x/client` when you want to call a running SpeechKit Server.
 
 Use the public SDK packages when you embed SpeechKit directly into another Go
 host. Import the smallest public component that matches the job instead of
@@ -117,7 +117,7 @@ still needs a visible target or explicit commit surface.
 
 ## Embed Meeting
 
-`pkg/speechkit/meeting` owns capture lifecycle and public transcript/notes
+`pkg/speechkit/x/meeting` owns capture lifecycle and public transcript/notes
 helpers. The host supplies capture pipelines and commits transcript segments.
 From a SpeechKit checkout, run:
 

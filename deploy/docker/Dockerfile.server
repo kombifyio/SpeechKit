@@ -18,7 +18,7 @@
 # auto-updates the @sha256:... value when upstream tags rebuild. The
 # tag stays in the line so humans (and Dependabot's image: matcher)
 # can read what version this resolves to.
-FROM golang:1.27-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61 AS builder
+FROM golang:1.27.3-bookworm@sha256:21ade014faf952365b9ecbd8dbdb87176fbacb82fac9fb132d9f2a7b8cc3f132 AS builder
 
 # ONNX Runtime, oto/v3 (ALSA on Linux via pkg-config), and LiveKit PCM/Opus
 # media bridging need a host compiler plus development headers at build time.
@@ -41,6 +41,8 @@ WORKDIR /src
 # it with the root SDK module, so copy every module manifest before downloading.
 COPY go.mod go.sum go.work go.work.sum ./
 COPY app/go.mod app/go.sum ./app/
+COPY pkg/speechkit/x/go.mod pkg/speechkit/x/go.sum ./pkg/speechkit/x/
+COPY examples/go.mod examples/go.sum ./examples/
 RUN go mod download
 
 # Pull in the full source tree — we rely on the `//go:build linux` tag on the

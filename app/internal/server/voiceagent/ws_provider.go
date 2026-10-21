@@ -6,8 +6,8 @@ import (
 	"context"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/a2a"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/responses"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/a2a"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/responses"
 )
 
 // ProviderFactory builds a Framework kernel voice-agent provider on demand.

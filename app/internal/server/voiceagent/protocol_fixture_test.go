@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/a2a"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/a2a"
 )
 
 // fixturePath is the golden contract file shared with the TypeScript and

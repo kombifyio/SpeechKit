@@ -23,7 +23,7 @@ Meeting on Windows captures microphone and system audio separately, combines
 the transcript with your notes and a template into a Meeting Review, and never
 persists meeting audio. Review generation needs a configured local or cloud
 model. Channel labels do not identify each remote participant. The public
-pkg/speechkit/meeting runtime supports host-owned capture adapters and notes
+pkg/speechkit/x/meeting runtime supports host-owned capture adapters and notes
 helpers; examples/meeting/synthetic-host demonstrates it without devices or
 credentials. Do not assume the full desktop Meeting workflow has a server REST,
 SSE or TypeScript equivalent. Use only endpoints present in the server OpenAPI.
@@ -74,7 +74,7 @@ Embed a Voice Agent into your own app:
 - Reference: `examples/voice-agent/game-instructor/` (TOML preset + Go embedder + README).
 - Provider-switching reference: `examples/voice-agent/provider-switching/`
   (credential-free fake provider, real public descriptors).
-- One prompt: "Build a 15-minute voice-agent game instructor into my app using SpeechKit. Use `pkg/speechkit/client` (CreateVoiceAgentSession + DialVoiceAgent), reuse the persona/role/sequence IDs `game-instructor` / `game-moderator` / `game-flow-15min`, and feed PCM 16 kHz S16LE mono via SendAudio."
+- One prompt: "Build a 15-minute voice-agent game instructor into my app using SpeechKit. Use `pkg/speechkit/x/client` (CreateVoiceAgentSession + DialVoiceAgent), reuse the persona/role/sequence IDs `game-instructor` / `game-moderator` / `game-flow-15min`, and feed PCM 16 kHz S16LE mono via SendAudio."
 - Server-side: seed the persona/role/sequence via the TOML at `examples/voice-agent/game-instructor/config.toml` and run `speechkit-server` with the selected provider credential set. Idle timeout caps each session at 15 min by default.
 
 Embed SpeechKit as a Go framework:

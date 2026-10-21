@@ -4,7 +4,7 @@ package voiceagent
 
 import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/a2a"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/a2a"
 )
 
 // Wire protocol constants and shapes for the Voice Agent WebSocket.
@@ -107,8 +107,11 @@ type StartFrame struct {
 	MediaTransport string `json:"media_transport,omitempty"`
 	Voice          string `json:"voice,omitempty"`
 	Locale         string `json:"locale,omitempty"`
-	Model          string `json:"model,omitempty"`
-	Thinking       string `json:"thinking,omitempty"` // "off" | "low" | "medium" | "high"
+	// Timezone is the user's IANA zone (e.g. "Europe/Berlin") for the
+	// session's local date and time; empty or unknown uses Europe/Berlin.
+	Timezone string `json:"timezone,omitempty"`
+	Model    string `json:"model,omitempty"`
+	Thinking string `json:"thinking,omitempty"` // "off" | "low" | "medium" | "high"
 	// Raw activity-detection policy override. Pipeline translates these to
 	// the kernel's internal enums.
 	ActivityDetection *ActivityDetectionFrame `json:"activity_detection,omitempty"`
@@ -276,6 +279,11 @@ type EventFrameFields struct {
 	EventType        string         `json:"event_type,omitempty"`
 	EventTypes       []string       `json:"event_types,omitempty"`
 	ProviderMetadata map[string]any `json:"provider_metadata,omitempty"`
+	// ExpectsReply rides on the frame that carries a reply's turn_end: true
+	// when the assistant's reply hands the turn back (a question or an
+	// invitation), so a one-shot client takes one more user turn on the same
+	// session. Absent when the turn had no reply text or was interrupted.
+	ExpectsReply *bool `json:"expects_reply,omitempty"`
 }
 
 // envelope is a lightweight struct for peeking at incoming frames before

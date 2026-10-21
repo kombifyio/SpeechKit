@@ -18,11 +18,11 @@ import (
 	vsserver "github.com/kombifyio/SpeechKit/app/internal/server/voiceagent"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/assemblyai"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/deepgram"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openai"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/openailive"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/xai"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/live/assemblyai"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/live/deepgram"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/live/openai"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/live/openailive"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/live/xai"
 )
 
 func buildNativeVoiceConsentReader() vsserver.NativeConsentReader {

@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/ttsroute"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/ttsroute"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"

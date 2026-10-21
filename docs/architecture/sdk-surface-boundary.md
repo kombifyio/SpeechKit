@@ -4,8 +4,8 @@ Decision date: 2026-05-26. This document records the v0.40 SDK-surface
 boundary so embedders can consume SpeechKit without importing desktop or
 server internals.
 
-Last updated: 2026-09-30 (nested app module, ADR 0004); earlier: 2026-08-28 with the full `go list ./pkg/speechkit/...` package
-inventory.
+Last updated: 2026-10-21. The public inventory below follows the root and x
+modules; the root SDK's independent dependency graph excludes x and app.
 
 ## Purpose
 
@@ -15,11 +15,25 @@ Local-Library hosts without depending on the reference-app module
 Windows-only adapters, desktop storage, server middleware, or bundled app
 assets.
 
-Module layout: `pkg/speechkit/...`
-lives in the root module `github.com/kombifyio/SpeechKit`; the reference
+Module layout: Stable public packages remain in the root module. Experimental
+and held Beta packages live in the separate v0 module at `pkg/speechkit/x`.
+The root SDK builds with `GOWORK=off` and does not depend on x or the app.
+The x facades for process policy, TTS profile routing and outcome telemetry
+share root implementation details without promoting those public APIs.
+
+`pkg/speechkit/...` outside x lives in the root module `github.com/kombifyio/SpeechKit`; the reference
 apps (`app/cmd`, `app/internal`, `app/tools`) are a separate nested module
 (`.../app`) that requires the root module. The root module therefore cannot
 import the apps, and its `go.mod` carries no app-only dependencies.
+
+Source builds select the repository's explicit `go.work`, which joins root,
+x, app and examples. x has no released version in this source migration;
+no dependency names a fictional x tag. App/examples source builds and Docker
+manifest stages use that workspace. A naked `GOWORK=off` app/examples build
+needs a future real x version; source smoke selects actual adjacent modules.
+Before publishing x, pin its root dependency to the compatible released source
+and create its own real `pkg/speechkit/x/v0...` tag. This is separate from the
+V1-M3 package split and does not complete V1-M5 or a release.
 
 The Android twin — which Gradle modules a host may depend on — is
 [android-sdk-surface-boundary.md](android-sdk-surface-boundary.md).
@@ -31,31 +45,31 @@ packages and leave Go `internal` packages to this repository's own binaries.
 
 ## Public Packages
 
-The surface is discovered dynamically with `go list ./pkg/speechkit/...`; this
+The surface is discovered dynamically with `go list ./pkg/speechkit/... ./pkg/speechkit/x/...`; this
 table mirrors that inventory.
 
 | Package | Stability | Public responsibility |
 |---------|-----------|-----------------------|
 | `pkg/speechkit` | Stable | Contracts and value types only: modes, capabilities, provider profiles, runtime policy, pipeline interfaces (`AudioRecorder`, `Transcriber`, `SegmentCollector`, `TranscriptOutput`, `JobSubmitter`), the values that flow between them (`Submission`, `Transcript`, `TranscriptionJob`), `Runtime` and the event bus. Imports no sibling package, so every subpackage can depend on it. |
-| `pkg/speechkit/agentbridge` | Experimental | Framework-neutral seam for driving an external coding agent (prompt in, normalized events out). |
-| `pkg/speechkit/agentbridge/codex` | Experimental | Drives the official OpenAI Codex binary as an agentbridge agent. |
-| `pkg/speechkit/agentbridge/voicetools` | Experimental | Binds an `agentbridge.Agent` to the Voice Agent's tool surface. |
+| `pkg/speechkit/x/agentbridge` | Experimental | Framework-neutral seam for driving an external coding agent (prompt in, normalized events out). |
+| `pkg/speechkit/x/agentbridge/codex` | Experimental | Drives the official OpenAI Codex binary as an agentbridge agent. |
+| `pkg/speechkit/x/agentbridge/voicetools` | Experimental | Binds an `agentbridge.Agent` to the Voice Agent's tool surface. |
 | `pkg/speechkit/agentkit` | Stable | Go harness for building Voice Agent hosts: tool registry, session memory, lifecycle hooks. |
 | `pkg/speechkit/assist` | Stable | Embeddable Assist service with generator, tools, multi-turn session context, codeword routing, and optional TTS routing. |
-| `pkg/speechkit/assist/genkitadapter` | Experimental | Optional adapter from Genkit-style generators to the public Assist generator contract. |
-| `pkg/speechkit/assist/shortcuts` | Beta | Codeword intent catalog and resolver: `Intent` ids, locale-aware phrase/filler `Registry`, the embedded Home Assistant lexicon, and `Resolver` that turns a transcript into an intent plus payload. |
-| `pkg/speechkit/assist/skills` | Beta | Voice-Companion skill catalog for Assist hosts: `New` builds an `assist.ToolMatcher` + `assist.ToolExecutor` pair over the `UtilityRegistry` (routable utilities and their presentation defaults), with host hooks for the resolver, a fallback executor, disabled intents and the in-process Timer/Reminder scheduler. |
-| `pkg/speechkit/assist/skills/companion` | Beta | The Voice-Companion skill implementations (Time, Date, Math, Weather, Timer, Reminder, Wikipedia, Temperature, Home Assistant), the `Skill` contract, `CompositeExecutor`, and the `TimerSink`/`ReminderSink` host hooks. |
-| `pkg/speechkit/assist/toolbridge` | Experimental | Adapts Assist-mode tools to other tool-calling surfaces. |
+| `pkg/speechkit/x/assist/genkitadapter` | Experimental | Optional adapter from Genkit-style generators to the public Assist generator contract. |
+| `pkg/speechkit/x/assist/shortcuts` | Beta | Codeword intent catalog and resolver: `Intent` ids, locale-aware phrase/filler `Registry`, the embedded Home Assistant lexicon, and `Resolver` that turns a transcript into an intent plus payload. |
+| `pkg/speechkit/x/assist/skills` | Beta | Voice-Companion skill catalog for Assist hosts: `New` builds an `assist.ToolMatcher` + `assist.ToolExecutor` pair over the `UtilityRegistry` (routable utilities and their presentation defaults), with host hooks for the resolver, a fallback executor, disabled intents and the in-process Timer/Reminder scheduler. |
+| `pkg/speechkit/x/assist/skills/companion` | Beta | The Voice-Companion skill implementations (Time, Date, Math, Weather, Timer, Reminder, Wikipedia, Temperature, Home Assistant), the `Skill` contract, `CompositeExecutor`, and the `TimerSink`/`ReminderSink` host hooks. |
+| `pkg/speechkit/x/assist/toolbridge` | Experimental | Adapts Assist-mode tools to other tool-calling surfaces. |
 | `pkg/speechkit/audio` | Stable | Shared PCM primitives: capture constants, WAV framing/parsing, duration and level math, mono resampling and synthesized WAV/MP3/PCM decoding. Server and embedded voice playback use the same normalization. |
-| `pkg/speechkit/audio/capture` | Beta | Microphone and system-loopback capture. `Session` satisfies `speechkit.AudioRecorder`, so a host does not implement recording itself; `RegisterBackend` is the extension point, and builds without a native backend report `ErrBackendUnavailable`. |
+| `pkg/speechkit/x/audio/capture` | Beta | Microphone and system-loopback capture. `Session` satisfies `speechkit.AudioRecorder`, so a host does not implement recording itself; `RegisterBackend` is the extension point, and builds without a native backend report `ErrBackendUnavailable`. |
 | `pkg/speechkit/catalog` | Stable | Built-in provider/model catalog: `DefaultCatalog`, `Catalog.With`, `DefaultProviderProfiles`, the provider defaults matrix and the model registry with freshness metadata. Data only; contracts stay in the root package. |
-| `pkg/speechkit/client` | Beta | Typed HTTP client for talking to a remote SpeechKit Server. |
+| `pkg/speechkit/x/client` | Beta | Typed HTTP client for talking to a remote SpeechKit Server. |
 | `pkg/speechkit/companion` | Stable | `NewHandsFree(...)` composer for hands-free target routing across Assist, Voice Agent, and UI-assisted Dictation using wake detections, host transcript requests, optional TTS, and EventBus lifecycle. |
 | `pkg/speechkit/customize` | Stable | Public Words/Replacements customization contract, dictionary parsing and provider recognition hints. |
-| `pkg/speechkit/deviceagent` | Beta | Credential-minimal LAN-side SpeechKit device agent. |
+| `pkg/speechkit/x/deviceagent` | Beta | Credential-minimal LAN-side SpeechKit device agent. |
 | `pkg/speechkit/dictation` | Stable | Embeddable strict Dictation runtime. |
-| `pkg/speechkit/hostconfig` | Beta | Turns a SpeechKit TOML configuration file into the public SDK configuration types. |
+| `pkg/speechkit/x/hostconfig` | Beta | Turns a SpeechKit TOML configuration file into the public SDK configuration types. |
 | `pkg/speechkit/internal/speakercontract` | n/a | Internal test-only speaker conformance helpers; not importable by embedders. |
 | `pkg/speechkit/internal/logutil` | n/a | Internal logging helper for SDK packages; not importable by embedders. |
 | `pkg/speechkit/internal/pcmresample` | n/a | Internal PCM16 16 kHz to 24 kHz upsampler shared by the realtime Voice Agent providers and `stt/openaicompat`, so the STT adapter does not link the Voice Agent; not importable by embedders. |
@@ -63,50 +77,51 @@ table mirrors that inventory.
 | `pkg/speechkit/internal/testutil` | n/a | Internal test-only helpers (env-gated integration skips, `Eventually`); not importable by embedders. |
 | `pkg/speechkit/lifecycle` | Stable | Mode start/stop orchestration and refcounted shared resources. |
 | `pkg/speechkit/localization` | Stable | Resolves stable SpeechKit message IDs against BCP-47 locales. |
-| `pkg/speechkit/meeting` | Beta | Embeddable Meeting Mode runtime and note/digest primitives: dual-channel capture lifecycle, per-channel health snapshots, transcript rendering/chunking, echo suppression, built-in note templates, anchor preservation, and call/end watcher policy. Hosts supply capture pipelines, persistence, generation, Wails windows, hotkeys, and server routes. |
-| `pkg/speechkit/meeting/export` | Beta | Notes export SPI of ADR 0002: `Document` (title, date, locale, review sections, the user's notes verbatim, transcript citations, screenshot references), content `Fingerprint`, structural `Outline` with Markdown and OneNote-subset XHTML renderers, `Parts`, `Target` with `Receipt`, `Registry`, and the sentinels `ErrTargetUnavailable`, `ErrDestinationGone`, `ErrDestinationFull`, `ErrTooLarge`. Names no destination; OneNote lives in the app module. |
+| `pkg/speechkit/x/meeting` | Beta | Embeddable Meeting Mode runtime and note/digest primitives: dual-channel capture lifecycle, per-channel health snapshots, transcript rendering/chunking, echo suppression, built-in note templates, anchor preservation, and call/end watcher policy. Hosts supply capture pipelines, persistence, generation, Wails windows, hotkeys, and server routes. |
+| `pkg/speechkit/x/meeting/export` | Beta | Notes export SPI of ADR 0002: `Document` (title, date, locale, review sections, the user's notes verbatim, transcript citations, screenshot references), content `Fingerprint`, structural `Outline` with Markdown and OneNote-subset XHTML renderers, `Parts`, `Target` with `Receipt`, `Registry`, and the sentinels `ErrTargetUnavailable`, `ErrDestinationGone`, `ErrDestinationFull`, `ErrTooLarge`. Names no destination; OneNote lives in the app module. |
 | `pkg/speechkit/netsec` | Stable | Centralized network security primitives shared by public surfaces. |
-| `pkg/speechkit/pipeline` | Beta | Composable capture-to-transcript engine: `RecordingController`, `TranscriptionWorker`, `TranscriptionRunner`, `DictationSegmenter`, `TranscriptSessionLedger`, live-commit policy. Implements the root-package contracts; `dictation` composes it. |
-| `pkg/speechkit/procguard` | Beta | Ties long-lived child processes to the lifetime of the host process. |
+| `pkg/speechkit/x/pipeline` | Beta | Composable capture-to-transcript engine: `RecordingController`, `TranscriptionWorker`, `TranscriptionRunner`, `DictationSegmenter`, `TranscriptSessionLedger`, live-commit policy. Implements the root-package contracts; `dictation` composes it. |
+| `pkg/speechkit/x/procguard` | Beta | Ties long-lived child processes to the lifetime of the host process. |
 | `pkg/speechkit/provideropts` | Stable | Provider-neutral voice option manifest (per-provider native options). |
 | `pkg/speechkit/speaker` | Stable | Provider-neutral speaker options, diarization results, speaker words/segments, provider profiles, streaming audio format, and `SpeakerFrame` contracts. |
 | `pkg/speechkit/storage` | Stable | Storage-backend contract: capabilities, install/device/user/tenant scopes, and backend configuration. |
 | `pkg/speechkit/stt` | Stable | Speech-to-text contracts: provider interface, transcribe options, result, router, the `AsTranscriber` bridge, and the helpers the adapters share. It names no provider, so importing it costs 49 external packages. |
-| `pkg/speechkit/stt/allproviders` | Beta | Batteries assembly: every shipped provider plus `BuildRouter`, `EnabledProviders`, and the provider registry. Import it when the host offers a provider choice at runtime. |
-| `pkg/speechkit/stt/assemblyai` | Beta | AssemblyAI: sync transcription, speaker streaming with attribution, live dictation with optional LLM turn cleanup. |
-| `pkg/speechkit/stt/azurespeech` | Experimental | Azure Speech fast transcription on a Microsoft Foundry resource, where the MAI-Transcribe models live; addressed on the resource custom domain, not the OpenAI-compatible route. |
-| `pkg/speechkit/stt/deepgram` | Beta | Deepgram: batch transcription, speaker streaming, live dictation, and the Flux turn stream. |
-| `pkg/speechkit/stt/google` | Beta | Opt-in bring-your-own-key Google Cloud Speech-to-Text: v1 batch with word-level diarization, v2 regional recognize for `chirp_3` (service-account/ADC only; v2 rejects API keys), and v2 StreamingRecognize. Never a default; needs the user's own dedicated STT key or service-account/ADC credentials. |
-| `pkg/speechkit/stt/geminitranscribe` | Experimental | Opt-in Gemini Transcribe (`gemini-3.5-transcribe`) on the Gemini API Interactions endpoint, and live dictation on `gemini-3.5-transcribe-live` over the Gemini Live API, with the user's Gemini key; not yet verified against the live service. |
-| `pkg/speechkit/stt/huggingface` | Beta | HuggingFace Inference API transcription. |
-| `pkg/speechkit/stt/local` | Beta | Built-in whisper.cpp subprocess provider plus its model and runtime helpers. |
-| `pkg/speechkit/stt/openaicompat` | Beta | One adapter for every OpenAI-compatible audio endpoint: OpenAI, Groq, Ollama. |
-| `pkg/speechkit/stt/openrouter` | Beta | OpenRouter transcription. |
-| `pkg/speechkit/stt/sttcontract` | Beta | Reusable conformance suite for STT provider implementations. |
-| `pkg/speechkit/stt/vps` | Beta | Self-hosted whisper-server: an OpenAI-compatible endpoint the user runs themselves. |
-| `pkg/speechkit/telemetry` | Experimental | Records named framework outcomes (`RecordOutcome`, `Attr`, `Outcome*`) on the active OpenTelemetry span; the only SDK package importing OpenTelemetry, so the root stays free of it. No-op without a TracerProvider. |
+| `pkg/speechkit/x/stt/allproviders` | Beta | Batteries assembly: every shipped provider plus `BuildRouter`, `EnabledProviders`, and the provider registry. Import it when the host offers a provider choice at runtime. |
+| `pkg/speechkit/x/stt/assemblyai` | Beta | AssemblyAI: sync transcription, speaker streaming with attribution, live dictation with optional LLM turn cleanup. |
+| `pkg/speechkit/x/stt/azurespeech` | Experimental | Azure Speech fast transcription on a Microsoft Foundry resource, where the MAI-Transcribe models live; addressed on the resource custom domain, not the OpenAI-compatible route. |
+| `pkg/speechkit/x/stt/deepgram` | Beta | Deepgram: batch transcription, speaker streaming, live dictation, and the Flux turn stream. |
+| `pkg/speechkit/x/stt/google` | Beta | Opt-in bring-your-own-key Google Cloud Speech-to-Text: v1 batch with word-level diarization, v2 regional recognize for `chirp_3` (service-account/ADC only; v2 rejects API keys), and v2 StreamingRecognize. Never a default; needs the user's own dedicated STT key or service-account/ADC credentials. |
+| `pkg/speechkit/x/stt/geminitranscribe` | Experimental | Opt-in Gemini Transcribe (`gemini-3.5-transcribe`) on the Gemini API Interactions endpoint, and live dictation on `gemini-3.5-transcribe-live` over the Gemini Live API, with the user's Gemini key; not yet verified against the live service. |
+| `pkg/speechkit/x/stt/huggingface` | Beta | HuggingFace Inference API transcription. |
+| `pkg/speechkit/x/stt/local` | Beta | Built-in whisper.cpp subprocess provider plus its model and runtime helpers. |
+| `pkg/speechkit/x/stt/openaicompat` | Beta | One adapter for every OpenAI-compatible audio endpoint: OpenAI, Groq, Ollama. |
+| `pkg/speechkit/x/stt/openrouter` | Beta | OpenRouter transcription. |
+| `pkg/speechkit/x/stt/sttcontract` | Beta | Reusable conformance suite for STT provider implementations. |
+| `pkg/speechkit/x/stt/vps` | Beta | Self-hosted whisper-server: an OpenAI-compatible endpoint the user runs themselves. |
+| `pkg/speechkit/x/stt/xai` | Beta | Explicit opt-in xAI batch transcription adapter; its provider and model are selected by the host. |
+| `pkg/speechkit/x/telemetry` | Experimental | Records named framework outcomes (`RecordOutcome`, `Attr`, `Outcome*`) on the active OpenTelemetry span; the only SDK package importing OpenTelemetry, so the root stays free of it. No-op without a TracerProvider. |
 | `pkg/speechkit/tts` | Stable | Provider, ProviderKind, Router, Service, fallback strategy, synthesis options, and result contract. |
-| `pkg/speechkit/tts/ttscontract` | Beta | Reusable conformance suite for TTS provider implementations. |
-| `pkg/speechkit/ttsroute` | Beta | Single source of truth mapping a Voice-Output selection to a TTS route. |
+| `pkg/speechkit/x/tts/ttscontract` | Beta | Reusable conformance suite for TTS provider implementations. |
+| `pkg/speechkit/x/ttsroute` | Beta | Single source of truth mapping a Voice-Output selection to a TTS route. |
 | `pkg/speechkit/voiceagent` | Stable | Embeddable Voice Agent service (realtime audio-to-audio mode). |
-| `pkg/speechkit/voiceagent/a2a` | Experimental | Adapts a registered A2A agent to the cascaded voice pipeline; SpeechKit keeps STT/TTS custody, the remote endpoint owns agent semantics, memory, tools and authorization. |
+| `pkg/speechkit/x/voiceagent/a2a` | Experimental | Adapts a registered A2A agent to the cascaded voice pipeline; SpeechKit keeps STT/TTS custody, the remote endpoint owns agent semantics, memory, tools and authorization. |
 | `pkg/speechkit/voiceagent/cascaded` | Stable | Turn-based STT -> LLM -> TTS pipeline and `LiveProvider` adapter. Live playback is normalized to raw 24 kHz S16 mono; recoverable turn failures carry safe guidance without ending the conversation. |
 | `pkg/speechkit/voiceagent/live` | Stable | Voice Agent realtime-protocol types, session runtime, and the `LiveProvider` contract. It names no provider, so importing it costs 15 external packages. |
-| `pkg/speechkit/voiceagent/live/assemblyai` | Beta | AssemblyAI Voice Agent realtime provider. |
-| `pkg/speechkit/voiceagent/live/deepgram` | Beta | Deepgram Voice Agent realtime provider. |
-| `pkg/speechkit/voiceagent/live/foundry` | Experimental | Microsoft Foundry adapter over the OpenAI Realtime provider. |
-| `pkg/speechkit/voiceagent/live/gemini` | Beta | Opt-in bring-your-own-key Gemini Live realtime provider (Google GenAI Live API). Never a default; `live.ResolveProviderIntent` only picks it when the intent names it. |
-| `pkg/speechkit/voiceagent/live/allproviders` | Beta | Batteries assembly for the realtime providers: resolves a provider id, alias or profile id to a live provider. Import it when the host offers a provider choice at runtime. |
-| `pkg/speechkit/voiceagent/live/openai` | Beta | OpenAI Realtime provider, including its client-side response cancel. |
-| `pkg/speechkit/voiceagent/live/openailive` | Experimental | OpenAI GPT-Live (`gpt-live-1`) on its own `/v1/live/sessions` protocol, delegating reasoning and tools to a backend Responses model; continuously full duplex (barge-in derived from the session timeline); served by the desktop app and `speechkit-server`. `NewFoundry` is the Microsoft Foundry variant (`foundry-gpt-live`, `wss://<host>/openai/v1/live/sessions`, endpoint required), served by the desktop app only. Not yet verified against the live service. |
-| `pkg/speechkit/voiceagent/live/xai` | Experimental | Opt-in bring-your-own-key xAI Grok Voice (`grok-voice-3.0`) over the OpenAI-Realtime-compatible `wss://api.x.ai/v1/realtime` protocol, reusing the OpenAI Realtime loop with the Grok session shape and cumulative input transcripts. Never a default. Not yet verified against the live service. |
-| `pkg/speechkit/voiceagent/live/voicelive` | Beta | Microsoft Foundry Voice Live adapter over the OpenAI Realtime provider: Foundry host, Azure and MAI voices, and the Azure-only session fields. |
-| `pkg/speechkit/voiceagent/live/livecontract` | Beta | Reusable conformance checks for `LiveProvider` implementations. |
-| `pkg/speechkit/voiceagent/local` | Beta | `voiceagent.Provider` on top of an in-process local pipeline. |
-| `pkg/speechkit/voiceagent/responses` | Experimental | Adapts one explicitly selected own endpoint (a Responses-style API the application admits) to the cascaded conversation pipeline; the application owns account, consent, funding and endpoint admission, and the adapter never selects a model, an agent, a credential or a fallback. |
+| `pkg/speechkit/x/voiceagent/live/assemblyai` | Beta | AssemblyAI Voice Agent realtime provider. |
+| `pkg/speechkit/x/voiceagent/live/deepgram` | Beta | Deepgram Voice Agent realtime provider. |
+| `pkg/speechkit/x/voiceagent/live/foundry` | Experimental | Microsoft Foundry adapter over the OpenAI Realtime provider. |
+| `pkg/speechkit/x/voiceagent/live/gemini` | Beta | Opt-in bring-your-own-key Gemini Live realtime provider (Google GenAI Live API). Never a default; `live.ResolveProviderIntent` only picks it when the intent names it. |
+| `pkg/speechkit/x/voiceagent/live/allproviders` | Beta | Batteries assembly for the realtime providers: resolves a provider id, alias or profile id to a live provider. Import it when the host offers a provider choice at runtime. |
+| `pkg/speechkit/x/voiceagent/live/openai` | Beta | OpenAI Realtime provider, including its client-side response cancel. |
+| `pkg/speechkit/x/voiceagent/live/openailive` | Experimental | OpenAI GPT-Live (`gpt-live-1`) on its own `/v1/live/sessions` protocol, delegating reasoning and tools to a backend Responses model; continuously full duplex (barge-in derived from the session timeline); served by the desktop app and `speechkit-server`. `NewFoundry` is the Microsoft Foundry variant (`foundry-gpt-live`, `wss://<host>/openai/v1/live/sessions`, endpoint required), served by the desktop app only. Not yet verified against the live service. |
+| `pkg/speechkit/x/voiceagent/live/xai` | Experimental | Opt-in bring-your-own-key xAI Grok Voice (`grok-voice-3.0`) over the OpenAI-Realtime-compatible `wss://api.x.ai/v1/realtime` protocol, reusing the OpenAI Realtime loop with the Grok session shape and cumulative input transcripts. Never a default. Not yet verified against the live service. |
+| `pkg/speechkit/x/voiceagent/live/voicelive` | Beta | Microsoft Foundry Voice Live adapter over the OpenAI Realtime provider: Foundry host, Azure and MAI voices, and the Azure-only session fields. |
+| `pkg/speechkit/x/voiceagent/live/livecontract` | Beta | Reusable conformance checks for `LiveProvider` implementations. |
+| `pkg/speechkit/x/voiceagent/local` | Beta | `voiceagent.Provider` on top of an in-process local pipeline. |
+| `pkg/speechkit/x/voiceagent/responses` | Experimental | Adapts one explicitly selected own endpoint (a Responses-style API the application admits) to the cascaded conversation pipeline; the application owns account, consent, funding and endpoint admission, and the adapter never selects a model, an agent, a credential or a fallback. |
 | `pkg/speechkit/wakeword` | Stable | Wake-word phrase catalog, detection events, dispatcher, `AutoEndPolicy`, and the engine-neutral `Detector`/`Pipeline` (PCM conversion, debounce, cooldown, pause) over the `Engine` contract. `RegisterEngine` is the extension point; the root ships no engine and links no native code, so a desktop host imports it without pulling in sherpa-onnx. |
 | `pkg/speechkit/wakeword/sherpa` | Stable | sherpa-onnx keyword-spotting engine. Importing it registers the engine with `wakeword.RegisterEngine` in cgo builds; `sherpa.NewDetector` selects it explicitly and returns `ErrCgoRequired` without cgo. |
-| `pkg/speechkit/wakeword/training` | Beta | Opt-in training-data capture around wake detections: `Capture` writes pre-roll/post-roll WAV clips with a JSON `Record` sidecar, `Uploader` ships labelled records to a SpeechKit server's `/v1/wakeword/activations`. Pure Go; every switch defaults to off. |
+| `pkg/speechkit/x/wakeword/training` | Beta | Opt-in training-data capture around wake detections: `Capture` writes pre-roll/post-roll WAV clips with a JSON `Record` sidecar, `Uploader` ships labelled records to a SpeechKit server's `/v1/wakeword/activations`. Pure Go; every switch defaults to off. |
 
 ## Live speech output and failed turns
 
@@ -158,11 +173,11 @@ a silent no-op.
 
 | Package | Build | Runtime dependency | Behaviour when missing |
 | --- | --- | --- | --- |
-| `pkg/speechkit/audio/capture` | `windows && cgo` for the WASAPI backend (malgo/miniaudio, needs a C toolchain such as MinGW). Pure Go elsewhere. | None beyond the toolchain. | `Open`/`NewCapturer` return an error wrapping `ErrBackendUnavailable`; `RegisterBackend` lets a host plug in its own capture on other platforms. |
+| `pkg/speechkit/x/audio/capture` | `windows && cgo` for the WASAPI backend (malgo/miniaudio, needs a C toolchain such as MinGW). Pure Go elsewhere. | None beyond the toolchain. | `Open`/`NewCapturer` return an error wrapping `ErrBackendUnavailable`; `RegisterBackend` lets a host plug in its own capture on other platforms. |
 | `pkg/speechkit/wakeword` | Pure Go. | A registered `Engine` (for example `wakeword/sherpa`) and its model on disk. | `NewDetector` returns `ErrEngineUnavailable` when no engine is registered; the sentinel exists in every build so `errors.Is` checks compile everywhere. |
 | `pkg/speechkit/wakeword/sherpa` | `cgo` (sherpa-onnx via `sherpa-onnx-go`). Compiles with `CGO_ENABLED=0` too, but then registers nothing and links no native code. | sherpa-onnx shared libraries and a KWS model on disk. | `sherpa.NewDetector` returns `wakeword.ErrCgoRequired` in a `CGO_ENABLED=0` build; `wakeword.NewDetector` reports `ErrEngineUnavailable` because the engine never registered. |
-| `pkg/speechkit/stt/local` | Pure Go. | A `whisper-server` executable next to the host binary or in the managed install directory (`%LOCALAPPDATA%\SpeechKit\bin` on Windows); `SPEECHKIT_ALLOW_WHISPER_PATH=1` also allows `PATH` lookup. A GGML model file. | `StartServer`/`FindWhisperBinary` return a descriptive error; `VerifyInstallation` reports what is missing without starting anything. |
-| `pkg/speechkit/stt/vps` | Pure Go. | A reachable OpenAI-compatible whisper-server endpoint. | `Health` fails; the router treats the provider as unavailable. |
+| `pkg/speechkit/x/stt/local` | Pure Go. | A `whisper-server` executable next to the host binary or in the managed install directory (`%LOCALAPPDATA%\SpeechKit\bin` on Windows); `SPEECHKIT_ALLOW_WHISPER_PATH=1` also allows `PATH` lookup. A GGML model file. | `StartServer`/`FindWhisperBinary` return a descriptive error; `VerifyInstallation` reports what is missing without starting anything. |
+| `pkg/speechkit/x/stt/vps` | Pure Go. | A reachable OpenAI-compatible whisper-server endpoint. | `Health` fails; the router treats the provider as unavailable. |
 | Every other package | Pure Go. | None. | n/a |
 
 Cloud providers (`stt/deepgram`, `stt/assemblyai`, `stt/openaicompat`,
@@ -178,7 +193,7 @@ native toolchain.
    the Assist skill catalog, its utility registry and the codeword resolver
    live in `pkg/speechkit/assist/{skills,skills/companion,shortcuts}` and the
    desktop and server binaries consume them from there. The dependency for
-   host configuration runs the other way: `pkg/speechkit/hostconfig` owns the
+   host configuration runs the other way: `pkg/speechkit/x/hostconfig` owns the
    loader semantics (`Defaults`, `Normalize`, `LoadConfig`, the hotkey /
    close-behavior / auth-mode normalisers) and `app/internal/config` delegates to
    it, so the desktop app and embedders read one `config.toml` identically
@@ -257,7 +272,7 @@ Verified on 2026-05-26 and updated on 2026-05-27 and 2026-06-02:
   `hostconfig`) ships runnable `Example*` functions in `example_test.go` with
   `// Output:` blocks, so pkg.go.dev shows a verified first call and a drifted
   public signature fails `go test` instead of rotting in prose.
-- The curated public export includes `pkg/speechkit/wakeword`, `pkg/speechkit/companion`, `pkg/speechkit/meeting`, and `pkg/speechkit/tts`.
+- The curated public export includes `pkg/speechkit/wakeword`, `pkg/speechkit/companion`, `pkg/speechkit/x/meeting`, and `pkg/speechkit/tts`.
 - Production SDK packages have no `app/internal/*` imports;
   `TestPublicSDKDoesNotImportAppModule` (`pkg/speechkit/sdk_boundary_test.go`)
   fails when any file under `pkg/speechkit` imports the app module or a
@@ -268,7 +283,7 @@ Verified on 2026-05-26 and updated on 2026-05-27 and 2026-06-02:
 - The root package imports nothing under `go.opentelemetry.io`;
   `TestRootPackageImportsNoOpenTelemetry` enforces boundary rule 7.
 - `app/internal/config` delegates its shared legacy backfills and normalisers to
-  `pkg/speechkit/hostconfig`; `TestLoadAgreesWithPublicHostconfigLoaderOnLegacyFile`
+  `pkg/speechkit/x/hostconfig`; `TestLoadAgreesWithPublicHostconfigLoaderOnLegacyFile`
   holds the desktop loader and `hostconfig.LoadConfig` to the same result on
   a legacy `config.toml`.
 - Shared parity tests in `pkg/speechkit/internal/sdkparity` exercise the same public/internal
@@ -277,7 +292,7 @@ Verified on 2026-05-26 and updated on 2026-05-27 and 2026-06-02:
   `AutoEndPolicy` have a single implementation in `pkg/speechkit/wakeword`
   (the desktop client and both sidecars consume it), tested there directly.
 - CI public API stability discovers the surface dynamically with
-  `go list ./pkg/speechkit/...`, so new promoted SDK packages are checked by
+  `go list ./pkg/speechkit/... ./pkg/speechkit/x/...`, so new promoted SDK packages are checked by
   default.
 - The public consumer-smoke gate validates a fresh external Go module that
   imports `github.com/kombifyio/SpeechKit/pkg/speechkit/{assist,companion,tts,wakeword}`
@@ -290,7 +305,7 @@ Verified on 2026-05-26 and updated on 2026-05-27 and 2026-06-02:
 
 ## Release Gates
 
-- API diff for every package returned by `go list ./pkg/speechkit/...` should
+- API diff for every package returned by `go list ./pkg/speechkit/... ./pkg/speechkit/x/...` should
   show no breaking removals unless the PR has the `breaking-api-approved` label.
 - Docker/server release gates must pass before a public tag is cut.
 - Public source exports must include the SDK, self-host server, CLI, MCP, docs,

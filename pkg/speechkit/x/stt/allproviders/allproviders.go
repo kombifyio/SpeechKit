@@ -1,0 +1,668 @@
+// Package allproviders is the batteries-included STT assembly layer: it knows
+// every provider SpeechKit ships and turns a host's resolved credentials into
+// a ready [stt.Router].
+//
+// Importing it compiles every provider, which is the right trade for a host
+// that offers a provider choice at runtime — the desktop app, the server. A
+// host that speaks to exactly one backend imports that provider's own package
+// and assembles the router itself, and stays free of the others'
+// dependencies.
+//
+// It is the single source of truth for STT provider assembly:
+//
+//   - Build/Register map a provider id (or ExecutionMode) to the canonical
+//     provider name, endpoint, and constructor.
+//   - BuildRouter assembles a [stt.Router] from a set of enabled providers so
+//     the Device- and Server-Targets share one assembly path while each keeps
+//     its own config-resolution specifics (mirrors pkg/speechkit/tts.BuildRouter).
+//
+// Stability: Beta — API-checked; may change with a changelog callout.
+package allproviders
+
+import (
+	"fmt"
+	"strings"
+	"sync"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/assemblyai"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/azurespeech"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/deepgram"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/geminitranscribe"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/google"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/huggingface"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/local"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/openaicompat"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/openrouter"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/vps"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/xai"
+)
+
+// BuildSpec carries the inputs needed to construct a cloud STT provider for a
+// given ExecutionMode. The host config layer resolves secrets and passes them
+// in; the registry owns the provider's canonical name, endpoint, and
+// constructor.
+type BuildSpec struct {
+	ExecutionMode speechkit.ExecutionMode
+	Provider      string
+	ModelID       string
+
+	APIKey  string // cloud API key (OpenAI/Groq/Google/Deepgram/AssemblyAI/OpenRouter/Foundry/xAI)
+	Token   string // HuggingFace token
+	BaseURL string // Ollama base URL (optional; defaulted when empty) or Foundry OpenAI-compatible base (required)
+
+	// DiarizationModel overrides the Deepgram diarization model (optional).
+	DiarizationModel string
+	// Deepgram forwards provider-specific Listen options (optional).
+	Deepgram deepgram.Tuning
+	// Google streaming credential env-var names (optional), forwarded to the
+	// Google provider so realtime transcription can authenticate.
+	GoogleStreamingCredentialsEnv   string
+	GoogleApplicationCredentialsEnv string
+	// GoogleRegion is the Speech-to-Text v2 multi-region ("us" or "eu") for
+	// models that run only regionally, such as chirp_3. Empty uses "us".
+	GoogleRegion string
+
+	// FoundrySpeech, when set, builds the Foundry provider on the resource's
+	// Azure Speech surface (MAI-Transcribe) instead of the OpenAI-compatible
+	// route; BaseURL is ignored and FoundrySpeech.Host/APIKey/Model are used.
+	FoundrySpeech *FoundrySpeechOpts
+	// BearerToken, when set, replaces APIKey for providers that accept an
+	// identity-provider token (Microsoft Foundry with an Entra sign-in). It
+	// is called per request; the framework never mints tokens itself.
+	BearerToken speechkit.BearerTokenFunc
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, v := range values {
+		if s := strings.TrimSpace(v); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+// Build constructs the cloud STT provider for spec and returns its canonical
+// Name plus the provider. spec.Provider (a provider id or profile id) wins;
+// when empty, the provider id is derived from spec.ExecutionMode.
+//
+// ExecutionModeLocal is host-managed (whisper.cpp subprocess lifecycle) and is
+// intentionally not handled here.
+func Build(spec BuildSpec) (string, stt.STTProvider, error) {
+	providerID := catalog.NormalizeProviderID(spec.Provider)
+	if providerID == "" {
+		providerID = catalog.ProviderIDForExecutionMode(spec.ExecutionMode)
+	}
+	registryMu.RLock()
+	descriptor, ok := providerRegistry[providerID]
+	registryMu.RUnlock()
+	if !ok {
+		return "", nil, fmt.Errorf("stt: unsupported provider %q for execution mode %q", providerID, spec.ExecutionMode)
+	}
+	provider, err := descriptor.Build(spec)
+	if err != nil {
+		return "", nil, err
+	}
+	return descriptor.Name, provider, nil
+}
+
+// IsGeminiTranscribeModel reports whether a Google STT model id names a Gemini
+// Transcribe model, which runs on the Gemini API (with a Gemini API key)
+// instead of Cloud Speech-to-Text.
+func IsGeminiTranscribeModel(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(model, "gemini-") && strings.Contains(model, "transcribe")
+}
+
+// Register adds a provider constructor under the given id so hosts can extend
+// the Build mapping with custom providers. The id is normalized like
+// spec.Provider in Build. Registering an id that already exists (including
+// the built-ins) returns an error.
+func Register(id, name string, build func(BuildSpec) (stt.STTProvider, error)) error {
+	providerID := catalog.NormalizeProviderID(id)
+	if providerID == "" {
+		return fmt.Errorf("stt: provider id is required")
+	}
+	if build == nil {
+		return fmt.Errorf("stt: provider %q build func is required", providerID)
+	}
+	if strings.TrimSpace(name) == "" {
+		name = providerID
+	}
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	if _, exists := providerRegistry[providerID]; exists {
+		return fmt.Errorf("stt: provider %q is already registered", providerID)
+	}
+	providerRegistry[providerID] = providerDescriptor{Name: name, Build: build}
+	return nil
+}
+
+type providerDescriptor struct {
+	Name  string
+	Build func(BuildSpec) (stt.STTProvider, error)
+}
+
+var registryMu sync.RWMutex
+
+var providerRegistry = map[string]providerDescriptor{
+	"huggingface": {
+		Name: "huggingface",
+		Build: func(spec BuildSpec) (stt.STTProvider, error) {
+			return huggingface.New(huggingface.Options{Model: spec.ModelID, APIKey: spec.Token}), nil
+		},
+	},
+	"openai": {
+		Name: "openai",
+		Build: func(spec BuildSpec) (stt.STTProvider, error) {
+			return openaicompat.New(openaicompat.Options{
+				Name:    "openai",
+				BaseURL: "https://api.openai.com",
+				APIKey:  spec.APIKey,
+				Model:   spec.ModelID,
+			}), nil
+		},
+	},
+	"groq": {
+		Name: "groq",
+		Build: func(spec BuildSpec) (stt.STTProvider, error) {
+			return openaicompat.New(openaicompat.Options{
+				Name:    "groq",
+				BaseURL: "https://api.groq.com/openai",
+				APIKey:  spec.APIKey,
+				Model:   spec.ModelID,
+			}), nil
+		},
+	},
+	"google": {
+		Name: "google",
+		Build: func(spec BuildSpec) (stt.STTProvider, error) {
+			if IsGeminiTranscribeModel(spec.ModelID) {
+				return geminitranscribe.New(geminitranscribe.Options{APIKey: spec.APIKey, Model: spec.ModelID}), nil
+			}
+			provider := google.New(google.Options{APIKey: spec.APIKey, Model: spec.ModelID})
+			provider.SetStreamingCredentialEnvs(spec.GoogleStreamingCredentialsEnv, spec.GoogleApplicationCredentialsEnv)
+			provider.Region = spec.GoogleRegion
+			return provider, nil
+		},
+	},
+	"deepgram": {
+		Name: "deepgram",
+		Build: func(spec BuildSpec) (stt.STTProvider, error) {
+			provider := deepgram.New(deepgram.Options{APIKey: spec.APIKey, Model: spec.ModelID})
+			if spec.DiarizationModel != "" {
+				provider.DiarizationModel = spec.DiarizationModel
+			}
+			if hasDeepgramOptions(spec.Deepgram) {
+				provider.ApplyTuning(spec.Deepgram)
+			}
+			return provider, nil
+		},
+	},
+	"assemblyai": {
+		Name: "assemblyai",
+		Build: func(spec BuildSpec) (stt.STTProvider, error) {
+			return assemblyai.New(assemblyai.Options{APIKey: spec.APIKey, Models: spec.ModelID}), nil
+		},
+	},
+	"openrouter": {
+		Name: "openrouter",
+		Build: func(spec BuildSpec) (stt.STTProvider, error) {
+			return openrouter.New(openrouter.Options{APIKey: spec.APIKey, Model: spec.ModelID}), nil
+		},
+	},
+	"foundry": {
+		Name: "foundry",
+		Build: func(spec BuildSpec) (stt.STTProvider, error) {
+			if o := spec.FoundrySpeech; o != nil {
+				host := strings.TrimSpace(o.Host)
+				if host == "" {
+					return nil, fmt.Errorf("stt: foundry (azure speech) requires the Speech host derived from the project endpoint")
+				}
+				apiKey := o.APIKey
+				if apiKey == "" {
+					apiKey = spec.APIKey
+				}
+				token := o.BearerToken
+				if token == nil {
+					token = spec.BearerToken
+				}
+				return azurespeech.New(azurespeech.Options{
+					Host:        host,
+					APIKey:      apiKey,
+					BearerToken: token,
+					Model:       firstNonEmptyString(o.Model, spec.ModelID),
+					Style:       o.Style,
+					Diarization: o.Diarization,
+				}), nil
+			}
+			baseURL := strings.TrimSpace(spec.BaseURL)
+			if baseURL == "" {
+				return nil, fmt.Errorf("stt: foundry requires the OpenAI-compatible base URL derived from the project endpoint")
+			}
+			model := strings.TrimSpace(spec.ModelID)
+			if model == "" {
+				model = "gpt-transcribe"
+			}
+			p := openaicompat.New(openaicompat.Options{Name: "foundry", BaseURL: baseURL, APIKey: spec.APIKey, Model: model})
+			p.BearerToken = spec.BearerToken
+			return p, nil
+		},
+	},
+	// xai is opt-in BYOK: a host builds it only for a user who enabled xAI with
+	// their own key. A BuildSpec names the profile the user applied, so the
+	// built provider is a selected one, not explicit-only.
+	"xai": {
+		Name: xai.ProviderName,
+		Build: func(spec BuildSpec) (stt.STTProvider, error) {
+			return xai.New(xai.Options{APIKey: spec.APIKey, Model: spec.ModelID, Selected: true}), nil
+		},
+	},
+	"ollama": {
+		Name: "ollama",
+		Build: func(spec BuildSpec) (stt.STTProvider, error) {
+			baseURL := spec.BaseURL
+			if baseURL == "" {
+				baseURL = "http://localhost:11434"
+			}
+			return openaicompat.NewOllama(openaicompat.Options{BaseURL: baseURL, Model: spec.ModelID}), nil
+		},
+	},
+}
+
+func hasDeepgramOptions(opts deepgram.Tuning) bool {
+	return opts.Configured ||
+		opts.SmartFormat ||
+		opts.Dictation ||
+		opts.FillerWords ||
+		opts.Numerals ||
+		opts.DetectLanguage ||
+		opts.UseVocabularyKeyterms ||
+		opts.LanguageOverride != "" ||
+		len(opts.Keyterms) > 0 ||
+		opts.EndpointingMs != 0
+}
+
+// RouterConfig carries the routing knobs both hosts resolve from their own
+// config before delegating router assembly to BuildRouter.
+type RouterConfig struct {
+	Strategy             stt.Strategy
+	PreferLocalUnderSecs float64
+	ParallelCloud        bool
+	ReplaceOnBetter      bool
+	// PreferredProfileID optionally pins the cloud provider matching this
+	// model_selection profile (or bare provider name) to the front of the
+	// strategy order, analogous to tts.EnabledProviders.PreferredProfileID.
+	PreferredProfileID string
+	// OnProviderSelected is installed as the router's per-instance observer
+	// (stt.Router.OnProviderSelected). Hosts wire audit logging here.
+	OnProviderSelected stt.ProviderSelectedObserver
+}
+
+// Per-provider assembly options. These carry the union of what the Device-
+// and Server-Targets configure; nil fields in EnabledProviders are skipped.
+// (deepgram.Tuning is the existing Listen-option type; the assembly struct is
+// DeepgramOpts and embeds it as Listen.)
+type (
+	// LocalOpts configures the host-managed whisper.cpp provider. The
+	// provider is registered but not started; process lifecycle stays with
+	// the host.
+	LocalOpts struct {
+		Port      int
+		ModelPath string
+		GPU       string
+	}
+
+	// VPSOpts configures a self-hosted OpenAI-compatible whisper-server.
+	// Model defaults to "whisper-1" when empty.
+	VPSOpts struct {
+		URL    string
+		APIKey string
+		Model  string
+		// Validation, when non-nil, replaces the provider's default netsec
+		// validation (loopback+private+http). Restricted network scopes pass
+		// a RequireLocal option set so public endpoints are rejected at
+		// request and dial time.
+		Validation *netsec.ValidationOptions
+	}
+
+	// HuggingFaceOpts configures the routed Hugging Face Inference provider:
+	// Model is the hub model id, Token the access token.
+	HuggingFaceOpts struct {
+		Model string
+		Token string
+	}
+
+	// OpenAIOpts configures the OpenAI transcription provider. Model defaults
+	// to "gpt-transcribe" when empty.
+	OpenAIOpts struct {
+		APIKey string
+		Model  string
+	}
+
+	// GroqOpts configures the Groq transcription provider. Model defaults to
+	// "whisper-large-v3-turbo" when empty.
+	GroqOpts struct {
+		APIKey string
+		Model  string
+	}
+
+	// GoogleOpts configures the opt-in Google Cloud Speech-to-Text provider
+	// (bring your own key). Model defaults to "latest_long" when empty; a
+	// Gemini Transcribe model (see IsGeminiTranscribeModel) builds the Gemini
+	// API adapter instead, and APIKey must then be a Gemini API key.
+	GoogleOpts struct {
+		APIKey string
+		Model  string
+		// Streaming credential env-var names forwarded via
+		// SetStreamingCredentialEnvs.
+		CredentialsJSONEnv        string
+		ApplicationCredentialsEnv string
+		// Region is the v2 multi-region ("us" or "eu") for chirp_3.
+		Region string
+	}
+
+	// DeepgramOpts configures the Deepgram Listen provider. Model defaults to
+	// "nova-3" when empty.
+	DeepgramOpts struct {
+		APIKey string
+		Model  string
+		// DiarizationModel overrides the provider default when non-empty.
+		DiarizationModel string
+		// Listen forwards Deepgram Listen options (applied when configured).
+		Listen deepgram.Tuning
+	}
+
+	// AssemblyAIOpts configures the AssemblyAI provider; empty fields keep
+	// the defaults assemblyai.New applies.
+	AssemblyAIOpts struct {
+		APIKey string
+		// Models is the comma-separated STT model list accepted by
+		// assemblyai.New.
+		Models           string
+		StreamingModel   string
+		StreamingBaseURL string
+		SyncBaseURL      string
+		DisableSync      bool
+		// StreamingLLM enables LLM Gateway cleanup on realtime dictation with
+		// StreamingLLMModel.
+		StreamingLLM      bool
+		StreamingLLMModel string
+	}
+
+	// OpenRouterOpts configures the OpenRouter provider. Model defaults to
+	// "openai/gpt-transcribe" when empty.
+	OpenRouterOpts struct {
+		APIKey string
+		Model  string
+	}
+
+	// FoundryOpts configures the Microsoft Foundry provider. BaseURL is the
+	// OpenAI-compatible base derived from the project endpoint
+	// (https://<host>/openai); Model is the deployment name and defaults to
+	// "gpt-transcribe" when empty.
+	FoundryOpts struct {
+		APIKey string
+		// BearerToken, when set, wins over APIKey (Entra sign-in on Foundry).
+		BearerToken speechkit.BearerTokenFunc
+		BaseURL     string
+		Model       string
+	}
+
+	// FoundrySpeechOpts configures the Microsoft Foundry provider on the
+	// resource's Azure Speech surface (MAI-Transcribe fast transcription).
+	// Host is the Speech custom domain derived from the project endpoint
+	// (myresource.cognitiveservices.azure.com); Model defaults to
+	// "MAI-Transcribe-2". The provider reports the shared "foundry" id, so a
+	// host enables either FoundryOpts or FoundrySpeechOpts, not both.
+	FoundrySpeechOpts struct {
+		APIKey string
+		// BearerToken, when set, wins over APIKey (Entra sign-in on Foundry).
+		BearerToken speechkit.BearerTokenFunc
+		Host        string
+		Model       string
+		Style       string // "clean" (default) or "verbatim"
+		Diarization bool
+	}
+
+	// XAIOpts configures the opt-in xAI Grok Voice Transcribe provider (bring
+	// your own key). Model defaults to "grok-voice-transcribe-2.0" when empty.
+	XAIOpts struct {
+		APIKey string
+		Model  string
+		// Selected marks xAI as chosen for dictation (model_selection.dictate
+		// names an xAI profile). Without it the provider is explicit-only: the
+		// router uses it only for a request whose ProviderProfileID names xAI
+		// and never as a fallback for other providers.
+		Selected bool
+	}
+
+	// OllamaOpts configures the Ollama provider. BaseURL defaults to
+	// "http://localhost:11434" and Model to the provider default when empty.
+	OllamaOpts struct {
+		BaseURL string
+		Model   string
+		// Validation, when non-nil, replaces the provider's default netsec
+		// validation (loopback+private+http). Restricted network scopes pass
+		// a RequireLocal option set so public endpoints are rejected at
+		// request and dial time.
+		Validation *netsec.ValidationOptions
+	}
+)
+
+// EnabledProviders carries the per-provider options a host has already
+// resolved from its own config (credential stores, env secrets, model
+// defaults). Nil fields are skipped. Extra providers are appended after the
+// named ones as additional cloud candidates.
+type EnabledProviders struct {
+	Local       *LocalOpts
+	HuggingFace *HuggingFaceOpts
+	OpenRouter  *OpenRouterOpts
+	VPS         *VPSOpts
+	Ollama      *OllamaOpts
+	Groq        *GroqOpts
+	OpenAI      *OpenAIOpts
+	Deepgram    *DeepgramOpts
+	AssemblyAI  *AssemblyAIOpts
+	Google      *GoogleOpts
+	Foundry     *FoundryOpts
+	// FoundrySpeech routes Foundry dictation to Azure Speech (MAI-Transcribe)
+	// instead of the OpenAI-compatible transcription route.
+	FoundrySpeech *FoundrySpeechOpts
+	// XAI registers xAI Grok Voice Transcribe; hosts set it only for a user
+	// who enabled xAI with their own key. It is explicit-only unless
+	// XAIOpts.Selected is set.
+	XAI   *XAIOpts
+	Extra []stt.STTProvider
+	// Secrets is handed to every constructed provider that resolves
+	// credentials lazily (currently Google streaming). Nil falls back to the
+	// process environment.
+	Secrets stt.SecretResolver
+}
+
+// BuildRouter is the single source of truth for assembling an STT router from
+// a set of enabled providers: it constructs each enabled provider in a stable
+// order (cloud fallback order: HuggingFace, OpenRouter, VPS, Ollama, Groq,
+// OpenAI, Deepgram, AssemblyAI, Google, Foundry, xAI, then Extra), applies optional
+// model_selection pinning, and returns the router plus human-readable notes.
+// ok is false (router nil) when nothing is enabled.
+func BuildRouter(cfg RouterConfig, enabled EnabledProviders) (router *stt.Router, ok bool, notes []string) {
+	var cloud []stt.STTProvider
+
+	if o := enabled.HuggingFace; o != nil {
+		cloud = append(cloud, huggingface.New(huggingface.Options{Model: o.Model, APIKey: o.Token}))
+		notes = append(notes, "STT: HuggingFace registered (model="+o.Model+")")
+	}
+	if o := enabled.OpenRouter; o != nil {
+		cloud = append(cloud, openrouter.New(openrouter.Options{APIKey: o.APIKey, Model: o.Model}))
+		notes = append(notes, "STT: OpenRouter registered (model="+o.Model+")")
+	}
+	if o := enabled.VPS; o != nil {
+		p := vps.New(vps.Options{BaseURL: o.URL, APIKey: o.APIKey, Model: o.Model})
+		if o.Validation != nil {
+			// The provider's HTTP client dials through &p.Validation, so
+			// tightening the field also tightens dial-time IP checks.
+			p.Validation = *o.Validation
+		}
+		cloud = append(cloud, p)
+		notes = append(notes, "STT: VPS registered (url="+o.URL+", model="+p.Model+")")
+	}
+	if o := enabled.Ollama; o != nil {
+		p := openaicompat.NewOllama(openaicompat.Options{BaseURL: o.BaseURL, Model: o.Model})
+		if o.Validation != nil {
+			p.Validation = *o.Validation
+		}
+		cloud = append(cloud, p)
+		notes = append(notes, "STT: Ollama registered (model="+p.Model+")")
+	}
+	if o := enabled.Groq; o != nil {
+		model := strings.TrimSpace(o.Model)
+		if model == "" {
+			model = "whisper-large-v3-turbo"
+		}
+		cloud = append(cloud, openaicompat.New(openaicompat.Options{
+			Name:    "groq",
+			BaseURL: "https://api.groq.com/openai",
+			APIKey:  o.APIKey,
+			Model:   model,
+		}))
+		notes = append(notes, "STT: Groq registered (model="+model+")")
+	}
+	if o := enabled.OpenAI; o != nil {
+		model := strings.TrimSpace(o.Model)
+		if model == "" {
+			model = openaicompat.OpenAIDefaultModel
+		}
+		cloud = append(cloud, openaicompat.New(openaicompat.Options{
+			Name:    "openai",
+			BaseURL: "https://api.openai.com",
+			APIKey:  o.APIKey,
+			Model:   model,
+		}))
+		notes = append(notes, "STT: OpenAI registered (model="+model+")")
+	}
+	if o := enabled.Deepgram; o != nil {
+		p := deepgram.New(deepgram.Options{APIKey: o.APIKey, Model: o.Model})
+		if strings.TrimSpace(o.DiarizationModel) != "" {
+			p.DiarizationModel = o.DiarizationModel
+		}
+		if hasDeepgramOptions(o.Listen) {
+			p.ApplyTuning(o.Listen)
+		}
+		cloud = append(cloud, p)
+		notes = append(notes, "STT: Deepgram registered (model="+p.Model+")")
+	}
+	if o := enabled.AssemblyAI; o != nil {
+		p := assemblyai.New(assemblyai.Options{APIKey: o.APIKey, Models: o.Models})
+		if strings.TrimSpace(o.StreamingModel) != "" {
+			p.StreamingModel = o.StreamingModel
+		}
+		if strings.TrimSpace(o.StreamingBaseURL) != "" {
+			p.StreamingBaseURL = o.StreamingBaseURL
+		}
+		if strings.TrimSpace(o.SyncBaseURL) != "" {
+			p.SyncBaseURL = o.SyncBaseURL
+		}
+		p.DisableSync = o.DisableSync
+		if o.StreamingLLM {
+			p.EnableStreamingLLM(o.StreamingLLMModel, "", 256)
+		}
+		cloud = append(cloud, p)
+		notes = append(notes, "STT: AssemblyAI registered (models="+strings.Join(p.Models, ",")+")")
+	}
+	if o := enabled.Google; o != nil && IsGeminiTranscribeModel(o.Model) {
+		cloud = append(cloud, geminitranscribe.New(geminitranscribe.Options{APIKey: o.APIKey, Model: o.Model}))
+		notes = append(notes, "STT: Gemini Transcribe registered (model="+o.Model+")")
+	} else if o != nil {
+		p := google.New(google.Options{APIKey: o.APIKey, Model: o.Model})
+		p.SetStreamingCredentialEnvs(o.CredentialsJSONEnv, o.ApplicationCredentialsEnv)
+		p.Region = o.Region
+		p.SecretResolver = enabled.Secrets
+		cloud = append(cloud, p)
+		notes = append(notes, "STT: Google registered (model="+o.Model+")")
+	}
+	if o := enabled.Foundry; o != nil {
+		if baseURL := strings.TrimSpace(o.BaseURL); baseURL != "" {
+			model := strings.TrimSpace(o.Model)
+			if model == "" {
+				model = "gpt-transcribe"
+			}
+			p := openaicompat.New(openaicompat.Options{Name: "foundry", BaseURL: baseURL, APIKey: o.APIKey, Model: model})
+			p.BearerToken = o.BearerToken
+			cloud = append(cloud, p)
+			notes = append(notes, "STT: Microsoft Foundry registered (deployment="+model+")")
+		} else {
+			notes = append(notes, "STT: Microsoft Foundry skipped (project endpoint missing)")
+		}
+	}
+	if o := enabled.FoundrySpeech; o != nil {
+		if host := strings.TrimSpace(o.Host); host != "" {
+			p := azurespeech.New(azurespeech.Options{
+				Host:        host,
+				APIKey:      o.APIKey,
+				BearerToken: o.BearerToken,
+				Model:       o.Model,
+				Style:       o.Style,
+				Diarization: o.Diarization,
+			})
+			cloud = append(cloud, p)
+			notes = append(notes, "STT: Microsoft Foundry registered (Azure Speech model="+p.Model+")")
+		} else {
+			notes = append(notes, "STT: Microsoft Foundry skipped (Speech host missing)")
+		}
+	}
+	if o := enabled.XAI; o != nil {
+		p := xai.New(xai.Options{APIKey: o.APIKey, Model: o.Model, Selected: o.Selected})
+		cloud = append(cloud, p)
+		if o.Selected {
+			notes = append(notes, "STT: xAI registered (model="+p.Model+")")
+		} else {
+			notes = append(notes, "STT: xAI registered for explicit requests only (model="+p.Model+")")
+		}
+	}
+	for _, p := range enabled.Extra {
+		if p == nil {
+			continue
+		}
+		cloud = append(cloud, p)
+		notes = append(notes, "STT: extra provider registered ("+p.Name()+")")
+	}
+
+	var localProvider stt.STTProvider
+	if o := enabled.Local; o != nil {
+		localProvider = local.New(local.Options{Port: o.Port, ModelPath: o.ModelPath, GPU: o.GPU})
+		notes = append(notes, "STT: local whisper.cpp registered (not started)")
+	}
+
+	if localProvider == nil && len(cloud) == 0 {
+		return nil, false, notes
+	}
+
+	if profileID := strings.TrimSpace(cfg.PreferredProfileID); profileID != "" {
+		if preferred := stt.ProviderNameFromProfileID(profileID); preferred != "" {
+			ordered := stt.PrioritizeProviderProfile(cloud, profileID)
+			if len(ordered) > 0 && strings.EqualFold(ordered[0].Name(), preferred) {
+				notes = append(notes, "STT: model_selection profile "+profileID+" pinned provider "+preferred+" first")
+			} else {
+				notes = append(notes, "STT: model_selection profile "+profileID+" requested provider "+preferred+" but it is not configured; using strategy order")
+			}
+			cloud = ordered
+		}
+	}
+
+	router = &stt.Router{
+		Strategy:             cfg.Strategy,
+		PreferLocalUnderSecs: cfg.PreferLocalUnderSecs,
+		ParallelCloud:        cfg.ParallelCloud,
+		ReplaceOnBetter:      cfg.ReplaceOnBetter,
+		OnProviderSelected:   cfg.OnProviderSelected,
+	}
+	if localProvider != nil {
+		router.SetLocal(localProvider)
+	}
+	router.SetCloudProviders(cloud)
+	return router, true, notes
+}

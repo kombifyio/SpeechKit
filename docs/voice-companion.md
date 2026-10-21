@@ -15,7 +15,7 @@ Use these packages:
 - `pkg/speechkit/companion` for the hands-free composer.
 - `pkg/speechkit/wakeword` for activation events and auto-end policy.
 - `pkg/speechkit/assist` for one-shot Assist processing contracts.
-- `pkg/speechkit/assist/skills` for the ready-made Voice-Companion skill
+- `pkg/speechkit/x/assist/skills` for the ready-made Voice-Companion skill
   catalog (Time, Date, Math, Weather, Timer, Reminder, Wikipedia, plus an
   optional Home Assistant bridge) as an `assist.ToolMatcher` +
   `assist.ToolExecutor` — wire the real framework skills instead of writing
@@ -24,10 +24,10 @@ Use these packages:
   fail closed instead of falling through to a general LLM. The SpeechKit
   desktop app and the self-host server run on exactly this catalog; there is
   no private Assist pipeline behind it.
-- `pkg/speechkit/assist/skills/companion` for the individual skill
+- `pkg/speechkit/x/assist/skills/companion` for the individual skill
   implementations (`Skill`, `CompositeExecutor`, `TimerSink`/`ReminderSink`)
   when a host composes its own catalog or probes the Home Assistant bridge.
-- `pkg/speechkit/assist/shortcuts` for the codeword `Intent` catalog and the
+- `pkg/speechkit/x/assist/shortcuts` for the codeword `Intent` catalog and the
   locale-aware `Resolver` the skills are matched against, including
   host-registered aliases.
 - `pkg/speechkit/tts` for spoken output routing.
@@ -41,12 +41,12 @@ Component-level imports are intentional:
 | Wake activation only | `pkg/speechkit/wakeword` |
 | Spoken output only | `pkg/speechkit/tts` |
 | One-shot utilities or LLM Assist | `pkg/speechkit/assist` |
-| Ready-made skill catalog (Time/Math/Weather/HA/…) | `pkg/speechkit/assist/skills` |
-| Individual skills or a custom catalog | `pkg/speechkit/assist/skills/companion` |
-| Codeword intents and resolver | `pkg/speechkit/assist/shortcuts` |
+| Ready-made skill catalog (Time/Math/Weather/HA/…) | `pkg/speechkit/x/assist/skills` |
+| Individual skills or a custom catalog | `pkg/speechkit/x/assist/skills/companion` |
+| Codeword intents and resolver | `pkg/speechkit/x/assist/shortcuts` |
 | Hands-Free composition | `pkg/speechkit/companion` |
 | Realtime Voice Agent tools/session harness | `pkg/speechkit/agentkit`, `pkg/speechkit/voiceagent/live` |
-| Self-host server client | `pkg/speechkit/client` |
+| Self-host server client | `pkg/speechkit/x/client` |
 | Mode contracts, events, readiness | `pkg/speechkit` |
 
 Do not import a wider package just to reach one primitive. For example, a host
@@ -95,7 +95,7 @@ Mic or host event
 ```
 
 For self-host scenarios, call the server's Assist endpoint or connect through
-`pkg/speechkit/client`. For embedded Go scenarios, compose the public SDK
+`pkg/speechkit/x/client`. For embedded Go scenarios, compose the public SDK
 interfaces directly and keep provider initialization inside your host.
 
 ## Smart-home authority boundaries
@@ -156,7 +156,7 @@ Add a SpeechKit Assist Voice Companion to this Go app. Import only public packag
 ### Voice Agent Companion
 
 ```text
-Add a SpeechKit hands-free Voice Agent companion to this app. Use companion.NewHandsFree with TargetMode: companion.TargetVoiceAgent for wake activation, and use pkg/speechkit/client for a running speechkit-server or pkg/speechkit/agentkit for an embedded Go Voice Agent harness. Keep persona/role/sequence configuration in host-owned config, stream PCM 16 kHz S16LE mono into the session, and do not use app/internal/* packages.
+Add a SpeechKit hands-free Voice Agent companion to this app. Use companion.NewHandsFree with TargetMode: companion.TargetVoiceAgent for wake activation, and use pkg/speechkit/x/client for a running speechkit-server or pkg/speechkit/agentkit for an embedded Go Voice Agent harness. Keep persona/role/sequence configuration in host-owned config, stream PCM 16 kHz S16LE mono into the session, and do not use app/internal/* packages.
 ```
 
 ### Dictation UI-Assisted Activation

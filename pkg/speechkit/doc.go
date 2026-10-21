@@ -20,13 +20,13 @@
 //
 //   - [github.com/kombifyio/SpeechKit/pkg/speechkit/dictation]
 //   - [github.com/kombifyio/SpeechKit/pkg/speechkit/assist]
-//   - [github.com/kombifyio/SpeechKit/pkg/speechkit/assist/skills]
+//   - [github.com/kombifyio/SpeechKit/pkg/speechkit/x/assist/skills]
 //     (Voice-Companion skill catalog; the skills live in
 //     assist/skills/companion and the codeword intents in assist/shortcuts)
 //   - [github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent]
 //   - [github.com/kombifyio/SpeechKit/pkg/speechkit/agentkit] (tool
 //     registry, session memory, lifecycle hooks for Voice Agent hosts)
-//   - [github.com/kombifyio/SpeechKit/pkg/speechkit/client] (HTTP
+//   - [github.com/kombifyio/SpeechKit/pkg/speechkit/x/client] (HTTP
 //     client for talking to a remote SpeechKit Server)
 //
 // # Central types in this package
@@ -44,7 +44,7 @@
 //
 // Implementations live in two sibling packages:
 //
-//   - [github.com/kombifyio/SpeechKit/pkg/speechkit/pipeline] — the
+//   - [github.com/kombifyio/SpeechKit/pkg/speechkit/x/pipeline] — the
 //     composable capture/transcription engine: RecordingController,
 //     TranscriptionWorker, TranscriptionRunner, DictationSegmenter,
 //     TranscriptSessionLedger and the live-commit policy.

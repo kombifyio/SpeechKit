@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/a2a"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/a2a"
 )
 
 func boundTestToken(expiresAt int64) string {

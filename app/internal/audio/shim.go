@@ -1,13 +1,13 @@
 // The capture layer (backend registry, capture Session, device
 // enumeration, frame pool) moved to the public
-// pkg/speechkit/audio/capture package. This shim re-exports that surface
+// pkg/speechkit/x/audio/capture package. This shim re-exports that surface
 // so the existing device-app call sites (app/cmd/speechkit, the wake-word
 // sidecars, cmd/sk-*-smoke) keep compiling unchanged. New
-// capture code goes in pkg/speechkit/audio/capture; playback
+// capture code goes in pkg/speechkit/x/audio/capture; playback
 // (player.go, stream_player.go) stays private in this package.
 package audio
 
-import "github.com/kombifyio/SpeechKit/pkg/speechkit/audio/capture"
+import "github.com/kombifyio/SpeechKit/pkg/speechkit/x/audio/capture"
 
 // Core capture contracts.
 type (

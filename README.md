@@ -67,7 +67,7 @@ go get github.com/kombifyio/SpeechKit
 Import only what your host needs: `pkg/speechkit/dictation`,
 `pkg/speechkit/wakeword`, `pkg/speechkit/tts`, `pkg/speechkit/companion`
 (one-shot voice companion hosts), `pkg/speechkit/speaker` and
-`pkg/speechkit/client` (server-connected apps). To configure from a file:
+`pkg/speechkit/x/client` (server-connected apps). To configure from a file:
 
 ```go
 settings, policy, err := hostconfig.Load("config.toml")

@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/app/internal/store"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/a2a"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/assemblyai"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/a2a"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/live/assemblyai"
 )
 
 type nativeJournalFixture struct {

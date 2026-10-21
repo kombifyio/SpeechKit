@@ -9,7 +9,7 @@ import (
 	"net/netip"
 	"strings"
 
-	wire "github.com/kombifyio/SpeechKit/pkg/speechkit/deviceagent"
+	wire "github.com/kombifyio/SpeechKit/pkg/speechkit/x/deviceagent"
 )
 
 func newDeviceBinding(raw DeviceBindingOptions) (deviceBinding, error) {

@@ -66,3 +66,8 @@ android/local.properties
 *~
 .DS_Store
 Thumbs.db
+
+# Compiled localization output and inlang local state.
+clients/typescript/packages/voice-ui/src/paraglide/
+clients/typescript/packages/voice-ui/project.inlang/*
+!clients/typescript/packages/voice-ui/project.inlang/settings.json

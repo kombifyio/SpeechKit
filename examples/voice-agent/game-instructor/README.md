@@ -12,7 +12,7 @@ single-prompt path.
 ## The single prompt
 
 > Build a 15-minute voice-agent game instructor into my app using SpeechKit.
-> Use `github.com/kombifyio/SpeechKit/pkg/speechkit/client` to talk
+> Use `github.com/kombifyio/SpeechKit/pkg/speechkit/x/client` to talk
 > to a running `speechkit-server`. Reuse the persona/role/sequence IDs
 > `game-instructor` / `game-moderator` / `game-flow-15min` defined in
 > `examples/voice-agent/game-instructor/config.example.toml`. Open a Voice Agent
@@ -102,7 +102,7 @@ fully voice:
 
 ## Wire protocol (cheat sheet)
 
-`pkg/speechkit/client/voiceagent_session.go` hides this, but if you ever
+`pkg/speechkit/x/client/voiceagent_session.go` hides this, but if you ever
 need to talk to the server without the SDK:
 
 | Direction       | Type                 | Payload                                                                                       |

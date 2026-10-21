@@ -15,10 +15,10 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/config"
 	"github.com/kombifyio/SpeechKit/app/internal/ttswiring"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/assist"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/assist/shortcuts"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/assist/skills"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/assist/shortcuts"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/assist/skills"
 )
 
 // ensureSharedAIDeps lazily builds Genkit runtime + TTS router + assist/agent

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/coder/websocket"
@@ -337,6 +338,7 @@ func (a *Adapter) admitProviderOutput(ctx context.Context, result providerReceiv
 // Nonterminal fields follow their audio, including the real ordered Done.
 // Interrupted/error/GoAway are interpreted immediately at receipt instead.
 func (a *Adapter) forwardProviderOutput(ctx context.Context, msg *LiveMessage, standalone string) {
+	expectsReply := a.trackReplyFollowUp(msg)
 	if msg.InputTranscript != "" {
 		eventType := EventInputPartial
 		if msg.InputTranscriptDone {
@@ -357,9 +359,11 @@ func (a *Adapter) forwardProviderOutput(ctx context.Context, msg *LiveMessage, s
 		}
 	}
 	if msg.OutputTranscript != "" {
+		fields := a.eventFrameFields(msg, EventOutputText)
+		fields.ExpectsReply = expectsReply
 		a.sendJSON(ctx, TranscriptFrame{
 			Type:             MsgOutputTranscript,
-			EventFrameFields: a.eventFrameFields(msg, EventOutputText),
+			EventFrameFields: fields,
 			Text:             msg.OutputTranscript,
 			Done:             msg.OutputTranscriptDone,
 		})
@@ -388,6 +392,34 @@ func (a *Adapter) forwardProviderOutput(ctx context.Context, msg *LiveMessage, s
 		a.writeMu.Unlock()
 	}
 	if standalone != "" {
-		a.sendJSON(ctx, EventFrame{Type: MsgEvent, EventFrameFields: a.eventFrameFields(msg, standalone)})
+		fields := a.eventFrameFields(msg, standalone)
+		fields.ExpectsReply = expectsReply
+		a.sendJSON(ctx, EventFrame{Type: MsgEvent, EventFrameFields: fields})
 	}
+}
+
+// trackReplyFollowUp accumulates the current reply's text and, on the
+// message that ends the turn, returns whether the reply expects an answer.
+// It returns nil for every other message and for turns without reply text;
+// a barge-in clears the cut reply (its muted tail never reaches this path).
+// Only the ordered output path calls it.
+func (a *Adapter) trackReplyFollowUp(msg *LiveMessage) *bool {
+	if msg.Interrupted {
+		a.replyText.Reset()
+	}
+	if text := strings.TrimSpace(msg.OutputTranscript); text != "" {
+		if a.replyText.Len() > 0 {
+			a.replyText.WriteByte(' ')
+		}
+		a.replyText.WriteString(text)
+	}
+	if !msg.Done {
+		return nil
+	}
+	defer a.replyText.Reset()
+	if a.replyText.Len() == 0 {
+		return nil
+	}
+	expects := replyExpectsAnswer(a.replyText.String())
+	return &expects
 }

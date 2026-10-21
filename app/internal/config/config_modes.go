@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/hostconfig"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/hostconfig"
 )
 
 type ModelSelectionConfig struct {
@@ -143,8 +143,8 @@ type ServerConnectionTargetConfig struct {
 // normalising the empty default to ModeSourceLocal. Use this everywhere
 // instead of reading sel.ModeSource directly so a missing TOML field does
 // not silently mean "server".
-func (sel ModeModelSelection) ResolvedModeSource() string {
-	switch strings.TrimSpace(strings.ToLower(sel.ModeSource)) {
+func (s ModeModelSelection) ResolvedModeSource() string {
+	switch strings.TrimSpace(strings.ToLower(s.ModeSource)) {
 	case ModeSourceServer:
 		return ModeSourceServer
 	default:

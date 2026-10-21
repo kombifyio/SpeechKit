@@ -41,7 +41,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/client"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/client"
 )
 
 const (

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	wire "github.com/kombifyio/SpeechKit/pkg/speechkit/deviceagent"
+	wire "github.com/kombifyio/SpeechKit/pkg/speechkit/x/deviceagent"
 )
 
 func (b *Bridge) requireBoundDevice(w http.ResponseWriter, binding deviceBinding, deviceID, roomID string) bool {

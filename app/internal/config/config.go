@@ -1,6 +1,6 @@
 package config
 
-import "github.com/kombifyio/SpeechKit/pkg/speechkit/hostconfig"
+import "github.com/kombifyio/SpeechKit/pkg/speechkit/x/hostconfig"
 
 const (
 	// HotkeyBehaviorHoldToTalk is the canonical name for the "hold the

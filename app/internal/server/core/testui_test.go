@@ -13,6 +13,7 @@ import (
 )
 
 func TestRegisterTestUI_ServesModeTester(t *testing.T) {
+	t.Setenv(config.ServerOperatorUIPublicEnv, "true")
 	app := &App{
 		Mux:     http.NewServeMux(),
 		Version: "test-version",
@@ -42,6 +43,7 @@ func TestRegisterTestUI_ServesModeTester(t *testing.T) {
 }
 
 func TestRegisterTestUI_ServesSmokeWithInlineAssetCSPHashes(t *testing.T) {
+	t.Setenv(config.ServerOperatorUIPublicEnv, "true")
 	app := &App{Mux: http.NewServeMux()}
 	registerTestUI(app)
 
@@ -63,6 +65,7 @@ func TestRegisterTestUI_ServesSmokeWithInlineAssetCSPHashes(t *testing.T) {
 }
 
 func TestRegisterTestUI_ServesSetupOnly(t *testing.T) {
+	t.Setenv(config.ServerOperatorUIPublicEnv, "true")
 	app := &App{Mux: http.NewServeMux()}
 	registerTestUI(app)
 
@@ -95,6 +98,7 @@ func TestRegisterTestUI_RejectsExtraUIPaths(t *testing.T) {
 }
 
 func TestRegisterTestUI_AllowsHEADAndRejectsOtherMethods(t *testing.T) {
+	t.Setenv(config.ServerOperatorUIPublicEnv, "true")
 	app := &App{Mux: http.NewServeMux()}
 	registerTestUI(app)
 
@@ -122,7 +126,7 @@ func TestRegisterTestUI_AllowsHEADAndRejectsOtherMethods(t *testing.T) {
 
 func TestServerPublicPaths_IncludeOnlyAlwaysPublicUIPaths(t *testing.T) {
 	paths := serverPublicPaths()
-	for _, want := range []string{"/", "/healthz", "/readyz", "/readyz/strict"} {
+	for _, want := range []string{"/healthz", "/readyz", "/readyz/strict"} {
 		found := false
 		for _, got := range paths {
 			if got == want {
@@ -134,7 +138,7 @@ func TestServerPublicPaths_IncludeOnlyAlwaysPublicUIPaths(t *testing.T) {
 			t.Fatalf("serverPublicPaths should include %q, got %#v", want, paths)
 		}
 	}
-	for _, forbidden := range []string{"/setup", "/setup/", "/test-ui", "/test-ui/", "/admin", "/admin/", "/v1/server/settings", "/api/v1/server/settings"} {
+	for _, forbidden := range []string{"/", "/setup", "/setup/", "/test-ui", "/test-ui/", "/admin", "/admin/", "/v1/server/settings", "/api/v1/server/settings"} {
 		for _, got := range paths {
 			if got == forbidden {
 				t.Fatalf("serverPublicPaths should not include extra UI path %q, got %#v", forbidden, paths)
@@ -144,6 +148,7 @@ func TestServerPublicPaths_IncludeOnlyAlwaysPublicUIPaths(t *testing.T) {
 }
 
 func TestServerBootstrapPaths_ExposeSetupOnlyDuringBootstrap(t *testing.T) {
+	t.Setenv(config.ServerOperatorUIPublicEnv, "true")
 	paths := serverBootstrapPaths()
 	for _, want := range []string{"/setup", "/setup/"} {
 		found := false
@@ -237,6 +242,7 @@ func TestHostedOperatorSurfaceRequiresAuthentication(t *testing.T) {
 }
 
 func TestServerBootstrapAuthRoutes_ExposeSettingsDuringBootstrap(t *testing.T) {
+	t.Setenv(config.ServerOperatorUIPublicEnv, "true")
 	routes := serverBootstrapAuthRoutes()
 	wants := map[string]map[string]bool{
 		"/v1/server/settings": {
@@ -288,6 +294,7 @@ func TestRegisterTestUI_NoOpWhenOnboardingDisabledByEnv(t *testing.T) {
 }
 
 func TestSetupHandler_RequiresAdminIdentityWhenAppSealed(t *testing.T) {
+	t.Setenv(config.ServerOperatorUIPublicEnv, "true")
 	app := &App{
 		Cfg:       &config.Config{},
 		Mux:       http.NewServeMux(),
@@ -323,16 +330,16 @@ func TestSetupHandler_RequiresAdminIdentityWhenAppSealed(t *testing.T) {
 		t.Fatalf("admin setup UI body should contain setup title, got %s", body)
 	}
 
-	// Smoke (`/`) is harmless and remains reachable so operators can
-	// still view runtime status after onboarding completes.
+	t.Setenv(config.ServerOperatorUIPublicEnv, "false")
 	rec := httptest.NewRecorder()
 	app.Mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("sealed app should still serve smoke at /, got %d", rec.Code)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous GET / = %d, want unauthenticated", rec.Code)
 	}
 }
 
 func TestSetupHandler_AllowsFirstRunWhenNoAdminExists(t *testing.T) {
+	t.Setenv(config.ServerOperatorUIPublicEnv, "true")
 	app := &App{
 		Cfg:       &config.Config{},
 		Mux:       http.NewServeMux(),
@@ -349,6 +356,7 @@ func TestSetupHandler_AllowsFirstRunWhenNoAdminExists(t *testing.T) {
 }
 
 func TestSetupHandler_AllowsSealedSetupWhenAdminAuthDisabled(t *testing.T) {
+	t.Setenv(config.ServerOperatorUIPublicEnv, "true")
 	app := &App{
 		Cfg:       &config.Config{},
 		Mux:       http.NewServeMux(),

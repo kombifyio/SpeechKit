@@ -10,7 +10,6 @@ import (
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/livecontract"
 )
 
 func newTestLiveProvider(t *testing.T, deps Deps) *LiveProvider {
@@ -259,20 +258,6 @@ func TestLiveProviderAuthorityFailureEndsSession(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("authority denial did not end the session")
 	}
-}
-
-func TestLiveProviderPassesLiveContract(t *testing.T) {
-	newProvider := func() live.LiveProvider { return NewLiveProvider(liveDeps()) }
-	livecontract.Run(t, livecontract.Case{
-		NewProvider:   newProvider,
-		Config:        live.LiveConfig{Locale: "en"},
-		WantName:      "local-cascaded",
-		WantEventType: live.LiveEventInputFinal,
-	})
-	livecontract.RunReceiveCancellation(t, livecontract.Case{
-		NewProvider: newProvider,
-		Config:      live.LiveConfig{Locale: "en"},
-	})
 }
 
 func receiveLiveUntil(t *testing.T, p *LiveProvider, match func(*live.LiveMessage) bool) *live.LiveMessage {

@@ -862,6 +862,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/recording-sessions/{sessionId}/exports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the exports of a meeting.
+         * @description One record per target, with its stable status id.
+         */
+        get: operations["listRecordingSessionExports"];
+        put?: never;
+        /**
+         * Export a meeting to a target, such as its notebook's OneNote section.
+         * @description Builds the page from the newest ready review, the user's notes verbatim, the cited transcript lines and the screenshots, and pushes it in the background (202 with the pending record). The same content is never sent twice; changed content is appended to the stored page. A meeting linked to a notebook is also exported on its own once its write-up is over while [onenote] enabled is on. A destination outside [onenote] allowed_notebook_scope fails with sk.export.destination_not_allowed before any request.
+         */
+        post: operations["createRecordingSessionExport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recording-sessions/{sessionId}/exports/{exportId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one export of a meeting. */
+        get: operations["getRecordingSessionExport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recording-sessions/{sessionId}/exports/{exportId}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run an export again.
+         * @description Pushes to the linked notebook's destination, or to the destination in the body. Answers 202 with the pending record, like the POST.
+         */
+        post: operations["retryRecordingSessionExport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/recording-sessions/{sessionId}/snapshots": {
         parameters: {
             query?: never;
@@ -875,8 +936,8 @@ export interface paths {
         get: operations["listRecordingSessionSnapshots"];
         put?: never;
         /**
-         * Capture the monitor under the foreground window right now into the open notebook of this session.
-         * @description The session's notebook must be open (409 otherwise); capture need not run. The snapshot is stamped with the session's transcript-timeline offset: the running capture's, the last capture's after it stopped, or 0 before capture ever started.
+         * Capture a window the user picks right now into the open notebook of this session.
+         * @description The session's notebook must be open (409 otherwise); capture need not run. A request over the control plane is not a user gesture, so it never captures a whole monitor: the host opens its window picker and the answer arrives once the user picked a window (409 with reason `cancelled` when the picker is dismissed, `busy` while another screenshot is being taken). The process deny list and the window protection apply. The snapshot is stamped with the session's transcript-timeline offset: the running capture's, the last capture's after it stopped, or 0 before capture ever started. A host without a window picker answers 501.
          */
         post: operations["captureRecordingSessionSnapshot"];
         delete?: never;
@@ -953,7 +1014,7 @@ export interface paths {
         };
         /**
          * List the OneNote sections a notebook can be linked to.
-         * @description Answers 503 with reason notebook_destinations_unavailable until the OneNote connector (Graph token source and the notes connect level) is wired.
+         * @description Every section of every notebook in the allowed notebook scope ([onenote] allowed_notebook_scope, policy OneNote\AllowedNotebookScope): the user's own notebooks, or the one named SharePoint site. Listing needs the Microsoft 365 connect level notes_readwrite (Notes.ReadWrite). A missing sign-in or consent answers 409 with the access state and the connect level that fixes it; OneNote turned off or unreachable answers 503, a privacy scope without cloud services 403.
          */
         get: operations["listNotebookDestinations"];
         put?: never;
@@ -998,13 +1059,15 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Overlay shortcut — capture a screen snapshot into whichever meeting is live right now.
+         * Overlay shortcut — capture a window the user picks into whichever meeting is live right now.
          * @deprecated
          * @description Deprecated since v0.68.0 and scheduled for removal in v0.69.0. Every
          *     response carries `Deprecation: true`, a `Sunset` date and a `Link`
          *     header with `rel="successor-version"`. Resolve the live meeting via
          *     `GET /api/v1/recording-sessions?kind=meeting&limit=1` and capture with
-         *     `POST /api/v1/recording-sessions/{sessionId}/snapshots` instead.
+         *     `POST /api/v1/recording-sessions/{sessionId}/snapshots` instead. It
+         *     captures the same way: through the window picker, never a whole
+         *     monitor.
          */
         post: operations["captureLiveMeetingSnapshot"];
         delete?: never;
@@ -2053,6 +2116,13 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
         };
+        SnapshotRefusal: {
+            /**
+             * @description Why no screenshot was stored. Never names the window or its application.
+             * @enum {string}
+             */
+            reason: "denied" | "process_unresolved" | "protected" | "cancelled" | "busy";
+        };
         RecordingSessionSnapshotRequest: {
             /** @description Optional annotation stored with the snapshot. */
             note?: string;
@@ -2105,6 +2175,8 @@ export interface components {
             notebookId: string;
             /** @description The OneNote section id pages are written to. */
             sectionId: string;
+            /** @description The SharePoint site whose notebooks hold the section; absent for the user's own notebooks. */
+            siteId?: string;
             /** @description Human-readable location, such as "Work notebook / Meetings". */
             displayPath?: string;
         };
@@ -2119,11 +2191,73 @@ export interface components {
             notebookName: string;
             sectionId: string;
             sectionName: string;
+            siteId?: string;
             displayPath: string;
         };
         NotebookDestinationsUnavailable: {
             /** @enum {string} */
-            reason: "notebook_destinations_unavailable";
+            reason: "notebook_destinations_unavailable" | "notebook_destinations_access";
+            /**
+             * @description In the Microsoft 365 settings vocabulary.
+             * @enum {string}
+             */
+            access?: "signed_out" | "admin_consent_required" | "scope_blocked" | "unavailable";
+            /**
+             * @description The connect level that grants what is missing; empty when none helps.
+             * @enum {string}
+             */
+            connectLevel?: "" | "notes" | "notes_readwrite";
+        };
+        /** @description One export of a meeting to one target. Identifiers and states only, never content. */
+        RecordingSessionExport: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            sessionId: number;
+            /** @example onenote */
+            targetId: string;
+            /** @enum {string} */
+            status: "pending" | "synced" | "failed";
+            /**
+             * @description Stable localization id of the state.
+             * @enum {string}
+             */
+            statusId: "sk.export.pending" | "sk.export.synced" | "sk.export.signed_out" | "sk.export.consent_required" | "sk.export.destination_gone" | "sk.export.destination_full" | "sk.export.destination_not_allowed" | "sk.export.too_large" | "sk.export.throttled" | "sk.export.unavailable" | "sk.export.failed" | "sk.export.target_unavailable";
+            /**
+             * @description Set on a failed export: the meeting's transcript and screenshots stay on the device until the sync succeeds or the retention limit ends them.
+             * @enum {string}
+             */
+            warningId?: "sk.export.kept_until_synced";
+            /** @description A retry can succeed without the user changing anything. */
+            retryable: boolean;
+            destinationId?: string;
+            /** @description The page the destination holds. */
+            externalId?: string;
+            url?: string;
+            /** Format: date-time */
+            pushedAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        RecordingSessionExportRequest: {
+            /** @description Export target id (onenote). Defaults to the destination kind of the notebook the meeting is linked to. */
+            target?: string;
+            destination?: components["schemas"]["ExportDestination"];
+            /** @description Let a full OneNote section roll over to a new section named with the year (default true); the linked notebook then follows it. */
+            allowRollover?: boolean;
+        };
+        ExportDestination: {
+            /** @description The section id. */
+            id: string;
+            /** @description The notebook id, needed for a rollover. */
+            parentId?: string;
+            name?: string;
+            /** @description The SharePoint site id; empty for the user's own notebooks. */
+            container?: string;
+        };
+        RecordingSessionExportRefused: {
+            /** @enum {string} */
+            statusId: "sk.export.pending" | "sk.export.review_not_ready" | "sk.export.no_destination" | "sk.export.target_unavailable" | "sk.export.failed";
         };
         RecordingSessionSegmentRequest: {
             segmentIndex?: number;
@@ -2280,6 +2414,8 @@ export interface components {
             screenshotEnabled: boolean;
             screenshotHotkey: string;
             screenshotHotkeyEnabled: boolean;
+            /** @description The sources a meeting records, as resolved: the configured list, or both `mic` and `system` when none is configured. One entry runs a single capture session (the system loopback is never opened with `["mic"]`) and the channel health reports one row. Pinned by the machine policy `Meeting\CaptureChannels`. */
+            captureChannels: ("mic" | "system")[];
             localModelReady: boolean;
             localModelId?: string;
             localModelName?: string;
@@ -2302,6 +2438,8 @@ export interface components {
             screenshotEnabled?: boolean;
             screenshotHotkey?: string;
             screenshotHotkeyEnabled?: boolean;
+            /** @description Channels to record from the next meeting on. Unknown names and an empty list answer 400; a change under the `Meeting\CaptureChannels` pin answers 403. */
+            captureChannels?: ("mic" | "system")[];
         };
         Microsoft365Integration: {
             /** @description False when no Entra app registration is configured. */
@@ -4555,6 +4693,136 @@ export interface operations {
             };
         };
     };
+    listRecordingSessionExports: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The meeting's exports. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordingSessionExport"][];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createRecordingSessionExport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RecordingSessionExportRequest"];
+            };
+        };
+        responses: {
+            /** @description The pending export. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordingSessionExport"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            /** @description No ready review, no destination, or an export already running. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordingSessionExportRefused"];
+                };
+            };
+            /** @description The target is not registered. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordingSessionExportRefused"];
+                };
+            };
+        };
+    };
+    getRecordingSessionExport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: number;
+                exportId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The export. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordingSessionExport"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    retryRecordingSessionExport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: number;
+                exportId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RecordingSessionExportRequest"];
+            };
+        };
+        responses: {
+            /** @description The pending export. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordingSessionExport"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description No ready review, no destination, or an export already running. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordingSessionExportRefused"];
+                };
+            };
+        };
+    };
     listRecordingSessionSnapshots: {
         parameters: {
             query?: never;
@@ -4601,6 +4869,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecordingSessionSnapshot"];
+                };
+            };
+            /** @description The picked window may not be captured: `denied` (its application is on the screenshot deny list), `process_unresolved` (a deny list is in force and the window's application could not be determined) or `protected` (the window is protected from screen capture). Nothing is stored. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotRefusal"];
                 };
             };
             404: components["responses"]["NotFound"];
@@ -4754,7 +5031,25 @@ export interface operations {
                     "application/json": components["schemas"]["NotebookDestinationOption"][];
                 };
             };
-            /** @description No destination source is wired. */
+            /** @description The privacy scope does not allow cloud services. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotebookDestinationsUnavailable"];
+                };
+            };
+            /** @description Sign-in or consent needed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotebookDestinationsUnavailable"];
+                };
+            };
+            /** @description No destination source is wired, OneNote is off, or Microsoft 365 is unreachable. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -4863,6 +5158,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecordingSessionSnapshot"];
+                };
+            };
+            /** @description The picked window may not be captured: `denied` (its application is on the screenshot deny list), `process_unresolved` (a deny list is in force and the window's application could not be determined) or `protected` (the window is protected from screen capture). Nothing is stored. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotRefusal"];
                 };
             };
             409: components["responses"]["Conflict"];

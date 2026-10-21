@@ -23,7 +23,7 @@ Meeting on Windows captures microphone and system audio separately, combines
 the transcript with your notes and a template into a Meeting Review, and never
 persists meeting audio. Review generation needs a configured local or cloud
 model. Channel labels do not identify each remote participant. The public
-pkg/speechkit/meeting runtime supports host-owned capture adapters and notes
+pkg/speechkit/x/meeting runtime supports host-owned capture adapters and notes
 helpers; examples/meeting/synthetic-host demonstrates it without devices or
 credentials. Do not assume the full desktop Meeting workflow has a server REST,
 SSE or TypeScript equivalent. Use only endpoints present in the server OpenAPI.
@@ -201,15 +201,15 @@ Use these packages when the host embeds SpeechKit directly instead of calling a
 running server:
 
 - `pkg/speechkit`: contracts, value types, Runtime and events.
-- `pkg/speechkit/pipeline`: orchestration; `pkg/speechkit/catalog`: provider catalog and readiness.
-- `pkg/speechkit/meeting`: host-owned capture lifecycle, transcript and notes helpers.
+- `pkg/speechkit/x/pipeline`: orchestration; `pkg/speechkit/catalog`: provider catalog and readiness.
+- `pkg/speechkit/x/meeting`: host-owned capture lifecycle, transcript and notes helpers.
 - `pkg/speechkit/dictation`: strict STT-only embedded dictation.
 - `pkg/speechkit/wakeword` and `pkg/speechkit/wakeword/sherpa`: wake-word detection contracts and sherpa adapter.
 - `pkg/speechkit/companion`: `NewHandsFree` composer for wake events, target routing, host transcript requests, Assist, Voice Agent activation, optional TTS, and runtime events.
 - `pkg/speechkit/tts`: ProviderKind-aware Router and Service for local/cloud/direct spoken output.
 - `pkg/speechkit/assist`: Assist service, multi-turn skill context, codeword routing, TTS routing, and optional provider adapters.
 - `pkg/speechkit/agentkit` and `pkg/speechkit/voiceagent/live`: embedded realtime Voice Agent hosts.
-- `pkg/speechkit/client`: self-host server client.
+- `pkg/speechkit/x/client`: self-host server client.
 
 Import the smallest public component that matches the job. A wake-only
 satellite should import `wakeword`; a TTS-only app should import `tts`; a
@@ -285,7 +285,7 @@ calling agent to review and apply.
 
 For host applications that talk to a remote `speechkit-server` (recommended for
 non-Windows targets, cloud deployments, and any multi-client scenario), use
-`pkg/speechkit/client` instead of embedding the kernel. The reference is
+`pkg/speechkit/x/client` instead of embedding the kernel. The reference is
 `examples/voice-agent/game-instructor/` in this repo:
 
 - `config.toml` seeds a Voice Agent persona + role + sequence on the server

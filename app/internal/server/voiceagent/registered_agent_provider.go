@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/a2a"
 	publiccascaded "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/cascaded"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/a2a"
 )
 
 // RegisteredAgentProvider preserves SpeechKit's existing STT/TTS pipeline but

@@ -48,6 +48,8 @@ func DefaultManifests() []ProviderOptionManifest {
 		openAIVoiceAgentManifest(),
 		openAILiveVoiceAgentManifest(),
 		xaiVoiceAgentManifest(),
+		cascadedVoiceAgentManifest("cascaded", "Cascaded Voice Agent"),
+		cascadedVoiceAgentManifest("local-cascaded", "In-process Cascaded Voice Agent"),
 	}
 }
 
@@ -65,12 +67,41 @@ func ManifestsByProvider() map[string][]ProviderOptionManifest {
 // provider and modality (one of the Modality constants). The boolean is
 // false when no manifest describes that pair.
 func FindManifest(provider, modality string) (ProviderOptionManifest, bool) {
+	// Adapter names identify the concrete transport in logs. Catalog provider
+	// ids identify its option contract; keep this mapping modality-specific.
+	if modality == ModalityVoiceAgent {
+		switch provider {
+		case "deepgram-agent":
+			provider = "deepgram"
+		case "assemblyai-agent":
+			provider = "assemblyai"
+		case "gemini-live":
+			provider = "google"
+		case "openai-realtime", "foundry-realtime", "foundry-voicelive":
+			provider = "openai"
+		case "xai-grok-voice":
+			provider = "xai"
+		case "foundry-gpt-live":
+			provider = "gpt-live"
+		}
+	}
 	for _, manifest := range DefaultManifests() {
 		if manifest.Provider == provider && manifest.Modality == modality {
 			return manifest, true
 		}
 	}
 	return ProviderOptionManifest{}, false
+}
+
+// These are pipeline forwarding contracts, not claims about an underlying
+// vendor. Both adapters consume the same minimal cascaded SessionConfig.
+func cascadedVoiceAgentManifest(provider, label string) ProviderOptionManifest {
+	const evidence = "pkg/speechkit/voiceagent/cascaded/types.go#SessionConfig"
+	return manifest(provider, label, ModalityVoiceAgent, nil, []OptionSupport{
+		derived(OptionLanguage, TypeString, "Language", "SessionConfig.Locale is forwarded to recognition, reasoning and synthesis.", evidence),
+		derived(OptionVoice, TypeString, "Voice", "SessionConfig.Voice is forwarded to the configured TTS router.", evidence),
+		derived(OptionContextPrompt, TypeString, "Context prompt", "The live adapter appends context to the framework prompt; SessionConfig.SystemPrompt reaches the agent.", evidence),
+	})
 }
 
 func deepgramSTTManifest() ProviderOptionManifest {

@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/audio/capture"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/meeting"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/audio/capture"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/meeting"
 )
 
 type syntheticHost struct {

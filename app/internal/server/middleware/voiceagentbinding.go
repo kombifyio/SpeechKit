@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/responses"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/responses"
 )
 
 const (

@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/hostconfig"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/hostconfig"
 )
 
 // The desktop loader and the public hostconfig loader must read the same

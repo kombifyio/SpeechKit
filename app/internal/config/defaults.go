@@ -3,8 +3,8 @@ package config
 import (
 	"strings"
 
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/audio/capture"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/audio/capture"
 
 	customtemplates "github.com/kombifyio/SpeechKit/app/internal/customize/templates"
 	"github.com/kombifyio/SpeechKit/app/internal/voiceagentprofile"

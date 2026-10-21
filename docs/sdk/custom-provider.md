@@ -142,7 +142,7 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/sttcontract"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/sttcontract"
 
 	"example.com/host/acme"
 )
@@ -169,13 +169,13 @@ it; the shared suite only asserts what must hold for every provider.
 
 | SPI | Suite | Entry point |
 | --- | --- | --- |
-| `stt.STTProvider` | `pkg/speechkit/stt/sttcontract` | `RunContract(t, Case)` |
-| `tts.Provider` | `pkg/speechkit/tts/ttscontract` | `RunContract(t, Case)` |
-| `live.LiveProvider` | `pkg/speechkit/voiceagent/live/livecontract` | `Run(t, Case)`, `RunReceiveCancellation(t, Case)` |
+| `stt.STTProvider` | `pkg/speechkit/x/stt/sttcontract` | `RunContract(t, Case)` |
+| `tts.Provider` | `pkg/speechkit/x/tts/ttscontract` | `RunContract(t, Case)` |
+| `live.LiveProvider` | `pkg/speechkit/x/voiceagent/live/livecontract` | `Run(t, Case)`, `RunReceiveCancellation(t, Case)` |
 
 The shipped providers run the same suites in
-`pkg/speechkit/stt/allproviders`, `pkg/speechkit/tts` and
-`pkg/speechkit/voiceagent/live/allproviders`; copy the closest `Case` when the
+`pkg/speechkit/x/stt/allproviders`, `pkg/speechkit/tts` and
+`pkg/speechkit/x/voiceagent/live/allproviders`; copy the closest `Case` when the
 wire format is similar.
 
 ## 3. Register a catalog profile

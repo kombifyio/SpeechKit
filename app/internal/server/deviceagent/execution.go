@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"strings"
 
-	wire "github.com/kombifyio/SpeechKit/pkg/speechkit/deviceagent"
+	wire "github.com/kombifyio/SpeechKit/pkg/speechkit/x/deviceagent"
 )
 
 // TurnRequest is the authenticated, host-side execution contract used by

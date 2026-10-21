@@ -25,7 +25,11 @@ export function resolveVoiceUiLocale(locale?: string): VoiceUiLocale {
   const exact = VOICE_UI_LOCALES.find((candidate) => candidate.toLowerCase() === normalized);
   if (exact) return exact;
   const primary = normalized.split("-")[0];
-  if (primary === "zh") return "zh-Hans";
+  if (primary === "zh") {
+    try {
+      return new Intl.Locale(normalized).maximize().script === "Hans" ? "zh-Hans" : "en";
+    } catch { return "en"; }
+  }
   const byPrimary = VOICE_UI_LOCALES.find((candidate) => candidate.toLowerCase() === primary);
   return byPrimary ?? "en";
 }

@@ -357,7 +357,7 @@ func normalizeDeepgramSTTProviderValues(values provideropts.Values) provideropts
 		// Deleting the key here is "the user pinned nothing", not "send no
 		// language". It is safe only because the adapter sets the parameter
 		// unconditionally and falls back to the code-switching value
-		// (pkg/speechkit/stt/deepgram.go: q.Set("language",
+		// (pkg/speechkit/x/stt/deepgram.go: q.Set("language",
 		// deepgramResolvedLanguage(resolved)), pinned by deepgram_test.go).
 		// Do not turn this into an omission on the wire: an absent language
 		// lets Deepgram pick silently, which is the failure mode the

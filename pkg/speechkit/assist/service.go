@@ -23,9 +23,9 @@ import (
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/telemetry"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/localization"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/telemetry"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
 )
 

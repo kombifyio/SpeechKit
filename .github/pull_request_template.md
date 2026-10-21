@@ -6,7 +6,8 @@
 ## Verification
 
 - [ ] `powershell -ExecutionPolicy Bypass -File scripts/build.ps1`
-- [ ] targeted tests for changed behavior
+- [ ] proven end to end: the affected journey ran as a shared test user against the running product
+- [ ] no new unit tests outside the boundaries in `.kombify/test-boundaries.json`
 - [ ] docs updated when needed
 
 ## Release Boundary Check

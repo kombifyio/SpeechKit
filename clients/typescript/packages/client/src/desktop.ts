@@ -89,6 +89,12 @@ export interface ObjectUrl {
   revoke(): void;
 }
 
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+  return value.slice(0, end);
+}
+
 class DesktopTransport {
   private cachedToken: string | null = null;
 
@@ -341,7 +347,7 @@ export class DesktopClient {
     if (typeof opts.tokenProvider !== "function") {
       throw new Error("speechkit: a desktop client needs a tokenProvider");
     }
-    const baseUrl = (opts.baseUrl ?? "").replace(/\/+$/, "");
+    const baseUrl = trimTrailingSlashes(opts.baseUrl ?? "");
     if (baseUrl !== "" && !/^https?:\/\//.test(baseUrl)) {
       throw new Error("baseUrl must include http:// or https://");
     }

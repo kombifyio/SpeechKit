@@ -98,6 +98,17 @@ and are why upstream reserves the `runTests` variant; our build must run that
 task rather than a blanket `test`, which would also sweep the variants
 upstream expects to fail.
 
+Upstream moved to AGP 9 (built-in Kotlin, `compileSdk`/`targetSdk` 37, Kotlin
+plugins 2.4.0) in the rebase of 2026-10-21. SpeechKit is still on AGP 8.13, so
+the fork's `app/build.gradle.kts` keeps `kotlin("android")` and the explicit
+`jvmTarget` that upstream dropped; remove both when SpeechKit moves to AGP 9.
+`compileSdk`/`targetSdk` follow upstream (37) and build under AGP 8.13 from
+this build. Rebased state: `:heliboard:assembleRelease`, `:app:assembleOssDebug`,
+`:app:assembleOssRelease` and `:app:testOssDebugUnitTest` pass;
+`:heliboard:testRunTestsUnitTest` fails 12 of 193 (`InputTest` 6, `ParserTest`
+4, plus 2 `XLinkTest` cases that probe the third-party
+`roccobot.github.io/HeliBoard-RLM` link, a 404 independent of the patch).
+
 ## The seam is the patch surface
 
 The fork does not learn about SpeechKit. It calls
@@ -109,6 +120,29 @@ of the line, which is what keeps the patch small enough to rebase.
 
 Target patch surface: the voice-key dispatch, the suggestion-strip layout,
 the input-view slot for the inline panel, a settings hook, and branding.
+
+Rebase cost comes from the upstream files the patch modifies. Files the patch
+only adds (`SpeechKitVoiceBridge.kt`, the `ic_speechkit_*` drawables) never
+conflict. The Gboard-shaped strip, the toolbar action keys and the library
+build (13 patches as of 2026-10-21) modify these reviewed upstream files; the
+weekly `heliboard-drift.yml` fails when the patch modifies any other upstream
+file. Review a new one against the seam above and add it here in the same pull
+request, or move the change to the host side.
+
+<!-- reviewed-upstream-files:start -->
+- `app/build.gradle.kts`: library build, plugin versions from the consuming build
+- `app/src/main/java/helium314/keyboard/keyboard/KeyboardSwitcher.java`: inline panel mount
+- `app/src/main/java/helium314/keyboard/keyboard/internal/KeyboardIconsSet.kt`: host-chosen toolbar glyphs
+- `app/src/main/java/helium314/keyboard/latin/App.kt`: consuming application class
+- `app/src/main/java/helium314/keyboard/latin/InputAttributes.java`: dictation guard for password fields
+- `app/src/main/java/helium314/keyboard/latin/LatinIME.java`: voice-key dispatch, service hand-off
+- `app/src/main/java/helium314/keyboard/latin/suggestions/SuggestionStripView.kt`: strip layout
+- `app/src/main/java/helium314/keyboard/latin/utils/GestureDataGathering.kt`: library build
+- `app/src/main/java/helium314/keyboard/latin/utils/JniUtils.java`: library build
+- `app/src/main/java/helium314/keyboard/latin/utils/ToolbarUtils.kt`: SpeechKit toolbar keys
+- `app/src/main/res/layout/input_view.xml`: input-view slot for the inline panel
+- `app/src/main/res/values/strings.xml`: toolbar key labels
+<!-- reviewed-upstream-files:end -->
 
 ## Rebase cadence
 

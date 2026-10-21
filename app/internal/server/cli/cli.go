@@ -120,6 +120,7 @@ func runOnce(opts Options) int {
 
 	setupLogger(cfg)
 	for _, note := range defaultNotes {
+		// codeql[go/clear-text-logging] runtime default note names the env var, not the key value
 		slog.Info("server runtime default", "msg", note)
 	}
 	for _, note := range settingsNotes {

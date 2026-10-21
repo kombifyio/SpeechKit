@@ -15,9 +15,9 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/audio/capture"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/dictation"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/audio/capture"
 )
 
 // --- Step 1: Pick an STT provider ---
@@ -25,7 +25,7 @@ import (
 // Deepgram, Google, and more) plugs into the runtime via stt.AsTranscriber —
 // no hand-written adapter needed. This example uses a tiny fake provider so
 // it runs without credentials; swap it for a real one, e.g.
-// openaicompat.NewOpenAI(...) from pkg/speechkit/stt/openaicompat.
+// openaicompat.NewOpenAI(...) from pkg/speechkit/x/stt/openaicompat.
 
 type exampleProvider struct{}
 
@@ -53,7 +53,7 @@ func openRecorder() (speechkit.AudioRecorder, func(), string) {
 	session, err := capture.Open(capture.Config{})
 	switch {
 	case err == nil:
-		return session, func() { _ = session.Close() }, "microphone via pkg/speechkit/audio/capture"
+		return session, func() { _ = session.Close() }, "microphone via pkg/speechkit/x/audio/capture"
 	case errors.Is(err, capture.ErrBackendUnavailable), errors.Is(err, capture.ErrUnsupportedBackend):
 		return &syntheticRecorder{}, func() {}, "synthetic PCM (no capture backend in this build)"
 	default:

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	wire "github.com/kombifyio/SpeechKit/pkg/speechkit/deviceagent"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
+	wire "github.com/kombifyio/SpeechKit/pkg/speechkit/x/deviceagent"
 )
 
 func (b *Bridge) register(w http.ResponseWriter, r *http.Request, binding deviceBinding) {

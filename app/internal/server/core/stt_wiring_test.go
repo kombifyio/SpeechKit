@@ -10,9 +10,9 @@ import (
 
 	"github.com/kombifyio/SpeechKit/app/internal/config"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/assemblyai"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/openaicompat"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/xai"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/assemblyai"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/openaicompat"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/xai"
 )
 
 // Regression: Voice's shared router used OpenAI before the configured managed

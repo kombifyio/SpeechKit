@@ -13,6 +13,7 @@ import (
 
 func newAssistantUITestApp(t *testing.T) *App {
 	t.Helper()
+	t.Setenv(config.ServerOperatorUIPublicEnv, "true")
 	app := &App{
 		Cfg: &config.Config{},
 		Mux: http.NewServeMux(),

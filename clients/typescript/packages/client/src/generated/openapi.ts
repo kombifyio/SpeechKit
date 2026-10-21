@@ -880,6 +880,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/voiceagent/sessions/{id}/renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extend a live hosted session with a renewed Voice budget reservation
+         * @description Hosted only (`require_voice_budget`). The client posts with a fresh
+         *     access token through the edge; the edge validates it, reserves new
+         *     Voice minutes and forwards the signed `X-Edge-Voice-Budget-*` grant,
+         *     bound to the token's subject and org. The server adopts it only for a
+         *     live session of that same owner whose current reservation has not
+         *     expired, settles the previous reservation, and moves the media
+         *     deadline. A grant it does not adopt is settled at zero.
+         */
+        post: operations["renewVoiceAgentSessionBudget"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/voiceagent/sessions/{id}": {
         parameters: {
             query?: never;
@@ -3828,6 +3854,60 @@ export interface operations {
             };
             /** @description LiveKit token minting is disabled or misconfigured. */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    renewVoiceAgentSessionBudget: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["SessionID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deadline extended. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        session_id: string;
+                        /** Format: date-time */
+                        budget_expires_at: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            /** @description No edge-verified grant, a replayed grant, or the renewing identity does not own the session. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Session not found or already closed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Session not live, its reservation already expired, the grant does not extend it, or the session is bound to an agent authorization that renewal cannot extend. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

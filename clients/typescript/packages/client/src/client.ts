@@ -50,7 +50,7 @@ export interface RequestOverrides {
 }
 
 /**
- * SpeechKit Server REST client. Mirrors `pkg/speechkit/client.Client` in Go.
+ * SpeechKit Server REST client. Mirrors `pkg/speechkit/x/client.Client` in Go.
  *
  * ```ts
  * const client = new SpeechKitClient({
@@ -69,7 +69,7 @@ export class SpeechKitClient {
   private readonly timeoutMs: number;
 
   constructor(opts: ClientOptions = {}) {
-    const raw = (opts.baseUrl ?? "http://localhost:8080").replace(/\/+$/, "");
+    const raw = trimTrailingSlashes(opts.baseUrl ?? "http://localhost:8080");
     if (!/^https?:\/\//.test(raw)) {
       throw new Error("baseUrl must include http:// or https://");
     }
@@ -341,5 +341,11 @@ function normalizeBasePath(basePath: string | undefined): string {
   const raw = (basePath ?? "/v1").trim();
   if (raw === "" || raw === "/") return "";
   const withLeading = raw.startsWith("/") ? raw : `/${raw}`;
-  return withLeading.replace(/\/+$/, "");
+  return trimTrailingSlashes(withLeading);
+}
+
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+  return value.slice(0, end);
 }

@@ -116,7 +116,7 @@ func WatchPolicy(ctx context.Context, shared *Shared, onRefresh func(PolicyRefre
 }
 
 // pollPolicyChanges calls notify every interval until ctx ends.
-func pollPolicyChanges(ctx context.Context, interval time.Duration, notify func()) {
+func pollPolicyChanges(ctx context.Context, interval time.Duration, notify func()) { //nolint:unused // used by the windows and darwin policy watchers
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()

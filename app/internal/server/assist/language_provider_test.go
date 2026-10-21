@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/deepgram"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/deepgram"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"

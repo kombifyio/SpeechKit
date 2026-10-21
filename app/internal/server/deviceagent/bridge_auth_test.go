@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	wire "github.com/kombifyio/SpeechKit/pkg/speechkit/deviceagent"
+	wire "github.com/kombifyio/SpeechKit/pkg/speechkit/x/deviceagent"
 )
 
 func TestBridgeAuthBindingCIDRAndStrictJSONFailClosed(t *testing.T) {

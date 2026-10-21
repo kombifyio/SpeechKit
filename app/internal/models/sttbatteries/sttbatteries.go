@@ -1,5 +1,5 @@
 // Package sttbatteries is the batteries-included models.STTBuilder: it hands a
-// provider-neutral models.STTBuildSpec to pkg/speechkit/stt/allproviders, which
+// provider-neutral models.STTBuildSpec to pkg/speechkit/x/stt/allproviders, which
 // links every STT provider SpeechKit ships. Only composition roots that offer a
 // provider choice at runtime (the reference client, the server) import it; a
 // managed root injects a builder with its allowed providers instead. Router
@@ -11,8 +11,8 @@ import (
 
 	"github.com/kombifyio/SpeechKit/app/internal/models"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/allproviders"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt/deepgram"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/allproviders"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/deepgram"
 )
 
 // Builder implements models.STTBuilder over allproviders.Build.

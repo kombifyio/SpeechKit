@@ -15,10 +15,10 @@ import (
 
 	"github.com/kombifyio/SpeechKit/app/internal/server/wssession"
 	"github.com/kombifyio/SpeechKit/app/internal/store"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/a2a"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live/assemblyai"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/responses"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/a2a"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/live/assemblyai"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/responses"
 )
 
 type nativeVoiceSessions struct {

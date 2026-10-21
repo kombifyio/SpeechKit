@@ -9,7 +9,7 @@ import (
 
 	appai "github.com/kombifyio/SpeechKit/app/internal/ai"
 	"github.com/kombifyio/SpeechKit/app/internal/ai/generation"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/meeting"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/meeting"
 )
 
 // MeetingNotesInput is one meeting to write up.

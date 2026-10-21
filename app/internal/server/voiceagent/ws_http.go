@@ -21,7 +21,7 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/server/storageauth"
 	"github.com/kombifyio/SpeechKit/app/internal/server/wssession"
 	"github.com/kombifyio/SpeechKit/app/internal/store"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/responses"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/responses"
 )
 
 // ── HTTP endpoints ──────────────────────────────────────────────────────────

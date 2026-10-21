@@ -158,3 +158,16 @@ every fixture case.
 ## License
 
 Apache-2.0.
+
+## Localization adapter
+
+`locales/*.json` is the canonical six-locale catalog source, including the
+native interchange export. `pnpm run localization:compile` compiles its inlang
+project with Paraglide JS 2 and generates the message-ID types. The build
+checks that every compiled message preserves the source text. The public
+`voiceUiMessages(locale, overrides)` API, catalog exports and per-element
+locale isolation stay available; hosts need no Paraglide runtime dependency.
+Build from the TypeScript workspace with
+`pnpm --filter @kombifyio/speechkit-voice-ui... run build` so the optional
+Voice Agent peer's declarations are current. Catalog presence alone is not
+signed translation QA or a device acceptance result.

@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/a2a"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/a2a"
 )
 
-func (a *Adapter) configureConversation(ctx context.Context, start StartFrame, cfg *LiveConfigFrame) error {
+func (a *Adapter) configureConversation(start StartFrame, cfg *LiveConfigFrame) error {
 	if start.ConversationControl == nil {
 		return nil
 	}
@@ -112,11 +112,13 @@ func (a *Adapter) sendConversationReceipt(ctx context.Context, receipt a2a.Voice
 }
 
 func validConversationRequestID(value string) bool {
-	if len(value) == 0 || len(value) > 128 {
+	if value == "" || len(value) > 128 {
 		return false
 	}
 	for _, c := range value {
-		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_' || c == ':' || c == '.') {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '-', c == '_', c == ':', c == '.':
+		default:
 			return false
 		}
 	}

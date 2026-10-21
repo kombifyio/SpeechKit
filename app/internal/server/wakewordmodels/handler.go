@@ -150,12 +150,14 @@ func (h *Handler) file(w http.ResponseWriter, r *http.Request) {
 	// name is a bare filename from the fixed catalog allowlist (knownModelFile
 	// rejects path separators and any non-catalog name), so joining it under
 	// localDir cannot traverse out of the directory.
-	full := filepath.Join(h.localDir, name)  //nolint:gosec // G703: name is allowlisted, no traversal
+	full := filepath.Join(h.localDir, name) //nolint:gosec // G703: name is allowlisted, no traversal
+	// codeql[go/path-injection] name is an exact catalog basename; separators are rejected
 	if _, err := os.Stat(full); err != nil { //nolint:gosec // G703: full derives from the allowlisted name above
 		httpx.WriteError(w, http.StatusNotFound, "model_pending", "wake-word model file '"+name+"' is not available yet")
 		return
 	}
 	w.Header().Set("Cache-Control", "public, max-age=86400, immutable")
+	// codeql[go/path-injection] name is an exact catalog basename; separators are rejected
 	http.ServeFile(w, r, full) //nolint:gosec // G703: full derives from the allowlisted name above
 }
 

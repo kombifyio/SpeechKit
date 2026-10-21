@@ -158,6 +158,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		sttRouter, providers, notes := buildSTTRouter(cfg)
 		app.STTRouter = sttRouter
 		for _, note := range notes {
+			// codeql[go/clear-text-logging] wiring note names the env var, not the key value
 			slog.Info("STT wiring", "msg", note)
 		}
 		registerProviderHealth(app, providers, app.ModeEnabled(ModeDictation)) //nolint:contextcheck // health probes own their short-lived contexts and are not request-scoped.

@@ -88,10 +88,8 @@ func secretFileName(name string) string {
 	// "named-secret:openai"), never the secret itself: SHA-256 only derives a
 	// filesystem-safe file name for an identifier that carries characters a
 	// path cannot. The secret is protected by the platform backend, not by
-	// this hash. The marker below documents that for a reader; code scanning
-	// default setup does not honour inline suppressions, so the alert is
-	// dismissed in the security tab as well, as with the other false
-	// positives in this repository.
+	// this hash.
+	// codeql[go/weak-sensitive-data-hashing] hashes the secret's name, not the secret
 	sum := sha256.Sum256([]byte(name)) // codeql[go/weak-sensitive-data-hashing] hashes the secret's name, not the secret
 	return "secret-" + hex.EncodeToString(sum[:]) + ".bin"
 }

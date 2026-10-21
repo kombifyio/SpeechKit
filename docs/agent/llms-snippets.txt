@@ -48,7 +48,7 @@ import (
 
 Use `wakeword` for activation only, `tts` for spoken output only, `assist` for
 one-shot utilities/LLM, `companion` for Hands-Free composition, and
-`pkg/speechkit/client` for a running SpeechKit Server. Do not import
+`pkg/speechkit/x/client` for a running SpeechKit Server. Do not import
 `app/internal/*`. For a new Go companion, start with `speechkit-cli init --template
 go-assist-voice-companion`, `go-voice-agent-companion`, or
 `go-dictation-handsfree-ui`.
@@ -127,12 +127,12 @@ response.raise_for_status()
 print(response.json()["text"])
 ```
 
-### Go (pkg/speechkit/client)
+### Go (pkg/speechkit/x/client)
 
 ```go
 import (
     "context"
-    skclient "github.com/kombifyio/SpeechKit/pkg/speechkit/client"
+    skclient "github.com/kombifyio/SpeechKit/pkg/speechkit/x/client"
 )
 
 func dictate(ctx context.Context) error {

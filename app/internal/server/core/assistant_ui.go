@@ -9,6 +9,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/app/internal/config"
 	"github.com/kombifyio/SpeechKit/app/internal/server/assistantui"
+	"github.com/kombifyio/SpeechKit/app/internal/server/middleware"
 )
 
 // registerAssistantUI serves the /assistant web page — the server-hosted
@@ -36,6 +37,10 @@ func (h assistantUIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !operatorUIPublic() && middleware.IdentityFromContext(r.Context()).Role == "" {
+		http.Error(w, "unauthenticated", http.StatusUnauthorized)
 		return
 	}
 	switch r.URL.Path {

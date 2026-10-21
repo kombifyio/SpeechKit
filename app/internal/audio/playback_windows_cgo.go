@@ -11,7 +11,7 @@ import (
 )
 
 // Playback-side copies of the device-resolution helpers that moved to
-// pkg/speechkit/audio/capture with the capture layer. They stay private
+// pkg/speechkit/x/audio/capture with the capture layer. They stay private
 // there (and playback stays private here), so the malgo stream player
 // keeps small local duplicates instead of the public package exporting
 // malgo types. Do not "fix" one copy without the other:

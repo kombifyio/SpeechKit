@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/kombifyio/SpeechKit/app/internal/ai/generation"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/meeting"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/meeting"
 )
 
 // Models return JSON wrapped in whatever they feel like: a code fence, a

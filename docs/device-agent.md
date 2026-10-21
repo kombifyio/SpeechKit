@@ -290,5 +290,5 @@ Bounded local verification:
 
 ```powershell
 $env:GOWORK='off'
-go test ./pkg/speechkit/deviceagent ./app/cmd/speechkit-device-agent ./app/internal/config ./app/internal/server/deviceagent/... -count=1
+go test ./pkg/speechkit/x/deviceagent ./app/cmd/speechkit-device-agent ./app/internal/config ./app/internal/server/deviceagent/... -count=1
 ```

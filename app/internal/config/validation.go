@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/app/internal/hotkeycombo"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/hostconfig"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/hostconfig"
 )
 
 // DefaultMeetingScreenshotHotkey is the shipped global shortcut for the Meeting
