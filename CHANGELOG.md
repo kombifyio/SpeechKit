@@ -18,6 +18,19 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## [0.77.12](https://github.com/kombifyio/SpeechKit/compare/v0.77.11...v0.77.12) (2026-10-22)
+
+
+### Features
+
+* **release:** publish the Box firmware for every board, including the RLCD 4.2 ([#1114](https://github.com/kombifyio/SpeechKit/issues/1114)) ([cd551e7](https://github.com/kombifyio/SpeechKit/commit/cd551e708c0116705540055552b0d7e8ab59a722))
+* **voice:** recognise registered-agent speech while it is spoken, log why a native consent check denied ([#1111](https://github.com/kombifyio/SpeechKit/issues/1111)) ([61fef57](https://github.com/kombifyio/SpeechKit/commit/61fef57e496fcb24460da7ae960854e1cc97397b))
+
+
+### Bug Fixes
+
+* **release:** the version tag push uses the App token, not the checkout's job token header ([#1113](https://github.com/kombifyio/SpeechKit/issues/1113)) ([0a6dc23](https://github.com/kombifyio/SpeechKit/commit/0a6dc23fadadac0c2c5585843ec712da05d3dbe9))
+
 ## [0.77.11](https://github.com/kombifyio/SpeechKit/compare/v0.77.10...v0.77.11) (2026-10-22)
 
 

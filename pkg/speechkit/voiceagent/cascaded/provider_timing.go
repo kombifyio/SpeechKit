@@ -57,18 +57,20 @@ func (t *turnTiming) snapshot(agent Agent) map[string]any {
 	return out
 }
 
-// noteSTT keeps the last speech-recognition duration for the turn that follows it.
-func (p *Provider) noteSTT(d time.Duration) {
+// noteSTT keeps the last speech-recognition duration for the turn that follows it, and whether
+// the live recogniser (instead of the batch one) produced the transcript.
+func (p *Provider) noteSTT(d time.Duration, streamed bool) {
 	p.mu.Lock()
 	p.pendingSTT = d.Milliseconds()
+	p.sttStreamed = streamed
 	p.sttNoted = true
 	p.mu.Unlock()
 }
 
-func (p *Provider) takeSTT() (int64, bool) {
+func (p *Provider) takeSTT() (ms int64, streamed, ok bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	ms, ok := p.pendingSTT, p.sttNoted
-	p.pendingSTT, p.sttNoted = 0, false
-	return ms, ok
+	ms, streamed, ok = p.pendingSTT, p.sttStreamed, p.sttNoted
+	p.pendingSTT, p.sttStreamed, p.sttNoted = 0, false, false
+	return ms, streamed, ok
 }

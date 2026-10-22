@@ -23,7 +23,7 @@ func (p *Provider) maybeTriggerLocked() {
 	}
 	now := time.Now()
 	silentFor := now.Sub(p.lastVoiceAt).Milliseconds()
-	if silentFor >= int64(p.cfg.SilenceTurnMs) || bufMs >= int64(p.cfg.MaxTurnMs) {
+	if silentFor >= int64(p.cfg.SilenceTurnMs) || bufMs >= int64(p.cfg.MaxTurnMs) || p.liveTurnEndedLocked(silentFor) {
 		p.fire()
 	}
 }
@@ -60,6 +60,7 @@ func (p *Provider) processOneTurn(ctx context.Context) {
 	pcm := p.buffer
 	p.buffer = nil
 	p.lastVoiceAt = time.Time{}
+	live := p.takeLiveTurnLocked()
 	p.mu.Unlock()
 
 	duration := float64(PCMDurationMs(pcm)) / 1000.0
@@ -72,8 +73,21 @@ func (p *Provider) processOneTurn(ctx context.Context) {
 	}
 
 	sttStarted := time.Now()
-	sttResult, err := p.stt.Route(ctx, pcm, duration, stt.TranscribeOpts{Language: p.locale, Speaker: p.speaker})
-	p.noteSTT(time.Since(sttStarted))
+	var sttResult *stt.Result
+	var err error
+	streamed := false
+	if live != nil {
+		// The recogniser has heard the turn while it was spoken: its transcript is ready or
+		// nearly so. Any turn it cannot serve is recognised from the buffered audio below.
+		if text, ok := live.recognized(ctx); ok {
+			sttResult = &stt.Result{Text: text}
+			streamed = true
+		}
+	}
+	if sttResult == nil {
+		sttResult, err = p.stt.Route(ctx, pcm, duration, stt.TranscribeOpts{Language: p.locale, Speaker: p.speaker})
+	}
+	p.noteSTT(time.Since(sttStarted), streamed)
 	if err != nil {
 		if ctx.Err() == nil {
 			p.emitError("stt_failed")
@@ -142,8 +156,13 @@ func (p *Provider) runTurn(ctx context.Context, userText string, skipInputTransc
 		return err
 	}
 	timing := newTurnTiming()
-	if sttMs, ok := p.takeSTT(); ok {
+	if sttMs, streamed, ok := p.takeSTT(); ok {
 		timing.set("stt_ms", sttMs)
+		if streamed {
+			timing.set("stt_streamed", 1) // the live recogniser heard the turn while it was spoken
+		} else {
+			timing.set("stt_streamed", 0)
+		}
 	}
 	defer func() {
 		if turnErr != nil || ctx.Err() != nil {

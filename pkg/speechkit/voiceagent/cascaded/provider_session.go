@@ -120,9 +120,12 @@ func (p *Provider) SendAudio(chunk []byte) error {
 		return err
 	}
 	p.buffer = append(p.buffer, chunk...)
+	voiced := false
 	if rms := ChunkRMS(chunk); rms > p.cfg.SilenceRMSThreshold {
 		p.lastVoiceAt = time.Now()
+		voiced = true
 	}
+	p.feedLiveTurnLocked(ctx, chunk, voiced)
 	p.maybeTriggerLocked()
 	p.mu.Unlock()
 
@@ -200,6 +203,9 @@ func (p *Provider) Close() error {
 		}
 		p.buffer = nil
 		p.history = nil
+		if p.liveTurn != nil {
+			p.takeLiveTurnLocked().abandon()
+		}
 		p.mu.Unlock()
 		p.closeSpeakerStream()
 	})

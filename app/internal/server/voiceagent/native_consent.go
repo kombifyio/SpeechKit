@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -63,7 +64,7 @@ func (r NativeConsentHTTPReader) Read(parent context.Context, cfg LiveConfigFram
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
-		return NativeVoiceConsent{}, errors.New("voiceagent: current consent authority denied")
+		return NativeVoiceConsent{}, fmt.Errorf("voiceagent: current consent authority denied (status %d, code %s)", response.StatusCode, denialCode(response.Body))
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, 4097))
 	if err != nil || len(body) > 4096 {
@@ -83,6 +84,23 @@ func (r NativeConsentHTTPReader) Read(parent context.Context, cfg LiveConfigFram
 		stamp = *result.RecordingStamp
 	}
 	return NativeVoiceConsent{Verified: true, CloudProcessing: *result.CloudProcessing, RecordingAllowed: *result.RecordingAllowed, RecordingUpdatedAt: stamp, ExpiresAt: result.ExpiresAt}, nil
+}
+
+// denialCode reads the closed error code of a denial body ({"error_code":"..."}): lower-case letters,
+// digits and underscores only, so a log line can carry it without carrying anything else.
+func denialCode(body io.Reader) string {
+	var denial struct {
+		ErrorCode string `json:"error_code"`
+	}
+	if json.NewDecoder(io.LimitReader(body, 1024)).Decode(&denial) != nil || denial.ErrorCode == "" || len(denial.ErrorCode) > 64 {
+		return "none"
+	}
+	for _, r := range denial.ErrorCode {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' {
+			return "invalid"
+		}
+	}
+	return denial.ErrorCode
 }
 
 func validRecordingStamp(stamp string) bool {

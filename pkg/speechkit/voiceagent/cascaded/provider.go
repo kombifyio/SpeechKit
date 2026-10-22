@@ -26,6 +26,8 @@ var (
 // hosts expect.
 type Provider struct {
 	stt             STT
+	recognizer      RecognitionStreamer
+	liveTurn        *liveTurn
 	agent           Agent
 	tts             TTS
 	speakerStreamer speaker.StreamingProvider
@@ -43,6 +45,7 @@ type Provider struct {
 
 	// Turn state
 	pendingSTT  int64
+	sttStreamed bool
 	sttNoted    bool
 	mu          sync.Mutex
 	buffer      []byte
@@ -80,7 +83,11 @@ type TTS interface {
 
 // Deps bundles everything the bootstrap hands to the provider.
 type Deps struct {
-	STT             STT
+	STT STT
+	// Recognizer is optional. When set, speech is recognised while the user is
+	// still speaking and the turn ends as soon as the recogniser hears the
+	// speaker stop; STT stays the fallback for every turn the stream cannot serve.
+	Recognizer      RecognitionStreamer
 	Agent           Agent
 	TTS             TTS
 	SpeakerStreamer speaker.StreamingProvider
@@ -96,6 +103,7 @@ func NewProvider(deps Deps) *Provider {
 	cfg := deps.Config.WithDefaults()
 	return &Provider{
 		stt:             deps.STT,
+		recognizer:      deps.Recognizer,
 		agent:           deps.Agent,
 		tts:             deps.TTS,
 		speakerStreamer: deps.SpeakerStreamer,

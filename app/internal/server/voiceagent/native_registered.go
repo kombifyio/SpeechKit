@@ -250,8 +250,22 @@ func (p *registeredNativeProvider) validateConsent(ctx context.Context, cfg Live
 	if !allowed(cfg.NativeConsent) || p.sessions.consentReader == nil {
 		return errNativeConsentDenied
 	}
+	startedAt := time.Now()
 	current, err := p.sessions.consentReader(ctx, cfg)
 	if ctx.Err() != nil || err != nil || !allowed(current) || (p.provider == "assemblyai" && current.RecordingUpdatedAt != cfg.NativeConsent.RecordingUpdatedAt) {
+		// Says why a native session ended on its authority check (a slow or refusing authority read, a withdrawn
+		// grant, a context that ended); the reason names no identity and no credential.
+		reason := "not_allowed"
+		switch {
+		case ctx.Err() != nil:
+			reason = "context_ended"
+		case err != nil:
+			reason = err.Error()
+		case !current.CloudProcessing:
+			reason = "cloud_processing_withdrawn"
+		}
+		slog.Warn("speechkit native consent check failed", "provider", p.provider, "session_id", cfg.VoiceSessionID,
+			"reason", reason, "read_ms", time.Since(startedAt).Milliseconds())
 		return errNativeConsentDenied
 	}
 	return nil

@@ -311,12 +311,21 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 		if strings.TrimSpace(os.Getenv("KOMBIFY_A2A_DELEGATION_SIGNING_SECRET")) == "" {
 			status = "degraded: kombify-agent A2A delegation signer is not configured"
 		}
-		return &registeredAgentProviderFactory{
-			deps: vsserver.CascadedDeps{
-				STT: app.STTRouter, SpeakerStreamer: app.STTRouter, TTS: vsserver.NewDownlinkTTS(ttsImpl),
-				Config: vsserver.CascadedConfig{TTSFormat: "wav", TTSSpeed: nonZeroFloat(cfg.TTS.Speed, 1.0)},
-			},
-		}, status, nil
+		deps := vsserver.CascadedDeps{
+			STT: app.STTRouter, SpeakerStreamer: app.STTRouter, TTS: vsserver.NewDownlinkTTS(ttsImpl),
+			Config: vsserver.CascadedConfig{TTSFormat: "wav", TTSSpeed: nonZeroFloat(cfg.TTS.Speed, 1.0)},
+		}
+		// Speech is recognised while the user speaks (the router's live recognition, by the same
+		// provider and endpoint configuration as streaming Dictation) whenever the router has a
+		// provider that streams; every turn it cannot serve is recognised from the buffered audio.
+		// SPEECHKIT_VOICE_STREAMING_STT=off keeps the batch recognition alone.
+		if strings.ToLower(strings.TrimSpace(os.Getenv("SPEECHKIT_VOICE_STREAMING_STT"))) != "off" {
+			if recognizer := vsserver.NewRouterRecognizer(app.STTRouter); recognizer != nil {
+				deps.Recognizer = recognizer
+				status += " + streaming recognition"
+			}
+		}
+		return &registeredAgentProviderFactory{deps: deps}, status, nil
 
 	case ProviderMoshi:
 		// M9b implements this; ship a stub factory that produces helpful
