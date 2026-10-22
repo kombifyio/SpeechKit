@@ -18,6 +18,13 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## [0.77.13](https://github.com/kombifyio/SpeechKit/compare/v0.77.12...v0.77.13) (2026-10-22)
+
+
+### Bug Fixes
+
+* **release:** find the public release by id and by tag, not through GitHub's unreliable release list ([#1117](https://github.com/kombifyio/SpeechKit/issues/1117)) ([8cb576a](https://github.com/kombifyio/SpeechKit/commit/8cb576a752335543fe600068a526d6d09888cfb3))
+
 ## [0.77.12](https://github.com/kombifyio/SpeechKit/compare/v0.77.11...v0.77.12) (2026-10-22)
 
 
