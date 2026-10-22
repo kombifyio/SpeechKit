@@ -18,6 +18,20 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## [0.77.11](https://github.com/kombifyio/SpeechKit/compare/v0.77.10...v0.77.11) (2026-10-22)
+
+
+### Features
+
+* **voice:** carry the orchestrator's per-hop run timings on a registered-agent turn ([#1107](https://github.com/kombifyio/SpeechKit/issues/1107)) ([f614c57](https://github.com/kombifyio/SpeechKit/commit/f614c5799c85272a8dc8906b942b527567068bf4))
+* **voice:** log where a native registered-agent turn spends its time ([#1108](https://github.com/kombifyio/SpeechKit/issues/1108)) ([17773d0](https://github.com/kombifyio/SpeechKit/commit/17773d0982c15ba2c76fd0af7afd2af605ebd36d))
+
+
+### Bug Fixes
+
+* **release:** pin the version authority to the revision that accepts PATCH 0..19 ([#1101](https://github.com/kombifyio/SpeechKit/issues/1101)) ([5b44e15](https://github.com/kombifyio/SpeechKit/commit/5b44e15f27e9902369292d654e5c2823e7b8024b))
+* **release:** record the version tag with a token that may write workflows ([#1104](https://github.com/kombifyio/SpeechKit/issues/1104)) ([1ad9375](https://github.com/kombifyio/SpeechKit/commit/1ad9375c04144b3eaf8a958104a2912d07bfd983))
+
 ## [0.77.10](https://github.com/kombifyio/SpeechKit/compare/v0.77.9...v0.77.10) (2026-10-22)
 
 

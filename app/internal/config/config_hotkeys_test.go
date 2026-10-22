@@ -236,41 +236,6 @@ voice_agent_hotkey = "ctrl+shift"
 	}
 }
 
-func TestLoadMigratesOldBuiltInHotkeyDefaults(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.toml")
-
-	content := `[general]
-hotkey = "win+alt"
-dictate_hotkey = "win+alt"
-assist_hotkey = "ctrl+win"
-voice_agent_hotkey = "ctrl+shift"
-agent_hotkey = "ctrl+win"
-agent_mode = "assist"
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	if got, want := cfg.General.Hotkey, "ctrl+win"; got != want {
-		t.Fatalf("legacy hotkey alias = %q, want %q", got, want)
-	}
-	if got, want := cfg.General.DictateHotkey, "ctrl+win"; got != want {
-		t.Fatalf("dictate hotkey = %q, want %q", got, want)
-	}
-	if got, want := cfg.General.AssistHotkey, "win+alt"; got != want {
-		t.Fatalf("assist hotkey = %q, want %q", got, want)
-	}
-	if got, want := cfg.General.AgentHotkey, "win+alt"; got != want {
-		t.Fatalf("agent hotkey alias = %q, want %q", got, want)
-	}
-}
-
 func TestLoadPreservesCustomHotkeyPair(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")

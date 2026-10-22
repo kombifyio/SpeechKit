@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"reflect"
 	"strings"
@@ -211,8 +212,11 @@ func (h *OpenAIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
+	arrived := time.Now()
 	ctx, release, status := h.begin(r.Context())
+	admittedMs := time.Since(arrived).Milliseconds()
 	if status != 0 {
+		slog.Info("speechkit native callback timing", "result", "refused", "status", status, "admit_ms", admittedMs)
 		w.WriteHeader(status)
 		return
 	}
@@ -247,6 +251,7 @@ func (h *OpenAIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	turnID, status := h.bind(ctx, utterance)
 	if status != 0 {
+		slog.Info("speechkit native callback timing", "result", "unbound", "status", status, "admit_ms", admittedMs)
 		w.WriteHeader(status)
 		return
 	}
@@ -267,9 +272,26 @@ func (h *OpenAIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		started = true
 		return controller.Flush()
 	}
+	firstChunkMs, firstAnswerMs := int64(-1), int64(-1)
+	disclosure := !h.disclosed && h.FirstResponsePrefix != ""
+	chunks := 0
 	_, err := h.stream(ctx, utterance, turnID, func(delta string) error {
+		chunks++
+		if firstChunkMs < 0 {
+			firstChunkMs = time.Since(arrived).Milliseconds()
+		}
+		if firstAnswerMs < 0 && !(disclosure && chunks == 1) {
+			firstAnswerMs = time.Since(arrived).Milliseconds()
+		}
 		return write(map[string]string{"content": delta}, nil)
 	})
+	defer func() {
+		// Where a native turn spends its time inside this callback: admission (including the
+		// consent revalidation), the first spoken chunk (the disclosure on the first turn) and
+		// the agent's first answer text, from the moment the provider's request arrived.
+		slog.Info("speechkit native callback timing", "result", map[bool]string{true: "failed", false: "ok"}[err != nil],
+			"admit_ms", admittedMs, "first_chunk_ms", firstChunkMs, "first_answer_ms", firstAnswerMs, "total_ms", time.Since(arrived).Milliseconds())
+	}()
 	if err != nil {
 		// Never turn a failed/approval-blocked agent operation into spoken text.
 		code := "agent_turn_failed"

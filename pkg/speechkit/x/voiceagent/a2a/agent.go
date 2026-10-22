@@ -277,6 +277,7 @@ func (a *Agent) streamTurn(ctx context.Context, input cascaded.AgentInput, turnI
 	// perimeter's own Server-Timing phases ride along. Durations only.
 	headerMs := time.Since(sent).Milliseconds()
 	firstDeltaMs := int64(-1)
+	orchestratorTimings := map[string]int64{}
 	downstream := emit
 	emit = func(delta string) error {
 		if firstDeltaMs < 0 {
@@ -292,9 +293,10 @@ func (a *Agent) streamTurn(ctx context.Context, input cascaded.AgentInput, turnI
 		if len(serverTiming) > 400 {
 			serverTiming = serverTiming[:400]
 		}
-		a.recordTiming(headerMs, firstDeltaMs, time.Since(sent).Milliseconds(), serverTiming)
+		a.recordTiming(headerMs, firstDeltaMs, time.Since(sent).Milliseconds(), serverTiming, orchestratorTimings)
 		slog.Info("speechkit a2a turn timing", "target", a.targetAgentID, "status", response.StatusCode,
-			"header_ms", headerMs, "first_delta_ms", firstDeltaMs, "total_ms", time.Since(sent).Milliseconds(), "server_timing", serverTiming)
+			"header_ms", headerMs, "first_delta_ms", firstDeltaMs, "total_ms", time.Since(sent).Milliseconds(), "server_timing", serverTiming,
+			"orchestrator", orchestratorTimings)
 	}()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		var detail any
@@ -346,6 +348,15 @@ func (a *Agent) streamTurn(ctx context.Context, input cascaded.AgentInput, turnI
 			}
 			return nil
 		}
+	}
+	// The agent reports its own per-hop spans (durations only) in a metadata-only result event.
+	innerControl := control
+	control = func(envelope any) error {
+		captureRunTimings(envelope, orchestratorTimings)
+		if innerControl != nil {
+			return innerControl(envelope)
+		}
+		return nil
 	}
 	var text string
 	if command != nil {

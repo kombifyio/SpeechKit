@@ -151,9 +151,8 @@ LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 COPY --from=builder /out/speechkit-server /app/speechkit-server
 # CONFIG_FILE selects which baked config ships in the image. Defaults to the
-# providerless reference config (prod/OSS unchanged). The staging build sets it
-# to deploy/config/server.staging.toml so the staging service exercises the
-# Deepgram/AssemblyAI providers without a separate Dockerfile.
+# providerless reference config (OSS unchanged); the kombify production build
+# passes deploy/config/server.kombify-prod.toml without a separate Dockerfile.
 ARG CONFIG_FILE=deploy/config/server.example.toml
 COPY --chown=speechkit:speechkit ${CONFIG_FILE} /etc/speechkit/config.toml
 
