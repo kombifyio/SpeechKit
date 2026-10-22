@@ -100,7 +100,19 @@ func runPostgresMigrations(ctx context.Context, db *sql.DB) error {
 	if err := ensureSchemaMigrations(ctx, db, "postgres"); err != nil {
 		return fmt.Errorf("migrate postgres ledger: %w", err)
 	}
-	migrations := []storeMigration{
+	for _, migration := range postgresMigrations() {
+		if err := applyMigration(ctx, db, "postgres", migration); err != nil {
+			return fmt.Errorf("migrate %s: %w", migration.version, err)
+		}
+	}
+	return nil
+}
+
+// postgresMigrations is the ordered Postgres chain. The governed migration
+// (MigratePostgres) applies it; a runtime-role server only checks that every
+// version is recorded (verifyPostgresSchema).
+func postgresMigrations() []storeMigration {
+	return []storeMigration{
 		postgresSQLMigration("postgres:001_init", postgresMigration001),
 		{version: "postgres:002_voice_agent_sessions", run: runPostgresVoiceAgentSessionsMigration},
 		postgresSQLMigration("postgres:003_personas", postgresMigration003),
@@ -141,12 +153,6 @@ func runPostgresMigrations(ctx context.Context, db *sql.DB) error {
 		postgresSQLMigration("postgres:028_notebooks", postgresMigration028),
 		postgresSQLMigration("postgres:029_notebook_site", postgresMigration029),
 	}
-	for _, migration := range migrations {
-		if err := applyMigration(ctx, db, "postgres", migration); err != nil {
-			return fmt.Errorf("migrate %s: %w", migration.version, err)
-		}
-	}
-	return nil
 }
 
 func sqliteSQLMigration(version, statement string) storeMigration {

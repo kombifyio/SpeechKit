@@ -13,9 +13,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
@@ -76,6 +78,8 @@ type Agent struct {
 	conversationTurn chan struct{}
 	speechWaiter     chan struct{}
 	panelRequests    map[string]struct{}
+	timingMu         sync.Mutex
+	lastTiming       map[string]int64
 }
 
 // New validates config and returns an [Agent]. It fails when Endpoint is
@@ -259,6 +263,7 @@ func (a *Agent) streamTurn(ctx context.Context, input cascaded.AgentInput, turnI
 			}
 		}
 	}
+	sent := time.Now()
 	response, err := a.client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -267,6 +272,30 @@ func (a *Agent) streamTurn(ctx context.Context, input cascaded.AgentInput, turnI
 		return cascaded.AgentOutput{}, &TurnError{code: "provider_unavailable"}
 	}
 	defer func() { _ = response.Body.Close() }()
+	// Where a registered-agent turn spends its time: request to response
+	// headers, to the first answer text, and to the end of the stream. The
+	// perimeter's own Server-Timing phases ride along. Durations only.
+	headerMs := time.Since(sent).Milliseconds()
+	firstDeltaMs := int64(-1)
+	downstream := emit
+	emit = func(delta string) error {
+		if firstDeltaMs < 0 {
+			firstDeltaMs = time.Since(sent).Milliseconds()
+		}
+		if downstream != nil {
+			return downstream(delta)
+		}
+		return nil
+	}
+	defer func() {
+		serverTiming := response.Header.Get("Server-Timing")
+		if len(serverTiming) > 400 {
+			serverTiming = serverTiming[:400]
+		}
+		a.recordTiming(headerMs, firstDeltaMs, time.Since(sent).Milliseconds(), serverTiming)
+		slog.Info("speechkit a2a turn timing", "target", a.targetAgentID, "status", response.StatusCode,
+			"header_ms", headerMs, "first_delta_ms", firstDeltaMs, "total_ms", time.Since(sent).Milliseconds(), "server_timing", serverTiming)
+	}()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		var detail any
 		_ = json.NewDecoder(io.LimitReader(response.Body, maxErrorBody)).Decode(&detail)

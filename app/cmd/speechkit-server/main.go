@@ -12,22 +12,41 @@
 // Usage:
 //
 //	speechkit-server --config /etc/speechkit/config.toml [--modes dictation,assist,voiceagent]
+//	speechkit-server migrate [-runtime-role speechkit_app]
+//
+// `migrate` is the Postgres migration step. It reads the migration
+// role's DSN from SPEECHKIT_MIGRATION_POSTGRES_DSN only, never from the
+// serving configuration, applies the schema chain and grants the runtime
+// role its row privileges. A runtime-role server (store.postgres_runtime_role)
+// never migrates itself.
 //
 // See docs/server/README.md for the full operator guide.
 package main
 
 import (
+	"context"
+	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/kombifyio/SpeechKit/app/internal/productid"
 	"github.com/kombifyio/SpeechKit/app/internal/server/cli"
+	"github.com/kombifyio/SpeechKit/app/internal/store"
 )
 
 // version is overridden at build time via `-ldflags="-X main.version=..."`.
 var version = "dev"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "migrate" {
+		if err := migrate(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "speechkit-server migrate:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	// The server shares the reference client's data directory, secret store
 	// and policy roots.
 	if err := productid.Register(productid.Reference); err != nil {
@@ -42,4 +61,18 @@ func main() {
 		// modes enabled. This is the "kitchen sink" deploy.
 		DefaultModes: nil,
 	})
+}
+
+func migrate(args []string) error {
+	flags := flag.NewFlagSet("migrate", flag.ContinueOnError)
+	runtimeRole := flags.String("runtime-role", "", "runtime login role to grant row privileges (empty: no grants)")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("unexpected positional arguments")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return store.MigratePostgres(ctx, os.Getenv("SPEECHKIT_MIGRATION_POSTGRES_DSN"), *runtimeRole)
 }

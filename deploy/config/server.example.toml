@@ -302,6 +302,13 @@ parallel_cloud             = false
 # secret — do NOT commit the literal value; use an env-var substitution
 # in your real config (e.g. via the deployment manifest).
 #
+# postgres_runtime_role = true serves as a runtime role: no migration at
+# start, and the server refuses to start unless its role is NOSUPERUSER and
+# NOBYPASSRLS, owns nothing and holds no DDL, TRUNCATE or SET ROLE. Apply the
+# schema with `speechkit-server migrate` and the migration role's DSN in
+# SPEECHKIT_MIGRATION_POSTGRES_DSN. Leave it off when the server owns its
+# own database.
+#
 # [store]
 # backend              = "postgres"
 # postgres_dsn         = "postgres://speechkit:CHANGE-ME@localhost:5432/speechkit?sslmode=disable"

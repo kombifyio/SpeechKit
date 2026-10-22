@@ -1,6 +1,6 @@
 # SpeechKit Storage Architecture
 
-**Status:** Storage 3.0 local-first OSS contract, v0.34.1 readiness baseline, May 15, 2026
+**Status:** Storage 3.0 local-first OSS contract
 
 ## Current Contract
 
@@ -13,7 +13,7 @@ SpeechKit ships with a local-first storage layer that is usable without accounts
 
 The public framework contract lives in `pkg/speechkit/storage`. It defines `Scope`, context helpers, scope policies, backend capabilities, and backend registration primitives. The internal app store keeps its existing facade, but all user-owned records resolve a scope from `context.Context`.
 
-For `v0.34.1`, this is the product boundary: SQLite, scope resolution, scoped
+The product boundary: SQLite, scope resolution, scoped
 history/settings-adjacent records, audio metadata links, and per-scope stats are
 release surface. Any additional backend is registered by the host and must not
 be required by local usage.
@@ -68,6 +68,26 @@ Stats are maintained per scope in `store_stats`; `Stats()` reads that aggregate 
 ## Backend Guidance
 
 SQLite remains the simplest OSS path and should be the documented default. Postgres is the BYO database path for hosts that need shared infrastructure or stronger operational controls.
+
+### Postgres runtime role
+
+A shared Postgres deployment can separate the serving role from the role that
+owns the schema. With `store.postgres_runtime_role = true` the server:
+
+- never runs DDL: it checks that every migration of the binary is recorded in
+  `schema_migrations` and refuses to start on an older schema;
+- refuses to start unless its login role is NOSUPERUSER and NOBYPASSRLS, has no
+  CREATEROLE, CREATEDB or REPLICATION, owns no database, schema, table,
+  sequence, view or function, has no CREATE on the database or a schema, is a
+  member of no role (no SET ROLE), has no TRUNCATE or TRIGGER on any table, and
+  no row-level security policy reads an `app.service_scope` escape setting.
+
+`speechkit-server migrate -runtime-role <role>`, with the migration role's DSN
+in `SPEECHKIT_MIGRATION_POSTGRES_DSN`, applies the chain and grants the runtime
+role `SELECT, INSERT, UPDATE, DELETE` on the tables, `USAGE, SELECT` on the
+sequences and only `SELECT` on `schema_migrations`. With the option off (the
+default) a server that owns its database keeps migrating at start.
+`app/internal/store/postgres_runtime_role_test.go` proves both refusals.
 
 Additional cloud backends should:
 

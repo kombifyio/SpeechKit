@@ -188,8 +188,7 @@ native toolchain.
 
 ## Boundary Rules
 
-1. Public SDK packages must not import the app module (`.../app/...`, formerly
-   `internal/*` and `cmd/*`); the root module cannot require it. There is no exception:
+1. Public SDK packages must not import the app module (`.../app/...`); the root module cannot require it. There is no exception:
    the Assist skill catalog, its utility registry and the codeword resolver
    live in `pkg/speechkit/assist/{skills,skills/companion,shortcuts}` and the
    desktop and server binaries consume them from there. The dependency for

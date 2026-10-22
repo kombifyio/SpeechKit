@@ -120,7 +120,18 @@ func NewPostgresStore(cfg StoreConfig) (*PostgresStore, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("connect postgres: %w", err)
 	}
-	if err := runPostgresMigrations(context.Background(), db); err != nil {
+	if cfg.PostgresRuntimeRole {
+		// The serving role never runs DDL and must not be able to escape
+		// row-level security; both are checked before anything is served.
+		if err := verifyPostgresSchema(context.Background(), db); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+		if err := assertPostgresRuntimeRole(context.Background(), db); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+	} else if err := runPostgresMigrations(context.Background(), db); err != nil {
 		_ = db.Close()
 		return nil, err
 	}

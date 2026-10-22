@@ -9,11 +9,17 @@ import (
 
 // StoreConfig holds configuration for store backend selection.
 type StoreConfig struct {
-	Backend            string `toml:"backend"` // "sqlite" | "postgres" | registered name
-	SQLitePath         string `toml:"sqlite_path"`
-	PostgresDSN        string `toml:"postgres_dsn"`
-	SaveAudio          bool   `toml:"save_audio"`
-	AudioRetentionDays int    `toml:"audio_retention_days"`
+	Backend     string `toml:"backend"` // "sqlite" | "postgres" | registered name
+	SQLitePath  string `toml:"sqlite_path"`
+	PostgresDSN string `toml:"postgres_dsn"`
+	// PostgresRuntimeRole is the runtime-role mode of the Postgres backend:
+	// the server connects as a runtime role, never migrates, refuses an older
+	// schema and refuses to start unless the role cannot escape row-level
+	// security (assertPostgresRuntimeRole). Off, a self-hosted server migrates
+	// its own database at start.
+	PostgresRuntimeRole bool `toml:"postgres_runtime_role"`
+	SaveAudio           bool `toml:"save_audio"`
+	AudioRetentionDays  int  `toml:"audio_retention_days"`
 	// MeetingRetentionDays discards finished meetings older than this. Zero
 	// keeps them forever, which is the default: a meeting is work, not a
 	// by-product, so nothing is thrown away unless the user asks for it.

@@ -18,6 +18,25 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## [0.77.10](https://github.com/kombifyio/SpeechKit/compare/v0.77.9...v0.77.10) (2026-10-22)
+
+
+### Features
+
+* **store:** serve hosted Postgres as a runtime role, migrate only through the governed step ([#1083](https://github.com/kombifyio/SpeechKit/issues/1083)) ([32f187d](https://github.com/kombifyio/SpeechKit/commit/32f187de25afb96e2fb5feca26eaca8ee91673bc))
+* **voice:** carry the phase durations of a cascaded voice turn on its closing message ([#1091](https://github.com/kombifyio/SpeechKit/issues/1091)) ([2be82c3](https://github.com/kombifyio/SpeechKit/commit/2be82c3749d84a139d9706aa1cb46c733130e78c))
+* **voice:** stream registered-agent answers sentence by sentence into TTS and speak the disclosure first ([#1090](https://github.com/kombifyio/SpeechKit/issues/1090)) ([71242af](https://github.com/kombifyio/SpeechKit/commit/71242af0ffc97bd7c5daa900426c0f559b4f4f10))
+
+
+### Bug Fixes
+
+* **ci:** stop requiring website content in the release verification ([#1075](https://github.com/kombifyio/SpeechKit/issues/1075)) ([dee4c95](https://github.com/kombifyio/SpeechKit/commit/dee4c951404d3d0d297fc20c7cbd984f5cd9c36d))
+* **legal:** link the canonical kombify.io legal texts from website and app ([#1078](https://github.com/kombifyio/SpeechKit/issues/1078)) ([54d8cce](https://github.com/kombifyio/SpeechKit/commit/54d8cce9ec039ee0302a1ab52d666e01b5a400db))
+* **probe:** do not end a hosted text turn at a turn_end that precedes the agent's output ([#1088](https://github.com/kombifyio/SpeechKit/issues/1088)) ([ff5681c](https://github.com/kombifyio/SpeechKit/commit/ff5681cd6ccc37d1ae9215aae789c92edeb750d1))
+* **release:** accept release-package PATCH up to 19 as the standard says ([#1094](https://github.com/kombifyio/SpeechKit/issues/1094)) ([7919899](https://github.com/kombifyio/SpeechKit/commit/7919899e1eb592a14a2526d65b87f279314ae64b))
+* **release:** find and publish the draft GitHub lists as untagged for its tag ([#1071](https://github.com/kombifyio/SpeechKit/issues/1071)) ([7074f17](https://github.com/kombifyio/SpeechKit/commit/7074f17dfc50b7b4f203bded25a7e47d9c84f419))
+* **release:** give the asset guard an .mjs name and pin the Android distribution to the release source ([#1070](https://github.com/kombifyio/SpeechKit/issues/1070)) ([9c54a48](https://github.com/kombifyio/SpeechKit/commit/9c54a48502efa5242699b417301394391ae86b38))
+
 ## [0.77.9](https://github.com/kombifyio/SpeechKit/compare/v0.77.8...v0.77.9) (2026-10-21)
 
 

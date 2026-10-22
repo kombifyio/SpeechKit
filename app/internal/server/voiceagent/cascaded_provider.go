@@ -103,6 +103,9 @@ func (p *CascadedProvider) Receive(ctx context.Context) (*LiveMessage, error) {
 		OutputTranscriptDone:   msg.OutputTranscriptDone,
 		ProviderMetadata:       map[string]any{"provider_event": "cascaded.message"},
 	}
+	if len(msg.Metadata) > 0 {
+		out.ProviderMetadata["turn_timing"] = msg.Metadata
+	}
 	out.EventTypes = inferServerEventTypes(out)
 	if len(out.EventTypes) > 0 {
 		out.EventType = out.EventTypes[0]

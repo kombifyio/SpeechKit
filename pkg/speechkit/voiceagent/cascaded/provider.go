@@ -42,6 +42,8 @@ type Provider struct {
 	sessionCancel context.CancelFunc
 
 	// Turn state
+	pendingSTT  int64
+	sttNoted    bool
 	mu          sync.Mutex
 	buffer      []byte
 	lastVoiceAt time.Time

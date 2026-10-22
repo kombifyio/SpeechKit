@@ -17,32 +17,40 @@ import (
 // successful call populates app.Store; subsequent calls are no-ops. If
 // the backend is unconfigured or the driver fails, we log and continue:
 // Voice Agent mode still works (personas stay in-memory), dictation still
-// serves requests, and /readyz surfaces the missing capability.
-func ensureStore(cfg *config.Config, app *App) {
+// serves requests, and /readyz surfaces the missing capability. A
+// runtime-role store (store.postgres_runtime_role) is the exception: its
+// failure (an older schema or a role that could escape row-level security)
+// is returned, and the server refuses to start.
+func ensureStore(cfg *config.Config, app *App) error {
 	if app.Store != nil {
-		return
+		return nil
 	}
 	backend := strings.TrimSpace(cfg.Store.Backend)
 	if backend == "" {
 		backend = "sqlite"
 	}
 	storeCfg := store.StoreConfig{
-		Backend:            backend,
-		SQLitePath:         cfg.Store.SQLitePath,
-		PostgresDSN:        cfg.Store.PostgresDSN,
-		SaveAudio:          cfg.Store.SaveAudio,
-		AudioRetentionDays: cfg.Store.AudioRetentionDays,
-		MaxAudioStorageMB:  cfg.Store.MaxAudioStorageMB,
+		Backend:             backend,
+		SQLitePath:          cfg.Store.SQLitePath,
+		PostgresDSN:         cfg.Store.PostgresDSN,
+		PostgresRuntimeRole: cfg.Store.PostgresRuntimeRole,
+		SaveAudio:           cfg.Store.SaveAudio,
+		AudioRetentionDays:  cfg.Store.AudioRetentionDays,
+		MaxAudioStorageMB:   cfg.Store.MaxAudioStorageMB,
 	}
 	s, err := store.New(storeCfg)
 	if err != nil {
+		if cfg.Store.PostgresRuntimeRole {
+			return fmt.Errorf("runtime-role store refused: %w", err)
+		}
 		slog.Warn("store init failed; durable features disabled", "backend", backend, "err", err)
 		app.Health.SetReady("store", StatusDegraded, err.Error())
-		return
+		return nil
 	}
 	app.Store = s
 	app.Health.SetReady("store", StatusOK, backend)
 	slog.Info("store initialized", "backend", backend)
+	return nil
 }
 
 // ensurePersonaRegistry lazily initializes the persona catalog.

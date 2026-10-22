@@ -11,11 +11,18 @@ type StoreConfig struct {
 	// default: %LOCALAPPDATA%\SpeechKit on Windows installs, <exe>\data for
 	// portable bundles. A network path is refused. The machine policy pin
 	// Storage\DataRoot targets this field.
-	DataRoot           string `toml:"data_root"`
-	PostgresDSN        string `toml:"postgres_dsn"`
-	SaveAudio          bool   `toml:"save_audio"`
-	AudioRetentionDays int    `toml:"audio_retention_days"`
-	MaxAudioStorageMB  int    `toml:"max_audio_storage_mb"`
+	DataRoot    string `toml:"data_root"`
+	PostgresDSN string `toml:"postgres_dsn"`
+	// PostgresRuntimeRole marks a server that serves as a runtime role: no migration at start, the schema must already be current, and
+	// the server refuses to start unless its role is NOSUPERUSER and
+	// NOBYPASSRLS, owns nothing and holds no DDL, TRUNCATE or SET ROLE. The
+	// governed `speechkit-server migrate` step applies the schema with the
+	// migration role. Off (the default), a self-hosted server migrates its
+	// own database at start.
+	PostgresRuntimeRole bool `toml:"postgres_runtime_role"`
+	SaveAudio           bool `toml:"save_audio"`
+	AudioRetentionDays  int  `toml:"audio_retention_days"`
+	MaxAudioStorageMB   int  `toml:"max_audio_storage_mb"`
 	// MeetingRetentionDays discards finished meetings older than this many
 	// days. Zero, the default, keeps them: a meeting is work someone did, not
 	// a by-product, so nothing is thrown away unless it is asked for. Pinned

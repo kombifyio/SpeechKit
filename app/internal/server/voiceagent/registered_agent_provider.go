@@ -173,18 +173,46 @@ func (a *disclosingAgent) Run(ctx context.Context, input publiccascaded.AgentInp
 	if err != nil {
 		return output, err
 	}
-	a.mu.Lock()
-	first := !a.done
-	a.done = true
-	a.mu.Unlock()
-	if first {
-		disclosure := "Notice: You are speaking with an AI assistant. "
-		if strings.HasPrefix(strings.ToLower(input.Locale), "de") {
-			disclosure = "Hinweis: Du sprichst mit einem KI-Assistenten. "
-		}
-		output.Text = disclosure + output.Text
+	if a.takeFirst() {
+		output.Text = disclosureFor(input.Locale) + output.Text
 	}
 	return output, nil
+}
+
+// Stream speaks the answer while the agent is still producing it. The AI
+// disclosure of the first turn leaves first, before the agent has answered, so
+// it is spoken while the agent works instead of delaying the answer.
+func (a *disclosingAgent) Stream(ctx context.Context, input publiccascaded.AgentInput, emit func(string) error) (publiccascaded.AgentOutput, error) {
+	disclosure := ""
+	if a.takeFirst() {
+		disclosure = disclosureFor(input.Locale)
+		if emit != nil {
+			if err := emit(disclosure); err != nil {
+				return publiccascaded.AgentOutput{}, err
+			}
+		}
+	}
+	output, err := a.inner.Stream(ctx, input, emit)
+	if err != nil {
+		return output, err
+	}
+	output.Text = disclosure + output.Text
+	return output, nil
+}
+
+func (a *disclosingAgent) takeFirst() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	first := !a.done
+	a.done = true
+	return first
+}
+
+func disclosureFor(locale string) string {
+	if strings.HasPrefix(strings.ToLower(locale), "de") {
+		return "Hinweis: Du sprichst mit einem KI-Assistenten. "
+	}
+	return "Notice: You are speaking with an AI assistant. "
 }
 
 func firstNonBlank(values ...string) string {
@@ -261,3 +289,7 @@ func (p *RegisteredAgentProvider) HandlesOwnTools() bool { return true }
 func registeredConversationTarget(target, endpoint string) bool {
 	return target == "workbench-orchestrator" && endpoint == "https://api.kombify.io/a2a/agents/kombify-ai"
 }
+
+// LastTurnTiming forwards the registered agent's own phase durations so the
+// turn's closing message can carry them.
+func (a *disclosingAgent) LastTurnTiming() map[string]int64 { return a.inner.LastTurnTiming() }

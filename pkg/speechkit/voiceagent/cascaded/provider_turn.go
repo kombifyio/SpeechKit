@@ -71,7 +71,9 @@ func (p *Provider) processOneTurn(ctx context.Context) {
 		}
 	}
 
+	sttStarted := time.Now()
 	sttResult, err := p.stt.Route(ctx, pcm, duration, stt.TranscribeOpts{Language: p.locale, Speaker: p.speaker})
+	p.noteSTT(time.Since(sttStarted))
 	if err != nil {
 		if ctx.Err() == nil {
 			p.emitError("stt_failed")
@@ -139,12 +141,16 @@ func (p *Provider) runTurn(ctx context.Context, userText string, skipInputTransc
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	timing := newTurnTiming()
+	if sttMs, ok := p.takeSTT(); ok {
+		timing.set("stt_ms", sttMs)
+	}
 	defer func() {
 		if turnErr != nil || ctx.Err() != nil {
 			return
 		}
 		select {
-		case p.messages <- &Message{Done: true}:
+		case p.messages <- &Message{Done: true, Metadata: timing.snapshot(p.agent)}:
 		case <-p.closedCh:
 		case <-ctx.Done():
 		}
@@ -168,10 +174,14 @@ func (p *Provider) runTurn(ctx context.Context, userText string, skipInputTransc
 		LastTranscription: historyBlurb,
 		SystemPrompt:      systemPrompt,
 	}
+	if streamer, ok := p.agent.(StreamingAgent); ok && p.tts != nil {
+		return p.runStreamedTurn(ctx, streamer, userText, agentInput, locale, voice, timing)
+	}
 	out, err := p.agent.Run(ctx, agentInput)
 	if err != nil {
 		return fmt.Errorf("agent: %w", err)
 	}
+	timing.mark("agent_ms")
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -205,6 +215,7 @@ func (p *Provider) runTurn(ctx context.Context, userText string, skipInputTransc
 		return err
 	}
 	if ttsResult != nil && len(ttsResult.Audio) > 0 {
+		timing.mark("first_audio_ms")
 		for _, frag := range ChunkAudio(ttsResult.Audio, 8192) {
 			select {
 			case p.messages <- &Message{Audio: frag}:

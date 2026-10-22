@@ -166,7 +166,9 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	initServerLifecycle(app) //nolint:contextcheck // lifecycle hooks are process-scoped startup state, not request-scoped work.
 
 	if cfg.Server.Features.StorageReads || cfg.Server.Features.Vocabulary {
-		ensureStore(cfg, app) //nolint:contextcheck // store.Open has no context-aware API; startup migration is bounded by CI/runtime gates.
+		if err := ensureStore(cfg, app); err != nil { //nolint:contextcheck // store.Open has no context-aware API; startup migration is bounded by CI/runtime gates.
+			return fmt.Errorf("core.Run: %w", err)
+		}
 	}
 	if (cfg.Server.Features.TTSDirect || wyomingNeedsTTS(cfg) || cfg.Server.DeviceAgent.Enabled) && app.TTSRouter == nil {
 		ttsRouter, ttsEnabled, ttsNotes := buildTTSRouter(cfg)
@@ -345,7 +347,9 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		// endpoints (/v1/personas etc.) exist only when voiceagent is on.
 		// Initialize the durable store first so persona writes persist
 		// across restarts when a SQL backend is configured.
-		ensureStore(cfg, app) //nolint:contextcheck // store.Open has no context-aware API; startup migration is bounded by CI/runtime gates.
+		if err := ensureStore(cfg, app); err != nil { //nolint:contextcheck // store.Open has no context-aware API; startup migration is bounded by CI/runtime gates.
+			return fmt.Errorf("core.Run: %w", err)
+		}
 		ensurePersonaRegistry(ctx, cfg, app)
 
 		personaHandler, err := persona.New(persona.HandlerOptions{

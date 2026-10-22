@@ -151,15 +151,15 @@ func (h *OpenAIHandler) bind(ctx context.Context, utterance string) (string, int
 // stream runs the bound agent and emits the trusted disclosure once before
 // the first answer delta.
 func (h *OpenAIHandler) stream(ctx context.Context, utterance, turnID string, emit func(string) error) (cascaded.AgentOutput, error) {
-	return h.Agent.StreamTurn(ctx, cascaded.AgentInput{Utterance: utterance, Locale: h.Locale}, turnID, func(delta string) error {
-		if !h.disclosed && h.FirstResponsePrefix != "" {
-			if err := emit(h.FirstResponsePrefix); err != nil {
-				return err
-			}
-			h.disclosed = true
+	// The disclosure is host-trusted text and needs nothing from the agent, so it
+	// is spoken now, while the agent works, instead of after its first delta.
+	if !h.disclosed && h.FirstResponsePrefix != "" {
+		if err := emit(h.FirstResponsePrefix); err != nil {
+			return cascaded.AgentOutput{}, err
 		}
-		return emit(delta)
-	})
+		h.disclosed = true
+	}
+	return h.Agent.StreamTurn(ctx, cascaded.AgentInput{Utterance: utterance, Locale: h.Locale}, turnID, emit)
 }
 
 // Answer runs one turn in-process for native providers whose tool call or

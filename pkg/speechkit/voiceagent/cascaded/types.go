@@ -69,6 +69,10 @@ type Message struct {
 	ErrorMessage string
 	// Done marks completion of a successful turn after all its audio.
 	Done bool
+	// Metadata is diagnostic data a message may carry. The closing message of a
+	// turn carries the turn's phase durations in milliseconds ("stt_ms",
+	// "agent_first_delta_ms", "first_audio_ms", "total_ms", ...); never text.
+	Metadata map[string]any
 }
 
 // CodedError is an [Agent] error that names why the turn failed with a
