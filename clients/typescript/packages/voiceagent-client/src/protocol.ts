@@ -80,6 +80,12 @@ export interface StartFrame {
   system_prompt_override?: string;
   /** Opt into agent-owned conversation commands; supported registered roots only. */
   conversation_control?: { version: 1; mode: "oneshot" };
+  /**
+   * Two-stage wake word: the device's low-cutoff detection. The server
+   * answers state "verifying"; send the pre-roll and following speech at
+   * once, then expect wake_verified or wake_rejected.
+   */
+  wake?: { phrase: string; score?: number; preroll_ms?: number };
 }
 
 export interface ConversationModeFrame {
@@ -137,6 +143,7 @@ export type ClientFrame = StartFrame | TextFrame | ToolResponseFrame | AdvanceSt
 
 export type AgentState =
   | "connecting"
+  | "verifying"
   | "listening"
   | "processing"
   | "speaking"
@@ -270,7 +277,14 @@ export interface ErrorFrame {
 
 export interface SessionEndFrame extends ServerFrameMeta {
   type: "session_end";
-  reason: "idle" | "go_away" | "client" | "error" | "shutdown" | "max_duration" | "authorization_expired";
+  reason: "idle" | "go_away" | "client" | "error" | "shutdown" | "max_duration" | "authorization_expired" | "wake_rejected";
+}
+
+/** Second-stage verdict on a start frame's wake candidate. */
+export interface WakeResultFrame {
+  type: "wake_verified" | "wake_rejected";
+  phrase?: string;
+  reason?: "no_match" | "no_audio";
 }
 
 export interface PongFrame {
@@ -286,7 +300,8 @@ export type ServerFrame =
   | InterruptedFrame
   | ErrorFrame
   | SessionEndFrame
-  | PongFrame;
+  | PongFrame
+  | WakeResultFrame;
 
 // ── Audio constants ──────────────────────────────────────────────────────
 

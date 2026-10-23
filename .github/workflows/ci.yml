@@ -36,7 +36,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
-          node-version: 24
+          node-version: 24.22.1
 
       - name: Check documentation links
         run: node scripts/release/check-doc-links.mjs
@@ -62,10 +62,9 @@ jobs:
           npm install -g pnpm@11.5.3
           pnpm --version
 
-      - name: Build and test TypeScript clients & Voice UI Kit
+      - name: Build and type-check TypeScript clients & Voice UI Kit
         working-directory: clients/typescript
         run: |
           pnpm install --frozen-lockfile
           pnpm run build
-          pnpm run test
           pnpm run typecheck

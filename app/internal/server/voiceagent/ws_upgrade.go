@@ -3,6 +3,7 @@
 package voiceagent
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -46,6 +47,10 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 		httpx.WriteError(w, http.StatusNotFound, "session_not_found", err.Error())
 		return
 	}
+	if session.AnonymousGuide != h.anonymous {
+		httpx.WriteError(w, http.StatusForbidden, "voice_session_route_mismatch", "Use the route that created this session.")
+		return
+	}
 	if err := h.manager.Attach(sessionID); err != nil {
 		switch {
 		case errors.Is(err, ErrSessionExpired):
@@ -78,6 +83,13 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 		return
 	}
 	conn.SetReadLimit(h.readLimit)
+	ctx, stop := context.WithCancel(r.Context())
+	defer stop()
+	if err := h.manager.SetConversationStop(sessionID, stop); err != nil {
+		_ = conn.CloseNow()
+		h.reportUnstartedSession(session)
+		return
+	}
 
 	adapter := &Adapter{
 		Session:         session,
@@ -87,9 +99,13 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 		Persona:         h.persona,
 		native:          h.native,
 		MediaBridge:     h.mediaBridge,
+		WakeVerifier:    h.wakeVerifier,
 		IdleTimeout:     h.idleTimeout,
 		MaxDuration:     h.maxSessionDuration,
 		ToolRouter:      h.toolRouter,
+		OnStart: func() error {
+			return h.manager.StartConversation(sessionID)
+		},
 		//nolint:contextcheck // OnUsage has no context parameter and runs after the request context is done
 		OnUsage: func(usage VoiceUsage) {
 			h.reportVoiceUsage(session.BridgeCredential, usage)
@@ -98,14 +114,14 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 			h.manager.SetVoiceBudgetRenewer(sessionID, renew)
 		},
 		OnClose: func() {
-			h.manager.Remove(sessionID)
+			h.manager.FinishConversation(sessionID)
 		},
 	}
 	// Run the pumps; returns only when session ends or the client
 	// disconnects. We intentionally do not run this in a goroutine: the
 	// HTTP handler owns the connection for its lifetime, which keeps
 	// observability and tracing correct.
-	adapter.Run(r.Context())
+	adapter.Run(ctx)
 }
 
 func (h *Handler) webSocketURL(r *http.Request, sessionID string) string {
@@ -113,6 +129,10 @@ func (h *Handler) webSocketURL(r *http.Request, sessionID string) string {
 	publicURL := ""
 	if h != nil {
 		publicURL = h.publicURL
+	}
+	if h.anonymous {
+		return wssession.WebSocketURL(r.Host, r.Header.Get(httpx.APIPrefixHeader), publicURL,
+			requestIsHTTPS, "/anonymous/voiceagent/sessions/"+sessionID+"/ws")
 	}
 	return wssession.WebSocketURL(r.Host, r.Header.Get(httpx.APIPrefixHeader), publicURL,
 		requestIsHTTPS, "/voiceagent/sessions/"+sessionID+"/ws")

@@ -31,6 +31,9 @@ const (
 	minFirstClauseRunes = 28
 	// minSegmentRunes keeps a very short sentence ("Ja.") joined to the next one.
 	minSegmentRunes = 12
+	// minFirstSegmentRunes is the shorter bound for the first piece of a turn ("Gerne!", "Hallo!", "Klar."): the first
+	// audio should not wait for the second sentence only because the opening word is short.
+	minFirstSegmentRunes = 5
 	// maxSegmentRunes forces a split of a sentence that never ends.
 	maxSegmentRunes = 220
 )
@@ -233,7 +236,16 @@ func (s *sentenceSplitter) boundary() int {
 				return i + 1
 			}
 		case r == '.' || r == '!' || r == '?' || r == '…':
-			if i+1 >= len(s.buf) || !unicode.IsSpace(s.buf[i+1]) {
+			if i+1 >= len(s.buf) {
+				// A full stop at the very end of the buffer may continue ("3.", "z."), so it waits for the next delta.
+				// "!", "?" and "…" cannot, so a speakable piece leaves at once instead of waiting for the next delta
+				// or for the end of the answer.
+				if r != '.' && s.speakable(i) {
+					return i + 1
+				}
+				continue
+			}
+			if !unicode.IsSpace(s.buf[i+1]) {
 				continue
 			}
 			if r == '.' && s.abbreviation(i) {
@@ -264,7 +276,11 @@ func (s *sentenceSplitter) boundary() int {
 // speakable reports whether the text up to index end is long enough to stand
 // as its own spoken piece.
 func (s *sentenceSplitter) speakable(end int) bool {
-	return utf8.RuneCountInString(strings.TrimSpace(string(s.buf[:end+1]))) >= minSegmentRunes
+	min := minSegmentRunes
+	if !s.emitted {
+		min = minFirstSegmentRunes
+	}
+	return utf8.RuneCountInString(strings.TrimSpace(string(s.buf[:end+1]))) >= min
 }
 
 var spokenAbbreviations = map[string]struct{}{

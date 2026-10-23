@@ -239,7 +239,7 @@ func RedactHeaders(h http.Header) http.Header {
 	out := make(http.Header, len(h))
 	for k, vs := range h {
 		lk := strings.ToLower(k)
-		if _, sensitive := sensitiveHeaders[lk]; sensitive {
+		if _, sensitive := sensitiveHeaders[lk]; sensitive || strings.HasSuffix(lk, "-grant") {
 			redacted := make([]string, len(vs))
 			for i := range vs {
 				redacted[i] = "[REDACTED]"

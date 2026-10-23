@@ -16,6 +16,42 @@ import (
 
 const envelopeTestSecret = "edge-envelope-secret"
 
+func TestAnonymousEdgeCannotEnterAccountRoutes(t *testing.T) {
+	for _, path := range []string{"/api/v1/settings", "/api/v1/voiceagent/sessions", "/api/v1/anonymous/voiceagent/sessions/any/renew", "/api/v1/personas"} {
+		t.Run(path, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPost, path, nil)
+			if err := SignEdgeEnvelope(r, EdgeKey{ID: "primary", Secret: envelopeTestSecret}, Identity{UserID: "anonymous:voice:synthetic", OrgID: "default", Role: "anonymous", Plan: "anonymous"}, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			h := envelopeAuth(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+			if got := serve(h, r); got != http.StatusUnauthorized {
+				t.Fatalf("anonymous identity entered private route: %d", got)
+			}
+		})
+	}
+}
+
+func TestAnonymousRouteRequiresScopedEdgeIdentity(t *testing.T) {
+	for _, id := range []Identity{
+		{UserID: "anonymous:voice:synthetic", OrgID: "default", Role: "anonymous", Plan: "anonymous"},
+		{UserID: "user-42", OrgID: "org-1", Role: "admin", Plan: "pro"},
+		{UserID: "anonymous:voice:synthetic", OrgID: "default", Role: "admin", Plan: "anonymous"},
+	} {
+		r := httptest.NewRequest(http.MethodPost, "/api/v1/anonymous/voiceagent/sessions", nil)
+		if err := SignEdgeEnvelope(r, EdgeKey{ID: "primary", Secret: envelopeTestSecret}, id, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		h := envelopeAuth(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+		want := http.StatusUnauthorized
+		if IsAnonymousEdge(Identity{UserID: id.UserID, OrgID: id.OrgID, Role: id.Role, Plan: id.Plan, Source: "edge_hmac"}) {
+			want = http.StatusOK
+		}
+		if got := serve(h, r); got != want {
+			t.Fatalf("anonymous admission got %d want %d", got, want)
+		}
+	}
+}
+
 func envelopeAuth(t *testing.T, next http.Handler) http.Handler {
 	t.Helper()
 	return Auth(AuthOptions{

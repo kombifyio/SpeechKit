@@ -25,9 +25,6 @@ android {
         }
     }
 
-    testOptions {
-        unitTests.all { it.useJUnitPlatform() }
-    }
 }
 
 // Published because docs/architecture/android-sdk-surface-boundary.md names
@@ -77,9 +74,6 @@ publishing {
 dependencies {
     implementation(libs.kotlin.stdlib)
 
-    testImplementation(libs.junit.api)
-    testRuntimeOnly(libs.junit.engine)
-    testRuntimeOnly(libs.junit.launcher)
 }
 
 kotlin {

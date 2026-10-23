@@ -129,6 +129,25 @@ type VoiceAgentConfig struct {
 	VADPrefixPaddingMs              int                    `toml:"vad_prefix_padding_ms"`
 	VADSilenceDurationMs            int                    `toml:"vad_silence_duration_ms"`
 	Limits                          VoiceAgentLimitsConfig `toml:"limits"`
+	// Wake configures the second-stage wake word check for devices that open
+	// a session on a wake candidate. Phrases without an entry are checked by
+	// the last word of their id.
+	Wake VoiceAgentWakeConfig `toml:"wake"`
+}
+
+// VoiceAgentWakeConfig is [voice_agent.wake].
+type VoiceAgentWakeConfig struct {
+	// Keyterms bias the first recognition pass towards the wake words.
+	Keyterms []string                        `toml:"keyterms"`
+	Phrases  map[string]VoiceAgentWakePhrase `toml:"phrases"`
+}
+
+// VoiceAgentWakePhrase is one [voice_agent.wake.phrases.<id>] entry; see
+// voiceagent.WakePhrase for the matching rules.
+type VoiceAgentWakePhrase struct {
+	Cores        []string `toml:"cores"`
+	Confirm      []string `toml:"confirm"`
+	ConfirmCodes []string `toml:"confirm_codes"`
 }
 
 // VoiceAgentSessionLimits returns the effective Voice Agent session caps.
@@ -139,14 +158,18 @@ func (cfg *Config) VoiceAgentSessionLimits() VoiceAgentLimitsConfig {
 		return VoiceAgentLimitsConfig{}
 	}
 	limits := VoiceAgentLimitsConfig{
-		MaxGlobalSessions:      cfg.Server.MaxVoiceAgentSessions,
-		MaxPerIdentitySessions: cfg.Server.MaxSessionsPerUser,
+		MaxGlobalSessions:              cfg.Server.MaxVoiceAgentSessions,
+		MaxPerIdentitySessions:         cfg.Server.MaxSessionsPerUser,
+		MaxPreparedPerIdentitySessions: DefaultMaxPreparedVoiceAgentSessions,
 	}
 	if cfg.VoiceAgent.Limits.MaxGlobalSessions > 0 {
 		limits.MaxGlobalSessions = cfg.VoiceAgent.Limits.MaxGlobalSessions
 	}
 	if cfg.VoiceAgent.Limits.MaxPerIdentitySessions > 0 {
 		limits.MaxPerIdentitySessions = cfg.VoiceAgent.Limits.MaxPerIdentitySessions
+	}
+	if cfg.VoiceAgent.Limits.MaxPreparedPerIdentitySessions > 0 {
+		limits.MaxPreparedPerIdentitySessions = cfg.VoiceAgent.Limits.MaxPreparedPerIdentitySessions
 	}
 	return limits
 }

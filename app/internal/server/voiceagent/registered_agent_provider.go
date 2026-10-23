@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -71,6 +72,12 @@ func (p *RegisteredAgentProvider) Connect(ctx context.Context, cfg LiveConfigFra
 	}
 	deps := p.deps
 	deps.Agent = &disclosingAgent{inner: agent}
+	if warm := gatewayPolicyWarmer(cfg.AgentEndpoint); warm != nil {
+		// The Gateway reads the agent plugin policy before every turn; asking for that read when the session opens and
+		// when the user starts speaking has it under way (and the agent host awake) by the time the turn arrives.
+		deps.OnSpeechStart = warm
+		go warm()
+	}
 	inner := NewCascadedProvider(deps)
 	if err := inner.Connect(ctx, cfg); err != nil {
 		cancel()
@@ -84,6 +91,42 @@ func (p *RegisteredAgentProvider) Connect(ctx context.Context, cfg LiveConfigFra
 	p.cancel = cancel
 	p.mu.Unlock()
 	return nil
+}
+
+// gatewayPolicyWarmer returns a function that asks the Gateway, at most every ten seconds, to read the policy behind the
+// next agent turn ahead of it (the public liveness route with warm=agents). It never blocks and never fails the session;
+// nil when the agent endpoint is not an https Gateway address or the warm-up is switched off
+// (SPEECHKIT_GATEWAY_WARM=off).
+func gatewayPolicyWarmer(agentEndpoint string) func() {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("SPEECHKIT_GATEWAY_WARM")), "off") {
+		return nil
+	}
+	parsed, err := url.Parse(agentEndpoint)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
+		return nil
+	}
+	target := (&url.URL{Scheme: "https", Host: parsed.Host, Path: "/v1/speechkit/healthz", RawQuery: "warm=agents"}).String()
+	client := &http.Client{Timeout: 4 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	var mu sync.Mutex
+	var last time.Time
+	return func() {
+		mu.Lock()
+		if time.Since(last) < 10*time.Second {
+			mu.Unlock()
+			return
+		}
+		last = time.Now()
+		mu.Unlock()
+		request, err := http.NewRequest(http.MethodGet, target, http.NoBody)
+		if err != nil {
+			return
+		}
+		response, err := client.Do(request)
+		if err != nil {
+			return
+		}
+		_ = response.Body.Close()
+	}
 }
 
 func registeredAgentHeaders(cfg LiveConfigFrame, secret string) a2a.HeaderProvider {

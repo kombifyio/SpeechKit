@@ -72,6 +72,9 @@ type HandlerOptions struct {
 	RegisteredAgentSigningSecret func() string
 	// NativeConsentReader checks current owner consent through trusted authority.
 	NativeConsentReader NativeConsentReader
+	// WakeVerifier enables the two-stage wake word check for start frames
+	// that carry a wake candidate. Nil leaves such sessions unverified.
+	WakeVerifier WakeVerifier
 }
 
 // Handler exposes both the HTTP session-creation endpoint and the WS
@@ -94,6 +97,8 @@ type Handler struct {
 	toolRouter         SessionToolRouter
 	usage              UsageReporter
 	native             *nativeVoiceSessions
+	wakeVerifier       WakeVerifier
+	anonymous          bool
 }
 
 // New constructs a handler. All options except MaxAllowedClockSkew are
@@ -166,6 +171,7 @@ func New(opts HandlerOptions) (*Handler, error) {
 		toolRouter:         opts.ToolRouter,
 		usage:              opts.Usage,
 		native:             newNativeVoiceSessions(opts.PublicURL, opts.Store, opts.AssemblyAIKey, opts.RegisteredAgentSigningSecret, opts.NativeConsentReader),
+		wakeVerifier:       opts.WakeVerifier,
 	}, nil
 }
 
@@ -178,4 +184,38 @@ func New(opts HandlerOptions) (*Handler, error) {
 func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/voiceagent/sessions", h.collectionHandler)
 	mux.HandleFunc("/v1/voiceagent/sessions/", h.itemHandler)
+}
+
+// MountAnonymous shares the existing media pipeline and ticket manager while
+// keeping the public surface free of account, storage and tool capabilities.
+func (h *Handler) MountAnonymous(mux *http.ServeMux) {
+	public := *h
+	public.anonymous, public.requireVoiceBudget = true, true
+	public.defaultProvider = "anonymous-guide"
+	public.providers = map[string]ProviderFactory{"anonymous-guide": h.providers["anonymous-guide"]}
+	public.persona = anonymousPersona{}
+	public.store, public.toolRouter, public.usage = nil, nil, nil
+	public.liveKit, public.mediaBridge, public.native, public.wakeVerifier = nil, nil, nil, nil
+	public.maxSessionDuration = 60 * time.Second
+	mux.HandleFunc("/v1/anonymous/voiceagent/sessions", public.collectionHandler)
+	mux.HandleFunc("/v1/anonymous/voiceagent/sessions/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/v1/anonymous/voiceagent/sessions/")
+		id, suffix, ok := strings.Cut(path, "/")
+		if !ok || id == "" || suffix != "ws" || r.Method != http.MethodGet {
+			http.NotFound(w, r)
+			return
+		}
+		session, err := public.manager.Get(id)
+		if err != nil || !session.AnonymousGuide {
+			http.NotFound(w, r)
+			return
+		}
+		public.upgradeWS(w, r, id)
+	})
+}
+
+type anonymousPersona struct{}
+
+func (anonymousPersona) Resolve(start StartFrame) (LiveConfigFrame, error) {
+	return LiveConfigFrame{Locale: start.Locale}, nil
 }

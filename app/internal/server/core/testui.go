@@ -45,6 +45,8 @@ func serverPublicPaths() []string {
 
 func serverPublicRoutes() []middleware.PublicRoute {
 	routes := []middleware.PublicRoute{
+		{PathPrefix: "/v1/anonymous/voiceagent/sessions/", PathSuffix: "/ws", Methods: []string{http.MethodGet}},
+		{PathPrefix: "/api/v1/anonymous/voiceagent/sessions/", PathSuffix: "/ws", Methods: []string{http.MethodGet}},
 		// Customer handoff only: no operator UI, credentials or mutations.
 		{Path: onboarding.DeviceAddPath, Methods: []string{http.MethodGet, http.MethodHead}},
 		{Path: "/api" + onboarding.DeviceAddPath, Methods: []string{http.MethodGet, http.MethodHead}},

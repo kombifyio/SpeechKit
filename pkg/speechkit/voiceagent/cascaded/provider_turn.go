@@ -79,9 +79,12 @@ func (p *Provider) processOneTurn(ctx context.Context) {
 	if live != nil {
 		// The recogniser has heard the turn while it was spoken: its transcript is ready or
 		// nearly so. Any turn it cannot serve is recognised from the buffered audio below.
-		if text, ok := live.recognized(ctx); ok {
+		text, reason := live.recognized(ctx)
+		if reason == "" {
 			sttResult = &stt.Result{Text: text}
 			streamed = true
+		} else {
+			logutil.Resolve(p.logger).Info("cascaded: live recognition did not serve the turn; using batch recognition", "reason", reason)
 		}
 	}
 	if sttResult == nil {

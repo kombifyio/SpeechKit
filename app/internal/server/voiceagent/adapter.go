@@ -32,6 +32,9 @@ import (
 type Adapter struct {
 	Session *ManagedSession
 	Conn    *websocket.Conn
+	// WakeVerifier checks start frames that carry a wake candidate before any
+	// provider connects (wake_verify.go). Nil skips the stage.
+	WakeVerifier WakeVerifier
 	// Provider, when set, is used directly (tests pre-inject a fake). In
 	// production it is nil and the provider is chosen per session from
 	// Providers[StartFrame.Provider || DefaultProvider] after the start frame
@@ -67,6 +70,9 @@ type Adapter struct {
 	// OnClose runs after both pumps have returned. Typically removes the
 	// session from the manager.
 	OnClose func()
+	// OnStart claims active conversation capacity before provider admission.
+	// A pre-dialed socket waiting for start remains a prepared session.
+	OnStart func() error
 	// OnUsage receives the provider-connected duration exactly once. It is
 	// registered only after Connect succeeds, so pending tickets and failed
 	// provider handshakes are never billed.
@@ -180,7 +186,7 @@ func (a *Adapter) Run(parent context.Context) {
 		defer expire(nil)
 		// Registered-agent and own-endpoint sessions also end with their
 		// delegated authorization, which a budget renewal cannot extend.
-		if a.SetVoiceBudgetRenewer != nil && a.Session.VoiceAgentBinding.TargetAgentID == "" && a.Session.VoiceAgentBinding.DirectEndpoint == nil {
+		if !a.Session.AnonymousGuide && a.SetVoiceBudgetRenewer != nil && a.Session.VoiceAgentBinding.TargetAgentID == "" && a.Session.VoiceAgentBinding.DirectEndpoint == nil {
 			a.SetVoiceBudgetRenewer(func(next wssession.VoiceBudget) error {
 				previous, err := budget.renew(next, a.now())
 				if err == nil && a.OnUsage != nil {
@@ -231,6 +237,11 @@ func (a *Adapter) Run(parent context.Context) {
 	// edge-resolved voice preferences captured at session mint. Explicit
 	// start-frame values always win; unsatisfiable preferences fall back to
 	// the server defaults instead of failing the session.
+	if a.Session != nil && a.Session.AnonymousGuide {
+		// Public callers cannot select a private persona, model, endpoint,
+		// tools, instructions, recognition profile or media transport.
+		start = StartFrame{Type: MsgStart, Provider: "anonymous-guide", Locale: a.Session.AnonymousLocale, MediaTransport: MediaTransportWebSocket}
+	}
 	personaFromPref := a.applyVoicePrefDefaults(&start)
 	// Select the realtime backend for this session. Tests pre-set a.Provider;
 	// production picks from the factory map by the client-requested provider
@@ -309,6 +320,7 @@ func (a *Adapter) Run(parent context.Context) {
 		cfg.OwnerOrgID = a.Session.Owner.OrgID
 		cfg.OwnerPlan = a.Session.Owner.Plan
 		cfg.OboSubjectToken = a.Session.BridgeCredential
+		cfg.AnonymousGrant = a.Session.AnonymousGrant
 		cfg.DirectEndpoint = binding.DirectEndpoint
 		cfg.EndpointBinding, cfg.EndpointSignature = binding.EndpointBinding, binding.EndpointSignature
 		if cfg.DirectEndpoint != nil {
@@ -318,6 +330,27 @@ func (a *Adapter) Run(parent context.Context) {
 	if err := a.configureConversation(start, &cfg); err != nil {
 		a.sendFatalError(ctx, "conversation_control_unsupported", "Conversation control requires a capable client and an authorized Companion session.")
 		return
+	}
+	if a.OnStart != nil {
+		if err := a.OnStart(); err != nil {
+			code := "session_unavailable"
+			if errors.Is(err, ErrIdentityLimitExceeded) {
+				code = "per_user_limit_exceeded"
+			}
+			a.sendFatalError(ctx, code, "No active voice conversation slot is available. Try again when the current conversation ends.")
+			return
+		}
+	}
+	// Second-stage wake word check: after active admission and before tools or
+	// provider connection. A rejected candidate releases its slot on close.
+	var wakeAudio []byte
+	if start.Wake != nil && a.WakeVerifier != nil && transport != MediaTransportLiveKit {
+		audio, ok, reason := a.verifyWake(ctx, start)
+		if !ok {
+			endReason = reason
+			return
+		}
+		wakeAudio = audio
 	}
 	// Merge server-executed tool definitions from the tool bridge into the
 	// provider config before Connect. Bounded and fail-open to tool-less:
@@ -392,6 +425,14 @@ func (a *Adapter) Run(parent context.Context) {
 		return
 	}
 
+	// The verified wake audio (request after the phrase) goes to the provider
+	// first; frames the device sent meanwhile follow through readPump.
+	for off := 0; off < len(wakeAudio); off += 3200 {
+		if err := a.Provider.SendAudio(wakeAudio[off:min(off+3200, len(wakeAudio))]); err != nil {
+			slog.Warn("voiceagent: wake audio replay failed", "err", err)
+			break
+		}
+	}
 	// Report the backend and transport that actually serve this session on
 	// the session_ready frame (the start.provider → voice-pref → default
 	// precedence already ran above). Clients need this to distinguish e.g.

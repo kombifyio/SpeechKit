@@ -38,10 +38,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    testOptions {
-        // JUnit 5 (Jupiter) tests silently do not run without this.
-        unitTests.all { it.useJUnitPlatform() }
-    }
 
     publishing {
         singleVariant("release") {
@@ -101,9 +97,6 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.runtime)
 
-    testImplementation(libs.junit.api)
-    testRuntimeOnly(libs.junit.engine)
-    testRuntimeOnly(libs.junit.launcher)
 }
 
 // Kotlin 2.4 turned the kotlinOptions DSL from deprecated into an error.

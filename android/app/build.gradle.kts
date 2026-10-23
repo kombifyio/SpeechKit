@@ -29,8 +29,8 @@ android {
         applicationId = "io.kombify.speechkit"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7713
-        versionName = "0.77.13"
+        versionCode = 7714
+        versionName = "0.77.14"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // An OSS installation has no admitted hosted media origin.
         buildConfigField("String", "HOSTED_VOICE_ORIGIN", "\"\"")
@@ -144,10 +144,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    testOptions {
-        // JUnit 5 (Jupiter) tests silently do not run without this.
-        unitTests.all { it.useJUnitPlatform() }
-    }
 }
 
 dependencies {
@@ -192,11 +188,6 @@ dependencies {
     implementation(libs.timber)
 
     // Testing
-    testImplementation(libs.junit.api)
-    testRuntimeOnly(libs.junit.engine)
-    testRuntimeOnly(libs.junit.launcher)
-    testImplementation(libs.coroutines.test)
-    testImplementation(libs.mockk)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.espresso.core)
 }

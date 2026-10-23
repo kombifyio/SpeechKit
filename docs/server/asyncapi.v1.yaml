@@ -1,7 +1,7 @@
 asyncapi: 3.1.0
 info:
   title: SpeechKit Voice Agent WebSocket API
-  version: 1.1.0
+  version: 1.2.0
   description: |
     Stable v1 WebSocket contract for the SpeechKit Server's Voice Agent mode.
 
@@ -121,6 +121,8 @@ channels:
         $ref: '#/components/messages/SessionEndFrame'
       PongFrame:
         $ref: '#/components/messages/PongFrame'
+      WakeResultFrame:
+        $ref: '#/components/messages/WakeResultFrame'
       # Server to client binary audio
       AudioChunkServer:
         $ref: '#/components/messages/AudioChunkServer'
@@ -173,6 +175,7 @@ operations:
       - $ref: '#/channels/voiceAgentSession/messages/ErrorFrame'
       - $ref: '#/channels/voiceAgentSession/messages/SessionEndFrame'
       - $ref: '#/channels/voiceAgentSession/messages/PongFrame'
+      - $ref: '#/channels/voiceAgentSession/messages/WakeResultFrame'
       - $ref: '#/channels/voiceAgentSession/messages/AudioChunkServer'
 
 components:
@@ -333,6 +336,13 @@ components:
       payload:
         $ref: '#/components/schemas/PongFrame'
 
+    WakeResultFrame:
+      title: Wake verified / rejected
+      summary: Second-stage verdict on a start frame's wake candidate.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/WakeResultFrame'
+
     AudioChunkServer:
       title: Audio chunk (server to client)
       summary: PCM 24 kHz S16 mono model-output chunk (binary frame).
@@ -402,6 +412,30 @@ components:
           properties:
             version: { type: integer, const: 1 }
             mode: { type: string, const: oneshot }
+        wake:
+          type: object
+          required: [phrase]
+          description: |
+            Two-stage wake word (added in 1.2.0). The device's detector ran at
+            a low cutoff and only nominates a candidate. The server answers
+            State "verifying"; the client then sends its pre-roll and the
+            following speech as binary audio at once. The server transcribes
+            the first 3 s without provider retention and matches the phrase
+            before any provider connects: WakeResultFrame wake_verified (the
+            session continues; the audio after the phrase is replayed to the
+            provider) or wake_rejected (SessionEnd reason wake_rejected,
+            nothing billed). Ignored for media_transport livekit and by
+            servers without a verifier, which go straight to listening.
+          properties:
+            phrase:
+              type: string
+              description: Device phrase id, e.g. hey_jarvis; the server config maps ids to the words it checks.
+            score:
+              type: number
+              description: Device detector window mean, 0..1 (diagnostics).
+            preroll_ms:
+              type: integer
+              description: Audio before the detection that the client sends first.
 
     SpeakerOptions:
       type: object
@@ -611,7 +645,7 @@ components:
           additionalProperties: true
         state:
           type: string
-          enum: [connecting, listening, processing, speaking, recovering, deactivating, inactive]
+          enum: [connecting, verifying, listening, processing, speaking, recovering, deactivating, inactive]
         provider:
           type: string
           description: |
@@ -781,7 +815,7 @@ components:
           additionalProperties: true
         reason:
           type: string
-          enum: [idle, go_away, client, error, shutdown, max_duration, authorization_expired]
+          enum: [idle, go_away, client, error, shutdown, max_duration, authorization_expired, wake_rejected]
           description: |
             Registered-agent sessions end at the earliest capability-lease,
             delegated JWT, or signed issuer credential expiry, even while active.
@@ -794,3 +828,16 @@ components:
       required: [type]
       properties:
         type: { type: string, const: pong }
+
+    WakeResultFrame:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, enum: [wake_verified, wake_rejected] }
+        phrase:
+          type: string
+          description: Canonical phrase id the server matched (or checked, on rejection).
+        reason:
+          type: string
+          enum: [no_match, no_audio]
+          description: Only on wake_rejected.

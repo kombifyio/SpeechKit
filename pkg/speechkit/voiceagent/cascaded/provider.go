@@ -27,6 +27,7 @@ var (
 type Provider struct {
 	stt             STT
 	recognizer      RecognitionStreamer
+	onSpeechStart   func()
 	liveTurn        *liveTurn
 	agent           Agent
 	tts             TTS
@@ -87,7 +88,10 @@ type Deps struct {
 	// Recognizer is optional. When set, speech is recognised while the user is
 	// still speaking and the turn ends as soon as the recogniser hears the
 	// speaker stop; STT stays the fallback for every turn the stream cannot serve.
-	Recognizer      RecognitionStreamer
+	Recognizer RecognitionStreamer
+	// OnSpeechStart is optional. It runs, on its own goroutine, when a user starts speaking after a pause (the first
+	// voiced chunk after at least a second of silence), so a host can prepare the agent leg that follows the turn.
+	OnSpeechStart   func()
 	Agent           Agent
 	TTS             TTS
 	SpeakerStreamer speaker.StreamingProvider
@@ -104,6 +108,7 @@ func NewProvider(deps Deps) *Provider {
 	return &Provider{
 		stt:             deps.STT,
 		recognizer:      deps.Recognizer,
+		onSpeechStart:   deps.OnSpeechStart,
 		agent:           deps.Agent,
 		tts:             deps.TTS,
 		speakerStreamer: deps.SpeakerStreamer,

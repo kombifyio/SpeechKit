@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -14,6 +15,8 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/config"
 	"github.com/kombifyio/SpeechKit/app/internal/server/toolbridge"
 	vsserver "github.com/kombifyio/SpeechKit/app/internal/server/voiceagent"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
+	dgstt "github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/deepgram"
 )
 
 // Supported provider strings for cfg.VoiceAgent.Provider.
@@ -57,7 +60,7 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 	// -> TTS), and — only when the operator opted into [providers.google] or
 	// [providers.xai] — Gemini Live and xAI Grok Voice (native). Providers whose keys/deps are missing are skipped
 	// and surfaced in the status line rather than failing the handler.
-	candidates := dedupeProviders(defaultProvider, ProviderDeepgram, ProviderGemini, ProviderOpenAI, ProviderGPTLive, ProviderXAI, ProviderAssemblyAI, ProviderCascaded, ProviderKombifyAgent)
+	candidates := dedupeProviders(defaultProvider, ProviderDeepgram, ProviderGemini, ProviderOpenAI, ProviderGPTLive, ProviderXAI, ProviderAssemblyAI, ProviderCascaded, ProviderKombifyAgent, "anonymous-guide")
 	factories := make(map[string]vsserver.ProviderFactory, len(candidates))
 	statusByProvider := make(map[string]string, len(candidates))
 	for _, p := range candidates {
@@ -94,9 +97,10 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 	}
 	limits := cfg.VoiceAgentSessionLimits()
 	manager, err := vsserver.NewSessionManager(vsserver.Options{
-		TicketTTL:              ticketTTL,
-		MaxGlobalSessions:      limits.MaxGlobalSessions,
-		MaxPerIdentitySessions: limits.MaxPerIdentitySessions,
+		TicketTTL:                      ticketTTL,
+		MaxGlobalSessions:              limits.MaxGlobalSessions,
+		MaxPerIdentitySessions:         limits.MaxPerIdentitySessions,
+		MaxPreparedPerIdentitySessions: limits.MaxPreparedPerIdentitySessions,
 	})
 	if err != nil {
 		return nil, status, err
@@ -138,12 +142,31 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 
 		RegisteredAgentSigningSecret: func() string { return os.Getenv("KOMBIFY_A2A_DELEGATION_SIGNING_SECRET") },
 		NativeConsentReader:          buildNativeVoiceConsentReader(),
+		WakeVerifier:                 buildWakeVerifier(cfg),
 	})
 	if err != nil {
 		return nil, status, err
 	}
 	h.StartNativeCleanup(ctx)
 	return h, status, nil
+}
+
+// buildWakeVerifier backs the two-stage wake word check with a Deepgram
+// batch transcription of the first seconds. NoStore keeps the audio out of
+// Deepgram's model improvement programme. Without a Deepgram key the stage
+// is off and wake candidates run unverified.
+func buildWakeVerifier(cfg *config.Config) vsserver.WakeVerifier {
+	key := resolveRealtimeAPIKey(cfg, ProviderDeepgram)
+	if key == "" {
+		return nil
+	}
+	p := dgstt.New(dgstt.Options{APIKey: key, Model: "nova-3"})
+	p.NoStore = true
+	phrases := make(map[string]vsserver.WakePhrase, len(cfg.VoiceAgent.Wake.Phrases))
+	for id, ph := range cfg.VoiceAgent.Wake.Phrases {
+		phrases[id] = vsserver.WakePhrase{Cores: ph.Cores, Confirm: ph.Confirm, ConfirmCodes: ph.ConfirmCodes}
+	}
+	return vsserver.NewSTTWakeVerifier(p, phrases, cfg.VoiceAgent.Wake.Keyterms)
 }
 
 // buildVoiceAgentToolRouter constructs the generic tool bridge from
@@ -215,6 +238,20 @@ func buildLiveKitIssuer(cfg *config.Config, app *App) *vsserver.LiveKitTokenIssu
 func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, provider string) (vsserver.ProviderFactory, string, error) {
 	provider = normalizeVoiceAgentProvider(provider)
 	switch provider {
+	case "anonymous-guide":
+		if app.STTRouter == nil || app.TTSRouter == nil {
+			return nil, "unavailable: public voice needs STT and TTS", errors.New("public voice requires configured speech routers")
+		}
+		central := strings.TrimSpace(cfg.Server.AnonymousAIOrigin)
+		if err := netsec.ValidateProviderURL(central, netsec.ValidationOptions{AllowLoopback: true}); err != nil {
+			return nil, "unavailable: public AI Gateway URL invalid", err
+		}
+		origin, _ := url.Parse(central)
+		if (origin.Path != "" && origin.Path != "/") || origin.RawQuery != "" || origin.Fragment != "" {
+			return nil, "unavailable: public AI Gateway origin invalid", errors.New("public AI Gateway configuration must contain only an origin")
+		}
+		origin.Path, origin.RawPath, origin.RawQuery, origin.Fragment = "/v1/ai/anonymous/responses", "", "", ""
+		return &vsserver.AnonymousProviderFactory{STT: app.STTRouter, TTS: app.TTSRouter, Endpoint: origin.String()}, "ready (public guide)", nil
 	case ProviderGemini:
 		// Opt-in BYOK: Gemini Live is switchable only when the operator
 		// enabled [providers.google] or selected it as the Voice Agent

@@ -49,7 +49,7 @@ type UsageReporter interface {
 }
 
 func (h *Handler) reportUnstartedSession(session *ManagedSession) {
-	if session.VoiceBudget.ReservationID == "" {
+	if session.AnonymousGuide || session.VoiceBudget.ReservationID == "" {
 		return
 	}
 	h.reportVoiceUsage("", VoiceUsage{

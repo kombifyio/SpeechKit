@@ -111,9 +111,15 @@ type Options struct {
 	// MaxGlobalSessions caps concurrent sessions across all callers.
 	// Defaults to 100.
 	MaxGlobalSessions int
-	// MaxPerIdentitySessions caps concurrent sessions per caller.
+	// MaxPerIdentitySessions caps concurrent sessions per caller, or running
+	// conversations when separate prepared-session admission is enabled.
 	// Defaults to 3.
 	MaxPerIdentitySessions int
+	// MaxPreparedPerIdentitySessions opts a surface into separate admission for
+	// unstarted sessions (including attached standby sockets). Zero preserves
+	// the shared transport's legacy total-session cap. The active conversation
+	// cap remains MaxPerIdentitySessions and is claimed by StartConversation.
+	MaxPreparedPerIdentitySessions int
 	// Clock is a time source; nil means time.Now. Tests can override.
 	Clock func() time.Time
 }
@@ -145,10 +151,17 @@ type ManagedSession struct {
 	// AISessionID binds this voice transport session to the durable agent
 	// conversation that owns its turns. Empty preserves standalone sessions.
 	AISessionID string
-	Owner       Identity
-	CreatedAt   time.Time
-	State       State
-	HasWSClient bool // true once the client has upgraded
+	// AnonymousGuide is memory-only public admission state, never a durable AI session.
+	AnonymousGuide      bool
+	AnonymousLocale     string
+	AnonymousGrant      string
+	Owner               Identity
+	CreatedAt           time.Time
+	State               State
+	HasWSClient         bool   // true once the client has upgraded
+	conversationStarted bool   // manager-lock protected; provider admission won
+	stopConversation    func() // manager-lock protected; cancel adapter on DELETE
+	closing             bool   // capacity remains held until adapter teardown
 
 	// BridgeCredential is the opaque, short-lived delegated credential the
 	// fronting proxy minted and forwarded at session creation (see middleware
@@ -338,7 +351,15 @@ func (m *SessionManager) createWithVoiceBudget(owner Identity, aiSessionID strin
 		failedCreate()
 		return nil, "", ErrGlobalLimitExceeded
 	}
-	if m.byUser[owner.UserID] >= m.opts.MaxPerIdentitySessions {
+	atLimit := m.byUser[owner.UserID] >= m.opts.MaxPerIdentitySessions
+	// The restricted public-guide identity is not an account. Its verified
+	// anonymous role retains the existing total-session cap, even though the
+	// public and account routes share this manager.
+	if m.opts.MaxPreparedPerIdentitySessions > 0 && owner.Role != "anonymous" {
+		prepared, _ := m.conversationCountsLocked(owner.UserID)
+		atLimit = prepared >= m.opts.MaxPreparedPerIdentitySessions
+	}
+	if atLimit {
 		failedCreate()
 		return nil, "", ErrIdentityLimitExceeded
 	}
@@ -395,6 +416,14 @@ func (m *SessionManager) Stats(userID string) SessionStats {
 		MaxPerIdentitySessions: m.opts.MaxPerIdentitySessions,
 	}
 	for _, session := range m.sessions {
+		if m.opts.MaxPreparedPerIdentitySessions > 0 {
+			if session.conversationStarted {
+				stats.ActiveSessions++
+			} else {
+				stats.PendingSessions++
+			}
+			continue
+		}
 		switch session.State {
 		case StateActive:
 			stats.ActiveSessions++
@@ -404,6 +433,43 @@ func (m *SessionManager) Stats(userID string) SessionStats {
 		}
 	}
 	return stats
+}
+
+// StartConversation atomically exchanges one prepared slot for an active slot
+// before any paid provider connection. Attaching a standby socket alone does
+// not claim that slot. Removal releases it on every failure or disconnect.
+func (m *SessionManager) StartConversation(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s := m.sessions[id]
+	if s == nil || s.State != StateActive || !s.HasWSClient || s.closing {
+		return ErrSessionNotFound
+	}
+	if s.conversationStarted {
+		return ErrSessionAlreadyActive
+	}
+	if m.opts.MaxPreparedPerIdentitySessions > 0 {
+		_, active := m.conversationCountsLocked(s.Owner.UserID)
+		if active >= m.opts.MaxPerIdentitySessions {
+			return ErrIdentityLimitExceeded
+		}
+	}
+	s.conversationStarted = true
+	return nil
+}
+
+func (m *SessionManager) conversationCountsLocked(userID string) (prepared, active int) {
+	for _, s := range m.sessions {
+		if s.Owner.UserID != userID {
+			continue
+		}
+		if s.conversationStarted {
+			active++
+		} else {
+			prepared++
+		}
+	}
+	return
 }
 
 // Attach moves a session from pending to active. Returns an error when the
@@ -439,12 +505,50 @@ func (m *SessionManager) Attach(id string) error {
 	return nil
 }
 
-// Remove closes and removes the session. Safe to call multiple times.
+// SetConversationStop binds an attached voice adapter's lifetime to DELETE.
+// Registration under the manager lock also closes the accept/delete race.
+func (m *SessionManager) SetConversationStop(id string, stop func()) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s := m.sessions[id]
+	if s == nil || !s.HasWSClient || s.closing {
+		return ErrSessionNotFound
+	}
+	s.stopConversation = stop
+	return nil
+}
+
+// FinishConversation releases capacity only after the adapter has closed its
+// provider and joined its pumps. A prior DELETE requests shutdown but cannot
+// make a still-running provider invisible to concurrency admission.
+func (m *SessionManager) FinishConversation(id string) {
+	m.mu.Lock()
+	s := m.sessions[id]
+	var receipt *ManagedSession
+	if s != nil {
+		s.stopConversation = nil
+		receipt = m.removeLocked(s)
+	}
+	m.mu.Unlock()
+	if receipt != nil {
+		receipt.pendingFinalizer(receipt)
+	}
+}
+
+// Remove requests adapter shutdown before removing an attached voice session.
+// Other surfaces and unconnected preparations are removed immediately.
+// Safe to call multiple times.
 func (m *SessionManager) Remove(id string) {
 	m.mu.Lock()
 	s, ok := m.sessions[id]
 	if !ok {
 		m.mu.Unlock()
+		return
+	}
+	if stop := s.stopConversation; stop != nil {
+		s.closing = true
+		m.mu.Unlock()
+		stop()
 		return
 	}
 	receipt := m.removeLocked(s)

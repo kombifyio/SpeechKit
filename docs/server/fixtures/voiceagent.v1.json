@@ -128,6 +128,15 @@
       "event_type": "session_end",
       "reason": "idle"
     },
-    "pong": { "type": "pong" }
+    "pong": { "type": "pong" },
+    "start_wake": {
+      "type": "start",
+      "media_transport": "websocket",
+      "locale": "de-DE",
+      "wake": { "phrase": "hey_jarvis", "score": 0.62, "preroll_ms": 1500 }
+    },
+    "state_verifying": { "type": "state", "state": "verifying" },
+    "wake_verified": { "type": "wake_verified", "phrase": "hey_jarvis" },
+    "wake_rejected": { "type": "wake_rejected", "phrase": "hey_jarvis", "reason": "no_match" }
   }
 }

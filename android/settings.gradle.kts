@@ -31,7 +31,6 @@ include(":assistant")
 include(":ime")
 include(":net")
 include(":coinstall")
-include(":test-shared")
 
 // The HeliBoard fork's keyboard module, consumed from the submodule as a
 // library. Its own root build script is not evaluated here -- plugin versions

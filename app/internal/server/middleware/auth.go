@@ -221,6 +221,10 @@ func (a authRuntime) verifyEdge(r *http.Request) (Identity, bool) {
 }
 
 func (a authRuntime) serveAuthenticated(next http.Handler, w http.ResponseWriter, r *http.Request, id Identity) {
+	if !anonymousRouteAllowed(r, id) {
+		writeAuthError(w)
+		return
+	}
 	if id.Source == "basic" {
 		username, passwordHash := a.adminCredentials()
 		a.setAdminSessionCookie(w, r, username, passwordHash)

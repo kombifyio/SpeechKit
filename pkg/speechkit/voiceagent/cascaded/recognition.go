@@ -44,6 +44,8 @@ const (
 	// earlyCommitSilenceMs is the silence that, together with the recogniser's own
 	// end-of-utterance signal, ends a turn before the plain silence timer.
 	earlyCommitSilenceMs = 300
+	// speechStartSilence is the silence that must precede a voiced chunk for it to count as the start of speech.
+	speechStartSilence = time.Second
 )
 
 // liveTurn is the streaming recognition of the turn being spoken. Its chunk
@@ -162,17 +164,17 @@ func (p *Provider) takeLiveTurnLocked() *liveTurn {
 	return turn
 }
 
-// recognized finishes the turn's streaming recognition and returns its text. ok
-// is false when the batch recogniser must take over: the stream failed, did not
-// finish in time, or recognised nothing.
-func (t *liveTurn) recognized(ctx context.Context) (text string, ok bool) {
+// recognized finishes the turn's streaming recognition and returns its text. A
+// non-empty reason means the batch recogniser must take over: the stream failed,
+// did not finish in time, or recognised nothing.
+func (t *liveTurn) recognized(ctx context.Context) (text, reason string) {
 	defer t.cancel()
 	waitCtx, cancel := context.WithTimeout(ctx, recognitionFinishTimeout)
 	defer cancel()
 	select {
 	case <-t.worker:
 	case <-waitCtx.Done():
-		return "", false
+		return "", "audio_not_delivered_in_time"
 	}
 	t.mu.Lock()
 	rec, failed := t.rec, t.failed
@@ -181,15 +183,18 @@ func (t *liveTurn) recognized(ctx context.Context) (text string, ok bool) {
 		if rec != nil {
 			_ = rec.Close()
 		}
-		return "", false
+		return "", "stream_unavailable"
 	}
 	text, err := rec.Finish(waitCtx)
 	_ = rec.Close()
 	text = strings.TrimSpace(text)
-	if err != nil || text == "" {
-		return "", false
+	switch {
+	case err != nil:
+		return "", "finish_failed"
+	case text == "":
+		return "", "nothing_recognised"
 	}
-	return text, true
+	return text, ""
 }
 
 // abandonLiveTurn drops a turn's recognition without using its result.

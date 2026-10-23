@@ -363,6 +363,9 @@ reminder_after_idle_sec         = 300
 deactivate_after_idle_sec       = 900
 
 [voice_agent.limits]
+# Tickets and pre-dialed sockets waiting for start (default 4), independently
+# of the active-conversation cap below. The global cap still counts both.
+max_prepared_per_identity_sessions = 4
 # Preferred v0.40.x capacity config. Legacy [server] limits above remain
 # accepted; positive values here take precedence.
 max_global_sessions       = 100

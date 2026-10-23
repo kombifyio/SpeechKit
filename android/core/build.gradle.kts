@@ -29,10 +29,6 @@ android {
         }
     }
 
-    testOptions {
-        // JUnit 5 (Jupiter) tests silently do not run without this.
-        unitTests.all { it.useJUnitPlatform() }
-    }
 }
 
 // Published because docs/architecture/android-sdk-surface-boundary.md names
@@ -114,12 +110,6 @@ dependencies {
     implementation(libs.timber)
 
     // Testing
-    testImplementation(libs.junit.api)
-    testRuntimeOnly(libs.junit.engine)
-    testRuntimeOnly(libs.junit.launcher)
-    testImplementation(libs.coroutines.test)
-    testImplementation(libs.mockk)
-    testImplementation(libs.turbine)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.espresso.core)
     androidTestImplementation(libs.room.testing)

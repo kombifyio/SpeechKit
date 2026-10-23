@@ -18,6 +18,27 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## [0.77.14](https://github.com/kombifyio/SpeechKit/compare/v0.77.13...v0.77.14) (2026-10-23)
+
+
+### Features
+
+* **server:** enable bounded multilingual anonymous voice ([#1134](https://github.com/kombifyio/SpeechKit/issues/1134)) ([7ef24ab](https://github.com/kombifyio/SpeechKit/commit/7ef24ab4ca7002e4556e501568a68fc3a0284a79))
+* **voiceagent:** two-stage wake word verification before provider start ([#1129](https://github.com/kombifyio/SpeechKit/issues/1129)) ([3177611](https://github.com/kombifyio/SpeechKit/commit/317761165601589578cebc4eb1bc731c6283e03c))
+
+
+### Bug Fixes
+
+* **delivery:** admit a release parent that is still waiting for a runner ([#1119](https://github.com/kombifyio/SpeechKit/issues/1119)) ([0db9f1d](https://github.com/kombifyio/SpeechKit/commit/0db9f1d57ffe714c6bf04a51f03925d37f43a9e5))
+* **release:** export the voice-agent router recognizer the exported server calls ([#1123](https://github.com/kombifyio/SpeechKit/issues/1123)) ([dd328dc](https://github.com/kombifyio/SpeechKit/commit/dd328dcd436999853c24b12dcbf7778440109af0))
+* **voiceagent:** allow bounded preparations for multiple Boxes ([#1137](https://github.com/kombifyio/SpeechKit/issues/1137)) ([19cb239](https://github.com/kombifyio/SpeechKit/commit/19cb2392fc387f424ff6288cef2d30afe36fcbb2))
+* **voice:** live recognition keeps the 800 ms turn end and logs why it fell back to batch ([#1120](https://github.com/kombifyio/SpeechKit/issues/1120)) ([9c6f53b](https://github.com/kombifyio/SpeechKit/commit/9c6f53b545716db6dbda819d405c113961dc5166))
+
+
+### Performance Improvements
+
+* **voice:** the first spoken piece leaves early, a session warms the Gateway's policy read ahead of the turn ([#1125](https://github.com/kombifyio/SpeechKit/issues/1125)) ([0d6e4da](https://github.com/kombifyio/SpeechKit/commit/0d6e4dac920f905384d9abe31c4dba47de988919))
+
 ## [0.77.13](https://github.com/kombifyio/SpeechKit/compare/v0.77.12...v0.77.13) (2026-10-22)
 
 

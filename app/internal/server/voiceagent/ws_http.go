@@ -37,10 +37,12 @@ type createSessionResponse struct {
 }
 
 type createSessionRequest struct {
-	AISessionID    string             `json:"ai_session_id,omitempty"`
-	Provider       string             `json:"provider,omitempty"`
-	TargetAgentID  string             `json:"target_agent_id,omitempty"`
-	DirectEndpoint *responses.Context `json:"direct_endpoint,omitempty"`
+	CloudProcessingConsent bool               `json:"cloud_processing_consent,omitempty"`
+	Locale                 string             `json:"locale,omitempty"`
+	AISessionID            string             `json:"ai_session_id,omitempty"`
+	Provider               string             `json:"provider,omitempty"`
+	TargetAgentID          string             `json:"target_agent_id,omitempty"`
+	DirectEndpoint         *responses.Context `json:"direct_endpoint,omitempty"`
 }
 
 type listSessionsResponse struct {
@@ -56,6 +58,10 @@ type listedSession struct {
 }
 
 func (h *Handler) collectionHandler(w http.ResponseWriter, r *http.Request) {
+	if h.anonymous && r.Method != http.MethodPost {
+		http.NotFound(w, r)
+		return
+	}
 	switch r.Method {
 	case http.MethodPost:
 		h.createSession(w, r)
@@ -174,6 +180,22 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 	input.AISessionID = strings.TrimSpace(input.AISessionID)
 	input.Provider = normalizeProviderName(input.Provider)
 	input.TargetAgentID = strings.TrimSpace(input.TargetAgentID)
+	if h.anonymous {
+		budget := middleware.VoiceBudgetFromContext(r.Context())
+		if !middleware.IsAnonymousEdge(id) || !input.CloudProcessingConsent || input.Provider != "anonymous-guide" || input.AISessionID != "" || input.TargetAgentID != "" || input.DirectEndpoint != nil ||
+			budget.ReservationID == "" || budget.ExpiresAt <= time.Now().Unix() || budget.ExpiresAt > time.Now().Unix()+60 || len(input.Locale) > 35 ||
+			strings.TrimSpace(r.Header.Get(anonymousGrantHeader)) == "" {
+			httpx.WriteError(w, http.StatusForbidden, "anonymous_voice_admission_required", "Start a consented, bounded public voice session through Gateway.")
+			return
+		}
+		if h.providers["anonymous-guide"] == nil {
+			httpx.WriteError(w, http.StatusServiceUnavailable, "provider_unavailable", "Public voice is not configured.")
+			return
+		}
+	} else if input.Provider == "anonymous-guide" {
+		httpx.WriteError(w, http.StatusForbidden, "anonymous_voice_route_required", "Use the public voice route.")
+		return
+	}
 	binding := middleware.VoiceAgentBindingFromContext(r.Context())
 	if binding.DirectEndpoint != nil || input.DirectEndpoint != nil || input.Provider == "kombify-endpoint" {
 		digest := sha256.Sum256(requestBytes)
@@ -203,6 +225,10 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		Role:   id.Role,
 	}, input.AISessionID, budget, h.reportUnstartedSession)
 	if err == nil {
+		session.AnonymousGuide, session.AnonymousLocale = h.anonymous, input.Locale
+		if h.anonymous {
+			session.AnonymousGrant = r.Header.Get(anonymousGrantHeader)
+		}
 		// Capture the optional per-session tool-bridge credential the edge
 		// forwarded with this request. The middleware only attaches it when
 		// edge-HMAC auth succeeded, so a plain bearer/browser caller cannot
@@ -216,6 +242,11 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		// defaults when the start frame omits provider or persona_id.
 		session.VoicePrefs = wssession.VoicePrefs(middleware.VoicePrefsFromContext(r.Context()))
 		session.VoiceAgentBinding = wssession.VoiceAgentBinding(binding)
+		if h.anonymous {
+			session.BridgeCredential = ""
+			session.VoicePrefs = wssession.VoicePrefs{}
+			session.VoiceAgentBinding = wssession.VoiceAgentBinding{}
+		}
 	}
 	if err != nil {
 		switch {
@@ -269,6 +300,10 @@ type renewSessionResponse struct {
 // verified reservation this session does not adopt is settled at zero so
 // Cloud never keeps an orphan hold.
 func (h *Handler) renewSession(w http.ResponseWriter, r *http.Request, sessionID string) {
+	if session, err := h.manager.Get(sessionID); err == nil && session.AnonymousGuide {
+		httpx.WriteError(w, http.StatusForbidden, "voice_budget_not_renewable", "Public voice sessions cannot be extended.")
+		return
+	}
 	id := middleware.IdentityFromContext(r.Context())
 	budget := wssession.VoiceBudget(middleware.VoiceBudgetFromContext(r.Context()))
 	if id.Source != "edge_hmac" || id.UserID == "" || budget.ReservationID == "" {

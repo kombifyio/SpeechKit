@@ -61,6 +61,10 @@ const (
 	MsgError            = "error"
 	MsgSessionEnd       = "session_end"
 	MsgPong             = "pong"
+	// MsgWakeVerified and MsgWakeRejected answer a start frame that carries a
+	// wake candidate, before any provider connects.
+	MsgWakeVerified = "wake_verified"
+	MsgWakeRejected = "wake_rejected"
 )
 
 // Provider-neutral event types surfaced on JSON frames as event_type and
@@ -121,6 +125,36 @@ type StartFrame struct {
 	// ConversationControl opts this client into typed assistant mode actions.
 	// Omission preserves existing clients. Session identities are server-owned.
 	ConversationControl *ConversationControlStart `json:"conversation_control,omitempty"`
+	// Wake marks a session a device opened on a wake word candidate. The
+	// device runs its detector at a low cutoff and sends its pre-roll and
+	// the following speech as soon as the server reports state "verifying";
+	// the server verifies the phrase on that audio before any provider
+	// connects, then answers wake_verified (and continues as a normal
+	// session) or wake_rejected (session ends, nothing billed). Ignored for
+	// LiveKit media and on servers without a wake verifier.
+	Wake *WakeCandidate `json:"wake,omitempty"`
+}
+
+// WakeCandidate is the device's stage-one detection.
+type WakeCandidate struct {
+	// Phrase is the device's phrase id, e.g. "hey_jarvis"; the server
+	// config maps ids to the words it checks.
+	Phrase string `json:"phrase"`
+	// Score is the device detector's window mean, 0..1 (diagnostics only).
+	Score float64 `json:"score,omitempty"`
+	// PrerollMs is how much audio before the detection the device sends
+	// first, so the phrase itself is in the verified audio.
+	PrerollMs int `json:"preroll_ms,omitempty"`
+}
+
+// WakeResultFrame is wake_verified or wake_rejected. Phrase is the
+// canonical id the server matched; clients and routing may act on it.
+type WakeResultFrame struct {
+	Type   string `json:"type"`
+	Phrase string `json:"phrase,omitempty"`
+	// Reason on wake_rejected: "no_match" (the phrase was not heard) or
+	// "no_audio" (too little audio arrived to decide).
+	Reason string `json:"reason,omitempty"`
 }
 
 type ConversationControlStart struct {
@@ -267,7 +301,7 @@ func ErrorRemediation(code string) string { return errorRemediation[code] }
 type SessionEndFrame struct {
 	Type string `json:"type"` // "session_end"
 	EventFrameFields
-	Reason string `json:"reason"` // "idle" | "go_away" | "client" | "error" | "shutdown" | "max_duration" | "authorization_expired"
+	Reason string `json:"reason"` // "idle" | "go_away" | "client" | "error" | "shutdown" | "max_duration" | "authorization_expired" | "wake_rejected"
 }
 
 type PongFrame struct {

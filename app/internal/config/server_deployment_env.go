@@ -9,6 +9,7 @@ import (
 )
 
 const (
+	ServerAnonymousAIOriginEnv = "SPEECHKIT_SERVER_ANONYMOUS_AI_ORIGIN"
 	ServerAuthModeEnv          = "SPEECHKIT_SERVER_AUTH_MODE"
 	ServerBearerTokenEnvName   = "SPEECHKIT_SERVER_BEARER_TOKEN_ENV"
 	ServerEdgeSecretEnvName    = "SPEECHKIT_SERVER_EDGE_AUTH_SECRET_ENV"
@@ -38,6 +39,10 @@ func ApplyServerDeploymentEnv(cfg *Config) ([]string, error) {
 	}
 
 	var notes []string
+	if origin := cleanSetting(os.Getenv(ServerAnonymousAIOriginEnv)); origin != "" {
+		cfg.Server.AnonymousAIOrigin = origin
+		notes = append(notes, "deployment env: public guide Gateway origin set from "+ServerAnonymousAIOriginEnv)
+	}
 
 	if envName := cleanSetting(os.Getenv(ServerBearerTokenEnvName)); envName != "" {
 		if !validEnvName(envName) {

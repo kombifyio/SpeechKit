@@ -295,7 +295,7 @@ func (a *Adapter) admitProviderOutput(ctx context.Context, result providerReceiv
 		a.suppressDownlink.set(false)
 		a.writeMu.Unlock()
 		code := cascaded.SafeFailureCode(msg.ErrorCode)
-		fatal := cascaded.IsTerminalFailure(code)
+		fatal := cascaded.IsTerminalFailure(code) || (a.Session != nil && a.Session.AnonymousGuide && code == "quota_exhausted")
 		a.sendErrorWithFatal(ctx, code, cascaded.FailureMessage(code), fatal)
 		if fatal {
 			if code == "auth_expired" {

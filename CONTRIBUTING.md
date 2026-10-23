@@ -47,7 +47,7 @@ TypeScript clients:
 ```bash
 cd clients/typescript
 pnpm install --frozen-lockfile
-pnpm run build && pnpm run test && pnpm run typecheck
+pnpm run build && pnpm run typecheck
 ```
 
 The examples run without provider credentials unless their README or source

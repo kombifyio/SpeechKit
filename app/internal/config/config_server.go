@@ -26,6 +26,9 @@ const (
 // ServerConfig configures the standalone Linux server binary. Used only by
 // app/cmd/speechkit-server; the desktop app never reads these values.
 type ServerConfig struct {
+	// AnonymousAIOrigin is the operator-selected Gateway origin for the
+	// public guide's reasoning. Empty leaves public conversations unavailable.
+	AnonymousAIOrigin string   `toml:"anonymous_ai_origin"`
 	ListenAddr        string   `toml:"listen_addr"`          // e.g. ":8080"
 	PublicURL         string   `toml:"public_url"`           // external API base URL, e.g. https://speechkit.example.com/api
 	Modes             []string `toml:"modes"`                // subset of ["dictation","assist","voiceagent"]; empty = all
@@ -402,11 +405,17 @@ type ServerDiscoveryConfig struct {
 	AdvertiseURL string `toml:"advertise_url"`
 }
 
-// VoiceAgentLimitsConfig configures Voice Agent session capacity. Zero values
-// are treated as unset and fall back to the legacy [server] limits.
+// DefaultMaxPreparedVoiceAgentSessions bounds unstarted sessions per account.
+const DefaultMaxPreparedVoiceAgentSessions = 4
+
+// VoiceAgentLimitsConfig configures Voice Agent session capacity. Unset active
+// and global caps fall back to [server]; the prepared cap defaults to four.
 type VoiceAgentLimitsConfig struct {
 	MaxGlobalSessions      int `toml:"max_global_sessions"`
 	MaxPerIdentitySessions int `toml:"max_per_identity_sessions"`
+	// MaxPreparedPerIdentitySessions bounds tickets and pre-dialed sockets
+	// before provider admission, separately from active conversations. Default 4.
+	MaxPreparedPerIdentitySessions int `toml:"max_prepared_per_identity_sessions"`
 }
 
 // ServerVoiceAgentConfig groups Server-Target-only Voice Agent integration

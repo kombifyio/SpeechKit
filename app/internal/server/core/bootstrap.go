@@ -221,6 +221,9 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			}
 			h.Mount(app.Mux)
 			h.MountOpenAICompat(app.Mux)
+			if err := h.MountAnonymous(app.Mux); err != nil {
+				return fmt.Errorf("core.Run: build public dictation handler: %w", err)
+			}
 			app.Health.SetReady("mode.dictation", StatusOK, "listening")
 			slog.Info("mode enabled", "mode", "dictation", "path", "/v1/dictation/transcribe", "openai_compat_path", dictation.OpenAITranscriptionsPath)
 			// Streaming dictation rides on the same mode + STT router:
@@ -368,6 +371,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			return fmt.Errorf("core.Run: build voiceagent handler: %w", err)
 		}
 		h.Mount(app.Mux)
+		h.MountAnonymous(app.Mux)
 		switch {
 		case strings.HasPrefix(status, "degraded"), strings.HasPrefix(status, "unavailable"):
 			app.Health.SetReady("mode.voiceagent", StatusDegraded, status)

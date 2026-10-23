@@ -111,6 +111,7 @@ runtime credentials without storing secret values in JSON.
 
 | Env var | Effect |
 |---|---|
+| `SPEECHKIT_SERVER_ANONYMOUS_AI_ORIGIN` | Gateway origin for bounded public guide reasoning; overrides `[server].anonymous_ai_origin`. Required for public conversations, with no default. Accepts HTTPS or explicit loopback HTTP for isolated development; paths, queries and fragments are rejected. SpeechKit appends `/v1/ai/anonymous/responses`. |
 | `SPEECHKIT_SERVER_TOKEN` | Canonical bearer token value for server auth. When set, it overrides a stale persisted `bearer_token_env` that points somewhere else. |
 | `SPEECHKIT_SERVER_BEARER_TOKEN_ENV` | Optional custom env var name for the bearer token, for example `DEPLOYMENT_SERVER_TOKEN`. |
 | `SPEECHKIT_SERVER_AUTH_MODE` | Optional startup override: `none`, `bearer`, `edge_hmac`, or `bearer_or_edge`. |
@@ -238,6 +239,7 @@ Voice Agent session capacity is configured under `[voice_agent.limits]`:
 [voice_agent.limits]
 max_global_sessions = 100
 max_per_identity_sessions = 3
+max_prepared_per_identity_sessions = 4
 ```
 
 The older `[server].max_voiceagent_sessions` and
@@ -246,6 +248,26 @@ The older `[server].max_voiceagent_sessions` and
 over the legacy server key. `GET /v1/voiceagent/sessions` returns a `metrics`
 object with current total, active, pending, per-identity, and configured limit
 values so operators can compare live usage with capacity.
+
+For Voice Agent, `max_per_identity_sessions` limits concurrently running
+conversations, atomically claimed before provider connection. Prepared tickets
+and pre-dialed WebSockets waiting for `start` use a separate
+`max_prepared_per_identity_sessions` allowance (default 4 when unset or
+nonpositive). The fifth preparation returns HTTP 409
+`per_user_limit_exceeded`; a start exceeding the active cap sends that code
+on the WebSocket and closes the session without connecting a provider.
+Pending metrics include attached standby sockets; active metrics count
+conversations admitted to provider connection. The global cap still counts
+all preparations and conversations. Ticket/standby expiry, authorization,
+Voice-minute reservations and usage settlement remain in force.
+Deleting a running conversation requests shutdown; its capacity remains held
+until the provider has closed and session teardown completes.
+
+With an isolated shared test account against a running server, run
+`sk-e2e --server <url> --scenarios voiceagent --voiceagent-prepared-limit 4`
+with its access token in `SPEECHKIT_SERVER_TOKEN`. The journey holds four
+preparations (two sockets pre-dialed), rejects the fifth and deletes all
+created sessions. It sends no audio or provider-start frame.
 
 Budget capacity from the heaviest enabled Voice Agent provider, not only the
 SpeechKit manager record. Native realtime cloud sessions are mostly network

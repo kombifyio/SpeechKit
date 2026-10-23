@@ -250,6 +250,100 @@ func TestSessionManager_TicketStructureIsStable(t *testing.T) {
 
 // ── test helpers ────────────────────────────────────────────────────────────
 
+// Public-guide identities cannot use the account preparation allowance.
+func TestSessionManager_AnonymousAdmissionRetainsTotalCap(t *testing.T) {
+	m := mustManager(t, Options{MaxPerIdentitySessions: 1, MaxPreparedPerIdentitySessions: 4})
+	owner := Identity{UserID: "anonymous:guide", Role: "anonymous", Plan: "anonymous"}
+	first, _, err := m.Create(owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := m.Create(owner); err != ErrIdentityLimitExceeded {
+		t.Fatalf("second public preparation: %v", err)
+	}
+	if err := m.Attach(first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := m.Create(owner); err != ErrIdentityLimitExceeded {
+		t.Fatalf("public standby bypassed total cap: %v", err)
+	}
+}
+
+// Active admission is a quota/security boundary. A journey cannot reliably
+// schedule simultaneous starts; prove the atomic handoff and failed-start
+// release here, while sk-e2e proves the HTTP/standby preparation regression.
+func TestSessionManager_ConcurrentConversationAdmission(t *testing.T) {
+	m := mustManager(t, Options{MaxPerIdentitySessions: 1, MaxPreparedPerIdentitySessions: 4})
+	var sessions []*ManagedSession
+	for i := 0; i < 4; i++ {
+		s, _, err := m.Create(Identity{UserID: "same-account"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := m.Attach(s.ID); err != nil {
+			t.Fatal(err)
+		}
+		sessions = append(sessions, s)
+	}
+	start := make(chan struct{})
+	results := make(chan string, len(sessions))
+	for _, s := range sessions {
+		go func() {
+			<-start
+			err := m.StartConversation(s.ID)
+			if err == nil {
+				results <- s.ID
+				return
+			}
+			if err != ErrIdentityLimitExceeded {
+				t.Errorf("start: %v", err)
+			}
+			results <- ""
+		}()
+	}
+	close(start)
+	var winner string
+	wins := 0
+	for range sessions {
+		if id := <-results; id != "" {
+			winner = id
+			wins++
+		}
+	}
+	if wins != 1 {
+		t.Fatalf("admitted %d concurrent conversations, want 1", wins)
+	}
+	stats := m.Stats("same-account")
+	if stats.ActiveSessions != 1 || stats.PendingSessions != 3 {
+		t.Fatalf("counts: %+v", stats)
+	}
+	spare, _, err := m.Create(Identity{UserID: "same-account"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Attach(spare.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.StartConversation(spare.ID); err != ErrIdentityLimitExceeded {
+		t.Fatalf("start spare: %v", err)
+	}
+	stopped := false
+	if err := m.SetConversationStop(winner, func() { stopped = true }); err != nil {
+		t.Fatal(err)
+	}
+	m.Remove(winner)
+	if !stopped {
+		t.Fatal("DELETE did not request adapter shutdown")
+	}
+	if err := m.StartConversation(spare.ID); err != ErrIdentityLimitExceeded {
+		t.Fatalf("DELETE released capacity before provider teardown: %v", err)
+	}
+	m.FinishConversation(winner) // provider-connect-failure/teardown path
+	if err := m.StartConversation(spare.ID); err != nil {
+		t.Fatalf("slot not released: %v", err)
+	}
+}
+
 type mutableClock struct {
 	mu sync.Mutex
 	t  time.Time
