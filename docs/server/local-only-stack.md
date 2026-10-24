@@ -45,7 +45,15 @@ Speaches voice ID.
 
 - **STT:** `[vps]` sends requests to `http://speechkit-whisper:8080`. The
   `cloud-only` routing strategy is the name of the setting that selects this
-  network client. It does not enable any cloud provider.
+  network client. It does not enable any cloud provider. For Parakeet instead
+  of Whisper (25 European languages, many times faster on the CPU), run the
+  compose profile `parakeet-setup` once to fetch and verify the model, start
+  with `--profile parakeet`, and set `[vps] url` to
+  `http://speechkit-stt-parakeet:8080`. `speechkit-server` still waits for
+  the `speechkit-whisper` health check, so Whisper keeps running unless a
+  compose override removes that dependency. The Parakeet service runs
+  `speechkit-stt-sherpa` from the server image, so it needs a server image
+  that includes it.
 - **TTS:** `[tts.local]` sends requests to `http://speechkit-tts:8880` with
   model `kokoro` and voice `af_bella`. The `[tts] strategy` is `local-only`.
 - **LLM:** `[local_llm]` sends requests to `http://ollama:11434/v1` with

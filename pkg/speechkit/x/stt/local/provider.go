@@ -1,11 +1,13 @@
-// Package local is the built-in speech-to-text provider: it runs a
-// whisper.cpp whisper-server child process on loopback and speaks its
-// OpenAI-compatible transcription route, so audio never leaves the machine.
-// It needs the whisper-server binary next to the executable or in a managed
-// install location (no cgo; PATH is consulted only with
-// SPEECHKIT_ALLOW_WHISPER_PATH=1) and a ggml-*.bin model file. The host owns
-// the process lifecycle through [Provider.StartServer] and
-// [Provider.StopServer].
+// Package local is the built-in speech-to-text provider: it runs a local STT
+// server as a child process on loopback and speaks its OpenAI-compatible
+// transcription route, so audio never leaves the machine. The model decides
+// the server: a ggml-*.bin file runs whisper.cpp's whisper-server, a
+// sherpa-onnx Parakeet model directory runs speechkit-stt-sherpa (see
+// pkg/speechkit/x/stt/sherpa). Either binary is found next to the executable,
+// in its sherpa-runtime subdirectory (speechkit-stt-sherpa) or in a managed
+// install location (no cgo in this process; PATH is consulted only with
+// SPEECHKIT_ALLOW_WHISPER_PATH=1). The host owns the process lifecycle
+// through [Provider.StartServer] and [Provider.StopServer].
 //
 // Stability: Beta — API-checked; may change with a changelog callout.
 package local
@@ -98,14 +100,15 @@ type Options struct {
 	// process cannot predict and bind first. A fixed port that is already in
 	// use fails the start instead of trusting whatever listens there.
 	Port int
-	// ModelPath is the path to the whisper.cpp model file.
+	// ModelPath is the whisper.cpp ggml-*.bin file or the Parakeet model
+	// directory.
 	ModelPath string
 	// GPU selects the GPU backend passed to the server. Empty leaves it unset.
 	GPU string
 }
 
-// New creates the built-in whisper.cpp provider. The process is
-// not started; lifecycle stays with the host.
+// New creates the built-in local provider. The process is not started;
+// lifecycle stays with the host.
 func New(opts Options) *Provider {
 	p := &Provider{
 		BaseURL:   fmt.Sprintf("http://127.0.0.1:%d", opts.Port),
@@ -155,13 +158,13 @@ func (p *Provider) Health(ctx context.Context) error {
 	// observable result was that local dictation stayed "not ready" until the
 	// app restarted, even though whisper-server was healthy the whole time.
 	if !p.hasProcess() {
-		return fmt.Errorf("whisper-server not running")
+		return fmt.Errorf("%s not running", engineForModel(p.ModelPath).serverName())
 	}
 
 	healthURL := fmt.Sprintf("%s/health", p.serverURL())
 	req, err := http.NewRequestWithContext(ctx, "GET", healthURL, http.NoBody)
 	if err != nil {
-		return fmt.Errorf("build whisper-server health request: %w", err)
+		return fmt.Errorf("build local STT health request: %w", err)
 	}
 
 	resp, err := p.client.Do(req)

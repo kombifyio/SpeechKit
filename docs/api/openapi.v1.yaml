@@ -2656,6 +2656,59 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/providers/artifacts/{artifactId}/install:
+    parameters:
+      - $ref: "#/components/parameters/ArtifactId"
+    post:
+      tags: [Providers]
+      operationId: installProviderArtifact
+      summary: Download or pull a provider artifact without changing any mode's model.
+      description: >-
+        A downloaded model becomes the model of its on-device engine only when
+        that engine has none yet; no mode's model selection changes. An Ollama
+        pull needs no activation.
+      security:
+        - ControlPlaneHeader: []
+      responses:
+        "200":
+          description: Download job accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DownloadJob"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/providers/artifacts/{artifactId}/activate:
+    parameters:
+      - $ref: "#/components/parameters/ArtifactId"
+    post:
+      tags: [Providers]
+      operationId: activateProviderArtifact
+      summary: Make an installed model the one its on-device engine runs.
+      description: >-
+        Modes that already run on the device follow the engine; no mode is
+        moved onto the device and no cloud model choice changes.
+      security:
+        - ControlPlaneHeader: []
+      responses:
+        "200":
+          description: Provider artifact activated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SelectedArtifact"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/v1/providers/{profileId}/activate:
     parameters:
       - name: profileId
@@ -3461,6 +3514,25 @@ components:
           type: string
         ollamaModel:
           type: string
+        dir:
+          type: string
+          description: Directory the files of a multi-file model (a Parakeet model) are installed into; url and sha256 are then empty.
+        files:
+          type: array
+          description: The files of a multi-file model, each verified against its own SHA-256.
+          items:
+            type: object
+            required: [name, url, sha256, sizeBytes]
+            properties:
+              name:
+                type: string
+              url:
+                type: string
+              sha256:
+                type: string
+              sizeBytes:
+                type: integer
+                format: int64
         license:
           type: string
         available:

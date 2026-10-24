@@ -27,34 +27,8 @@ import (
 
 func buildNativeVoiceConsentReader() vsserver.NativeConsentReader {
 	reader := vsserver.NativeConsentHTTPReader{
-		Endpoint: "https://api.kombify.io/v1/speechkit/voiceagent/session-authority",
-		Authorize: func(req *http.Request, cfg vsserver.LiveConfigFrame) error {
-			secret := strings.TrimSpace(os.Getenv("SERVICE_AUTH_SECRET"))
-			now := time.Now().Unix()
-			if secret == "" || cfg.OwnerUserID == "" || (cfg.DirectEndpoint == nil && (cfg.AgentTargetID == "" || cfg.CapabilityLease == "")) || cfg.CredentialExpiresAt <= now {
-				return errors.New("voiceagent: current consent service binding is unavailable")
-			}
-			owner := map[string]string{"sub": cfg.OwnerUserID}
-			if cfg.OwnerOrgID != "" && cfg.OwnerOrgID != "default" {
-				owner["org_id"] = cfg.OwnerOrgID
-			}
-			claims := jwt.MapClaims{
-				"iss": "kombify-speechkit-server", "svc": "speechkit-server", "aud": "kombify-gateway",
-				"scope": "speechkit.voice_consent.read", "iat": now, "exp": min(now+60, cfg.CredentialExpiresAt),
-				"on_behalf_of": owner, "target_agent_id": cfg.AgentTargetID, "session_expires_at": cfg.CredentialExpiresAt,
-			}
-			if cfg.DirectEndpoint != nil {
-				claims["voice_endpoint_binding"], claims["voice_endpoint_signature"] = cfg.EndpointBinding, cfg.EndpointSignature
-				delete(claims, "target_agent_id")
-			}
-			token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
-			if err != nil {
-				return errors.New("voiceagent: current consent service credential could not be issued")
-			}
-			req.Header.Set("X-Kombify-Service-Auth", token)
-			req.Header.Set("X-Kombify-Capability-Lease", cfg.CapabilityLease)
-			return nil
-		},
+		Endpoint:  "https://api.kombify.io/v1/speechkit/voiceagent/session-authority",
+		Authorize: authorizeNativeVoiceConsent,
 	}
 	return func(ctx context.Context, cfg vsserver.LiveConfigFrame) (vsserver.NativeVoiceConsent, error) {
 		current := reader
@@ -68,6 +42,34 @@ func buildNativeVoiceConsentReader() vsserver.NativeConsentReader {
 		}
 		return current.Read(ctx, cfg)
 	}
+}
+
+func authorizeNativeVoiceConsent(req *http.Request, cfg vsserver.LiveConfigFrame) error {
+	signer, err := vsserver.NewServiceTokenSigner(os.Getenv("SERVICE_AUTH_SECRET"), os.Getenv("SERVICE_AUTH_ED25519_PRIVATE_KEY"))
+	now := time.Now().Unix()
+	if err != nil || cfg.OwnerUserID == "" || (cfg.DirectEndpoint == nil && (cfg.AgentTargetID == "" || cfg.CapabilityLease == "")) || cfg.CredentialExpiresAt <= now {
+		return errors.New("voiceagent: current consent service binding is unavailable")
+	}
+	owner := map[string]string{"sub": cfg.OwnerUserID}
+	if cfg.OwnerOrgID != "" && cfg.OwnerOrgID != "default" {
+		owner["org_id"] = cfg.OwnerOrgID
+	}
+	claims := jwt.MapClaims{
+		"iss": "kombify-speechkit-server", "svc": "speechkit-server", "aud": "kombify-gateway",
+		"scope": "speechkit.voice_consent.read", "iat": now, "exp": min(now+60, cfg.CredentialExpiresAt),
+		"on_behalf_of": owner, "target_agent_id": cfg.AgentTargetID, "session_expires_at": cfg.CredentialExpiresAt,
+	}
+	if cfg.DirectEndpoint != nil {
+		claims["voice_endpoint_binding"], claims["voice_endpoint_signature"] = cfg.EndpointBinding, cfg.EndpointSignature
+		delete(claims, "target_agent_id")
+	}
+	token, err := signer.Sign(claims)
+	if err != nil {
+		return errors.New("voiceagent: current consent service credential could not be issued")
+	}
+	req.Header.Set("X-Kombify-Service-Auth", token)
+	req.Header.Set("X-Kombify-Capability-Lease", cfg.CapabilityLease)
+	return nil
 }
 
 func mapKernelLiveMessage(msg *live.LiveMessage) *vsserver.LiveMessage {

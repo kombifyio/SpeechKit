@@ -13,30 +13,27 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/procguard"
 )
 
-// StartServer starts the whisper.cpp server subprocess. Blocks until ready or context cancelled.
+// StartServer starts the local STT server subprocess for the configured model
+// (whisper-server for a ggml file, speechkit-stt-sherpa for a Parakeet model
+// directory). Blocks until ready or context cancelled.
 func (p *Provider) StartServer(ctx context.Context) error {
 	if ctx == nil {
-		return fmt.Errorf("whisper-server process context is required")
+		return fmt.Errorf("local STT server process context is required")
 	}
+	engine := engineForModel(p.ModelPath)
+	name := engine.serverName()
 	generation, startDone, err := p.beginProcessStart()
 	if err != nil {
 		return err
 	}
 	defer p.finishProcessStart(generation, startDone)
 
-	binaryPath, err := findWhisperBinary()
+	binaryPath, err := findBinary(engine)
 	if err != nil {
-		return fmt.Errorf("whisper binary: %w", err)
+		return fmt.Errorf("%s binary: %w", name, err)
 	}
-
-	if err := ValidateModelPath(p.ModelPath); err != nil {
-		return fmt.Errorf("validate whisper model path: %w", err)
-	}
-	if _, err := os.Stat(p.ModelPath); err != nil {
-		return fmt.Errorf("model not found: %s", p.ModelPath)
-	}
-	if err := verifyReadableModelFile(p.ModelPath); err != nil {
-		return fmt.Errorf("model not readable: %s: %w", p.ModelPath, err)
+	if err := validateModel(engine, p.ModelPath); err != nil {
+		return err
 	}
 	if err := p.processStartCanceled(ctx, generation); err != nil {
 		return err
@@ -50,32 +47,17 @@ func (p *Provider) StartServer(ctx context.Context) error {
 	}
 	proxy, err := startAuthProxy(ctx, p.Port, port)
 	if err != nil {
-		return fmt.Errorf("start whisper-server: %w", err)
+		return fmt.Errorf("start %s: %w", name, err)
 	}
 	identity, err := newServerIdentity()
 	if err != nil {
-		p.log().Warn("whisper-server identity check unavailable", "error", err)
+		p.log().Warn("local STT server identity check unavailable", "server", name, "error", err)
 	}
 
 	threads := defaultWhisperThreads()
-	modelArg, workDir := whisperModelArgument(p.ModelPath)
-	args := []string{
-		"--model", modelArg,
-		"--host", "127.0.0.1",
-		"--port", strconv.Itoa(port),
-		"--threads", strconv.Itoa(threads),
-		"--inference-path", "/v1/audio/transcriptions",
-	}
-	if identity != nil {
-		args = append(args, "--public", identity.publicArg)
-	}
-	// whisper.cpp uses GPU by default; only pass --no-gpu when explicitly disabled.
-	// "auto" and "" mean let whisper.cpp decide (default behavior).
-	if p.GPU == "cpu" {
-		args = append(args, "--no-gpu")
-	}
+	args, workDir := serverArgs(engine, p.ModelPath, port, threads, identity, p.GPU)
 
-	cmd := exec.CommandContext(ctx, binaryPath, args...) // #nosec G204 -- binaryPath is resolved by findWhisperBinary from bundle/managed locations or explicit dev opt-in.
+	cmd := exec.CommandContext(ctx, binaryPath, args...) // #nosec G204 -- binaryPath is resolved by findBinary from bundle/managed locations or explicit dev opt-in.
 	// The child runs from its own directory unless the model argument needs
 	// the model directory (see whisperModelArgument): ggml and the Windows
 	// loader also search the working directory for DLLs.
@@ -91,7 +73,8 @@ func (p *Provider) StartServer(ctx context.Context) error {
 	procguard.Prepare(cmd)
 	// whisper-server prints every recognised segment to stdout, so stdout is
 	// left unset (the null device): transcripts must not reach a console or
-	// log. Its diagnostics (model load, backend, bind errors) go to stderr.
+	// log. Its diagnostics (model load, backend, bind errors) go to stderr;
+	// speechkit-stt-sherpa logs only to stderr and never logs transcripts.
 	cmd.Stderr = os.Stderr
 
 	// gpu_mode is the *requested* mode; whether inference actually runs on a
@@ -99,20 +82,21 @@ func (p *Provider) StartServer(ctx context.Context) error {
 	// build silently ignores "auto"/"cuda" and transcription scales with
 	// audio length). whisper-server's own startup banner on stderr names the
 	// backend it actually initialised — check it when latency looks CPU-bound.
-	p.log().Info("starting whisper-server", "binary", binaryPath, "args", args, "dir", workDir, "threads", threads, "gpu_mode", p.GPU)
-	if modelArg == p.ModelPath && !isASCII(modelArg) {
+	// speechkit-stt-sherpa always runs on the CPU.
+	p.log().Info("starting local STT server", "server", name, "binary", binaryPath, "args", args, "dir", workDir, "threads", threads, "gpu_mode", p.GPU)
+	if engine == engineWhisper && args[1] == p.ModelPath && !isASCII(p.ModelPath) {
 		p.log().Warn("whisper-server model path contains non-ASCII characters that cannot be passed through argv safely; move the model to an ASCII-only path if startup fails", "model", p.ModelPath)
 	}
 	if err := cmd.Start(); err != nil {
 		proxy.close()
 		identity.remove()
-		return fmt.Errorf("start whisper-server: %w", err)
+		return fmt.Errorf("start %s: %w", name, err)
 	}
 	// Hand the child to the OS so it cannot outlive this process when the
 	// host dies without running its cleanup path (crash, taskkill, dev-loop
 	// rebuild). Assignment failing does not make the child unusable.
 	procguard.AdoptOrReport(cmd, func(err error) {
-		p.log().Warn("whisper-server not adopted into the kill-on-exit job", "error", err, "pid", cmd.Process.Pid)
+		p.log().Warn("local STT server not adopted into the kill-on-exit job", "server", name, "error", err, "pid", cmd.Process.Pid)
 	})
 	processDone := make(chan struct{})
 	p.processMu.Lock()
@@ -122,7 +106,7 @@ func (p *Provider) StartServer(ctx context.Context) error {
 		_ = cmd.Wait()
 		proxy.close()
 		identity.remove()
-		return fmt.Errorf("whisper-server startup generation changed unexpectedly")
+		return fmt.Errorf("%s startup generation changed unexpectedly", name)
 	}
 	p.cmd = cmd
 	p.processDone = processDone
@@ -135,23 +119,23 @@ func (p *Provider) StartServer(ctx context.Context) error {
 	go p.waitForProcess(ctx, cmd, processDone, generation)
 	if stopAfterPublish {
 		p.stopStartedProcess(generation, cmd, processDone)
-		return fmt.Errorf("whisper-server startup was stopped")
+		return fmt.Errorf("%s startup was stopped", name)
 	}
 
 	if err := p.waitForReady(ctx); err != nil {
 		p.stopStartedProcess(generation, cmd, processDone)
-		return fmt.Errorf("whisper-server health probe never returned ready: %w", err)
+		return fmt.Errorf("%s health probe never returned ready: %w", name, err)
 	}
 	if err := p.waitForInferenceReady(ctx); err != nil {
 		p.stopStartedProcess(generation, cmd, processDone)
-		return fmt.Errorf("whisper-server inference probe never returned ready: %w", err)
+		return fmt.Errorf("%s inference probe never returned ready: %w", name, err)
 	}
 
 	if err := p.markProcessReady(generation, processDone); err != nil {
 		p.stopStartedProcess(generation, cmd, processDone)
-		return fmt.Errorf("whisper-server stopped before readiness: %w", err)
+		return fmt.Errorf("%s stopped before readiness: %w", name, err)
 	}
-	p.log().Info("whisper-server ready", "url", p.serverURL())
+	p.log().Info("local STT server ready", "server", name, "url", p.serverURL())
 	return nil
 }
 

@@ -204,4 +204,19 @@
     <string name="dev_transcripts">Transcripts</string>
     <string name="dev_log">Log</string>
     <string name="dev_system_recognizer_owns_mic">The system recognizer owns the microphone</string>
+    <string name="settings_on_device_title">On-device transcription</string>
+    <string name="settings_on_device_subtitle">Which recognizer dictates when no server is used. Parakeet runs fully on this phone, offline, in 25 European languages (not Chinese, Hindi or Arabic).</string>
+    <string name="settings_on_device_engine_system">System recognizer</string>
+    <string name="settings_on_device_engine_parakeet">Parakeet</string>
+    <string name="settings_on_device_unsupported">Parakeet is not available: %1$s</string>
+    <string name="settings_on_device_downloading">Downloading Parakeet: %1$d / %2$d MB</string>
+    <string name="settings_on_device_pause">Pause download</string>
+    <string name="settings_on_device_ready_active">Parakeet is downloaded and dictates on this device.</string>
+    <string name="settings_on_device_ready_inactive">Parakeet is downloaded. Choose it above to dictate with it.</string>
+    <string name="settings_on_device_delete">Delete Parakeet (%1$d MB)</string>
+    <string name="settings_on_device_failed">Download failed: %1$s</string>
+    <string name="settings_on_device_needs_download">Until Parakeet is downloaded, the system recognizer keeps dictating.</string>
+    <string name="settings_on_device_metered">You are on a metered connection; the download is %1$d MB.</string>
+    <string name="settings_on_device_download">Download Parakeet (%1$d MB)</string>
+    <string name="settings_on_device_discard_partial">Remove the partial download (%1$d MB)</string>
 </resources>

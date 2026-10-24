@@ -366,6 +366,8 @@ which wraps `sk-e2e --strict-ready --require-functional` and requires
 | `/api/v1/providers/artifacts/jobs` | `GET` | Return current provider artifact download/pull jobs. |
 | `/api/v1/providers/artifacts/{artifactId}/download` | `POST` | Download or pull a provider artifact. |
 | `/api/v1/providers/artifacts/{artifactId}/select` | `POST` | Select an already available provider artifact. |
+| `/api/v1/providers/artifacts/{artifactId}/install` | `POST` | Download or pull an artifact without changing any mode's model; it becomes its on-device engine's model only when that engine has none. |
+| `/api/v1/providers/artifacts/{artifactId}/activate` | `POST` | Make an installed model the one its on-device engine runs; modes already on the device follow. |
 | `/api/v1/providers/{profileId}/activate` | `POST` | Activate a provider profile for its mode. |
 | `/api/v1/customization/words` | `GET`, `POST` | Read or replace Words for the selected language, source, and scope. |
 | `/api/v1/customization/replacements` | `GET`, `POST` | Read or replace Replacements for the selected language, source, and scope. |

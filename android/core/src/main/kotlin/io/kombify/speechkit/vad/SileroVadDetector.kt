@@ -4,6 +4,7 @@ import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import android.content.Context
+import io.kombify.speechkit.onnx.LocalOrt
 import timber.log.Timber
 import java.io.File
 import java.nio.FloatBuffer
@@ -28,7 +29,7 @@ class SileroVadDetector(
     context: Context,
 ) : VadDetector {
 
-    private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
+    private val env: OrtEnvironment = LocalOrt.environment()
     private val session: OrtSession
 
     // Silero VAD internal state (LSTM hidden/cell states)
@@ -114,7 +115,6 @@ class SileroVadDetector(
 
     override fun close() {
         session.close()
-        env.close()
     }
 
     private fun resolveModelPath(context: Context): String {

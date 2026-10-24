@@ -20,6 +20,7 @@ import io.kombify.speechkit.net.CloudRefresh
 import io.kombify.speechkit.net.CloudTokenLifecycle
 import io.kombify.speechkit.net.KombifyCloudAuth
 import io.kombify.speechkit.net.StoredCloudSession
+import io.kombify.speechkit.stt.parakeet.ParakeetOnDevice
 import timber.log.Timber
 
 /**
@@ -30,6 +31,12 @@ import timber.log.Timber
  */
 @HiltAndroidApp
 class SpeechKitApplication : App() {
+
+    /** A backgrounded keyboard gives the on-device dictation model's memory (about 1 GB) back. */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        ParakeetOnDevice.onTrimMemory(level)
+    }
 
     override fun onCreate() {
         super.onCreate()

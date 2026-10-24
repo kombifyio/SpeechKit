@@ -184,4 +184,19 @@
     <string name="dev_transcripts">Transkripte</string>
     <string name="dev_log">Protokoll</string>
     <string name="dev_system_recognizer_owns_mic">Der System-Erkenner belegt das Mikrofon</string>
+    <string name="settings_on_device_title">Transkription auf dem Gerät</string>
+    <string name="settings_on_device_subtitle">Welche Spracherkennung diktiert, wenn kein Server genutzt wird. Parakeet läuft vollständig auf diesem Smartphone, offline, in 25 europäischen Sprachen (nicht Chinesisch, Hindi oder Arabisch).</string>
+    <string name="settings_on_device_engine_system">System-Spracherkennung</string>
+    <string name="settings_on_device_engine_parakeet">Parakeet</string>
+    <string name="settings_on_device_unsupported">Parakeet ist nicht verfügbar: %1$s</string>
+    <string name="settings_on_device_downloading">Parakeet wird geladen: %1$d / %2$d MB</string>
+    <string name="settings_on_device_pause">Download pausieren</string>
+    <string name="settings_on_device_ready_active">Parakeet ist geladen und diktiert auf diesem Gerät.</string>
+    <string name="settings_on_device_ready_inactive">Parakeet ist geladen. Wähle es oben aus, um damit zu diktieren.</string>
+    <string name="settings_on_device_delete">Parakeet löschen (%1$d MB)</string>
+    <string name="settings_on_device_failed">Download fehlgeschlagen: %1$s</string>
+    <string name="settings_on_device_needs_download">Bis Parakeet geladen ist, diktiert weiter die System-Spracherkennung.</string>
+    <string name="settings_on_device_metered">Du bist in einem getakteten Netz; der Download ist %1$d MB groß.</string>
+    <string name="settings_on_device_download">Parakeet laden (%1$d MB)</string>
+    <string name="settings_on_device_discard_partial">Teilweisen Download entfernen (%1$d MB)</string>
 </resources>

@@ -2,12 +2,14 @@ package local
 
 import (
 	"fmt"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/sherpa"
 )
 
 // whisperModelPattern restricts whisper.cpp model filenames to the
@@ -57,25 +59,43 @@ type InstallStatus struct {
 const MinWhisperModelBytes = 50_000_000
 
 // VerifyInstallation checks binary and model availability without starting the server.
+// For a Parakeet model directory it checks speechkit-stt-sherpa and the
+// model's encoder, decoder, joiner and tokens; ModelBytes is then the size of
+// all files in the directory.
 func (p *Provider) VerifyInstallation() InstallStatus {
 	status := InstallStatus{
 		ModelPath:   p.ModelPath,
 		ServerReady: p.ready.Load(),
 	}
+	engine := engineForModel(p.ModelPath)
 
 	// Check binary.
-	binaryPath, err := findWhisperBinary()
+	binaryPath, err := findBinary(engine)
 	if err != nil {
-		status.Problems = append(status.Problems, "whisper-server binary not found")
+		status.Problems = append(status.Problems, engine.serverName()+" binary not found")
 	} else {
 		status.BinaryFound = true
 		status.BinaryPath = binaryPath
 	}
 
-	// Check model file.
-	if p.ModelPath == "" {
+	switch {
+	case p.ModelPath == "":
 		status.Problems = append(status.Problems, "no model path configured")
-	} else if err := ValidateModelPath(p.ModelPath); err != nil {
+	case engine == engineSherpa:
+		if files, err := sherpa.ResolveModelDir(p.ModelPath); err != nil {
+			status.Problems = append(status.Problems, err.Error())
+		} else {
+			status.ModelFound = true
+			status.ModelBytes = dirBytes(files.Dir)
+		}
+	default:
+		status = p.verifyWhisperModel(status)
+	}
+	return status
+}
+
+func (p *Provider) verifyWhisperModel(status InstallStatus) InstallStatus {
+	if err := ValidateModelPath(p.ModelPath); err != nil {
 		status.Problems = append(status.Problems, err.Error())
 	} else if fi, err := os.Stat(p.ModelPath); err != nil {
 		status.Problems = append(status.Problems, fmt.Sprintf("model file missing: %s", p.ModelPath))
@@ -89,8 +109,22 @@ func (p *Provider) VerifyInstallation() InstallStatus {
 			status.ModelFound = true
 		}
 	}
-
 	return status
+}
+
+// dirBytes is the total size of the regular files directly in dir.
+func dirBytes(dir string) int64 {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	var total int64
+	for _, entry := range entries {
+		if info, err := entry.Info(); err == nil && info.Mode().IsRegular() {
+			total += info.Size()
+		}
+	}
+	return total
 }
 
 func verifyReadableModelFile(path string) error {

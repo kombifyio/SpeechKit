@@ -62,6 +62,18 @@ RUN go build \
         -o /out/speechkit-server \
         ./app/cmd/speechkit-server
 
+# Parakeet speech-to-text sidecar (speechkit-stt-sherpa). It links the
+# sherpa-onnx libraries the go.sum-pinned sherpa-onnx-go-linux module ships,
+# which bring their own ONNX Runtime. They go to a private directory found
+# through the binary's runpath, never into /usr/local/lib, so they cannot
+# shadow the ONNX Runtime 1.17.1 the server loads for Silero VAD.
+RUN go build \
+        -ldflags="-s -w -X main.version=${VERSION} -extldflags=-Wl,-rpath,/usr/local/lib/sherpa-onnx" \
+        -o /out/speechkit-stt-sherpa \
+        ./app/cmd/speechkit-stt-sherpa \
+    && mkdir -p /out/sherpa-onnx \
+    && cp "$(go list -m -f '{{.Dir}}' github.com/k2-fsa/sherpa-onnx-go-linux)/lib/x86_64-unknown-linux-gnu/"*.so /out/sherpa-onnx/
+
 # ── Stage 2: Shared runtime base ─────────────────────────────────────────────
 # Keeping this as a separate stage keeps apt + ONNX install layers stable
 # across rebuilds.
@@ -131,7 +143,11 @@ RUN groupadd -r speechkit --gid 2000 \
 # whisper.cpp binary is expected at /usr/local/bin/whisper-server; it is
 # intentionally NOT baked into this image so that the OSS container stays
 # small and license-clean. Operators provide whisper.cpp via a sidecar or
-# compose-service (see deploy/docker/docker-compose.yml).
+# compose-service (see deploy/docker/docker-compose.yml). The Parakeet sidecar
+# speechkit-stt-sherpa ships next to the server binary (stage 3): the local
+# provider starts it for a Parakeet model directory, and the same image runs
+# it as a standalone STT service (docker-compose.local-only.yml, profile
+# parakeet).
 
 USER speechkit
 WORKDIR /home/speechkit
@@ -150,6 +166,8 @@ LABEL org.opencontainers.image.source="https://github.com/kombifyio/SpeechKit"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 COPY --from=builder /out/speechkit-server /app/speechkit-server
+COPY --from=builder /out/speechkit-stt-sherpa /app/speechkit-stt-sherpa
+COPY --from=builder /out/sherpa-onnx/ /usr/local/lib/sherpa-onnx/
 # CONFIG_FILE selects which baked config ships in the image. Defaults to the
 # providerless reference config (OSS unchanged); the kombify production build
 # passes deploy/config/server.kombify-prod.toml without a separate Dockerfile.

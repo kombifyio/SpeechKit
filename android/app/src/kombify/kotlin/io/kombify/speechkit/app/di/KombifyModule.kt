@@ -10,6 +10,7 @@ import io.kombify.speechkit.app.build.ShippedDefaults
 import io.kombify.speechkit.app.companion.CompanionProvisioner
 import io.kombify.speechkit.domain.ConnectionMode
 import io.kombify.speechkit.domain.ConnectionProfileSource
+import io.kombify.speechkit.net.OnDeviceEngine
 import io.kombify.speechkit.net.StoredServerProfile
 import io.kombify.speechkit.domain.resolveConnectionProfile
 import io.kombify.speechkit.stt.HuggingFaceProvider
@@ -66,13 +67,15 @@ object KombifyModule {
             val companionCloud = if (cloud != null &&
                 !StoredServerProfile.hasOwnCloudSession(context)
             ) companion.currentSession() else null
-            resolveConnectionProfile(
+            val resolved = resolveConnectionProfile(
                 mode = mode,
                 companion = companionCloud,
                 stored = stored,
                 shipped = shipped,
                 cloud = companionCloud ?: cloud,
             )
+            // The on-device floor uses the recognizer chosen in Settings.
+            OnDeviceEngine.resolve(context, resolved)
         }
     }
 

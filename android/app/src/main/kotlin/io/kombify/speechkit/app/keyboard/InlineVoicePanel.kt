@@ -42,6 +42,7 @@ import io.kombify.speechkit.ime.ui.VoicePanelUi
 import io.kombify.speechkit.domain.ConnectionProfile
 import io.kombify.speechkit.domain.ConnectionProfileSource
 import io.kombify.speechkit.net.DictationController
+import io.kombify.speechkit.net.OnDeviceEngine
 import io.kombify.speechkit.net.SpeechKitApiException
 import io.kombify.speechkit.net.VoiceAgentAudio
 import io.kombify.speechkit.net.VoiceAgentController
@@ -629,7 +630,7 @@ class InlineVoicePanel(
         val connection = currentInputConnection ?: return
         val editor = currentInputEditorInfo ?: return
         val tier = when (action) {
-            KeyboardAction.OnDeviceDictation -> ConnectionProfile.SystemOnDevice()
+            KeyboardAction.OnDeviceDictation -> OnDeviceEngine.profile(this)
             // The row disables these without a paired server, so the cast is
             // the one the user's choice implies rather than a guess.
             KeyboardAction.ServerDictation,

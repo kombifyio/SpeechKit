@@ -13,11 +13,13 @@ import (
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 )
 
 // Transcribe implements [stt.STTProvider] against the child's
-// /v1/audio/transcriptions route. When a [Provider.StartServer] call is in
+// /v1/audio/transcriptions route. A Parakeet model takes no prompt, so none
+// is sent to it. When a [Provider.StartServer] call is in
 // progress it waits for it to finish, and it fails when the server is not
 // ready. A multilanguage request is sent as whisper.cpp's explicit "auto",
 // since the server would otherwise pin English. The request timeout grows
@@ -30,21 +32,27 @@ func (p *Provider) Transcribe(ctx context.Context, audioData []byte, opts stt.Tr
 		done := p.startDone
 		p.processMu.Unlock()
 		if done != nil {
-			p.log().Info("whisper-server: waiting for startup to complete...")
+			p.log().Info("local STT server: waiting for startup to complete...")
 			select {
 			case <-done:
 				// startup finished — check ready below
 			case <-ctx.Done():
-				return nil, fmt.Errorf("local whisper-server not ready: cancelled while waiting for startup")
+				return nil, fmt.Errorf("local %s not ready: cancelled while waiting for startup", engineForModel(p.ModelPath).serverName())
 			}
 		}
 		if !p.ready.Load() {
-			return nil, fmt.Errorf("local whisper-server not ready")
+			return nil, fmt.Errorf("local %s not ready", engineForModel(p.ModelPath).serverName())
 		}
 	}
 
 	endpoint := fmt.Sprintf("%s/v1/audio/transcriptions", p.serverURL())
-	resolved := stt.ResolveTranscribeOptions("local", "stt.local.whispercpp", opts, nil, nil)
+	engine := engineForModel(p.ModelPath)
+	var resolved stt.ResolvedTranscribeOptions
+	if engine == engineSherpa {
+		resolved = stt.ResolveTranscribeOptionsWithManifest(provideropts.LocalParakeetSTTManifest(), engine.profileID(), opts, nil, nil)
+	} else {
+		resolved = stt.ResolveTranscribeOptions("local", engine.profileID(), opts, nil, nil)
+	}
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -73,7 +81,7 @@ func (p *Provider) Transcribe(ctx context.Context, audioData []byte, opts stt.Tr
 	if err := writer.WriteField("model", "whisper-1"); err != nil {
 		return nil, fmt.Errorf("write model field: %w", err)
 	}
-	if resolved.Prompt != "" {
+	if engine == engineWhisper && resolved.Prompt != "" {
 		if err := writer.WriteField("prompt", resolved.Prompt); err != nil {
 			return nil, fmt.Errorf("write prompt field: %w", err)
 		}
@@ -116,8 +124,8 @@ func (p *Provider) Transcribe(ctx context.Context, audioData []byte, opts stt.Tr
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 
-	// whisper.cpp does not report which language it detected, so the label can
-	// only echo what was asked for. APILanguage() is empty for a multilanguage
+	// Neither whisper.cpp nor Parakeet reports which language it detected, so
+	// the label can only echo what was asked for. APILanguage() is empty for a multilanguage
 	// session, and reporting a locale there would be an inference — the exact
 	// thing the multilanguage rule forbids.
 	lang := stt.FirstNonEmptyTrimmed(resolved.APILanguage(), stt.LanguageMulti)

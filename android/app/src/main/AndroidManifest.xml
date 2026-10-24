@@ -7,6 +7,8 @@
     </queries>
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- The model card warns before a download on a metered network. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission
         android:name="android.permission.NEARBY_WIFI_DEVICES"

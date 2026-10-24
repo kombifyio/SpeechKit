@@ -3,6 +3,7 @@
 #   speechkit-server   Dictation / Assist / Voice Agent + OpenAI-compatible
 #                      /v1/audio/transcriptions and /v1/audio/speech
 #   speechkit-whisper  whisper.cpp whisper-server (STT)
+#   speechkit-stt-parakeet  optional Parakeet STT (profile "parakeet"), see below
 #   speechkit-tts      Kokoro-FastAPI, OpenAI-compatible /v1/audio/speech (TTS)
 #   ollama             Assist / Voice Agent LLM. Omit this service and point
 #                      [local_llm] base_url at an existing Ollama instead.
@@ -72,6 +73,62 @@ services:
       - "8080"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8080/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  # Parakeet instead of Whisper (25 European languages, many times faster on
+  # the CPU): fetch the model once, start the profile, and point [vps] url in
+  # deploy/config/server.local-only.toml at http://speechkit-stt-parakeet:8080.
+  #   docker compose -f docker-compose.local-only.yml --profile parakeet-setup run --rm speechkit-parakeet-model
+  #   docker compose -f docker-compose.local-only.yml --profile parakeet up -d
+  # Every file is checked against the SHA-256 the desktop download catalog
+  # pins for parakeet.ultra-int8; an interrupted fetch leaves only a .part
+  # file, so a re-run starts that file again.
+  speechkit-parakeet-model:
+    profiles: ["parakeet-setup"]
+    image: curlimages/curl:8.16.0
+    user: "0:0"
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        set -e;
+        mkdir -p /models/parakeet-ultra-int8 && cd /models/parakeet-ultra-int8;
+        base=https://huggingface.co/tpmaerk/parakeet-ultra-sherpa-onnx-int8/resolve/b86784a3a5356cbd126f710b61cd90c5fe5898f1;
+        for f in encoder.int8.onnx decoder.int8.onnx joiner.int8.onnx tokens.txt; do
+          test -s $$f || { curl -fL --retry 5 -o $$f.part $$base/$$f && mv $$f.part $$f; };
+        done;
+        printf '%s  %s\n'
+        f4d06712d32431b1718eceba2153c314ac4425e8fe708a3534f5e56c5ad53697 encoder.int8.onnx
+        94373c6405c8149d1c9d1e9862514e0e3e88dab1c7de18fac9d5df9c6ba5efdd decoder.int8.onnx
+        8a71aaccfdba3d451775507a889afd2257d2e754463fd81095a8c8f290f924c2 joiner.int8.onnx
+        d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d tokens.txt
+        | sha256sum -c -
+    volumes:
+      - speechkit-models:/models
+
+  speechkit-stt-parakeet:
+    profiles: ["parakeet"]
+    # The server image carries the speechkit-stt-sherpa sidecar.
+    image: ${SPEECHKIT_SERVER_IMAGE:-ghcr.io/kombifyio/speechkit-server:latest}
+    entrypoint: ["/app/speechkit-stt-sherpa"]
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --model
+      - /models/parakeet-ultra-int8
+      - --inference-path
+      - /v1/audio/transcriptions
+    volumes:
+      - speechkit-models:/models:ro
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health >/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12

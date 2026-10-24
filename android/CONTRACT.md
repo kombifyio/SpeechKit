@@ -147,6 +147,23 @@ multilanguage by passing no language tag at all
 | `core/stt/SttProvider.kt` :: `Result` | `internal/stt/provider.go:28-35` :: `Result` |
 | `core/stt/SttRouter.kt` :: `SttRouter` | `internal/router/router.go:27-39` :: `Router` |
 | `core/stt/SttRouter.kt` :: `RoutingStrategy` | `internal/router/router.go:18-22` :: `Strategy` |
+| `core/stt/parakeet/ParakeetModelFiles.kt` :: `ParakeetModelFiles` | `pkg/speechkit/x/stt/sherpa/model.go` :: `ResolveModelDir` / `ModelFiles` |
+| `core/stt/parakeet/ParakeetModelFiles.kt` :: `ParakeetLanguages` | `pkg/speechkit/x/stt/sherpa/model.go` :: `ParakeetLanguages` / `SupportsLanguage` |
+| `core/stt/parakeet/PauseSplitter.kt` :: `PauseSplitter` | `pkg/speechkit/x/stt/sherpa/audio.go` :: `SplitAtPauses` |
+| `core/stt/parakeet/ParakeetRecognizer.kt` :: `ParakeetRecognizer` | `pkg/speechkit/x/stt/sherpa/engine` :: `Recognizer` (sherpa-onnx greedy `nemo_transducer`; Android runs the same export on ONNX Runtime) |
+| `core/stt/parakeet/ParakeetModels.kt` :: `ParakeetModels` | `app/host/downloads/catalog_artifacts.go` :: `parakeet.*` items (same revisions and SHA-256) |
+
+The on-device Parakeet tier reproduces sherpa-onnx's feature extraction
+(kaldi-native-fbank, 128 Slaney mel bins, NeMo `per_feature` normalisation)
+and greedy TDT search, so a phone and the desktop sidecar decode the same
+model the same way. When the tier was written, its features agreed with
+kaldi-native-fbank to about 1e-4 and its transcripts of `testdata/e2e` and
+mixed German/English recordings matched the sidecar's, measured on the JVM
+with the same ONNX Runtime version (evidence in the pull request that added
+it; no comparison runs in CI).
+`ParakeetRecognizerPool` keeps one model loaded per process and closes it
+only when no segment holds a lease: two minutes after the last
+transcription, on `ParakeetOnDevice.onTrimMemory`, or before a delete.
 
 ### Storage
 

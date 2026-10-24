@@ -11,12 +11,69 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## Unreleased
 
+### Added
+
+- Parakeet is a new built-in local transcription option next to Whisper.
+  Parakeet Ultra (recommended) and Parakeet TDT 0.6B v3 transcribe 25 European
+  languages, including mixed German and English in one recording, many times
+  faster than real time on the CPU and without a GPU. Download a Parakeet model
+  in Settings > Local Models and choose "Use this model". Parakeet takes no
+  vocabulary hints, but Replacements still apply to its transcripts. Chinese,
+  Hindi and Arabic stay on Whisper or a cloud provider.
+- The Linux server image includes the Parakeet transcription runtime, and the
+  local-only Docker stack has an optional Parakeet profile that replaces the
+  Whisper container.
+- Android: Parakeet can dictate fully on the phone, offline and without a
+  server. Choose Parakeet under Settings > On-device transcription and download
+  the model (about 670 MB) once; the keyboard, the assistant and the voice
+  keyboard then use it whenever no server is in use. It needs a 64-bit phone
+  with about 6 GB of memory; on other phones, and until the model is
+  downloaded, the system recognizer keeps dictating. Parakeet does not
+  transcribe Chinese, Hindi or Arabic, so keep the system recognizer for those.
+
+### Fixed
+
+- The Kombify Box satellite builds again and can use a Parakeet model as its
+  local transcription authority.
+- Android: apps built with SpeechKit no longer contain the speech runtime's
+  usage reporting to Microsoft, which collected the device ID, device model,
+  network and battery state. On-device speech models run without any data
+  leaving the phone.
+- Android: phones that cannot run Parakeet are no longer offered the model
+  download, including phones where the app runs as a 32-bit app.
+
 ### Changed
+
+- Settings has a new Local Models page next to Integrations and SpeechKit
+  Server. It lists the models that run on your computer, downloads them with
+  visible progress and switches which one runs. Downloading a model no longer
+  changes the model a mode uses.
+- The Model tab of Transcribe, Assist and Voice Agent is now one short list:
+  SpeechKit Server, the model on this computer, and the models of the
+  integrations you switched on, plus an optional backup model. A choice that is
+  not ready says why and links to the page that fixes it.
 
 Developers can use the stable SDK independently of experimental integrations.
 Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
+
+## [0.77.15](https://github.com/kombifyio/SpeechKit/compare/v0.77.14...v0.77.15) (2026-10-24)
+
+
+### Features
+
+* **android:** dictate on device with Parakeet ([#1141](https://github.com/kombifyio/SpeechKit/issues/1141)) ([46feac2](https://github.com/kombifyio/SpeechKit/commit/46feac29606e638fcd7c3cc55046f0bb73238e8a))
+* **auth:** sign SpeechKit service calls with caller EdDSA keys ([#1146](https://github.com/kombifyio/SpeechKit/issues/1146)) ([fad9a25](https://github.com/kombifyio/SpeechKit/commit/fad9a2518a6ab09078dd4eece9dc9dfadb7341e2))
+* **auth:** verify caller-bound EdDSA at the SpeechKit receiver ([#1145](https://github.com/kombifyio/SpeechKit/issues/1145)) ([2edd877](https://github.com/kombifyio/SpeechKit/commit/2edd8774165d37d4883028953dfc73c318e269f5))
+* **settings:** Local Models page and a one-list Model tab ([#1149](https://github.com/kombifyio/SpeechKit/issues/1149)) ([a1f75f6](https://github.com/kombifyio/SpeechKit/commit/a1f75f6314cd217562557ddd39bd4f5f544ef07a))
+* **speechkit:** hand Box firmware publication to its own product (platform-9d7tk.3) ([#1140](https://github.com/kombifyio/SpeechKit/issues/1140)) ([74a50b7](https://github.com/kombifyio/SpeechKit/commit/74a50b711ea15e11a93600fad716d9ce863d54ea))
+* **stt:** add Parakeet as a local speech-to-text option ([#1139](https://github.com/kombifyio/SpeechKit/issues/1139)) ([7cfff8f](https://github.com/kombifyio/SpeechKit/commit/7cfff8f217cf34360db104efefde8dbecf3e8176))
+
+
+### Bug Fixes
+
+* **android:** keep ONNX Runtime local and loadable in host release builds ([#1142](https://github.com/kombifyio/SpeechKit/issues/1142)) ([5872380](https://github.com/kombifyio/SpeechKit/commit/58723800a7a143c1cf968cce9de326b610e4ccfd))
 
 ## [0.77.14](https://github.com/kombifyio/SpeechKit/compare/v0.77.13...v0.77.14) (2026-10-23)
 

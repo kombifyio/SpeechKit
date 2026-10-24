@@ -4,6 +4,8 @@ import android.content.Context
 import io.kombify.speechkit.domain.ConnectionProfile
 import io.kombify.speechkit.domain.describe
 import io.kombify.speechkit.log.VoiceLog
+import io.kombify.speechkit.stt.parakeet.LocalParakeetSession
+import io.kombify.speechkit.stt.parakeet.ParakeetOnDevice
 import io.kombify.speechkit.stt.streaming.KeepAliveSession
 import io.kombify.speechkit.stt.streaming.StreamingSttSession
 import io.kombify.speechkit.stt.system.SystemSpeechRecognizerSession
@@ -14,11 +16,13 @@ import okhttp3.OkHttpClient
  * Entry point for dictation sessions on a [ConnectionProfile]. Picks the best
  * available tier: the sessionless system recognizer for
  * [ConnectionProfile.SystemOnDevice]; for [ConnectionProfile.Server] the
- * streaming WS when the server offers it, batch fallback otherwise. Shared by
- * the in-app test screen, the Voice IME, and the system assistant overlay.
+ * streaming WS when the server offers it, batch fallback otherwise; for
+ * [ConnectionProfile.Local] the on-device Parakeet model. Shared by the in-app
+ * test screen, the Voice IME, and the system assistant overlay.
  *
  * @param context required for [ConnectionProfile.SystemOnDevice] (the
- *   platform recognizer binds through it); unused by the network tiers.
+ *   platform recognizer binds through it) and [ConnectionProfile.Local] (the
+ *   model lives in app storage); unused by the network tiers.
  */
 class DictationController(
     private val profile: ConnectionProfile,
@@ -34,7 +38,9 @@ class DictationController(
      * @throws SpeechKitApiException when a server session mint is rejected
      *   (unauthenticated, per-user limit, server down).
      * @throws IllegalStateException for [ConnectionProfile.SystemOnDevice]
-     *   without a [context].
+     *   or [ConnectionProfile.Local] without a [context], and for
+     *   [ConnectionProfile.Local] when no usable Parakeet model is installed
+     *   ([ParakeetOnDevice.usableFiles]).
      * @throws NotImplementedError for tiers that land in later milestones.
      */
     suspend fun openSession(): StreamingSttSession {
@@ -73,8 +79,15 @@ class DictationController(
                 ConnectionProfile.Byok ->
                     throw NotImplementedError("BYOK provider streaming lands in B-M6")
 
-                ConnectionProfile.Local ->
-                    throw NotImplementedError("Local in-app model recognition lands in B-M7")
+                ConnectionProfile.Local -> {
+                    val appContext = checkNotNull(context) {
+                        "ConnectionProfile.Local requires a Context (DictationController(context = ...))"
+                    }
+                    val files = checkNotNull(ParakeetOnDevice.usableFiles(appContext)) {
+                        "no usable on-device Parakeet model: download one first, on a device that can run it"
+                    }
+                    LocalParakeetSession(files)
+                }
             }
             VoiceLog.i(
                 VoiceLog.DICTATION,

@@ -77,8 +77,10 @@ publishing {
 }
 
 dependencies {
-    implementation(project(":core"))
-    implementation(project(":domain"))
+    // Public signatures take :core sessions and :domain profiles, so a host
+    // compiles against both through :net.
+    api(project(":core"))
+    api(project(":domain"))
 
     implementation(libs.kotlin.stdlib)
     implementation(libs.coroutines.core)

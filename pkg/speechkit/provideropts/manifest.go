@@ -264,6 +264,24 @@ func localSTTManifest() ProviderOptionManifest {
 	})
 }
 
+// LocalParakeetSTTManifest describes the built-in local provider when its
+// model is a sherpa-onnx Parakeet directory served by speechkit-stt-sherpa.
+// It shares the provider id "local" with [localSTTManifest] (one local runtime
+// runs at a time), so it is not in [DefaultManifests]; the local provider
+// resolves Parakeet requests against it directly.
+func LocalParakeetSTTManifest() ProviderOptionManifest {
+	const evidence = "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3"
+	return manifest("local", "Local STT (Parakeet)", ModalitySTT, []string{"stt.local.parakeet"}, []OptionSupport{
+		languageOption("language", evidence,
+			"Multilanguage: send the literal auto. Parakeet detects which of its 25 European languages is spoken and cannot be pinned; a pinned language outside them is refused by speechkit-stt-sherpa instead of transcribed wrongly."),
+		derived(OptionDetectLanguage, TypeBool, "Detect language", "The model always detects the spoken language.", evidence),
+		unsupported(OptionKeyterms, TypeStringList, "Keyterms", "speechkit-stt-sherpa decodes greedily; sherpa-onnx reads hotwords only in its beam search, which drops speech on Parakeet TDT."),
+		unsupported(OptionVocabularyBias, TypeBool, "Use vocabulary bias", "Parakeet takes neither hotwords nor a prompt here; Replacements still apply to its transcript."),
+		unsupported(OptionPromptHint, TypeString, "Prompt hint", "Parakeet does not condition on a text prompt."),
+		unsupported(OptionEndpointingMs, TypeInt, "Endpointing", "Local batch transcription uses SpeechKit VAD/recording controls."),
+	})
+}
+
 // xaiSTTManifest describes the xAI batch transcription adapter
 // (https://docs.x.ai/developers/model-capabilities/audio/speech-to-text).
 func xaiSTTManifest() ProviderOptionManifest {

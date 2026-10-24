@@ -9,9 +9,9 @@ import kotlinx.coroutines.flow.Flow
  *
  * Implementations: system on-device tier (`stt/system`
  * SystemSpeechRecognizerSession, B-M2b), server WebSocket tier (`:net`
- * DictationWsClient), batch fallback (`:net` BatchDictationSession); BYOK
- * (B-M6) and local in-app model (B-M7) tiers implement the same contract
- * later.
+ * DictationWsClient), batch fallback (`:net` BatchDictationSession), local
+ * in-app model tier (`stt/parakeet` LocalParakeetSession, B-M7); the BYOK
+ * tier (B-M6) implements the same contract later.
  */
 interface StreamingSttSession {
     /**

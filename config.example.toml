@@ -155,10 +155,10 @@ allowed_notebook_scope = "personal" # "personal" (the user's own notebooks) or t
 
 [local]
 enabled = true
-model = "ggml-small.bin"
+model = "ggml-small.bin"  # A ggml-*.bin file runs whisper.cpp; a Parakeet model directory (e.g. "parakeet-ultra-int8") runs speechkit-stt-sherpa
 model_path = ""           # Auto: ./models/ first, then %LOCALAPPDATA%/SpeechKit/models/
-port = 9000               # whisper-server port
-gpu = "auto"              # auto, cuda, vulkan, cpu
+port = 9000               # Local STT server port (whisper-server or speechkit-stt-sherpa)
+gpu = "auto"              # auto, cuda, vulkan, cpu (whisper.cpp only; Parakeet always runs on the CPU)
 
 [local_llm]
 enabled = false

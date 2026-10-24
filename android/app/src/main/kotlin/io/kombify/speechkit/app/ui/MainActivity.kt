@@ -533,6 +533,8 @@ private fun SettingsTab(
             onConnectAbandoned = onConnectAbandoned,
         )
 
+        OnDeviceModelCard()
+
         VoiceAgentProviderCard()
 
         KeyboardIconsCard()

@@ -4,6 +4,7 @@ import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import android.content.Context
+import io.kombify.speechkit.onnx.LocalOrt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -45,7 +46,7 @@ class WhisperOnnxProvider(
     suspend fun loadModel() = withContext(Dispatchers.IO) {
         if (isLoaded) return@withContext
 
-        val env = OrtEnvironment.getEnvironment()
+        val env = LocalOrt.environment()
         ortEnv = env
 
         val modelDir = File(context.filesDir, "models/$modelName")
@@ -135,7 +136,6 @@ class WhisperOnnxProvider(
     fun release() {
         encoderSession?.close()
         decoderSession?.close()
-        ortEnv?.close()
         encoderSession = null
         decoderSession = null
         ortEnv = null

@@ -1,4 +1,15 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <application>
+        <!-- ONNX Runtime's AAR starts Microsoft's 1DS telemetry client (device id, device model, network
+             and battery state to mobile.events.data.microsoft.com) from this provider at every process start.
+             SpeechKit's on-device tiers stay on the device, so no host merges it; without it ORT has no
+             transport to send through. -->
+        <provider
+            android:name="ai.onnxruntime.TelemetryInitializer"
+            tools:node="remove" />
+    </application>
 </manifest>

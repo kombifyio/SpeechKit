@@ -1376,6 +1376,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/providers/artifacts/{artifactId}/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Stable provider artifact ID from `/api/v1/providers/artifacts`. */
+                artifactId: components["parameters"]["ArtifactId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Download or pull a provider artifact without changing any mode's model.
+         * @description A downloaded model becomes the model of its on-device engine only when that engine has none yet; no mode's model selection changes. An Ollama pull needs no activation.
+         */
+        post: operations["installProviderArtifact"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/providers/artifacts/{artifactId}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Stable provider artifact ID from `/api/v1/providers/artifacts`. */
+                artifactId: components["parameters"]["ArtifactId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Make an installed model the one its on-device engine runs.
+         * @description Modes that already run on the device follow the engine; no mode is moved onto the device and no cloud model choice changes.
+         */
+        post: operations["activateProviderArtifact"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/providers/{profileId}/activate": {
         parameters: {
             query?: never;
@@ -1803,6 +1849,16 @@ export interface components {
             url?: string;
             sha256?: string;
             ollamaModel?: string;
+            /** @description Directory the files of a multi-file model (a Parakeet model) are installed into; url and sha256 are then empty. */
+            dir?: string;
+            /** @description The files of a multi-file model, each verified against its own SHA-256. */
+            files?: {
+                name: string;
+                url: string;
+                sha256: string;
+                /** Format: int64 */
+                sizeBytes: number;
+            }[];
             license: string;
             available: boolean;
             selected: boolean;
@@ -5590,6 +5646,59 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Provider artifact selected. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelectedArtifact"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    installProviderArtifact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Stable provider artifact ID from `/api/v1/providers/artifacts`. */
+                artifactId: components["parameters"]["ArtifactId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Download job accepted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadJob"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    activateProviderArtifact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Stable provider artifact ID from `/api/v1/providers/artifacts`. */
+                artifactId: components["parameters"]["ArtifactId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider artifact activated. */
             200: {
                 headers: {
                     [name: string]: unknown;

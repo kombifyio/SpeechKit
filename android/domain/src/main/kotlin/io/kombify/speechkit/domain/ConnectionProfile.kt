@@ -52,7 +52,11 @@ sealed interface ConnectionProfile {
     /** Direct provider streaming with user-supplied keys. Lands in B-M6. */
     data object Byok : ConnectionProfile
 
-    /** Fully on-device recognition. Lands in B-M7. */
+    /**
+     * Fully on-device recognition with a downloaded Parakeet model (B-M7):
+     * no server, no keys, no network once the model is installed. The host
+     * pushes PCM like for the server tiers.
+     */
     data object Local : ConnectionProfile
 }
 
