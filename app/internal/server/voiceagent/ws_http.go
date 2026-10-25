@@ -247,6 +247,11 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 			session.VoicePrefs = wssession.VoicePrefs{}
 			session.VoiceAgentBinding = wssession.VoiceAgentBinding{}
 		}
+		// Server-tool sessions (no direct endpoint, no registered agent with
+		// its own tools) load their tool manifest now, while the client dials.
+		if prefetcher, ok := h.toolRouter.(SessionToolPrefetcher); ok && binding.DirectEndpoint == nil && binding.TargetAgentID == "" {
+			prefetcher.PrefetchTools(session)
+		}
 	}
 	if err != nil {
 		switch {
@@ -321,7 +326,8 @@ func (h *Handler) renewSession(w http.ResponseWriter, r *http.Request, sessionID
 	if !errors.Is(err, wssession.ErrVoiceBudgetUnavailable) {
 		//nolint:contextcheck // Settlement must outlive the request; the reporter uses a bounded service context.
 		h.reportVoiceUsage("", VoiceUsage{SessionID: "renewal-" + budget.ReservationID, ReservationID: budget.ReservationID,
-			OwnerUserID: id.UserID, OwnerOrgID: id.OrgID})
+			ReceiptToken: budget.ReceiptToken,
+			OwnerUserID:  id.UserID, OwnerOrgID: id.OrgID})
 	}
 	switch {
 	case errors.Is(err, wssession.ErrVoiceBudgetUnavailable):

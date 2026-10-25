@@ -133,7 +133,7 @@ type Adapter struct {
 func (a *Adapter) voiceSegmentUsage(segment voiceBudgetSegment) VoiceUsage {
 	return VoiceUsage{SessionID: a.Session.ID, AISessionID: a.Session.AISessionID, Provider: segment.provider,
 		Duration: segment.duration, OwnerUserID: a.Session.Owner.UserID, OwnerOrgID: a.Session.Owner.OrgID,
-		ReservationID: segment.budget.ReservationID, Segment: segment.segment}
+		ReservationID: segment.budget.ReservationID, ReceiptToken: segment.budget.ReceiptToken, Segment: segment.segment}
 }
 
 // Run blocks until the session ends. The first frame from the client MUST be

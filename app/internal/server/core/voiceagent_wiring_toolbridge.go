@@ -61,6 +61,15 @@ func (r *toolBridgeRouter) Definitions(ctx context.Context, session *vsserver.Ma
 	return out
 }
 
+// PrefetchTools starts the manifest fetch at session creation; Definitions
+// at start then reads the cache or joins the running fetch.
+func (r *toolBridgeRouter) PrefetchTools(session *vsserver.ManagedSession) {
+	if session == nil || strings.TrimSpace(session.BridgeCredential) == "" {
+		return
+	}
+	r.bridge.Prefetch(toolbridge.Session{ID: session.ID, Credential: session.BridgeCredential})
+}
+
 func (r *toolBridgeRouter) Execute(ctx context.Context, session *vsserver.ManagedSession, call vsserver.ToolCall) (map[string]any, bool) {
 	if session == nil || strings.TrimSpace(session.BridgeCredential) == "" {
 		return nil, false

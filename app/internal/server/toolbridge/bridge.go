@@ -147,12 +147,21 @@ type Bridge struct {
 
 	mu       sync.Mutex
 	manifest map[string]manifestCacheEntry // keyed by credential hash
+	inflight map[string]*manifestFetch     // keyed by credential hash
 	sessions map[string]*sessionCallState  // keyed by session ID
 }
 
 type manifestCacheEntry struct {
 	tools     []ToolDefinition
 	fetchedAt time.Time
+}
+
+// manifestFetch is one network manifest fetch shared by every caller with
+// the same credential; done closes once tools/err are set.
+type manifestFetch struct {
+	done  chan struct{}
+	tools []ToolDefinition
+	err   error
 }
 
 type sessionCallState struct {
@@ -192,6 +201,7 @@ func New(opts Options) (*Bridge, error) {
 		client:      client,
 		clock:       clock,
 		manifest:    make(map[string]manifestCacheEntry),
+		inflight:    make(map[string]*manifestFetch),
 		sessions:    make(map[string]*sessionCallState),
 	}, nil
 }
@@ -199,32 +209,78 @@ func New(opts Options) (*Bridge, error) {
 // Definitions returns the tool manifest for the session, cached per
 // credential for manifestCacheTTL. A session without a credential gets no
 // tools (fail-closed). Errors mean "run tool-less", never "kill the session".
+// ctx bounds only the wait: the fetch itself runs for the bridge timeout and
+// is shared with a Prefetch or another caller for the same credential, so a
+// session started right after its creation waits for the fetch that the
+// creation began instead of starting a second one.
 func (b *Bridge) Definitions(ctx context.Context, session Session) ([]ToolDefinition, error) {
 	credential := strings.TrimSpace(session.Credential)
 	if credential == "" {
 		return nil, nil
 	}
+	tools, fetch := b.cachedOrFetch(credential)
+	if fetch == nil {
+		return tools, nil
+	}
+	select {
+	case <-fetch.done:
+		return fetch.tools, fetch.err
+	case <-ctx.Done():
+		return nil, fmt.Errorf("toolbridge: manifest fetch: %w", ctx.Err())
+	}
+}
+
+// Prefetch starts the manifest fetch for a session that is about to start,
+// typically at session creation, so the cold path of the remote endpoint is
+// paid before the start frame instead of inside its short merge budget.
+func (b *Bridge) Prefetch(session Session) {
+	credential := strings.TrimSpace(session.Credential)
+	if credential == "" {
+		return
+	}
+	_, _ = b.cachedOrFetch(credential)
+}
+
+// cachedOrFetch returns the cached tools, or the running or newly started
+// fetch for the credential.
+func (b *Bridge) cachedOrFetch(credential string) ([]ToolDefinition, *manifestFetch) {
 	key := credentialHash(credential)
 	now := b.clock()
 
 	b.mu.Lock()
+	defer b.mu.Unlock()
 	if entry, ok := b.manifest[key]; ok && now.Sub(entry.fetchedAt) < manifestCacheTTL {
-		tools := entry.tools
-		b.mu.Unlock()
-		return tools, nil
+		return entry.tools, nil
 	}
-	b.mu.Unlock()
+	if fetch, ok := b.inflight[key]; ok {
+		return nil, fetch
+	}
+	fetch := &manifestFetch{done: make(chan struct{})}
+	b.inflight[key] = fetch
+	go b.runFetch(key, credential, fetch)
+	return nil, fetch
+}
 
-	tools, err := b.fetchManifest(ctx, credential)
-	if err != nil {
-		return nil, err
-	}
+func (b *Bridge) runFetch(key, credential string, fetch *manifestFetch) {
+	started := b.clock()
+	tools, err := b.fetchManifest(context.Background(), credential)
+	fetchedAt := b.clock()
 
 	b.mu.Lock()
-	b.purgeManifestLocked(now)
-	b.manifest[key] = manifestCacheEntry{tools: tools, fetchedAt: now}
+	delete(b.inflight, key)
+	if err == nil {
+		b.purgeManifestLocked(fetchedAt)
+		b.manifest[key] = manifestCacheEntry{tools: tools, fetchedAt: fetchedAt}
+	}
 	b.mu.Unlock()
-	return tools, nil
+
+	fetch.tools, fetch.err = tools, err
+	close(fetch.done)
+	if err == nil {
+		slog.Info("toolbridge: manifest fetched", "tools", len(tools), "duration_ms", fetchedAt.Sub(started).Milliseconds())
+	} else {
+		slog.Info("toolbridge: manifest fetch failed", "duration_ms", fetchedAt.Sub(started).Milliseconds(), "err", err) // #nosec G706 -- structured attribute, no credential in the error path.
+	}
 }
 
 func (b *Bridge) fetchManifest(ctx context.Context, credential string) ([]ToolDefinition, error) {

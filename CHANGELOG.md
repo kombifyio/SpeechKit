@@ -58,6 +58,16 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## [0.77.16](https://github.com/kombifyio/SpeechKit/compare/v0.77.15...v0.77.16) (2026-10-25)
+
+
+### Bug Fixes
+
+* **ci:** adopt Node security workflow producers ([#1156](https://github.com/kombifyio/SpeechKit/issues/1156)) ([ec86d72](https://github.com/kombifyio/SpeechKit/commit/ec86d728578ea59f259e25e4c96c4938fbe55624))
+* **delivery:** call the Delivery producer with the fixed public surface scan ([#1157](https://github.com/kombifyio/SpeechKit/issues/1157)) ([82cdc8a](https://github.com/kombifyio/SpeechKit/commit/82cdc8a0f4cc5ea731869d071cc1004b0a48c6ad))
+* **voiceagent:** load the tool manifest at session creation so cold bridges no longer leave sessions tool-less ([#1158](https://github.com/kombifyio/SpeechKit/issues/1158)) ([07e2066](https://github.com/kombifyio/SpeechKit/commit/07e2066b20d31fef149461a25287d9a8af31b471))
+* **voice:** bind reservation receipts to signed admission and settlement ([#1153](https://github.com/kombifyio/SpeechKit/issues/1153)) ([39396d8](https://github.com/kombifyio/SpeechKit/commit/39396d8260f4da8ba73c81dcb781b829db366fb8))
+
 ## [0.77.15](https://github.com/kombifyio/SpeechKit/compare/v0.77.14...v0.77.15) (2026-10-24)
 
 

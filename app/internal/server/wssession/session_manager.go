@@ -97,6 +97,7 @@ type VoiceAgentBinding struct {
 type VoiceBudget struct {
 	ReservationID string
 	ExpiresAt     int64
+	ReceiptToken  string `json:"-"`
 }
 
 // Options configures a SessionManager.

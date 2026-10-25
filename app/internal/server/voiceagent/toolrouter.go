@@ -35,6 +35,14 @@ type SessionToolRouter interface {
 	Execute(ctx context.Context, session *ManagedSession, call ToolCall) (map[string]any, bool)
 }
 
+// SessionToolPrefetcher is implemented by routers that can start loading a
+// session's tool definitions before its start frame arrives. Session
+// creation calls it so a cold bridge endpoint does not exhaust the short
+// pre-connect merge budget (bridgeDefinitionsTimeout).
+type SessionToolPrefetcher interface {
+	PrefetchTools(session *ManagedSession)
+}
+
 // ToolDefinitionFrame is the transport-neutral tool declaration the router
 // hands the adapter. It mirrors the kernel's live.ToolDefinition without
 // importing kernel types so test doubles stay dependency-free.

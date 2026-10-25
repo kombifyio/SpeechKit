@@ -8,13 +8,18 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/kombifyio/SpeechKit/app/internal/server/wssession"
 )
 
 func TestHTTPUsageReporterSendsIdempotentConnectedMinutes(t *testing.T) {
+	const receipt = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	var got map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if auth := r.Header.Get("Authorization"); auth != "Bearer session-token" {
@@ -28,13 +33,15 @@ func TestHTTPUsageReporterSendsIdempotentConnectedMinutes(t *testing.T) {
 	defer server.Close()
 
 	reporter := NewHTTPUsageReporter(server.URL)
-	err := reporter.Report(context.Background(), "session-token", VoiceUsage{
+	usage := VoiceUsage{
 		SessionID:     "session-123",
 		AISessionID:   "ai-session-456",
 		Provider:      "kombify-agent",
 		Duration:      90 * time.Second,
 		ReservationID: "reservation-123",
-	})
+		ReceiptToken:  receipt,
+	}
+	err := reporter.Report(context.Background(), "session-token", usage)
 	if err != nil {
 		t.Fatalf("report usage: %v", err)
 	}
@@ -52,8 +59,85 @@ func TestHTTPUsageReporterSendsIdempotentConnectedMinutes(t *testing.T) {
 	if got["reservation_id"] != "reservation-123" {
 		t.Fatal("receipt did not settle its reserved quota")
 	}
-	if err := reporter.Report(context.Background(), "session-token", VoiceUsage{SessionID: "session-123", ReservationID: "reservation-123"}); err != nil {
+	assertReceipt := func() {
+		t.Helper()
+		if got["reservation_receipt"] != receipt {
+			t.Fatal("terminal broker request lost its reservation capability")
+		}
+		nested, err := json.Marshal(got["events"])
+		if err != nil || strings.Contains(string(nested), receipt) || strings.Contains(string(nested), "reservation_receipt") {
+			t.Fatal("reservation capability escaped into event metadata")
+		}
+	}
+	assertReceipt()
+	for name, value := range map[string]any{
+		"usage":           usage,
+		"session budget":  wssession.VoiceBudget{ReservationID: usage.ReservationID, ReceiptToken: receipt},
+		"managed session": ManagedSession{VoiceBudget: wssession.VoiceBudget{ReservationID: usage.ReservationID, ReceiptToken: receipt}},
+	} {
+		public, err := json.Marshal(value)
+		if err != nil || strings.Contains(string(public), receipt) || strings.Contains(string(public), "ReceiptToken") || strings.Contains(string(public), "reservation_receipt") {
+			t.Fatalf("reservation capability escaped into public %s JSON", name)
+		}
+	}
+	usage.Duration = 0
+	if err := reporter.Report(context.Background(), "session-token", usage); err != nil {
 		t.Fatalf("trusted zero settlement failed: %v", err)
+	}
+	assertReceipt()
+	zeroEvent := got["events"].([]any)[0].(map[string]any)
+	if zeroEvent["value"] != float64(0) || zeroEvent["event_id"] != event["event_id"] || got["reservation_id"] != usage.ReservationID {
+		t.Fatal("zero settlement changed the reserved accounting event")
+	}
+	for _, status := range []int{301, 302, 303, 307, 308} {
+		for _, destination := range []string{"same_origin_route", "other_host"} {
+			t.Run("redirect_"+strconv.Itoa(status)+"_"+destination, func(t *testing.T) {
+				var redirected, callbacks atomic.Int32
+				targetHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					redirected.Add(1)
+					w.WriteHeader(http.StatusOK)
+				})
+				target := httptest.NewServer(targetHandler)
+				defer target.Close()
+				var broker *httptest.Server
+				broker = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.URL.Path == "/redirected" {
+						targetHandler.ServeHTTP(w, r)
+						return
+					}
+					location := broker.URL + "/redirected"
+					if destination == "other_host" {
+						location = strings.Replace(target.URL, "127.0.0.1", "localhost", 1) + "/redirected"
+					}
+					http.Redirect(w, r, location, status)
+				}))
+				defer broker.Close()
+				reporter := NewHTTPUsageReporter(broker.URL)
+				// A custom permissive client must not override capability custody.
+				// The reporter must also leave that shared client unchanged for v1.
+				reporter.Client.CheckRedirect = func(*http.Request, []*http.Request) error {
+					callbacks.Add(1)
+					return nil
+				}
+				if err := reporter.Report(context.Background(), "session-token", usage); err == nil {
+					t.Error("receipt-bearing report accepted a redirect")
+				}
+				if redirected.Load() != 0 || callbacks.Load() != 0 {
+					t.Error("receipt-bearing report followed a redirect")
+				}
+				// The same destination is reachable and the pre-existing v1
+				// redirect behavior remains available without a receipt.
+				before := redirected.Load()
+				legacy := usage
+				legacy.ReceiptToken = ""
+				if err := reporter.Report(context.Background(), "session-token", legacy); err != nil {
+					t.Fatalf("legacy redirect compatibility: %v", err)
+				}
+				if redirected.Load() != before+1 || callbacks.Load() == 0 {
+					t.Fatal("legacy control did not reach the redirect destination")
+				}
+			})
+		}
 	}
 }
 

@@ -5,7 +5,9 @@ package middleware
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -100,6 +102,86 @@ func TestEdgeEnvelopeAcceptedWithVoiceBudgetOverlay(t *testing.T) {
 	}
 	if budget.ReservationID != "reservation-1" {
 		t.Fatalf("voice budget overlay not applied: %+v", budget)
+	}
+}
+
+func TestEdgeEnvelopeVoiceBudgetReceiptBinding(t *testing.T) {
+	receipt := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
+	expiry := strconv.FormatInt(time.Now().Add(time.Minute).Unix(), 10)
+	for _, tc := range []struct {
+		name        string
+		mutate      func(*http.Request, *Identity)
+		signReceipt bool
+		want        int
+	}{
+		{name: "v2 accepted", want: http.StatusOK},
+		{name: "tampered receipt", mutate: func(r *http.Request, _ *Identity) {
+			r.Header.Set(VoiceBudgetReceiptHeader, "B"+receipt[1:])
+		}},
+		{name: "stripped receipt", mutate: func(r *http.Request, _ *Identity) { r.Header.Del(VoiceBudgetReceiptHeader) }},
+		{name: "duplicate receipt", mutate: func(r *http.Request, _ *Identity) { r.Header.Add(VoiceBudgetReceiptHeader, receipt) }},
+		{name: "empty receipt", signReceipt: true, mutate: func(r *http.Request, _ *Identity) { r.Header.Set(VoiceBudgetReceiptHeader, "") }},
+		{name: "noncanonical trailing bits", signReceipt: true, mutate: func(r *http.Request, _ *Identity) {
+			r.Header.Set(VoiceBudgetReceiptHeader, receipt[:42]+"B")
+		}},
+		{name: "padded receipt", signReceipt: true, mutate: func(r *http.Request, _ *Identity) { r.Header.Set(VoiceBudgetReceiptHeader, receipt+"=") }},
+		{name: "whitespace receipt", signReceipt: true, mutate: func(r *http.Request, _ *Identity) { r.Header.Set(VoiceBudgetReceiptHeader, " "+receipt) }},
+		{name: "short receipt", signReceipt: true, mutate: func(r *http.Request, _ *Identity) { r.Header.Set(VoiceBudgetReceiptHeader, receipt[:42]) }},
+		{name: "actor binding", mutate: func(_ *http.Request, id *Identity) { id.UserID = "auth0:other-actor" }},
+		{name: "org binding", mutate: func(_ *http.Request, id *Identity) { id.OrgID = "other-org" }},
+		{name: "reservation binding", mutate: func(r *http.Request, _ *Identity) { r.Header.Set(VoiceBudgetReservationHeader, "other-reservation") }},
+		{name: "expiry binding", mutate: func(r *http.Request, _ *Identity) {
+			r.Header.Set(VoiceBudgetExpiresAtHeader, strconv.FormatInt(time.Now().Add(2*time.Minute).Unix(), 10))
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			id := Identity{UserID: "auth0:actor", OrgID: "default", Plan: "pro", Role: "admin"}
+			r := httptest.NewRequest(http.MethodPost, "/api/v1/voiceagent/sessions", nil)
+			mac := hmac.New(sha256.New, []byte(envelopeTestSecret))
+			_, _ = mac.Write([]byte(strings.Join([]string{"speechkit.voice_budget.v2", id.UserID, id.OrgID, "reservation-1", expiry, receipt}, "\n")))
+			r.Header.Set(VoiceBudgetReservationHeader, "reservation-1")
+			r.Header.Set(VoiceBudgetExpiresAtHeader, expiry)
+			r.Header.Set(VoiceBudgetReceiptHeader, receipt)
+			r.Header.Set(VoiceBudgetHMACHeader, hex.EncodeToString(mac.Sum(nil)))
+			if tc.mutate != nil {
+				tc.mutate(r, &id)
+			}
+			if tc.signReceipt {
+				// A valid HMAC over malformed receipt text must still fail the
+				// canonical capability check, not merely the signature check.
+				mac.Reset()
+				_, _ = mac.Write([]byte(strings.Join([]string{"speechkit.voice_budget.v2", id.UserID, id.OrgID, "reservation-1", expiry, r.Header.Get(VoiceBudgetReceiptHeader)}, "\n")))
+				r.Header.Set(VoiceBudgetHMACHeader, hex.EncodeToString(mac.Sum(nil)))
+			}
+			// Re-sign the outer envelope so failures discriminate budget binding
+			// from the independent caller/request authentication.
+			if err := SignEdgeEnvelope(r, EdgeKey{ID: "primary", Secret: envelopeTestSecret}, id, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			called := false
+			h := envelopeAuth(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				called = true
+				budget := VoiceBudgetFromContext(r.Context())
+				if budget.ReceiptToken != receipt || budget.ReservationID != "reservation-1" || strconv.FormatInt(budget.ExpiresAt, 10) != expiry {
+					t.Error("verified reservation capability was not retained")
+				}
+				public, err := json.Marshal(budget)
+				if err != nil || strings.Contains(string(public), receipt) || strings.Contains(string(public), "ReceiptToken") {
+					t.Error("reservation capability escaped into public budget JSON")
+				}
+				w.WriteHeader(http.StatusOK)
+			}))
+			want := tc.want
+			if want == 0 {
+				want = http.StatusUnauthorized
+			}
+			if code := serve(h, r); code != want {
+				t.Fatalf("budget authentication = %d, want %d", code, want)
+			}
+			if called != (want == http.StatusOK) {
+				t.Fatal("denied budget reached the protected handler")
+			}
+		})
 	}
 }
 

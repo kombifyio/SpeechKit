@@ -26,6 +26,9 @@ type VoiceUsage struct {
 	Provider      string
 	Duration      time.Duration
 	ReservationID string
+	// ReceiptToken is retained from the signed admission, never from media or
+	// client frames. It authorizes only this reservation's final accounting.
+	ReceiptToken string `json:"-"`
 	// Segment numbers the reservations a renewed session settled in order;
 	// each Cloud reservation settles exactly once under its own event.
 	Segment int
@@ -54,7 +57,8 @@ func (h *Handler) reportUnstartedSession(session *ManagedSession) {
 	}
 	h.reportVoiceUsage("", VoiceUsage{
 		SessionID: session.ID, AISessionID: session.AISessionID, ReservationID: session.VoiceBudget.ReservationID,
-		OwnerUserID: session.Owner.UserID, OwnerOrgID: session.Owner.OrgID,
+		ReceiptToken: session.VoiceBudget.ReceiptToken,
+		OwnerUserID:  session.Owner.UserID, OwnerOrgID: session.Owner.OrgID,
 	})
 }
 
@@ -117,6 +121,9 @@ func (r *HTTPUsageReporter) report(ctx context.Context, usage VoiceUsage, author
 	}
 	if usage.ReservationID != "" {
 		event["reservation_id"] = usage.ReservationID
+		if usage.ReceiptToken != "" {
+			event["reservation_receipt"] = usage.ReceiptToken
+		}
 	}
 	payload, err := json.Marshal(event)
 	if err != nil {
@@ -126,9 +133,9 @@ func (r *HTTPUsageReporter) report(ctx context.Context, usage VoiceUsage, author
 	if client == nil {
 		client = netsec.NewClient(netsec.ClientOptions{Timeout: 5 * time.Second})
 	}
-	if forbidRedirects {
-		// Custom service-auth headers are not stripped by Go's default
-		// cross-origin redirect policy. Never forward the hosted JWT elsewhere.
+	if forbidRedirects || usage.ReceiptToken != "" {
+		// Redirects can retain custom service-auth headers or replay a receipt
+		// in the POST body. Both capabilities are bound to the configured broker.
 		isolated := *client
 		isolated.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 		client = &isolated
