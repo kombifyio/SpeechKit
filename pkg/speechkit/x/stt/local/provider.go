@@ -68,6 +68,10 @@ type Provider struct {
 	// SetSubprocessPriorityLowered for this provider only. nil keeps the
 	// default (true on Windows). Ignored outside Windows.
 	LowerSubprocessPriority *bool
+	// WordTimestamps asks a Parakeet model for word times, which
+	// [Provider.Transcribe] returns in Result.Words (Text, StartMs, EndMs).
+	// The wake word check needs them to cut the phrase off the audio.
+	WordTimestamps bool
 	// Logger receives this provider's diagnostics. Nil falls back to
 	// slog.Default() at log time.
 	Logger        *slog.Logger

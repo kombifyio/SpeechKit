@@ -155,14 +155,20 @@ not this APK starts from the public modules, not by copying `:app`.
    local-only.
 8. Do not log PCM, bearer tokens, or transcript text. Diagnosis is
    `adb logcat -s sk.voice`.
-9. On-device Parakeet (`ConnectionProfile.Local`, B-M7) lives in `:core`
-   `io.kombify.speechkit.stt.parakeet` and runs on the ONNX Runtime `:core`
-   already ships; no second native runtime enters the app. The model is never
+9. On-device dictation (`ConnectionProfile.Local`, B-M7) lives in `:core`
+   `io.kombify.speechkit.stt.parakeet`. Parakeet runs on the ONNX Runtime
+   `:core` already ships; Phonon-2.5 runs on SpeechKit's five-value engine in
+   `libspeechkit_phonon.so` (`io.kombify.speechkit.stt.phonon`), which `:core`
+   builds for arm64-v8a and x86_64 from `app/cmd/speechkit-phonon-jni` with Go
+   and the NDK; a build machine without Go leaves it out. The model is never
    bundled: `ParakeetModelStore` downloads it on request, pinned to an exact
-   revision and SHA-256, into `noBackupFilesDir`. `ParakeetOnDevice.support`
-   (and with it `ParakeetDownloads.start`) refuses 32-bit devices or
-   processes, devices under about 6 GB of memory, and builds without ONNX
-   Runtime's native library for the process's ABI. `:core` removes ORT's
+   revision and SHA-256, into `noBackupFilesDir`. The user picks the model
+   (`ParakeetOnDevice.selectedModel`; Phonon-2.5 is the default where it
+   runs). `ParakeetOnDevice.support` (and with it `ParakeetDownloads.start`)
+   refuses 32-bit devices or processes, devices under the model's memory
+   (about 6 GB for Parakeet, 3 GB for Phonon), builds without the model's
+   native library for the process's ABI, and for Phonon processors without
+   the ARM dot-product instructions. `:core` removes ORT's
    telemetry provider from the merged manifest, turns ORT's telemetry events
    off and ships the R8 keep rule ORT's JNI needs. A host that also declares
    `onnxruntime-android` itself repeats the provider's `tools:node="remove"`

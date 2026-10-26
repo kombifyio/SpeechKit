@@ -273,7 +273,7 @@ func LocalParakeetSTTManifest() ProviderOptionManifest {
 	const evidence = "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3"
 	return manifest("local", "Local STT (Parakeet)", ModalitySTT, []string{"stt.local.parakeet"}, []OptionSupport{
 		languageOption("language", evidence,
-			"Multilanguage: send the literal auto. Parakeet detects which of its 25 European languages is spoken and cannot be pinned; a pinned language outside them is refused by speechkit-stt-sherpa instead of transcribed wrongly."),
+			"Multilanguage: send the literal auto. Parakeet detects which of its 25 European languages is spoken and cannot be pinned; a pinned language outside them is refused by speechkit-stt-sherpa instead of transcribed wrongly. The English-only Bark 3.0 and Phonon-2.5 English variants refuse every pinned language other than English."),
 		derived(OptionDetectLanguage, TypeBool, "Detect language", "The model always detects the spoken language.", evidence),
 		unsupported(OptionKeyterms, TypeStringList, "Keyterms", "speechkit-stt-sherpa decodes greedily; sherpa-onnx reads hotwords only in its beam search, which drops speech on Parakeet TDT."),
 		unsupported(OptionVocabularyBias, TypeBool, "Use vocabulary bias", "Parakeet takes neither hotwords nor a prompt here; Replacements still apply to its transcript."),

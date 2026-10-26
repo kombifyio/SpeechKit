@@ -81,6 +81,12 @@ export interface StartFrame {
   /** Opt into agent-owned conversation commands; supported registered roots only. */
   conversation_control?: { version: 1; mode: "oneshot" };
   /**
+   * Opt a plain realtime session into spoken mode commands and Companion
+   * requests (conversation_mode and route_switch receipts). Older servers
+   * ignore the field; unknown routes are ignored.
+   */
+  front_door?: { version: 1; routes?: string[] };
+  /**
    * Two-stage wake word: the device's low-cutoff detection. The server
    * answers state "verifying"; send the pre-roll and following speech at
    * once, then expect wake_verified or wake_rejected.
@@ -164,7 +170,8 @@ export type LiveEventType =
   | "turn_end"
   | "session_resumable"
   | "session_end"
-  | "conversation_mode";
+  | "conversation_mode"
+  | "route_switch";
 
 /**
  * Optional event metadata carried by server frames (additive within v1).
@@ -251,6 +258,15 @@ export interface EventFrame extends ServerFrameMeta {
   type: "event";
   event_type: LiveEventType;
   conversation?: VoiceModeReceipt;
+  /** route_switch receipt: continue on the registered Companion route and replay `utterance` as the first text frame. */
+  route?: {
+    version: 1;
+    to: "agent";
+    voice_session_id: string;
+    request_id: string;
+    reason: "explicit_companion" | "model_handoff";
+    utterance?: string;
+  };
 }
 
 export interface InterruptedFrame extends ServerFrameMeta {

@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/sherpa"
 )
 
 // whisperModelPattern restricts whisper.cpp model filenames to the
@@ -82,11 +81,11 @@ func (p *Provider) VerifyInstallation() InstallStatus {
 	case p.ModelPath == "":
 		status.Problems = append(status.Problems, "no model path configured")
 	case engine == engineSherpa:
-		if files, err := sherpa.ResolveModelDir(p.ModelPath); err != nil {
+		if dir, err := resolveSidecarModelDir(p.ModelPath); err != nil {
 			status.Problems = append(status.Problems, err.Error())
 		} else {
 			status.ModelFound = true
-			status.ModelBytes = dirBytes(files.Dir)
+			status.ModelBytes = dirBytes(dir)
 		}
 	default:
 		status = p.verifyWhisperModel(status)

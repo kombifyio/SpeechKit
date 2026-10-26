@@ -4,7 +4,6 @@ import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import io.kombify.speechkit.onnx.LocalOrt
-import java.io.Closeable
 import java.io.IOException
 import java.nio.FloatBuffer
 import java.nio.IntBuffer
@@ -27,7 +26,7 @@ import java.nio.LongBuffer
 class ParakeetRecognizer(
     files: ParakeetModelFiles,
     threads: Int = defaultThreads(),
-) : Closeable {
+) : OnDeviceRecognizer {
 
     private val env: OrtEnvironment = LocalOrt.environment()
     private val encoder: OrtSession
@@ -93,7 +92,7 @@ class ParakeetRecognizer(
      * for silence or audio too short to produce a frame.
      */
     @Synchronized
-    fun transcribe(samples: FloatArray): String {
+    override fun transcribe(samples: FloatArray): String {
         check(!closed) { "ParakeetRecognizer is closed" }
         val texts = PauseSplitter.split(samples).mapNotNull { span ->
             decodeSpan(samples.copyOfRange(span.start, span.end)).takeIf { it.isNotEmpty() }

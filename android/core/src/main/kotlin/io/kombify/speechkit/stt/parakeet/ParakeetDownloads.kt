@@ -13,17 +13,20 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
- * The one Parakeet model download a process runs, observable from any screen.
+ * The one on-device model download a process runs, observable from any screen.
  * It runs in a process-wide scope, so leaving the screen that started it does
  * not stop it; if the process dies, the next [start] resumes from the bytes on
  * disk ([ParakeetModelStore]).
  */
 object ParakeetDownloads {
     sealed interface State {
+        /** The model the state is about; null for [Idle]. */
+        val modelId: String? get() = null
+
         data object Idle : State
-        data class Running(val modelId: String, val doneBytes: Long, val totalBytes: Long) : State
-        data class Failed(val modelId: String, val message: String) : State
-        data class Done(val modelId: String) : State
+        data class Running(override val modelId: String, val doneBytes: Long, val totalBytes: Long) : State
+        data class Failed(override val modelId: String, val message: String) : State
+        data class Done(override val modelId: String) : State
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -33,13 +36,13 @@ object ParakeetDownloads {
     val state: StateFlow<State> = _state.asStateFlow()
 
     /**
-     * Starts downloading [model] unless a download is already running. A device that cannot run Parakeet
+     * Starts downloading [model] unless a download is already running. A device that cannot run it
      * ([ParakeetOnDevice.support]) gets [State.Failed] instead of a download it could never use.
      */
     @Synchronized
-    fun start(context: Context, model: ParakeetModel = ParakeetModels.ULTRA) {
+    fun start(context: Context, model: ParakeetModel = ParakeetOnDevice.selectedModel(context)) {
         if (job?.isActive == true) return
-        val support = ParakeetOnDevice.support(context)
+        val support = ParakeetOnDevice.support(context, model)
         if (support is ParakeetOnDevice.Support.Unsupported) {
             _state.value = State.Failed(model.id, support.reason)
             return

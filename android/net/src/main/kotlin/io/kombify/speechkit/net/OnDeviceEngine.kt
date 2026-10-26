@@ -6,16 +6,18 @@ import io.kombify.speechkit.stt.parakeet.ParakeetOnDevice
 
 /**
  * Which recognizer on-device dictation uses: the platform's system
- * recognizer (the zero-config default) or a downloaded Parakeet model
- * ([ConnectionProfile.Local]). Stored with the connection settings.
+ * recognizer (the zero-config default) or a downloaded offline model,
+ * Phonon-2.5 or Parakeet ([ConnectionProfile.Local]; the model itself is
+ * chosen in [ParakeetOnDevice.selectedModel]). Stored with the connection
+ * settings.
  *
- * Parakeet is used only while it is chosen, installed, supported by the
- * device and not known to fail loading; otherwise [profile] falls back to the
- * system recognizer, so a deleted or damaged model or a device that cannot run
- * it does not leave dictation broken. Parakeet does not transcribe Chinese,
- * Hindi or Arabic: a segment pinned to one of them fails with
- * `language_unsupported`, so people who dictate in them keep the system
- * recognizer.
+ * The offline model is used only while it is chosen, installed, supported by
+ * the device and not known to fail loading; otherwise [profile] falls back to
+ * the system recognizer, so a deleted or damaged model or a device that cannot
+ * run it does not leave dictation broken. The models do not transcribe
+ * Chinese, Hindi or Arabic (Phonon-2.5 English only English): a segment pinned
+ * to another language fails with `language_unsupported`, so people who
+ * dictate in it keep the system recognizer.
  */
 object OnDeviceEngine {
     enum class Choice(val wire: String) {
@@ -42,7 +44,7 @@ object OnDeviceEngine {
             .apply()
     }
 
-    /** True when a Parakeet model is installed, loads, and this device can run it. */
+    /** True when an offline model is installed, loads, and this device can run it. */
     fun parakeetReady(context: Context): Boolean = ParakeetOnDevice.usableFiles(context) != null
 
     /** The on-device profile to dictate with now. */

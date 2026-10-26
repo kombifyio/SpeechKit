@@ -140,6 +140,11 @@ type VoiceAgentWakeConfig struct {
 	// Keyterms bias the first recognition pass towards the wake words.
 	Keyterms []string                        `toml:"keyterms"`
 	Phrases  map[string]VoiceAgentWakePhrase `toml:"phrases"`
+	// LocalSTTModel is the absolute path of a sherpa-onnx Parakeet model
+	// directory. When set, the server runs speechkit-stt-sherpa on it and
+	// verifies wake candidates locally; the cloud check answers only while
+	// the sidecar is unavailable. Empty keeps the cloud check alone.
+	LocalSTTModel string `toml:"local_stt_model"`
 }
 
 // VoiceAgentWakePhrase is one [voice_agent.wake.phrases.<id>] entry; see
@@ -148,6 +153,10 @@ type VoiceAgentWakePhrase struct {
 	Cores        []string `toml:"cores"`
 	Confirm      []string `toml:"confirm"`
 	ConfirmCodes []string `toml:"confirm_codes"`
+	// Codes are Cologne phonetic codes the local check accepts like a core.
+	Codes []string `toml:"codes"`
+	// Weak words match only as the first word of the audio (see voiceagent.WakePhrase).
+	Weak []string `toml:"weak"`
 }
 
 // VoiceAgentSessionLimits returns the effective Voice Agent session caps.
@@ -161,6 +170,7 @@ func (cfg *Config) VoiceAgentSessionLimits() VoiceAgentLimitsConfig {
 		MaxGlobalSessions:              cfg.Server.MaxVoiceAgentSessions,
 		MaxPerIdentitySessions:         cfg.Server.MaxSessionsPerUser,
 		MaxPreparedPerIdentitySessions: DefaultMaxPreparedVoiceAgentSessions,
+		MaxAnonymousSessions:           DefaultMaxAnonymousVoiceAgentSessions,
 	}
 	if cfg.VoiceAgent.Limits.MaxGlobalSessions > 0 {
 		limits.MaxGlobalSessions = cfg.VoiceAgent.Limits.MaxGlobalSessions
@@ -170,6 +180,9 @@ func (cfg *Config) VoiceAgentSessionLimits() VoiceAgentLimitsConfig {
 	}
 	if cfg.VoiceAgent.Limits.MaxPreparedPerIdentitySessions > 0 {
 		limits.MaxPreparedPerIdentitySessions = cfg.VoiceAgent.Limits.MaxPreparedPerIdentitySessions
+	}
+	if cfg.VoiceAgent.Limits.MaxAnonymousSessions > 0 {
+		limits.MaxAnonymousSessions = cfg.VoiceAgent.Limits.MaxAnonymousSessions
 	}
 	return limits
 }

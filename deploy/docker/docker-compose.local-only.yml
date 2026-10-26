@@ -4,6 +4,7 @@
 #                      /v1/audio/transcriptions and /v1/audio/speech
 #   speechkit-whisper  whisper.cpp whisper-server (STT)
 #   speechkit-stt-parakeet  optional Parakeet STT (profile "parakeet"), see below
+#   speechkit-stt-phonon    optional Phonon-2.5 STT (profile "phonon"), see below
 #   speechkit-tts      Kokoro-FastAPI, OpenAI-compatible /v1/audio/speech (TTS)
 #   ollama             Assist / Voice Agent LLM. Omit this service and point
 #                      [local_llm] base_url at an existing Ollama instead.
@@ -121,6 +122,71 @@ services:
       - "8080"
       - --model
       - /models/parakeet-ultra-int8
+      - --inference-path
+      - /v1/audio/transcriptions
+    volumes:
+      - speechkit-models:/models:ro
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  # Phonon-2.5 instead (the same 25 languages in Fermion Research's 178 MB
+  # five-value format, in less than half the memory; needs AVX2 or ARM with
+  # dot product): fetch it once, start the profile, and point [vps] url at
+  # http://speechkit-stt-phonon:8080.
+  #   docker compose -f docker-compose.local-only.yml --profile phonon-setup run --rm speechkit-phonon-model
+  #   docker compose -f docker-compose.local-only.yml --profile phonon up -d
+  # The files come from Fermion's own repository at a pinned revision: the
+  # archive is checked against Fermion's SHA256SUMS.txt entry, and every file
+  # unpacked from it against the SHA-256 the desktop download catalog pins for
+  # parakeet.phonon-2.5.
+  speechkit-phonon-model:
+    profiles: ["phonon-setup"]
+    image: alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        set -e;
+        apk add --no-cache curl zstd >/dev/null;
+        mkdir -p /models/phonon-2.5 && cd /models/phonon-2.5;
+        base=https://huggingface.co/FermionResearch/Phonon-2.5/resolve/2673618ad8636c8dfd20fe57e94d1f67f75bdeaa;
+        test -s model.fermion || {
+          curl -fL --retry 5 -o archive.part $$base/phonon-2.5.bps.tar.zst;
+          echo '1faa04053a472cabab3bc31d07f30c23f22906f71044ca10eb1f0de36d1f19a9  archive.part' | sha256sum -c -;
+          zstd -dc archive.part | tar -xf - model.fermion config.json packed_manifest.json;
+          rm archive.part;
+        };
+        test -s NOTICE || curl -fL --retry 5 -o NOTICE $$base/NOTICE;
+        test -s LICENSE || curl -fL --retry 5 -o LICENSE $$base/LICENSE-WEIGHTS-CC-BY-4.0.txt;
+        printf '%s  %s\n'
+        17cb62d08e751a41819eb779db089aa7ac4eb2bab433ba5c2991d8cbd3cfefb9 model.fermion
+        b8ee2310784b2ffb62200bc9d2301cdc0576141ee9c53f7a41a5a2d181910cc9 config.json
+        2c98e5d0e1349fa146f21cdc168d681b186711c78abcfac47af16c25649f5c89 packed_manifest.json
+        dd4993badd45eb336280a0ab5b4ecb3ed06260d189a30fcae8b9e89a587c4de8 NOTICE
+        9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411 LICENSE
+        | sha256sum -c -
+    volumes:
+      - speechkit-models:/models
+
+  speechkit-stt-phonon:
+    profiles: ["phonon"]
+    # The server image's speechkit-stt-sherpa runs a Phonon directory with its
+    # five-value engine.
+    image: ${SPEECHKIT_SERVER_IMAGE:-ghcr.io/kombifyio/speechkit-server:latest}
+    entrypoint: ["/app/speechkit-stt-sherpa"]
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --model
+      - /models/phonon-2.5
       - --inference-path
       - /v1/audio/transcriptions
     volumes:

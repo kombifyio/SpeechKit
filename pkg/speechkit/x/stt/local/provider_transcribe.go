@@ -86,6 +86,12 @@ func (p *Provider) Transcribe(ctx context.Context, audioData []byte, opts stt.Tr
 			return nil, fmt.Errorf("write prompt field: %w", err)
 		}
 	}
+	wantWords := engine == engineSherpa && p.WordTimestamps
+	if wantWords {
+		if err := writer.WriteField("response_format", "verbose_json"); err != nil {
+			return nil, fmt.Errorf("write response format field: %w", err)
+		}
+	}
 	if err := writer.Close(); err != nil {
 		return nil, fmt.Errorf("close multipart writer: %w", err)
 	}
@@ -118,10 +124,21 @@ func (p *Provider) Transcribe(ctx context.Context, audioData []byte, opts stt.Tr
 	}
 
 	var result struct {
-		Text string `json:"text"`
+		Text  string `json:"text"`
+		Words []struct {
+			Word  string  `json:"word"`
+			Start float64 `json:"start"`
+			End   float64 `json:"end"`
+		} `json:"words"`
 	}
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, fmt.Errorf("parse response: %w", err)
+	}
+	var words []stt.WordConfidence
+	if wantWords {
+		for _, w := range result.Words {
+			words = append(words, stt.WordConfidence{Text: w.Word, StartMs: int64(w.Start * 1000), EndMs: int64(w.End * 1000)})
+		}
 	}
 
 	// Neither whisper.cpp nor Parakeet reports which language it detected, so
@@ -132,6 +149,7 @@ func (p *Provider) Transcribe(ctx context.Context, audioData []byte, opts stt.Tr
 
 	return &stt.Result{
 		Text:     result.Text,
+		Words:    words,
 		Language: lang,
 		Duration: duration,
 		Provider: p.Name(),

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/phonon"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/sherpa"
 )
 
@@ -21,8 +22,9 @@ type runtimeEngine int
 const (
 	// engineWhisper is whisper.cpp's whisper-server with a ggml-*.bin file.
 	engineWhisper runtimeEngine = iota
-	// engineSherpa is speechkit-stt-sherpa with a sherpa-onnx Parakeet
-	// model directory.
+	// engineSherpa is speechkit-stt-sherpa with a model directory: a
+	// sherpa-onnx Parakeet export or a Phonon five-value model, which the
+	// sidecar runs with its own engine.
 	engineSherpa
 )
 
@@ -119,13 +121,32 @@ func findSherpaBinary() (string, error) {
 	return "", fmt.Errorf("speechkit-stt-sherpa binary not found in bundle or managed install location")
 }
 
+// resolveSidecarModelDir validates a model directory speechkit-stt-sherpa
+// runs and returns it: a Phonon five-value model (Fermion's container) or a
+// sherpa-onnx export.
+func resolveSidecarModelDir(modelPath string) (string, error) {
+	if phonon.IsModelDir(modelPath) {
+		files, err := phonon.ResolveModelDir(modelPath)
+		return files.Dir, err
+	}
+	files, err := sherpa.ResolveModelDir(modelPath)
+	return files.Dir, err
+}
+
+// sidecarModelLanguages is the language list of the model directory, which
+// the sidecar enforces.
+func sidecarModelLanguages(modelPath string) []string {
+	if phonon.IsModelDir(modelPath) {
+		return phonon.ModelLanguages(modelPath)
+	}
+	return sherpa.ModelLanguages(modelPath)
+}
+
 // validateModel checks the model of engine before a start.
 func validateModel(engine runtimeEngine, modelPath string) error {
 	if engine == engineSherpa {
-		if _, err := sherpa.ResolveModelDir(modelPath); err != nil {
-			return err
-		}
-		return nil
+		_, err := resolveSidecarModelDir(modelPath)
+		return err
 	}
 	if err := ValidateModelPath(modelPath); err != nil {
 		return fmt.Errorf("validate whisper model path: %w", err)
@@ -152,6 +173,8 @@ func serverArgs(engine runtimeEngine, modelPath string, port, threads int, ident
 			"--port", fmt.Sprint(port),
 			"--threads", fmt.Sprint(threads),
 			"--inference-path", "/v1/audio/transcriptions",
+			// English-only models refuse a pinned non-English language.
+			"--languages", strings.Join(sidecarModelLanguages(modelPath), ","),
 		}
 		if identity != nil {
 			args = append(args, "--public", identity.dir)

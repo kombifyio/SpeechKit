@@ -53,7 +53,10 @@ Speaches voice ID.
   the `speechkit-whisper` health check, so Whisper keeps running unless a
   compose override removes that dependency. The Parakeet service runs
   `speechkit-stt-sherpa` from the server image, so it needs a server image
-  that includes it.
+  that includes it. Phonon-2.5 (the same 25 languages in Fermion Research's
+  178 MB five-value format, in less than half the memory; needs AVX2 or ARM
+  with dot product) works the same way with the profiles `phonon-setup` and
+  `phonon` and `[vps] url` set to `http://speechkit-stt-phonon:8080`.
 - **TTS:** `[tts.local]` sends requests to `http://speechkit-tts:8880` with
   model `kokoro` and voice `af_bella`. The `[tts] strategy` is `local-only`.
 - **LLM:** `[local_llm]` sends requests to `http://ollama:11434/v1` with

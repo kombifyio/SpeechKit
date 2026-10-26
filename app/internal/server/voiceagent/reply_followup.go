@@ -39,16 +39,33 @@ func replyIsPoliteCloser(sentence string) bool {
 // the turn_end that carries it; statements, confirmations and ordinary
 // answers return false.
 func replyExpectsAnswer(text string) bool {
+	expects, _ := replyFollowUpDecision(text)
+	return expects
+}
+
+// Rules that decide expects_reply, named for the dialog log. A question mark
+// is the plain fallback; the phrase lists are the classifier proper.
+const (
+	followUpRuleNoText       = "no_text"
+	followUpRuleQuestionMark = "question_mark"
+	followUpRuleImperative   = "imperative_phrase"
+	followUpRulePoliteCloser = "polite_closer"
+	followUpRuleInvitation   = "invitation_phrase"
+	followUpRuleStatement    = "statement"
+)
+
+// replyFollowUpDecision is replyExpectsAnswer plus the rule that decided it.
+func replyFollowUpDecision(text string) (bool, string) {
 	text = strings.TrimRightFunc(strings.TrimSpace(text), func(r rune) bool {
 		return unicode.IsSpace(r) || strings.ContainsRune(`"'”“’‘»«)]`, r) ||
 			unicode.In(r, unicode.So, unicode.Sk, unicode.Mn, unicode.Cf)
 	})
 	last := strings.TrimRightFunc(text, func(r rune) bool { return strings.ContainsRune(".!…", r) })
 	if last == "" {
-		return false
+		return false, followUpRuleNoText
 	}
 	if strings.HasSuffix(last, "?") || strings.HasSuffix(last, "？") {
-		return true
+		return true, followUpRuleQuestionMark
 	}
 	if i := strings.LastIndexAny(last, ".!?…\n"); i >= 0 {
 		last = last[i+1:]
@@ -56,13 +73,16 @@ func replyExpectsAnswer(text string) bool {
 	last = strings.ToLower(strings.TrimSpace(last))
 	for _, imperative := range replyFollowUpImperatives {
 		if strings.HasPrefix(last, imperative+" ") || strings.HasPrefix(last, imperative+",") {
-			return !replyIsPoliteCloser(last)
+			if replyIsPoliteCloser(last) {
+				return false, followUpRulePoliteCloser
+			}
+			return true, followUpRuleImperative
 		}
 	}
 	for _, invitation := range replyFollowUpInvitations {
 		if strings.HasPrefix(last, invitation) {
-			return true
+			return true, followUpRuleInvitation
 		}
 	}
-	return false
+	return false, followUpRuleStatement
 }

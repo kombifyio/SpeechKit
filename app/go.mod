@@ -101,7 +101,7 @@ require (
 	github.com/k2-fsa/sherpa-onnx-go-linux v1.13.8 // indirect
 	github.com/k2-fsa/sherpa-onnx-go-macos v1.13.8 // indirect
 	github.com/k2-fsa/sherpa-onnx-go-windows v1.13.8 // indirect
-	github.com/klauspost/compress v1.20.1 // indirect
+	github.com/klauspost/compress v1.20.1
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/lithammer/shortuuid/v4 v4.3.0 // indirect

@@ -412,6 +412,20 @@ components:
           properties:
             version: { type: integer, const: 1 }
             mode: { type: string, const: oneshot }
+        front_door:
+          type: object
+          required: [version]
+          description: |
+            Opt a plain realtime session into the server's front door: spoken mode commands and Companion
+            requests are recognised in the final transcript and answered with conversation_mode and
+            route_switch receipts. A server that does not know the field ignores it. Registered-agent
+            sessions keep their own control and ignore it.
+          properties:
+            version: { type: integer, const: 1 }
+            routes:
+              type: array
+              description: route_switch targets the client can act on; unknown entries are ignored. Without "agent" the session gets mode receipts only.
+              items: { type: string }
         wake:
           type: object
           required: [phrase]
@@ -511,6 +525,24 @@ components:
             status: { type: string, enum: [ready, pending] }
             code: { type: string }
 
+    RouteSwitchReceipt:
+      type: object
+      description: |
+        Sent with event_type route_switch on a plain session whose front_door listed routes ["agent"]. The
+        device continues on the registered Companion route for this turn and sends utterance as
+        the first text frame; the realtime reply of the switched turn is muted.
+      required: [version, to, voice_session_id, request_id, reason]
+      properties:
+        version: { type: integer, const: 1 }
+        to: { type: string, const: agent }
+        voice_session_id: { type: string, pattern: '^[A-Za-z0-9_.:-]{1,128}$' }
+        request_id: { type: string, pattern: '^[A-Za-z0-9_.:-]{1,128}$' }
+        reason: { type: string, enum: [explicit_companion, model_handoff] }
+        utterance:
+          type: string
+          description: At most 512 bytes of UTF-8, cut on a character boundary.
+
+
     TextFrame:
       type: object
       required: [type, text]
@@ -609,6 +641,7 @@ components:
         - session_resumable
         - session_end
         - conversation_mode
+        - route_switch
 
     EventFrameFields:
       type: object
@@ -744,6 +777,8 @@ components:
         type: { type: string, const: event }
         conversation:
           $ref: '#/components/schemas/VoiceModeReceipt'
+        route:
+          $ref: '#/components/schemas/RouteSwitchReceipt'
         ai_session_id: { type: string }
         event_type:
           $ref: '#/components/schemas/LiveEventType'

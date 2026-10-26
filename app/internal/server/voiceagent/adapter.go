@@ -126,6 +126,8 @@ type Adapter struct {
 	mediaTransport string
 	mediaBridge    MediaBridge
 	conversation   *a2a.ConversationSession
+	front          *frontDoor  // opt-in transcript routing on a plain session (front_door.go)
+	dialog         dialogStats // per-turn and session-end log counters (dialog_log.go)
 }
 
 // voiceSegmentUsage may run on a renewal goroutine, so it reads only the
@@ -219,6 +221,7 @@ func (a *Adapter) Run(parent context.Context) {
 	}
 
 	start, err := a.waitForStart(ctx)
+	a.dialog.startedAtMs.Store(time.Now().UnixMilli())
 	if err != nil || ctx.Err() != nil || authorizationEnded() {
 		if budgetEnded() {
 			endReason = "voice_budget_exhausted"
@@ -327,6 +330,7 @@ func (a *Adapter) Run(parent context.Context) {
 			cfg.SystemPrompt, cfg.RefinementPrompt = "", ""
 		}
 	}
+	a.configureFrontDoor(start, &cfg)
 	if err := a.configureConversation(start, &cfg); err != nil {
 		a.sendFatalError(ctx, "conversation_control_unsupported", "Conversation control requires a capable client and an authorized Companion session.")
 		return
@@ -334,10 +338,12 @@ func (a *Adapter) Run(parent context.Context) {
 	if a.OnStart != nil {
 		if err := a.OnStart(); err != nil {
 			code := "session_unavailable"
+			message := "No active voice conversation slot is available. Try again when the current conversation ends."
 			if errors.Is(err, ErrIdentityLimitExceeded) {
 				code = "per_user_limit_exceeded"
+				message = sessionBusyMessage(start.Locale)
 			}
-			a.sendFatalError(ctx, code, "No active voice conversation slot is available. Try again when the current conversation ends.")
+			a.sendFatalError(ctx, code, message)
 			return
 		}
 	}
@@ -362,7 +368,7 @@ func (a *Adapter) Run(parent context.Context) {
 	// they must not promise checks or actions they cannot perform. Agents and
 	// providers that bring their own prompt and tools keep theirs untouched.
 	if self, ok := a.Provider.(LiveSelfToolProvider); cfg.DirectEndpoint == nil && cfg.AgentTargetID == "" && (!ok || !self.HandlesOwnTools()) {
-		cfg.SystemPrompt = appendSessionContext(cfg.SystemPrompt, a.now(), start.Timezone, cfg.Locale, len(cfg.Tools) > 0)
+		cfg.SystemPrompt = appendSessionContext(cfg.SystemPrompt, a.now(), start.Timezone, cfg.Locale, toolsExcludingHandoff(cfg.Tools) > 0)
 	}
 	connectTimeout := a.ConnectTimeout
 	if connectTimeout <= 0 {

@@ -7,10 +7,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -73,36 +73,108 @@ func startAuthProxy(ctx context.Context, listenPort, upstreamPort int) (*authPro
 		MaxIdleConns:    4,
 		IdleConnTimeout: 30 * time.Second,
 	}
-	rp := &httputil.ReverseProxy{
-		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.Out.URL = &url.URL{Scheme: "http", Host: upstreamAddr, Path: pr.In.URL.Path, RawPath: pr.In.URL.RawPath, RawQuery: pr.In.URL.RawQuery}
-			pr.Out.Host = upstreamAddr
-			// The key authenticates the caller to this proxy only; the child
-			// never sees it.
-			pr.Out.Header.Del("Authorization")
-		},
+	client := &http.Client{
 		Transport: transport,
-		ModifyResponse: func(resp *http.Response) error {
-			for name := range resp.Header {
-				if strings.HasPrefix(http.CanonicalHeaderKey(name), "Access-Control-") {
-					resp.Header.Del(name)
-				}
-			}
-			return nil
-		},
-		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, _ error) {
-			http.Error(w, "whisper-server unavailable", http.StatusBadGateway)
-		},
+		// A redirect from the child is never followed: the answer goes back to
+		// the caller unchanged and the caller decides.
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 
 	p := &authProxy{key: key, upstream: transport, baseURL: "http://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(addr.Port))}
 	p.srv = &http.Server{
-		Handler:           p.guard(rp),
+		Handler:           p.guard(forwardToChild(client, upstreamAddr)),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 	go func() { _ = p.srv.Serve(ln) }()
 	return p, nil
+}
+
+// proxyMaxResponseBytes bounds one relayed answer. The child answers with small
+// JSON documents; anything larger is a fault, not a transcript.
+const proxyMaxResponseBytes = 16 << 20
+
+var (
+	proxyIdentityPath = regexp.MustCompile(`^/[0-9a-f]{32}\.txt$`)
+	// The stream routes of speechkit-stt-sherpa's five-value engine.
+	proxyStreamPath     = regexp.MustCompile(`^/stream/[0-9a-f]{32}$`)
+	proxyStreamCallPath = regexp.MustCompile(`^/stream/[0-9a-f]{32}/(audio|finish)$`)
+	proxyHopHeaders     = map[string]bool{
+		"Connection": true, "Keep-Alive": true, "Proxy-Authenticate": true, "Proxy-Authorization": true,
+		"Te": true, "Trailer": true, "Transfer-Encoding": true, "Upgrade": true,
+	}
+)
+
+// proxyRouteAllowed names the only calls the provider makes to its child:
+// the health probe, the per-start identity proof, one transcription, and the
+// calls of a live dictation stream. The
+// child's other routes (such as whisper-server's model loader) stay
+// unreachable, and the child's file directory is never exposed beyond the
+// identity proof.
+func proxyRouteAllowed(method, path string) bool {
+	switch {
+	case method == http.MethodGet && path == "/health":
+		return true
+	case method == http.MethodGet && proxyIdentityPath.MatchString(path):
+		return true
+	case method == http.MethodPost && (path == "/v1/audio/transcriptions" || path == "/inference" || path == "/stream"):
+		return true
+	case method == http.MethodPost && proxyStreamCallPath.MatchString(path):
+		return true
+	case method == http.MethodDelete && proxyStreamPath.MatchString(path):
+		return true
+	}
+	return false
+}
+
+// forwardToChild relays one allowed call to the child on loopback and returns
+// its bounded answer. It buffers the answer instead of streaming it, so no
+// file-sized body can pass through.
+func forwardToChild(client *http.Client, upstreamAddr string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !proxyRouteAllowed(r.Method, r.URL.Path) {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		target := "http://" + upstreamAddr + r.URL.Path
+		if r.URL.RawQuery != "" {
+			target += "?" + r.URL.RawQuery
+		}
+		out, err := http.NewRequestWithContext(r.Context(), r.Method, target, r.Body)
+		if err != nil {
+			http.Error(w, "whisper-server unavailable", http.StatusBadGateway)
+			return
+		}
+		out.ContentLength = r.ContentLength
+		for _, name := range []string{"Content-Type", "Accept"} {
+			if value := r.Header.Get(name); value != "" {
+				out.Header.Set(name, value)
+			}
+		}
+		resp, err := client.Do(out)
+		if err != nil {
+			http.Error(w, "whisper-server unavailable", http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		answer, err := io.ReadAll(io.LimitReader(resp.Body, proxyMaxResponseBytes+1))
+		if err != nil || len(answer) > proxyMaxResponseBytes {
+			http.Error(w, "whisper-server answer unusable", http.StatusBadGateway)
+			return
+		}
+		for name, values := range resp.Header {
+			canonical := http.CanonicalHeaderKey(name)
+			// The child answers every origin; that never passes through.
+			if proxyHopHeaders[canonical] || canonical == "Content-Length" || strings.HasPrefix(canonical, "Access-Control-") {
+				continue
+			}
+			for _, value := range values {
+				w.Header().Add(canonical, value)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+		_, _ = w.Write(answer)
+	})
 }
 
 // guard admits only requests that carry the per-start key and come from a

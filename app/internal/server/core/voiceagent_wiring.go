@@ -17,6 +17,7 @@ import (
 	vsserver "github.com/kombifyio/SpeechKit/app/internal/server/voiceagent"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	dgstt "github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/deepgram"
+	localstt "github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/local"
 )
 
 // Supported provider strings for cfg.VoiceAgent.Provider.
@@ -101,6 +102,7 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 		MaxGlobalSessions:              limits.MaxGlobalSessions,
 		MaxPerIdentitySessions:         limits.MaxPerIdentitySessions,
 		MaxPreparedPerIdentitySessions: limits.MaxPreparedPerIdentitySessions,
+		MaxAnonymousSessions:           limits.MaxAnonymousSessions,
 	})
 	if err != nil {
 		return nil, status, err
@@ -142,7 +144,7 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 
 		RegisteredAgentSigningSecret: func() string { return os.Getenv("KOMBIFY_A2A_DELEGATION_SIGNING_SECRET") },
 		NativeConsentReader:          buildNativeVoiceConsentReader(),
-		WakeVerifier:                 buildWakeVerifier(cfg),
+		WakeVerifier:                 buildWakeVerifier(ctx, cfg),
 	})
 	if err != nil {
 		return nil, status, err
@@ -151,11 +153,77 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 	return h, status, nil
 }
 
-// buildWakeVerifier backs the two-stage wake word check with a Deepgram
-// batch transcription of the first seconds. NoStore keeps the audio out of
-// Deepgram's model improvement programme. Without a Deepgram key the stage
-// is off and wake candidates run unverified.
-func buildWakeVerifier(cfg *config.Config) vsserver.WakeVerifier {
+// buildWakeVerifier backs the two-stage wake word check. With a Parakeet
+// model configured ([voice_agent.wake] local_stt_model or
+// SPEECHKIT_WAKE_STT_MODEL) the on-box sidecar transcribes the first 1.7 s and
+// the Deepgram batch transcription answers only while the sidecar is not
+// ready or fails. Without a model, Deepgram decides alone: NoStore keeps the
+// audio out of Deepgram's model improvement programme. Without either, the
+// stage is off and wake candidates run unverified.
+func buildWakeVerifier(ctx context.Context, cfg *config.Config) vsserver.WakeVerifier {
+	cloud := buildCloudWakeVerifier(cfg)
+	model := strings.TrimSpace(cfg.VoiceAgent.Wake.LocalSTTModel)
+	if model == "" {
+		model = strings.TrimSpace(os.Getenv("SPEECHKIT_WAKE_STT_MODEL"))
+	}
+	if model == "" {
+		return cloud
+	}
+	provider := localstt.New(localstt.Options{ModelPath: model})
+	provider.WordTimestamps = true
+	go superviseLocalWakeSTT(ctx, provider, model)
+	phrases := vsserver.DefaultLocalWakePhrases()
+	// The deployment's spellings, codes and weak words add to the built-in
+	// ones. Its confirm_codes are not merged: they only hold for the cloud
+	// pass, where a second, unbiased transcription must agree.
+	for id, ph := range cfg.VoiceAgent.Wake.Phrases {
+		id = strings.ToLower(strings.TrimSpace(id))
+		merged := phrases[id]
+		merged.Cores = append(merged.Cores, ph.Cores...)
+		merged.Weak = append(merged.Weak, ph.Weak...)
+		merged.Codes = append(merged.Codes, ph.Codes...)
+		phrases[id] = merged
+	}
+	return vsserver.NewLocalWakeVerifier(provider, phrases, cloud)
+}
+
+// superviseLocalWakeSTT keeps the sidecar running: it starts it, waits for it
+// to exit and starts it again with a growing pause (5 s up to 5 min, reset
+// after a run of 10 minutes). While it is down the wake check uses the cloud
+// verifier at once (Provider.Ready is false).
+func superviseLocalWakeSTT(ctx context.Context, provider *localstt.Provider, model string) {
+	defer provider.StopServer()
+	const (
+		minPause = 5 * time.Second
+		maxPause = 5 * time.Minute
+	)
+	pause := minPause
+	for ctx.Err() == nil {
+		started := time.Now()
+		if err := provider.StartServer(ctx); err != nil {
+			slog.Warn("voiceagent: local wake STT did not start; the cloud verifier decides", "model", model, "retry_in", pause.String(), "err", err)
+		} else {
+			slog.Info("voiceagent: local wake STT ready", "model", model, "start_ms", time.Since(started).Milliseconds())
+			select {
+			case <-provider.RuntimeDone():
+				slog.Warn("voiceagent: local wake STT exited; the cloud verifier decides", "model", model, "retry_in", pause.String(), "err", provider.RuntimeError())
+			case <-ctx.Done():
+				return
+			}
+			if time.Since(started) > 10*time.Minute {
+				pause = minPause
+			}
+		}
+		select {
+		case <-time.After(pause):
+		case <-ctx.Done():
+			return
+		}
+		pause = min(pause*2, maxPause)
+	}
+}
+
+func buildCloudWakeVerifier(cfg *config.Config) vsserver.WakeVerifier {
 	key := resolveRealtimeAPIKey(cfg, ProviderDeepgram)
 	if key == "" {
 		return nil

@@ -20,16 +20,16 @@ package wakewordcatalog
 
 import "strings"
 
-// modelsBase is the public origin that serves the wake-word model bytes. The
-// SpeechKit server serves them from its own volume (synced from Cloudflare R2 at
-// startup) at /v1/wakeword/files/<name>, so no third-party host is involved.
+// modelsBase is the public Cloudflare R2 origin (assets.kombify.io) that serves
+// the wake-word model bytes. The SpeechKit server never serves them itself
+// (Render serves no file bytes, D-2026-10-25-03); it only names this origin.
 // Kept identical to the desktop download catalog (app/internal/downloads/catalog.go)
 // so both consume the same artifacts; the two are intentionally NOT code-coupled
 // to keep this kernel package free of the desktop-only download machinery.
-const modelsBase = "https://speechkit.kombify.io/v1/wakeword/files/"
+const modelsBase = "https://assets.kombify.io/speechkit/wakeword/"
 
 // hfBase is retained as the build key so File.URL = hfBase + "<name>" stays a
-// one-liner; it now points at the kombify-hosted serving origin above.
+// one-liner; it now points at the R2 serving origin above.
 const hfBase = modelsBase
 
 // License is the SPDX-ish identifier for every SpeechKit-trained wake model.

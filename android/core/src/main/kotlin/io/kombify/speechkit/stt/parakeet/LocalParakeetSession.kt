@@ -19,7 +19,8 @@ import java.io.ByteArrayOutputStream
  *
  * Starting a segment leases the model, which starts loading it in the background, so the seconds a cold load
  * takes overlap with the user speaking; the lease keeps the model open until the segment's transcript is out.
- * A segment pinned to a language Parakeet does not transcribe ([ParakeetLanguages]) fails at once with code
+ * The model is Parakeet or Phonon-2.5 ([OnDeviceModelFiles]); a segment pinned to a language it does not transcribe
+ * ([OnDeviceModelFiles.supports]: Parakeet's 25 languages, English for Phonon-2.5 English) fails at once with code
  * `language_unsupported`. Starting a segment while one is still open (a host that abandoned it after a
  * microphone failure) ends the stale one with [TranscriptEvent.SegmentDone] first.
  *
@@ -27,7 +28,7 @@ import java.io.ByteArrayOutputStream
  * `local_transcription_failed`, `audio_too_long`.
  */
 class LocalParakeetSession(
-    private val files: ParakeetModelFiles,
+    private val files: OnDeviceModelFiles,
     private val recognizers: ParakeetRecognizers = ParakeetOnDevice.recognizers,
 ) : StreamingSttSession {
 
@@ -50,11 +51,11 @@ class LocalParakeetSession(
         if (active) abandonSegment()
         segmentId += 1
         val sid = segmentId
-        if (!ParakeetLanguages.supports(options.language)) {
+        if (!files.supports(options.language)) {
             channel.trySend(
                 TranscriptEvent.Failure(
                     code = "language_unsupported",
-                    message = "on-device Parakeet does not transcribe ${options.language}",
+                    message = "the on-device model ${files.dir.name} does not transcribe ${options.language}",
                 ),
             )
             channel.trySend(TranscriptEvent.SegmentDone(sid))

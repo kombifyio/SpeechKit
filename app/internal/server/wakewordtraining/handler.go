@@ -156,7 +156,7 @@ func New(opts Options) (*Handler, error) {
 //	POST    /v1/wakeword/activations             — multipart upload
 //	GET     /v1/wakeword/activations             — list caller's activations
 //	GET     /v1/wakeword/activations/{id}        — fetch one
-//	GET     /v1/wakeword/activations/{id}/audio  — fetch WAV bytes
+//	GET     /v1/wakeword/activations/{id}/audio  — 410 audio_download_disabled
 //	PATCH   /v1/wakeword/activations/{id}        — update label
 //	DELETE  /v1/wakeword/activations/{id}        — delete
 func (h *Handler) Mount(mux *http.ServeMux) {
@@ -196,7 +196,10 @@ func (h *Handler) item(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case subresource == "audio" && r.Method == http.MethodGet:
-		h.getAudio(w, r, id)
+		// The server never hands stored training audio back: recordings
+		// are download payloads (D-2026-10-25-03).
+		httpx.WriteError(w, http.StatusGone, "audio_download_disabled",
+			"the server does not return stored wake-word audio")
 	case subresource == "" && r.Method == http.MethodGet:
 		h.getMetadata(w, r, id)
 	case subresource == "" && r.Method == http.MethodPatch:
@@ -423,33 +426,6 @@ func (h *Handler) getMetadata(w http.ResponseWriter, r *http.Request, id string)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(row)
-}
-
-func (h *Handler) getAudio(w http.ResponseWriter, r *http.Request, id string) {
-	caller := middleware.IdentityFromContext(r.Context())
-	if caller.UserID == "" {
-		httpx.WriteError(w, http.StatusUnauthorized, "unauthenticated", "identity not available on context")
-		return
-	}
-	row, err := h.store.GetWakewordActivation(r.Context(), id, caller.UserID, caller.OrgID)
-	if err != nil {
-		writeStoreError(w, err)
-		return
-	}
-	absPath, err := h.audioPath(row.AudioPath)
-	if err != nil {
-		httpx.WriteError(w, http.StatusGone, "audio_missing", "stored audio path is invalid")
-		return
-	}
-	f, err := os.Open(absPath) // #nosec G304 -- absPath is validated by audioPath to stay under Handler.audioDir.
-	if err != nil {
-		httpx.WriteError(w, http.StatusGone, "audio_missing", "audio file no longer on disk")
-		return
-	}
-	defer func() { _ = f.Close() }()
-	w.Header().Set("Content-Type", "audio/wav")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filepath.Base(row.AudioPath)))
-	_, _ = io.Copy(w, f)
 }
 
 type patchLabelRequest struct {

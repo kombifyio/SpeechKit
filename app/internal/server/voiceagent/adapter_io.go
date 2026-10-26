@@ -91,6 +91,7 @@ func (a *Adapter) settleDuplexReplyLocked(now time.Time) bool {
 }
 
 func (a *Adapter) sendSessionEnd(ctx context.Context, reason string) {
+	a.logSessionEnd(reason)
 	a.sendJSON(ctx, SessionEndFrame{
 		Type:             MsgSessionEnd,
 		EventFrameFields: a.eventFrameFields(nil, EventSessionEnd),

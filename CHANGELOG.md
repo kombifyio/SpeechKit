@@ -20,12 +20,40 @@ IDs, source paths, and other maintainer-only vocabulary.
   in Settings > Local Models and choose "Use this model". Parakeet takes no
   vocabulary hints, but Replacements still apply to its transcripts. Chinese,
   Hindi and Arabic stay on Whisper or a cloud provider.
+- Bark 3.0 and Bark 3.0 Clean by Conway Research are new English-only local
+  transcription models in Settings > Local Models (about 685 MB each, CC-BY
+  4.0). Bark 3.0 writes every word as spoken; Bark 3.0 Clean leaves out
+  fillers, false starts and repeated words. Both run on the CPU like
+  Parakeet and refuse a recording whose language is set to anything other
+  than English.
+- Phonon-2.5 and Phonon-2.5 English by Fermion Research are new local
+  transcription models in Settings > Local Models (CC-BY 4.0). They download
+  as Fermion's original 178 MB files and run in their own compact format,
+  in less than half the memory of the other Parakeet models. Phonon-2.5
+  covers the same 25 European languages as Parakeet with fewer errors on
+  average; Phonon-2.5 English transcribes English only and refuses a
+  recording whose language is set to anything else. They need a processor
+  from about 2013 on (AVX2) or an ARM processor with dot-product
+  instructions.
+- Phonon-2.5 and Phonon-2.5 English transcribe about twice as fast on x86
+  processors, at the same accuracy, and faster than Parakeet Ultra.
+- Dictating with Phonon-2.5 or Phonon-2.5 English shows the text while you
+  speak, like the live cloud providers. The recording is transcribed while
+  it is made, so the final text is ready about as fast as before or faster
+  on long dictations, and it is the same text a transcription of the whole
+  recording gives.
 - The Linux server image includes the Parakeet transcription runtime, and the
   local-only Docker stack has an optional Parakeet profile that replaces the
   Whisper container.
+- Android: Phonon-2.5 dictates fully on the phone, offline: a 163 MB download
+  instead of 670 MB, about 350 MB of memory instead of 1 GB, so phones with
+  3 GB of memory qualify. It needs a 64-bit phone with ARM dot-product
+  instructions (most phones from 2018 on). Choose the offline model under
+  Settings > On-device transcription; Phonon-2.5 is preselected where it runs,
+  Parakeet Ultra and Phonon-2.5 English stay available.
 - Android: Parakeet can dictate fully on the phone, offline and without a
-  server. Choose Parakeet under Settings > On-device transcription and download
-  the model (about 670 MB) once; the keyboard, the assistant and the voice
+  server. Choose the offline model Parakeet Ultra under Settings > On-device
+  transcription and download it (about 670 MB) once; the keyboard, the assistant and the voice
   keyboard then use it whenever no server is in use. It needs a 64-bit phone
   with about 6 GB of memory; on other phones, and until the model is
   downloaded, the system recognizer keeps dictating. Parakeet does not
@@ -57,6 +85,33 @@ Developers can use the stable SDK independently of experimental integrations.
 Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
+
+## [0.77.17](https://github.com/kombifyio/SpeechKit/compare/v0.77.16...v0.77.17) (2026-10-26)
+
+
+### Features
+
+* **android:** Phonon-2.5 on the phone through SpeechKit's five-value engine (163 MB, 3 GB phones) ([#1183](https://github.com/kombifyio/SpeechKit/issues/1183)) ([da0f67a](https://github.com/kombifyio/SpeechKit/commit/da0f67abde1acd451e7acce130e48d3cbf049e4b))
+* **models:** run live vendor model discovery in the freshness gate ([#1166](https://github.com/kombifyio/SpeechKit/issues/1166)) ([3650cd4](https://github.com/kombifyio/SpeechKit/commit/3650cd43e977efac76c63eb70364a6ffd21afff4))
+* **stt:** Bark 3.0 and Phonon-2.5 local models, Phonon converted by SpeechKit ([#1176](https://github.com/kombifyio/SpeechKit/issues/1176)) ([bf754fa](https://github.com/kombifyio/SpeechKit/commit/bf754fa047c33fc57045ae2bed5192185153c708))
+* **stt:** live dictation with Phonon-2.5 through the five-value engine's stream ([#1180](https://github.com/kombifyio/SpeechKit/issues/1180)) ([4228595](https://github.com/kombifyio/SpeechKit/commit/4228595cd0915243c901c5becb863cfa4ebccaa1))
+* **stt:** run Phonon-2.5 natively in its five-value format (178 MB, less than half the memory) ([#1177](https://github.com/kombifyio/SpeechKit/issues/1177)) ([33aef0e](https://github.com/kombifyio/SpeechKit/commit/33aef0ed0b045239e95b7629dbe4c5ecfa98b0c7))
+* **voiceagent:** front door routes spoken mode and Companion commands from the final transcript ([#1159](https://github.com/kombifyio/SpeechKit/issues/1159)) ([1e052cd](https://github.com/kombifyio/SpeechKit/commit/1e052cd6f2e04e9e64a185341e9cdb5221407e30))
+* **voiceagent:** log the dialog-end decision; raise the per-account session caps for several devices ([#1161](https://github.com/kombifyio/SpeechKit/issues/1161)) ([92d2930](https://github.com/kombifyio/SpeechKit/commit/92d293089c79ee22aea6b8e3e8f36f1a3212b0e6))
+* **voiceagent:** verify wake candidates on the local Parakeet sidecar, cloud only as fallback ([#1164](https://github.com/kombifyio/SpeechKit/issues/1164)) ([b2a6f20](https://github.com/kombifyio/SpeechKit/commit/b2a6f207aec4b17a918310f2262183feb867bea5))
+
+
+### Bug Fixes
+
+* **ci:** pin mise 2026.10.18 in the affected gate so Java linux-arm64-musl locking no longer fails it ([#1163](https://github.com/kombifyio/SpeechKit/issues/1163)) ([e716066](https://github.com/kombifyio/SpeechKit/commit/e71606659f8a2d5955cfefc4255c4c8c37e53fa6))
+* **server:** serve no file bytes from the hosted server; wake-word and UI images come from R2 (D-2026-10-25-03) ([#1167](https://github.com/kombifyio/SpeechKit/issues/1167)) ([6d5ddb7](https://github.com/kombifyio/SpeechKit/commit/6d5ddb76b130ac657b6d7bc4f821d6724f4ea77d))
+* **voiceagent:** post-merge review findings for the local wake second stage ([#1170](https://github.com/kombifyio/SpeechKit/issues/1170)) ([8931c04](https://github.com/kombifyio/SpeechKit/commit/8931c047c5818c4fd79240b4065378af7733cae7))
+* **windows:** build the VersionInfo resource into SpeechKit.exe with go-winres ([#1165](https://github.com/kombifyio/SpeechKit/issues/1165)) ([f8b1756](https://github.com/kombifyio/SpeechKit/commit/f8b1756eaba4b085e890a081a45552fbdef4be2c))
+
+
+### Performance Improvements
+
+* **stt:** Phonon int8 kernels on x86 (AVX2), twice as fast at the same accuracy ([#1181](https://github.com/kombifyio/SpeechKit/issues/1181)) ([ec45cc0](https://github.com/kombifyio/SpeechKit/commit/ec45cc0bc7c815d7a4cc533a2f3df1ebda4e647b))
 
 ## [0.77.16](https://github.com/kombifyio/SpeechKit/compare/v0.77.15...v0.77.16) (2026-10-25)
 

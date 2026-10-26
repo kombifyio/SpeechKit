@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/app/internal/config"
+	"github.com/kombifyio/SpeechKit/app/internal/server/assistantui"
 	"github.com/kombifyio/SpeechKit/app/internal/server/httpx"
 	"github.com/kombifyio/SpeechKit/app/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/app/internal/server/onboarding"
@@ -84,7 +85,6 @@ func serverPublicRoutes() []middleware.PublicRoute {
 		// activation-collector (/v1/wakeword/activations) stays private.
 		{Path: "/v1/wakeword/models", Methods: []string{http.MethodGet, http.MethodHead}},
 		{PathPrefix: "/v1/wakeword/models/", Methods: []string{http.MethodGet, http.MethodHead}},
-		{PathPrefix: "/v1/wakeword/files/", Methods: []string{http.MethodGet, http.MethodHead}},
 	}
 	if !operatorUIPublic() {
 		return routes
@@ -308,7 +308,7 @@ func inlineHTMLCSP(html string) string {
 		"default-src 'none'",
 		"style-src " + cspSources(cspBlockHashes(html, "<style>", "</style>")),
 		"script-src " + cspSources(cspBlockHashes(html, "<script>", "</script>")),
-		"img-src 'self'",
+		"img-src 'self' " + assistantui.MarksOrigin,
 		"connect-src 'self' ws: wss:",
 		"object-src 'none'",
 		"frame-ancestors 'none'",

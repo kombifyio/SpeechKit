@@ -24,6 +24,27 @@ var ParakeetLanguages = []string{
 	"lt", "lv", "mt", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "uk",
 }
 
+// EnglishOnlyLanguages is the language list of the English-only Parakeet
+// derivatives, such as Underdog Bark 3.0 and Phonon-2.5 English.
+var EnglishOnlyLanguages = []string{"en"}
+
+// englishOnlyModelDirs are the catalog directory names of the English-only
+// models. A request pinning another language is refused for them instead of
+// being transcribed as English.
+var englishOnlyModelDirs = []string{"bark-3.0-int8", "bark-3.0-clean-int8", "phonon-2.5-en-int8"}
+
+// ModelLanguages returns the languages the model in dir transcribes, matched
+// on the directory's base name as the model catalog installs it: the
+// English-only models get [EnglishOnlyLanguages], every other directory
+// [ParakeetLanguages]. Hosts pass the result to speechkit-stt-sherpa's
+// --languages flag.
+func ModelLanguages(dir string) []string {
+	if slices.Contains(englishOnlyModelDirs, strings.ToLower(filepath.Base(filepath.Clean(dir)))) {
+		return EnglishOnlyLanguages
+	}
+	return ParakeetLanguages
+}
+
 // ModelFiles are the four files of a nemo_transducer model directory.
 type ModelFiles struct {
 	Dir     string

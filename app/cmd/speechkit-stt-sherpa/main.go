@@ -20,7 +20,9 @@
 //	    [--languages bg,cs,...|any] [--max-in-flight 8] [--no-gpu]
 //
 // The model loads before the port is bound, as in whisper-server, so a
-// listener that answers /health is ready to transcribe.
+// listener that answers /health is ready to transcribe. With a Phonon model
+// it also serves the stream routes (/stream, see sherpa.StreamTranscriber),
+// which the local provider uses for live dictation.
 //
 // Build: requires cgo (the sherpa-onnx native library). It ships in the
 // desktop bundle's sherpa-runtime/ directory next to the sherpa-onnx DLLs it
@@ -47,6 +49,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/phonon"
+	phononengine "github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/phonon/engine"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/sherpa"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/sherpa/engine"
 )
@@ -96,7 +100,7 @@ func parseFlags(args []string) (config, error) {
 		languages   string
 		showVersion bool
 	)
-	fs.StringVar(&cfg.model, "model", "", "sherpa-onnx nemo_transducer model directory (encoder, decoder, joiner, tokens.txt)")
+	fs.StringVar(&cfg.model, "model", "", "model directory: a sherpa-onnx nemo_transducer export (encoder, decoder, joiner, tokens.txt) or a Phonon five-value model (model.fermion, config.json, packed_manifest.json)")
 	fs.StringVar(&cfg.model, "m", "", "shorthand for --model")
 	fs.StringVar(&cfg.host, "host", "127.0.0.1", "address to listen on")
 	fs.IntVar(&cfg.port, "port", 8080, "port to listen on")
@@ -104,8 +108,8 @@ func parseFlags(args []string) (config, error) {
 	fs.IntVar(&cfg.threads, "t", defaultThreads(), "shorthand for --threads")
 	fs.StringVar(&cfg.inferencePath, "inference-path", "/inference", "transcription route")
 	fs.StringVar(&cfg.publicDir, "public", "", "directory whose files are served at the root")
-	fs.StringVar(&languages, "languages", strings.Join(sherpa.ParakeetLanguages, ","),
-		`comma-separated ISO 639-1 codes the model transcribes; a request pinning another language is refused ("any" accepts all)`)
+	fs.StringVar(&languages, "languages", "",
+		`comma-separated ISO 639-1 codes the model transcribes; a request pinning another language is refused ("any" accepts all; empty uses the model's own list, English for the Bark 3.0 and Phonon-2.5 English directories and Parakeet's 25 languages otherwise)`)
 	fs.IntVar(&cfg.maxInFlight, "max-in-flight", 8, "transcription requests held at once; more get 503")
 	fs.Bool("no-gpu", false, "accepted for whisper-server compatibility; inference always runs on the CPU")
 	fs.BoolVar(&showVersion, "version", false, "print the version and exit")
@@ -125,6 +129,9 @@ func parseFlags(args []string) (config, error) {
 	if cfg.port < 0 || cfg.port > 65535 {
 		return config{}, fmt.Errorf("--port %d is out of range", cfg.port)
 	}
+	if strings.TrimSpace(languages) == "" {
+		languages = strings.Join(modelLanguages(cfg.model), ",")
+	}
 	if !strings.EqualFold(strings.TrimSpace(languages), "any") {
 		for _, code := range strings.Split(languages, ",") {
 			if code = sherpa.NormalizeLanguage(code); code != "" {
@@ -136,7 +143,12 @@ func parseFlags(args []string) (config, error) {
 }
 
 func run(ctx context.Context, cfg config, logger *slog.Logger) error {
-	if _, err := sherpa.ResolveModelDir(cfg.model); err != nil {
+	five := phonon.IsModelDir(cfg.model)
+	if five {
+		if _, err := phonon.ResolveModelDir(cfg.model); err != nil {
+			return badConfigError{err}
+		}
+	} else if _, err := sherpa.ResolveModelDir(cfg.model); err != nil {
 		return badConfigError{err}
 	}
 	if cfg.publicDir != "" {
@@ -146,16 +158,13 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) error {
 	}
 
 	loadStart := time.Now()
-	recognizer, err := engine.NewRecognizer(sherpa.Config{
-		ModelDir: cfg.model,
-		Threads:  cfg.threads,
-	})
+	recognizer, engineName, err := openRecognizer(cfg, five)
 	if err != nil {
 		return badConfigError{err}
 	}
 	defer recognizer.Close()
 	modelName := filepath.Base(cfg.model)
-	logger.Info("model loaded", "model", modelName, "threads", cfg.threads, "load_ms", time.Since(loadStart).Milliseconds())
+	logger.Info("model loaded", "model", modelName, "engine", engineName, "threads", cfg.threads, "load_ms", time.Since(loadStart).Milliseconds())
 
 	listener, err := new(net.ListenConfig).Listen(ctx, "tcp", net.JoinHostPort(cfg.host, strconv.Itoa(cfg.port)))
 	if err != nil {
@@ -191,6 +200,37 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) error {
 		return fmt.Errorf("shutdown: %w", err)
 	}
 	return nil
+}
+
+// recognizer is what the sidecar serves and closes; both engines implement it.
+type recognizer interface {
+	sherpa.Transcriber
+	Close()
+}
+
+// openRecognizer loads the model with the engine its directory needs: the
+// five-value engine for a Phonon model, sherpa-onnx otherwise.
+func openRecognizer(cfg config, five bool) (recognizer, string, error) {
+	if five {
+		r, err := phononengine.NewRecognizer(phonon.Config{ModelDir: cfg.model, Threads: cfg.threads})
+		if err != nil {
+			return nil, "", err
+		}
+		return r, "phonon-2-c", nil
+	}
+	r, err := engine.NewRecognizer(sherpa.Config{ModelDir: cfg.model, Threads: cfg.threads})
+	if err != nil {
+		return nil, "", err
+	}
+	return r, "sherpa-onnx", nil
+}
+
+// modelLanguages is the language list of the model in dir.
+func modelLanguages(dir string) []string {
+	if phonon.IsModelDir(dir) {
+		return phonon.ModelLanguages(dir)
+	}
+	return sherpa.ModelLanguages(dir)
 }
 
 func defaultThreads() int {

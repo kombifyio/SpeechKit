@@ -13,11 +13,16 @@ import (
 //go:embed assets/assistant.html
 var assistantHTML string
 
-//go:embed assets/marks/rosette.png
-var rosettePNG []byte
+// MarksOrigin is the Cloudflare R2 public origin that serves the two mark
+// images. The page references them there; this server never serves image or
+// other file bytes (D-2026-10-25-03).
+const MarksOrigin = "https://assets.kombify.io"
 
-//go:embed assets/marks/k.png
-var monogramPNG []byte
+// markPaths maps the page's relative mark paths to their R2 object paths.
+var markPaths = strings.NewReplacer(
+	"/assistant/marks/rosette.png", MarksOrigin+"/speechkit/assistant/marks/rosette.png",
+	"/assistant/marks/k.png", MarksOrigin+"/speechkit/assistant/marks/k.png",
+)
 
 const smokeTokenPlaceholder = "__SPEECHKIT_SMOKE_TOKEN__"
 
@@ -25,14 +30,9 @@ const smokeTokenPlaceholder = "__SPEECHKIT_SMOKE_TOKEN__"
 // injected (same contract as the smoke UI on `/`): empty disables
 // token-from-page and the UI asks for a bearer token instead.
 func AssistantUIHTML(smokeToken string) string {
-	return strings.ReplaceAll(assistantHTML, smokeTokenPlaceholder, htmlAttrEscape(smokeToken))
+	page := strings.ReplaceAll(assistantHTML, smokeTokenPlaceholder, htmlAttrEscape(smokeToken))
+	return markPaths.Replace(page)
 }
-
-// RosettePNG is the standard AI-teal rosette mark asset.
-func RosettePNG() []byte { return rosettePNG }
-
-// MonogramPNG is the k monogram mark asset.
-func MonogramPNG() []byte { return monogramPNG }
 
 func htmlAttrEscape(value string) string {
 	replacer := strings.NewReplacer(

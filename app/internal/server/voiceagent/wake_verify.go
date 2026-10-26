@@ -48,6 +48,25 @@ type WakeVerdict struct {
 	// TrimBytes is the audio up to the end of the phrase. It is not replayed
 	// to the provider, so the agent hears the request, not the wake word.
 	TrimBytes int
+	// Stage names the verifier that decided ("local" or "cloud"); empty for
+	// a verifier that does not say.
+	Stage string
+	// Weak marks an accept that rests on a weak word alone (see
+	// WakePhrase.Weak). A verifier with a second stage treats it as
+	// undecided.
+	Weak bool
+	// Undecided asks the adapter to collect the cloud window and call the
+	// verifier's VerifyWakeCloud: the first pass could not decide.
+	Undecided bool
+}
+
+// wakeStaged is a verifier whose first pass may hand over to a second one
+// that needs more audio. WakeWindowBytes is asked when the audio is
+// collected, so a first pass that is known to be unavailable asks for the
+// second pass's window at once.
+type wakeStaged interface {
+	WakeWindowBytes() int
+	VerifyWakeCloud(ctx context.Context, pcm []byte, phrase, locale string) (WakeVerdict, error)
 }
 
 // wakeTranscriber is the batch STT the verifier needs (Deepgram in
@@ -72,7 +91,7 @@ func NewSTTWakeVerifier(t wakeTranscriber, phrases map[string]WakePhrase, keyter
 	}
 	norm := make(map[string]WakePhrase, len(phrases))
 	for id, p := range phrases {
-		n := WakePhrase{ConfirmCodes: p.ConfirmCodes}
+		n := WakePhrase{ConfirmCodes: p.ConfirmCodes, Codes: p.Codes, Weak: p.Weak}
 		for _, c := range p.Cores {
 			n.Cores = append(n.Cores, normalizeWakeWord(c))
 		}
@@ -100,10 +119,22 @@ func NewSTTWakeVerifier(t wakeTranscriber, phrases map[string]WakePhrase, keyter
 // turned "Kuba", "Kobe" and "Kuhn" into "Kubi" in the 2026-10-22
 // measurement). ConfirmCodes are Cologne phonetic codes of the unbiased
 // words, for names unbiased recognition cannot spell.
+//
+// Codes are Cologne phonetic codes accepted like a core, for a recognition
+// that spells the word freely (the on-box Parakeet path takes no bias, so it
+// writes "kombify" as "Combify", "Compify" or "Kombi Fi"). A code matches
+// single words and joins of up to 9 letters, not longer joins: "come buy
+// five" reaches the same code as "kombify" and must not pass.
 type WakePhrase struct {
 	Cores        []string
 	Confirm      []string
 	ConfirmCodes []string
+	Codes        []string
+	// Weak words match only as the very first word of the audio. Recognition
+	// often drops the unstressed end of a coined name ("Kombify" heard as
+	// "Combi"); a real word like "Kombi" is common, so it passes only where
+	// the phrase leads the audio, not anywhere in the first words.
+	Weak []string
 }
 
 // wakeLanguages transcribes in the session language and in Deepgram's
@@ -169,9 +200,9 @@ func (v *sttWakeVerifier) VerifyWake(ctx context.Context, pcm []byte, phrase, lo
 			}
 			switch {
 			case !j.confirm:
-				results <- result{match: matchWake(id, spec.Cores, nil, res)}
+				results <- result{match: matchWake(id, wakeRule{cores: spec.Cores, fuzzy: true}, res)}
 			default:
-				results <- result{confirm: true, match: matchWake(id, spec.Confirm, spec.ConfirmCodes, res)}
+				results <- result{confirm: true, match: matchWake(id, wakeRule{cores: spec.Confirm, codes: spec.ConfirmCodes, fuzzy: true}, res)}
 			}
 		}()
 	}
@@ -285,20 +316,23 @@ const (
 // wakeCoreMatches compares a candidate with the cores. Only a single word
 // may differ from a core; words joined across a split must match exactly,
 // otherwise a short word plus the next word passes for a longer core.
-func wakeCoreMatches(candidate string, cores []string, joined bool) bool {
+func wakeCoreMatches(candidate string, cores []string, joined, fuzzy bool) bool {
 	for _, core := range cores {
 		if candidate == core {
 			return true
 		}
-		if !joined && len(core) > wakeExactMaxLen && wakeSimilar(candidate, core) >= wakeMatchThreshold {
+		if fuzzy && !joined && len(core) > wakeExactMaxLen && wakeSimilar(candidate, core) >= wakeMatchThreshold {
 			return true
 		}
 	}
 	return false
 }
 
-func wakeCodeMatches(candidate string, codes []string) bool {
-	if len(codes) == 0 {
+// wakeCodeMaxLetters bounds the letters a phonetic code may match.
+const wakeCodeMaxLetters = 9
+
+func wakeCodeMatches(candidate string, codes []string, minLetters int) bool {
+	if n := len([]rune(candidate)); len(codes) == 0 || n > wakeCodeMaxLetters || n < minLetters {
 		return false
 	}
 	code := colognePhonetic(candidate)
@@ -387,9 +421,26 @@ func colognePhonetic(w string) string {
 	return b.String()
 }
 
-// matchWake looks for one of cores among the first words of the
+// wakeRule is what matchWake looks for. fuzzy admits cores that differ by
+// about a letter in four; the local path lists the spellings it accepts and
+// matches them exactly, because near words like "Kombinat" sit within that
+// distance of a long spelling such as "kombifai".
+type wakeRule struct {
+	cores, codes, weak []string
+	fuzzy              bool
+	// codeMinLetters is the shortest word a code may match. The local rule sets
+	// 6: "Kampf" has the same Cologne code (4613) as "kombify".
+	codeMinLetters int
+	// singleWordCodes matches codes against one word only. The local rule
+	// sets it: "Kombi wie" joins to "kombiwie", which has the code of
+	// "kombify" (4613).
+	singleWordCodes bool
+}
+
+// matchWake looks for one of the rule's cores among the first words of the
 // transcript, also split over up to three words.
-func matchWake(id string, cores, codes []string, res *stt.Result) WakeVerdict {
+func matchWake(id string, rule wakeRule, res *stt.Result) WakeVerdict {
+	cores, codes, weak := rule.cores, rule.codes, rule.weak
 	type word struct {
 		text  string
 		endMs int64
@@ -415,7 +466,8 @@ func matchWake(id string, cores, codes []string, res *stt.Result) WakeVerdict {
 		var joined strings.Builder
 		for n := 1; n <= 3 && start+n <= len(words); n++ {
 			joined.WriteString(words[start+n-1].text)
-			if !wakeCoreMatches(joined.String(), cores, n > 1) && !wakeCodeMatches(joined.String(), codes) {
+			codeMatch := (n == 1 || !rule.singleWordCodes) && wakeCodeMatches(joined.String(), codes, rule.codeMinLetters)
+			if !wakeCoreMatches(joined.String(), cores, n > 1, rule.fuzzy) && !codeMatch {
 				continue
 			}
 			trim := 0
@@ -426,6 +478,19 @@ func matchWake(id string, cores, codes []string, res *stt.Result) WakeVerdict {
 			return WakeVerdict{Accepted: true, Phrase: id, TrimBytes: trim}
 		}
 	}
+	if len(words) > 0 {
+		for _, w := range weak {
+			if words[0].text != w {
+				continue
+			}
+			trim := 0
+			if end := words[0].endMs; end > 0 {
+				trim = int(end * wakePCMBytesPerSecond / 1000)
+				trim -= trim % 2
+			}
+			return WakeVerdict{Accepted: true, Phrase: id, TrimBytes: trim, Weak: true}
+		}
+	}
 	return WakeVerdict{Phrase: id}
 }
 
@@ -434,9 +499,17 @@ func matchWake(id string, cores, codes []string, res *stt.Result) WakeVerdict {
 func (a *Adapter) collectWakeAudio(ctx context.Context) ([]byte, bool, error) {
 	readCtx, cancel := context.WithTimeout(ctx, wakeCollectTimeout)
 	defer cancel()
-	buf := make([]byte, 0, wakeVerifyAudioBytes+4096)
-	for len(buf) < wakeVerifyAudioBytes {
-		typ, data, err := a.Conn.Read(readCtx)
+	window := wakeVerifyAudioBytes
+	if w, ok := a.WakeVerifier.(wakeStaged); ok && w.WakeWindowBytes() > 0 {
+		window = w.WakeWindowBytes()
+	}
+	return a.readWakeAudio(readCtx, make([]byte, 0, window+4096), window)
+}
+
+// readWakeAudio appends uplink audio to buf until it holds target bytes.
+func (a *Adapter) readWakeAudio(ctx context.Context, buf []byte, target int) ([]byte, bool, error) {
+	for len(buf) < target {
+		typ, data, err := a.Conn.Read(ctx)
 		if err != nil {
 			return buf, false, err
 		}
@@ -471,12 +544,39 @@ func (a *Adapter) verifyWake(ctx context.Context, start StartFrame) ([]byte, boo
 	defer cancel()
 	began := time.Now()
 	verdict, err := a.WakeVerifier.VerifyWake(vctx, audio, start.Wake.Phrase, start.Locale)
+	// A weak word alone never accepts without the cloud pass, not even when
+	// that pass fails.
+	weakOnly := err == nil && verdict.Undecided && verdict.Weak
+	if err == nil && verdict.Undecided {
+		// The first pass could not decide (local pass unavailable, slow, or a
+		// weak word alone): the cloud pass gets its own, longer window.
+		staged, ok := a.WakeVerifier.(wakeStaged)
+		if !ok {
+			verdict = WakeVerdict{Phrase: start.Wake.Phrase}
+		} else {
+			if len(audio) < wakeVerifyAudioBytes {
+				rctx, rcancel := context.WithTimeout(ctx, wakeCollectTimeout)
+				var more bool
+				audio, more, err = a.readWakeAudio(rctx, audio, wakeVerifyAudioBytes)
+				rcancel()
+				if err != nil || more {
+					return nil, false, "client"
+				}
+			}
+			cctx, ccancel := context.WithTimeout(ctx, wakeVerifyTimeout)
+			verdict, err = staged.VerifyWakeCloud(cctx, audio, start.Wake.Phrase, start.Locale)
+			ccancel()
+		}
+	}
 	elapsed := time.Since(began).Milliseconds()
-	if err != nil {
+	if err != nil && weakOnly {
+		slog.Warn("voiceagent: cloud wake verification unavailable, rejecting a weak-word candidate", "phrase", start.Wake.Phrase, "ms", elapsed, "err", err)
+		verdict = WakeVerdict{Phrase: start.Wake.Phrase, Stage: "local"}
+	} else if err != nil {
 		slog.Warn("voiceagent: wake verification unavailable, accepting candidate", "phrase", start.Wake.Phrase, "ms", elapsed, "err", err)
 		verdict = WakeVerdict{Accepted: true, Phrase: start.Wake.Phrase}
 	}
-	slog.Info("voiceagent: wake candidate", "phrase", start.Wake.Phrase, "score", start.Wake.Score, "accepted", verdict.Accepted, "ms", elapsed, "audio_ms", len(audio)*1000/wakePCMBytesPerSecond)
+	slog.Info("voiceagent: wake candidate", "phrase", start.Wake.Phrase, "score", start.Wake.Score, "accepted", verdict.Accepted, "ms", elapsed, "audio_ms", len(audio)*1000/wakePCMBytesPerSecond, "stage", verdict.Stage)
 	if !verdict.Accepted {
 		a.sendJSON(ctx, WakeResultFrame{Type: MsgWakeRejected, Phrase: verdict.Phrase, Reason: "no_match"})
 		return nil, false, "wake_rejected"

@@ -125,6 +125,8 @@ type StartFrame struct {
 	// ConversationControl opts this client into typed assistant mode actions.
 	// Omission preserves existing clients. Session identities are server-owned.
 	ConversationControl *ConversationControlStart `json:"conversation_control,omitempty"`
+	// FrontDoor opts a plain session into spoken mode and Companion routing.
+	FrontDoor *FrontDoorStart `json:"front_door,omitempty"`
 	// Wake marks a session a device opened on a wake word candidate. The
 	// device runs its detector at a low cutoff and sends its pre-roll and
 	// the following speech as soon as the server reports state "verifying";
@@ -160,6 +162,17 @@ type WakeResultFrame struct {
 type ConversationControlStart struct {
 	Version int    `json:"version"`
 	Mode    string `json:"mode"`
+}
+
+// FrontDoorStart opts a plain realtime session into transcript routing
+// (front_door.go). It is a top-level start field on purpose: a server that
+// does not know it ignores it, so a device can send it before the server
+// supports it. Routes lists the route_switch targets the client can act on
+// (only "agent"; unknown entries are ignored). Without routes the client gets
+// conversation_mode receipts but never a route_switch.
+type FrontDoorStart struct {
+	Version int      `json:"version"`
+	Routes  []string `json:"routes,omitempty"`
 }
 
 // ConversationModeFrame invokes the agent-owned command from a client button.
@@ -256,6 +269,7 @@ type EventFrame struct {
 	Type string `json:"type"` // "event"
 	EventFrameFields
 	Conversation *a2a.VoiceModeReceipt `json:"conversation,omitempty"`
+	Route        *RouteSwitchReceipt   `json:"route,omitempty"`
 }
 
 type InterruptedFrame struct {
@@ -291,6 +305,7 @@ var errorRemediation = map[string]string{
 	"audio_transport_mismatch":    "send audio through the LiveKit room, not as binary WebSocket frames",
 	"tool_response_unsupported":   "drop tool_response frames for this provider",
 	"auth_expired":                "start a new voice session through the authenticated session endpoint",
+	"per_user_limit_exceeded":     "end a voice session on another device of this account (the limit counts all of them), then start again",
 }
 
 // ErrorRemediation returns the remediation hint for a wire error code, or ""

@@ -300,6 +300,13 @@ func (p *Provider) finishProcessStop() {
 	p.processMu.Unlock()
 }
 
+// Ready reports whether the child has started and answers; it turns false
+// when the child exits. A caller that must not wait for a starting server
+// (the wake word check) asks this instead of calling Transcribe.
+func (p *Provider) Ready() bool {
+	return p != nil && p.ready.Load()
+}
+
 // RuntimeDone closes whenever the owned whisper-server subprocess exits.
 // RuntimeError then reports an unexpected exit and stays nil for an explicit
 // StopServer call or process-context cancellation.

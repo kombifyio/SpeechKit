@@ -258,7 +258,7 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, wssession.ErrVoiceBudgetUnavailable):
 			httpx.WriteError(w, http.StatusForbidden, "voice_budget_unavailable", "Reserve new Voice quota before starting a voice session.")
 		case errors.Is(err, ErrIdentityLimitExceeded):
-			httpx.WriteError(w, http.StatusConflict, "per_user_limit_exceeded", err.Error())
+			httpx.WriteError(w, http.StatusConflict, "per_user_limit_exceeded", sessionBusyMessage(""))
 		case errors.Is(err, ErrGlobalLimitExceeded):
 			httpx.WriteError(w, http.StatusServiceUnavailable, "global_limit_exceeded", err.Error())
 		default:

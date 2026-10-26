@@ -88,12 +88,12 @@ func (r *Recognizer) Transcribe(samples []float32) (sherpa.Result, error) {
 		}
 		r.rec.DecodeStreams(streams)
 		for i, stream := range streams {
-			text := strings.TrimSpace(stream.GetResult().Text)
-			result.Segments = append(result.Segments, sherpa.Segment{
-				Start: float64(batch[i].Start) / sherpa.SampleRate,
-				End:   float64(batch[i].End) / sherpa.SampleRate,
-				Text:  text,
-			})
+			decoded := stream.GetResult()
+			text := strings.TrimSpace(decoded.Text)
+			start := float64(batch[i].Start) / sherpa.SampleRate
+			end := float64(batch[i].End) / sherpa.SampleRate
+			result.Segments = append(result.Segments, sherpa.Segment{Start: start, End: end, Text: text})
+			result.Words = append(result.Words, sherpa.WordsFromTokens(decoded.Tokens, decoded.Timestamps, start, end)...)
 			if text != "" {
 				texts = append(texts, text)
 			}

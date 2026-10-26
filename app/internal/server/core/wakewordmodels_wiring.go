@@ -4,8 +4,6 @@ package core
 
 import (
 	"log/slog"
-	"path/filepath"
-	"strings"
 
 	"github.com/kombifyio/SpeechKit/app/internal/config"
 	"github.com/kombifyio/SpeechKit/app/internal/server/wakewordmodels"
@@ -24,18 +22,10 @@ import (
 func wireWakewordModels(cfg *config.Config, app *App) {
 	const componentID = "api.wakeword_models"
 
-	modelDir := strings.TrimSpace(cfg.Server.ModelDir)
-	if modelDir == "" {
-		modelDir = "/var/lib/speechkit/models"
-	}
 	enabled := cfg.Server.Features.WakewordModels
 	h := wakewordmodels.New(wakewordmodels.Options{
 		Enabled:       enabled,
 		PublicBaseURL: cfg.Server.PublicBaseURL,
-		// Byte source: the startup R2 sync populates <model_dir>/wakeword (see
-		// deploy/docker/entrypoint). Empty/missing dir → /files 404s and clients
-		// fall back to the origin the catalog URLs already name.
-		LocalDir: filepath.Join(modelDir, "wakeword"),
 	})
 	h.Mount(app.Mux)
 

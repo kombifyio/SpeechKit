@@ -27,10 +27,10 @@ type ServerOptions struct {
 	// --inference-path; empty means "/inference". "/inference" is always
 	// served as well.
 	InferencePath string
-	// PublicDir, when set, is served at the root like whisper-server's
-	// --public directory: GET /<name> returns a regular file directly inside
-	// it. SpeechKit's local provider proves the identity of its child this
-	// way.
+	// PublicDir, when set, answers GET /<name> at the root like
+	// whisper-server's --public directory, for a regular file directly inside
+	// it of at most 4 KiB. SpeechKit's local provider proves the identity of
+	// its child this way; the route serves no other files.
 	PublicDir string
 	// Languages restricts the request language; a pinned language outside it
 	// is refused. Empty accepts every language.
@@ -54,6 +54,9 @@ const (
 	defaultMaxInFlight    = 8
 )
 
+// maxPublicFileBytes bounds a public-directory answer to an identity proof.
+const maxPublicFileBytes = 4 << 10
+
 // publicFileName admits plain file names and no dotfiles.
 var publicFileName = regexp.MustCompile(`^[A-Za-z0-9_-][A-Za-z0-9._-]*$`)
 
@@ -61,7 +64,8 @@ var publicFileName = regexp.MustCompile(`^[A-Za-z0-9_-][A-Za-z0-9._-]*$`)
 // GET / and public-directory files, and a multipart POST with a "file" (a
 // 16-bit PCM WAV), optional "language" and "response_format" json (default),
 // text or verbose_json. Other fields, such as whisper's "prompt", are
-// ignored: Parakeet's greedy decoder takes no text conditioning.
+// ignored: Parakeet's greedy decoder takes no text conditioning. When t is a
+// [StreamTranscriber] it also serves the stream routes (see serveStream).
 func NewHandler(t Transcriber, opts ServerOptions) http.Handler {
 	inference := strings.TrimSpace(opts.InferencePath)
 	if inference == "" {
@@ -82,9 +86,16 @@ type handler struct {
 	opts      ServerOptions
 	inference string
 	slots     chan struct{}
+	streams   streams
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/stream" || strings.HasPrefix(r.URL.Path, "/stream/") {
+		if st, ok := h.t.(StreamTranscriber); ok {
+			h.serveStream(w, r, st)
+			return
+		}
+	}
 	switch {
 	case r.URL.Path == h.inference || r.URL.Path == "/inference":
 		if r.Method != http.MethodPost {
@@ -126,12 +137,26 @@ func (h *handler) servePublic(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close() //nolint:errcheck // read-only
 	info, err := file.Stat()
-	if err != nil || !info.Mode().IsRegular() {
+	if err != nil || !info.Mode().IsRegular() || info.Size() > maxPublicFileBytes {
 		http.NotFound(w, r)
 		return
 	}
-	// ServeContent, not ServeFile: ServeFile redirects ".../index.html".
-	http.ServeContent(w, r, name, info.ModTime(), file)
+	// The directory only carries the provider's identity proof, a few bytes.
+	// A larger file is not served at all, so this route cannot deliver files.
+	content, err := io.ReadAll(io.LimitReader(file, maxPublicFileBytes))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(content)
+}
+
+type verboseWord struct {
+	Word  string  `json:"word"`
+	Start float64 `json:"start"`
+	End   float64 `json:"end"`
 }
 
 type verboseSegment struct {
@@ -209,8 +234,13 @@ func (h *handler) transcribe(w http.ResponseWriter, r *http.Request) {
 		for i, s := range result.Segments {
 			segments[i] = verboseSegment{ID: i, Start: s.Start, End: s.End, Text: s.Text}
 		}
+		words := make([]verboseWord, len(result.Words))
+		for i, word := range result.Words {
+			words[i] = verboseWord{Word: word.Text, Start: word.Start, End: word.End}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"task":     "transcribe",
+			"words":    words,
 			"language": NormalizeLanguage(language),
 			"duration": result.Duration,
 			"text":     result.Text,

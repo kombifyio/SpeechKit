@@ -266,11 +266,19 @@ func (a *Adapter) admitProviderOutput(ctx context.Context, result providerReceiv
 		if a.continuousDuplex {
 			a.replyActivityAt = time.Now()
 		}
+		if a.front != nil {
+			a.front.replySeen.Store(true)
+		}
 		if !a.replyActive.get() {
 			// Cancellation also applies before the first admitted fragment is
 			// audible; scheduling must not turn a queued reply into an idle ack.
 			a.replyActive.set(true)
 			a.outputEpoch = a.receiveEpoch
+			// A route_switch went out before this reply started: the device
+			// continues elsewhere, so this reply is muted as it starts.
+			if a.front != nil && a.front.muteNextUntilMs.Swap(0) > time.Now().UnixMilli() {
+				a.mutedThrough = max(a.mutedThrough, a.receiveEpoch)
+			}
 		}
 	}
 	epoch := a.receiveEpoch
@@ -356,6 +364,7 @@ func (a *Adapter) forwardProviderOutput(ctx context.Context, msg *LiveMessage, s
 		})
 		if msg.InputTranscriptDone {
 			a.recordUserTurn(ctx)
+			a.routeByTranscript(ctx, msg.InputTranscript)
 		}
 	}
 	if msg.OutputTranscript != "" {
@@ -406,6 +415,7 @@ func (a *Adapter) forwardProviderOutput(ctx context.Context, msg *LiveMessage, s
 func (a *Adapter) trackReplyFollowUp(msg *LiveMessage) *bool {
 	if msg.Interrupted {
 		a.replyText.Reset()
+		a.dialog.interrupted.Add(1)
 	}
 	if text := strings.TrimSpace(msg.OutputTranscript); text != "" {
 		if a.replyText.Len() > 0 {
@@ -418,8 +428,10 @@ func (a *Adapter) trackReplyFollowUp(msg *LiveMessage) *bool {
 	}
 	defer a.replyText.Reset()
 	if a.replyText.Len() == 0 {
+		a.logDialogTurn(nil, followUpRuleNoText, 0)
 		return nil
 	}
-	expects := replyExpectsAnswer(a.replyText.String())
+	expects, rule := replyFollowUpDecision(a.replyText.String())
+	a.logDialogTurn(&expects, rule, a.replyText.Len())
 	return &expects
 }

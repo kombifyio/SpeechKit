@@ -6,6 +6,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.job
+import io.kombify.speechkit.stt.phonon.PhononNative
 import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -32,6 +33,11 @@ import kotlin.coroutines.coroutineContext
 class ParakeetModelStore(
     val root: File,
     private val client: OkHttpClient = defaultClient(),
+    /** Extracts the named files of an archive into a directory; the default is the Phonon engine's native unpacker. */
+    private val unpacker: (archive: File, dir: File, names: List<String>) -> Unit = { archive, dir, names ->
+        if (!PhononNative.available()) throw IOException("the Phonon engine is not part of this app build")
+        PhononNative.unpack(archive.absolutePath, dir.absolutePath, names.toTypedArray())
+    },
 ) {
     private val lock = Mutex()
 
@@ -44,16 +50,20 @@ class ParakeetModelStore(
      */
     fun isInstalled(model: ParakeetModel): Boolean {
         val dir = directory(model)
-        return model.files.all { File(dir, it.name).let { f -> f.isFile && f.length() == it.sizeBytes } }
+        return model.installedFiles.all { File(dir, it.name).let { f -> f.isFile && f.length() == it.sizeBytes } }
     }
 
     /** Installed models, recommended first. */
     fun installed(): List<ParakeetModel> =
         ParakeetModels.all.filter(::isInstalled).sortedByDescending { it.recommended }
 
-    /** Files of the preferred installed model, or null when none is installed. */
-    fun preferredFiles(): ParakeetModelFiles? =
-        installed().firstNotNullOfOrNull { runCatching { ParakeetModelFiles.resolve(directory(it)) }.getOrNull() }
+    /**
+     * Files of the preferred installed model: [selected] when it is installed, otherwise the first installed one,
+     * recommended first. Null when none is installed.
+     */
+    fun preferredFiles(selected: ParakeetModel? = null): OnDeviceModelFiles? =
+        (listOfNotNull(selected?.takeIf(::isInstalled)) + installed())
+            .firstNotNullOfOrNull { runCatching { OnDeviceModelFiles.resolve(directory(it)) }.getOrNull() }
 
     /**
      * Downloads and installs [model], reporting bytes done of the model's
@@ -78,19 +88,27 @@ class ParakeetModelStore(
             val staging = File(root, ".${model.dirName}.partial")
             staging.mkdirs()
             val stagedBytes = model.files.sumOf { File(staging, it.name).let { f -> if (f.isFile) f.length() else 0L } }
-            val needed = model.sizeBytes - stagedBytes
+            // An archive needs room for its unpacked files next to it until it is deleted.
+            val needed = model.sizeBytes - stagedBytes + (model.archive?.members?.sumOf { it.sizeBytes } ?: 0L)
             if (root.usableSpace < needed + FREE_SPACE_MARGIN) {
                 throw IOException(
-                    "Parakeet needs ${needed / MB} MB of free storage; ${root.usableSpace / MB} MB are available",
+                    "${model.name} needs ${needed / MB} MB of free storage; ${root.usableSpace / MB} MB are available",
                 )
             }
             var done = 0L
+            // An archive whose members a previous run already unpacked and verified is not fetched again.
+            val unpacked = model.archive?.let { archive -> archive.members.all { verified(File(staging, it.name), it) } } ?: false
             for (file in model.files) {
                 coroutineContext.ensureActive()
+                if (unpacked && file.name == model.archive?.fileName) {
+                    done += file.sizeBytes
+                    continue
+                }
                 val target = File(staging, file.name)
                 fetch(file, target) { fileDone -> onProgress(done + fileDone, model.sizeBytes) }
                 done += file.sizeBytes
             }
+            model.archive?.let { unpackArchive(it, staging) }
             if (final.exists() && !final.deleteRecursively()) {
                 throw IOException("could not replace ${final.path}")
             }
@@ -99,6 +117,31 @@ class ParakeetModelStore(
             final
         }
     }
+
+    /**
+     * Unpacks [archive] in [staging] with [unpacker], checks every member against its pinned size and SHA-256, and
+     * deletes the archive. A member already in place with the right content is kept, so an interrupted unpack
+     * resumes.
+     */
+    private suspend fun unpackArchive(archive: ModelArchive, staging: File) {
+        val missing = archive.members.filter { !verified(File(staging, it.name), it) }
+        val packed = File(staging, archive.fileName)
+        if (missing.isNotEmpty()) {
+            coroutineContext.ensureActive()
+            unpacker(packed, staging, missing.map { it.name })
+            for (member in missing) {
+                val f = File(staging, member.name)
+                if (!verified(f, member)) {
+                    f.delete()
+                    throw IOException("${member.name} from ${archive.fileName} does not match its pinned SHA-256")
+                }
+            }
+        }
+        packed.delete()
+    }
+
+    private fun verified(f: File, file: ParakeetModelFile): Boolean =
+        f.isFile && f.length() == file.sizeBytes && sha256(f) == file.sha256
 
     /** Bytes of [model] a stopped download left on disk, which the next [download] resumes from. */
     fun partialBytes(model: ParakeetModel): Long =

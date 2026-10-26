@@ -10,12 +10,14 @@ import java.io.IOException
  * a directory the desktop accepts is accepted here and vice versa.
  */
 class ParakeetModelFiles private constructor(
-    val dir: File,
+    override val dir: File,
     val encoder: File,
     val decoder: File,
     val joiner: File,
     val tokens: File,
-) {
+) : OnDeviceModelFiles {
+    override fun supports(language: String?): Boolean = ParakeetLanguages.supports(language)
+
     companion object {
         /**
          * An encoder below this size is a truncated download or another

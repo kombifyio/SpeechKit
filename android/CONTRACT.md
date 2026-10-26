@@ -151,7 +151,9 @@ multilanguage by passing no language tag at all
 | `core/stt/parakeet/ParakeetModelFiles.kt` :: `ParakeetLanguages` | `pkg/speechkit/x/stt/sherpa/model.go` :: `ParakeetLanguages` / `SupportsLanguage` |
 | `core/stt/parakeet/PauseSplitter.kt` :: `PauseSplitter` | `pkg/speechkit/x/stt/sherpa/audio.go` :: `SplitAtPauses` |
 | `core/stt/parakeet/ParakeetRecognizer.kt` :: `ParakeetRecognizer` | `pkg/speechkit/x/stt/sherpa/engine` :: `Recognizer` (sherpa-onnx greedy `nemo_transducer`; Android runs the same export on ONNX Runtime) |
-| `core/stt/parakeet/ParakeetModels.kt` :: `ParakeetModels` | `app/host/downloads/catalog_artifacts.go` :: `parakeet.*` items (same revisions and SHA-256) |
+| `core/stt/parakeet/ParakeetModels.kt` :: `ParakeetModels` | `app/host/downloads/catalog_artifacts.go` :: `parakeet.*` items (same revisions and SHA-256; Phonon from Fermion's archive, the same unpacked files) |
+| `core/stt/parakeet/PhononModelFiles.kt` :: `PhononModelFiles` | `pkg/speechkit/x/stt/phonon/model.go` :: `ResolveModelDir` / `ModelLanguages` |
+| `core/stt/phonon/PhononRecognizer.kt` :: `PhononRecognizer` | `pkg/speechkit/x/stt/phonon/engine` :: `Recognizer` (the same Go code, built into `libspeechkit_phonon.so` from `app/cmd/speechkit-phonon-jni`) |
 
 The on-device Parakeet tier reproduces sherpa-onnx's feature extraction
 (kaldi-native-fbank, 128 Slaney mel bins, NeMo `per_feature` normalisation)
@@ -161,6 +163,12 @@ kaldi-native-fbank to about 1e-4 and its transcripts of `testdata/e2e` and
 mixed German/English recordings matched the sidecar's, measured on the JVM
 with the same ONNX Runtime version (evidence in the pull request that added
 it; no comparison runs in CI).
+The Phonon models do not reproduce anything: `libspeechkit_phonon.so` is the
+desktop's five-value engine and Go loader built for Android, so a phone and the
+sidecar run the same code on the same files. `ParakeetModelStore` downloads
+Fermion's archive from Hugging Face, unpacks `model.fermion`, `config.json` and
+`packed_manifest.json` through the library and checks each against the
+desktop catalog's SHA-256 before the model directory appears.
 `ParakeetRecognizerPool` keeps one model loaded per process and closes it
 only when no segment holds a lease: two minutes after the last
 transcription, on `ParakeetOnDevice.onTrimMemory`, or before a delete.

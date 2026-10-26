@@ -10,6 +10,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import io.kombify.speechkit.stt.phonon.PhononRecognizer
 import java.io.File
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -17,20 +18,20 @@ import kotlin.time.Duration.Companion.minutes
 /** Hands out the recognizer of a model directory for one dictation segment at a time. */
 fun interface ParakeetRecognizers {
     /** Leases the recognizer of [files], starting its load in the background when needed. */
-    suspend fun lease(files: ParakeetModelFiles): ParakeetLease
+    suspend fun lease(files: OnDeviceModelFiles): ParakeetLease
 }
 
 /** One holder's claim on a loaded (or loading) recognizer; released exactly once. */
 interface ParakeetLease {
     /** The recognizer, once loaded. Throws when the model failed to load. */
-    suspend fun recognizer(): ParakeetRecognizer
+    suspend fun recognizer(): OnDeviceRecognizer
 
     /** Ends the claim. Safe to call more than once and from any thread. */
     fun release()
 }
 
 /**
- * Keeps at most one Parakeet model loaded per process and closes it only when nobody holds it.
+ * Keeps at most one on-device model (Parakeet or Phonon) loaded per process and closes it only when nobody holds it.
  *
  * A load runs in the pool's own scope: a caller that is cancelled while the model loads (the keyboard closed
  * mid-load) does not abandon a loaded model, which would leak about 1 GB of native memory. A model is released
@@ -40,7 +41,7 @@ interface ParakeetLease {
  */
 class ParakeetRecognizerPool(
     var idleRelease: Duration = 2.minutes,
-    private val load: (ParakeetModelFiles) -> ParakeetRecognizer = { ParakeetRecognizer(it) },
+    private val load: (OnDeviceModelFiles) -> OnDeviceRecognizer = ::loadRecognizer,
 ) : ParakeetRecognizers {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lock = Mutex()
@@ -48,12 +49,12 @@ class ParakeetRecognizerPool(
     private var idleJob: Job? = null
     private val failed = mutableSetOf<File>()
 
-    private class Entry(val dir: File, val recognizer: Deferred<ParakeetRecognizer>) {
+    private class Entry(val dir: File, val recognizer: Deferred<OnDeviceRecognizer>) {
         var leases = 0
         var retired = false
     }
 
-    override suspend fun lease(files: ParakeetModelFiles): ParakeetLease {
+    override suspend fun lease(files: OnDeviceModelFiles): ParakeetLease {
         val entry = lock.withLock {
             idleJob?.cancel()
             entryFor(files).also { it.leases += 1 }
@@ -62,7 +63,7 @@ class ParakeetRecognizerPool(
     }
 
     /** Starts loading [files] so the first segment does not wait for it; released after [idleRelease] if unused. */
-    fun warmUp(files: ParakeetModelFiles) {
+    fun warmUp(files: OnDeviceModelFiles) {
         scope.launch {
             lock.withLock {
                 val entry = entryFor(files)
@@ -90,7 +91,7 @@ class ParakeetRecognizerPool(
     }
 
     // Call with lock held.
-    private fun entryFor(files: ParakeetModelFiles): Entry {
+    private fun entryFor(files: OnDeviceModelFiles): Entry {
         current?.let { entry ->
             val loadError = entry.recognizer.takeIf { it.isCompleted }?.getCompletionExceptionOrNull()
             if (entry.dir == files.dir && loadError == null) return entry
@@ -133,7 +134,7 @@ class ParakeetRecognizerPool(
         @Volatile
         private var released = false
 
-        override suspend fun recognizer(): ParakeetRecognizer = entry.recognizer.await()
+        override suspend fun recognizer(): OnDeviceRecognizer = entry.recognizer.await()
 
         override fun release() {
             synchronized(this) {
@@ -149,4 +150,10 @@ class ParakeetRecognizerPool(
             }
         }
     }
+}
+
+/** Loads [files] with the engine its directory needs. */
+private fun loadRecognizer(files: OnDeviceModelFiles): OnDeviceRecognizer = when (files) {
+    is PhononModelFiles -> PhononRecognizer(files)
+    is ParakeetModelFiles -> ParakeetRecognizer(files)
 }

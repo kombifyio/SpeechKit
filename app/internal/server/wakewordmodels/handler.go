@@ -19,6 +19,11 @@
 // serverPublicRoutes for the auth carve-out. The activation-collector endpoints
 // (app/internal/server/wakewordtraining) stay authenticated — do not widen those.
 //
+// The package serves metadata and redirects only. It never reads or streams a
+// model file: the catalog URLs name the Cloudflare R2 origin
+// (wakewordcatalog.modelsBase), so no byte of a model passes through the
+// server process (D-2026-10-25-03).
+//
 // Contract vs. consumer: this package SERVES the manifest/redirect contract.
 // Producing the microWakeWord .tflite (tools/wakeword-training/microwakeword)
 // and consuming it on-device (ESPHome / esp-tflite-micro) are separate
@@ -29,45 +34,11 @@ package wakewordmodels
 import (
 	"encoding/json"
 	"net/http"
-	"os"
-	"path"
-	"path/filepath"
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/app/internal/server/httpx"
 	"github.com/kombifyio/SpeechKit/app/internal/wakewordcatalog"
 )
-
-// knownModelFile reports whether name is one of the catalog's model filenames.
-// It rejects anything with a path separator so /v1/wakeword/files/ cannot be
-// used to traverse LocalDir.
-func knownModelFile(name string) bool {
-	if name == "" || strings.ContainsAny(name, "/\\") {
-		return false
-	}
-	for _, f := range knownModelFiles() {
-		if f == name {
-			return true
-		}
-	}
-	return false
-}
-
-func knownModelFiles() []string {
-	out := []string{
-		path.Base(wakewordcatalog.SharedMelspec.URL),
-		path.Base(wakewordcatalog.SharedEmbedding.URL),
-	}
-	for _, m := range wakewordcatalog.All() {
-		if m.OpenWakeWord.File.URL != "" {
-			out = append(out, path.Base(m.OpenWakeWord.File.URL))
-		}
-		if m.MicroWakeWord.File.URL != "" {
-			out = append(out, path.Base(m.MicroWakeWord.File.URL))
-		}
-	}
-	return out
-}
 
 // Options configures the handler.
 type Options struct {
@@ -83,12 +54,6 @@ type Options struct {
 	// used to build absolute manifest/model URLs in the list response. Empty =
 	// derive from each request's scheme + Host.
 	PublicBaseURL string
-	// LocalDir is the directory holding the wake-word model bytes this server
-	// serves at /v1/wakeword/files/<name> (synced from Cloudflare R2 at startup).
-	// Empty disables local byte serving (the /files route then 404s), which is
-	// the case for a self-hosted OSS server without the models — its clients use
-	// the kombify-hosted origin the catalog URLs point at.
-	LocalDir string
 }
 
 // Handler is the HTTP mount.
@@ -97,7 +62,6 @@ type Handler struct {
 	author        string
 	website       string
 	publicBaseURL string
-	localDir      string
 }
 
 // New returns a ready-to-mount handler.
@@ -107,7 +71,6 @@ func New(opts Options) *Handler {
 		author:        strings.TrimSpace(opts.Author),
 		website:       strings.TrimSpace(opts.Website),
 		publicBaseURL: strings.TrimRight(strings.TrimSpace(opts.PublicBaseURL), "/"),
-		localDir:      strings.TrimSpace(opts.LocalDir),
 	}
 	if h.author == "" {
 		h.author = "SpeechKit"
@@ -124,41 +87,6 @@ func New(opts Options) *Handler {
 func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/wakeword/models", h.collection)
 	mux.HandleFunc("/v1/wakeword/models/", h.item)
-	// Byte-serving route: the model files themselves, served from LocalDir.
-	mux.HandleFunc("/v1/wakeword/files/", h.file)
-}
-
-// file serves a wake-word model file by name from LocalDir. The name is
-// validated against the catalog's known filenames, so this cannot serve
-// arbitrary paths (no traversal). Returns 404 model_pending when the file is not
-// present (e.g. a self-hosted server without the R2-synced models, or a
-// microWakeWord .tflite not published yet).
-func (h *Handler) file(w http.ResponseWriter, r *http.Request) {
-	if !h.guard(w, r) {
-		return
-	}
-	name := strings.TrimPrefix(r.URL.Path, "/v1/wakeword/files/")
-	if name == "" || !knownModelFile(name) {
-		httpx.WriteError(w, http.StatusNotFound, "not_found", "unknown wake-word model file")
-		return
-	}
-	if h.localDir == "" {
-		httpx.WriteError(w, http.StatusNotFound, "model_pending",
-			"this server does not host wake-word model bytes; use the origin the catalog points at")
-		return
-	}
-	// name is a bare filename from the fixed catalog allowlist (knownModelFile
-	// rejects path separators and any non-catalog name), so joining it under
-	// localDir cannot traverse out of the directory.
-	full := filepath.Join(h.localDir, name) //nolint:gosec // G703: name is allowlisted, no traversal
-	// codeql[go/path-injection] name is an exact catalog basename; separators are rejected
-	if _, err := os.Stat(full); err != nil { //nolint:gosec // G703: full derives from the allowlisted name above
-		httpx.WriteError(w, http.StatusNotFound, "model_pending", "wake-word model file '"+name+"' is not available yet")
-		return
-	}
-	w.Header().Set("Cache-Control", "public, max-age=86400, immutable")
-	// codeql[go/path-injection] name is an exact catalog basename; separators are rejected
-	http.ServeFile(w, r, full) //nolint:gosec // G703: full derives from the allowlisted name above
 }
 
 func (h *Handler) collection(w http.ResponseWriter, r *http.Request) {

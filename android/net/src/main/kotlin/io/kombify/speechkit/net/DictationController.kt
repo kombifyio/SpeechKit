@@ -84,7 +84,7 @@ class DictationController(
                         "ConnectionProfile.Local requires a Context (DictationController(context = ...))"
                     }
                     val files = checkNotNull(ParakeetOnDevice.usableFiles(appContext)) {
-                        "no usable on-device Parakeet model: download one first, on a device that can run it"
+                        "no usable on-device model: download one first, on a device that can run it"
                     }
                     LocalParakeetSession(files)
                 }

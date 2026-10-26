@@ -3,9 +3,7 @@
 package core
 
 import (
-	"bytes"
 	"net/http"
-	"time"
 
 	"github.com/kombifyio/SpeechKit/app/internal/config"
 	"github.com/kombifyio/SpeechKit/app/internal/server/assistantui"
@@ -50,18 +48,7 @@ func (h assistantUIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			smokeToken = h.app.AuthState.SmokeToken()
 		}
 		writeHTML(w, r, assistantui.AssistantUIHTML(smokeToken))
-	case "/assistant/marks/rosette.png":
-		serveAssistantMark(w, r, assistantui.RosettePNG())
-	case "/assistant/marks/k.png":
-		serveAssistantMark(w, r, assistantui.MonogramPNG())
 	default:
 		http.NotFound(w, r)
 	}
-}
-
-func serveAssistantMark(w http.ResponseWriter, r *http.Request, data []byte) {
-	w.Header().Set("Content-Type", "image/png")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Cache-Control", "public, max-age=86400")
-	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(data))
 }

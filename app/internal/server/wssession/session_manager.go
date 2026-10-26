@@ -116,6 +116,10 @@ type Options struct {
 	// conversations when separate prepared-session admission is enabled.
 	// Defaults to 3.
 	MaxPerIdentitySessions int
+	// MaxAnonymousSessions caps the restricted public-guide identity, which is
+	// not an account and must not inherit a raised per-account cap. Zero uses
+	// MaxPerIdentitySessions.
+	MaxAnonymousSessions int
 	// MaxPreparedPerIdentitySessions opts a surface into separate admission for
 	// unstarted sessions (including attached standby sockets). Zero preserves
 	// the shared transport's legacy total-session cap. The active conversation
@@ -352,7 +356,7 @@ func (m *SessionManager) createWithVoiceBudget(owner Identity, aiSessionID strin
 		failedCreate()
 		return nil, "", ErrGlobalLimitExceeded
 	}
-	atLimit := m.byUser[owner.UserID] >= m.opts.MaxPerIdentitySessions
+	atLimit := m.byUser[owner.UserID] >= m.sessionCapLocked(owner)
 	// The restricted public-guide identity is not an account. Its verified
 	// anonymous role retains the existing total-session cap, even though the
 	// public and account routes share this manager.
@@ -451,12 +455,21 @@ func (m *SessionManager) StartConversation(id string) error {
 	}
 	if m.opts.MaxPreparedPerIdentitySessions > 0 {
 		_, active := m.conversationCountsLocked(s.Owner.UserID)
-		if active >= m.opts.MaxPerIdentitySessions {
+		if active >= m.sessionCapLocked(s.Owner) {
 			return ErrIdentityLimitExceeded
 		}
 	}
 	s.conversationStarted = true
 	return nil
+}
+
+// sessionCapLocked is the running-conversation cap of an owner: accounts get
+// MaxPerIdentitySessions, the anonymous public guide its own smaller cap.
+func (m *SessionManager) sessionCapLocked(owner Identity) int {
+	if owner.Role == "anonymous" && m.opts.MaxAnonymousSessions > 0 {
+		return m.opts.MaxAnonymousSessions
+	}
+	return m.opts.MaxPerIdentitySessions
 }
 
 func (m *SessionManager) conversationCountsLocked(userID string) (prepared, active int) {

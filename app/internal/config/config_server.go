@@ -408,6 +408,10 @@ type ServerDiscoveryConfig struct {
 // DefaultMaxPreparedVoiceAgentSessions bounds unstarted sessions per account.
 const DefaultMaxPreparedVoiceAgentSessions = 4
 
+// DefaultMaxAnonymousVoiceAgentSessions is the running-conversation cap of the
+// anonymous public guide, independent of the per-account cap.
+const DefaultMaxAnonymousVoiceAgentSessions = 1
+
 // VoiceAgentLimitsConfig configures Voice Agent session capacity. Unset active
 // and global caps fall back to [server]; the prepared cap defaults to four.
 type VoiceAgentLimitsConfig struct {
@@ -416,6 +420,8 @@ type VoiceAgentLimitsConfig struct {
 	// MaxPreparedPerIdentitySessions bounds tickets and pre-dialed sockets
 	// before provider admission, separately from active conversations. Default 4.
 	MaxPreparedPerIdentitySessions int `toml:"max_prepared_per_identity_sessions"`
+	// MaxAnonymousSessions caps the anonymous public guide. Default 1.
+	MaxAnonymousSessions int `toml:"max_anonymous_sessions"`
 }
 
 // ServerVoiceAgentConfig groups Server-Target-only Voice Agent integration

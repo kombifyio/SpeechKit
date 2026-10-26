@@ -25,9 +25,14 @@ func (a *Adapter) mergeBridgeTools(ctx context.Context, cfg *LiveConfigFrame) {
 	defer cancel()
 	defs := a.ToolRouter.Definitions(defsCtx, a.Session, *cfg)
 	if len(defs) == 0 {
+		// Decided from the bridge definitions alone: the front door's own
+		// handoff tool must not hide that the session has no bridge tools.
 		fields := a.eventFrameFields(nil, EventToolBridgeUnavailable)
 		fields.ProviderMetadata = map[string]any{"reason": "no_tool_definitions"}
 		a.sendJSON(ctx, EventFrame{Type: MsgEvent, EventFrameFields: fields})
+	}
+	defs = a.withFrontDoorTools(defs)
+	if len(defs) == 0 {
 		return
 	}
 	a.bridgeTools = make(map[string]ToolDefinitionFrame, len(defs))
@@ -90,7 +95,7 @@ func (a *Adapter) dispatchBridgeToolCall(ctx context.Context, msg *LiveMessage, 
 				)
 			}
 		}()
-		response, handled := a.ToolRouter.Execute(ctx, a.Session, call)
+		response, handled := a.executeBridgeTool(ctx, call)
 		status := "ok"
 		if !handled || response == nil {
 			status = "error"
