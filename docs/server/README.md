@@ -522,7 +522,11 @@ Server resource limits default to bounded production values: `read_header_timeou
 `read_timeout_sec = 120`, `idle_timeout_sec = 120`, `max_header_bytes = 1048576`,
 and `max_decoded_audio_seconds = 600`. Zero values fall back to these defaults;
 negative values are rejected at startup. `WriteTimeout` intentionally remains
-unset so long-lived Voice Agent WebSockets are not cut off.
+unset so long-lived Voice Agent WebSockets are not cut off. Behind a load
+balancer that keeps routing to an instance briefly after its shutdown signal
+(Render), `shutdown_grace_sec` (0 to 15, default 0) keeps the server answering
+that long before it drains; 8 s plus the 20 s drain stays under Render's 30 s
+shutdown limit.
 
 If setup auth is switched to self-managed, SpeechKit does not generate a token
 or change the current server auth mode; the deployment owner must provide

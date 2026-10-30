@@ -352,6 +352,7 @@ max_upload_mb = 25
 read_header_timeout_sec = 15
 read_timeout_sec = 120
 idle_timeout_sec = 120
+shutdown_grace_sec = 0     # seconds to keep serving after SIGTERM (0..15) behind a load balancer
 max_header_bytes = 1048576
 max_decoded_audio_seconds = 600
 trusted_proxy_cidrs = []                      # CIDRs allowed to supply X-Forwarded-* headers; loopback is always trusted.

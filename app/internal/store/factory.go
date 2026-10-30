@@ -13,8 +13,8 @@ type StoreConfig struct {
 	SQLitePath  string `toml:"sqlite_path"`
 	PostgresDSN string `toml:"postgres_dsn"`
 	// PostgresRuntimeRole is the runtime-role mode of the Postgres backend:
-	// the server connects as a runtime role, never migrates, refuses an older
-	// schema and refuses to start unless the role cannot escape row-level
+	// the server connects as a runtime role, never migrates, refuses a schema
+	// below its floor (PostgresSchemaFloor) and refuses to start unless the role cannot escape row-level
 	// security (assertPostgresRuntimeRole). Off, a self-hosted server migrates
 	// its own database at start.
 	PostgresRuntimeRole bool `toml:"postgres_runtime_role"`

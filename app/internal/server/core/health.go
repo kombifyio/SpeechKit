@@ -3,11 +3,14 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/app/internal/store"
 )
 
 // ComponentStatus describes a single component's health.
@@ -180,6 +183,13 @@ func registerHealth(app *App) {
 			body["release_channel"] = "preview"
 			body["execution_scope"] = previewExecutionScope()
 			body["capabilities"] = map[string]string{"providers": "disabled", "storage": "disabled", "customer_handoff": "enabled"}
+		}
+		// The Postgres store reports its schema floor, its newest migration
+		// and the newest recorded one.
+		if reporter, ok := app.Store.(interface {
+			SchemaStatus(context.Context) store.SchemaStatus
+		}); ok {
+			body["schema"] = reporter.SchemaStatus(r.Context())
 		}
 		_ = json.NewEncoder(w).Encode(body)
 	})

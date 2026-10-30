@@ -11,10 +11,15 @@ import (
 	sdk "github.com/github/copilot-sdk/go"
 	"github.com/github/copilot-sdk/go/rpc"
 
+	"github.com/kombifyio/SpeechKit/app/internal/ai/copilotruntime"
 	"github.com/kombifyio/SpeechKit/app/internal/ai/generation"
 )
 
 const Provider = "github_copilot"
+
+// ErrRuntimeMissing means no Copilot CLI is installed yet; the settings page
+// offers to download it.
+var ErrRuntimeMissing = errors.New("the GitHub Copilot runtime is not installed")
 
 type GrantChecker func(generation.Purpose) bool
 
@@ -37,15 +42,28 @@ type Status struct {
 	Models        []string `json:"models"`
 }
 
-func New(options Options) *Generator {
-	if strings.TrimSpace(options.CLIPath) == "" {
-		if executable, err := os.Executable(); err == nil {
-			bundled := filepath.Join(filepath.Dir(executable), "copilot.exe")
-			if info, statErr := os.Stat(bundled); statErr == nil && !info.IsDir() {
-				options.CLIPath = bundled
-			}
+// ResolveCLIPath names the Copilot CLI to run: the configured path, else a
+// copilot.exe next to the executable (development builds and installs from
+// before the runtime became a download), else the runtime SpeechKit
+// downloaded. It is empty when none exists.
+func ResolveCLIPath(configured string) string {
+	if configured = strings.TrimSpace(configured); configured != "" {
+		return configured
+	}
+	if executable, err := os.Executable(); err == nil {
+		bundled := filepath.Join(filepath.Dir(executable), "copilot.exe")
+		if info, statErr := os.Stat(bundled); statErr == nil && !info.IsDir() {
+			return bundled
 		}
 	}
+	if installed, ok := copilotruntime.Path(); ok {
+		return installed
+	}
+	return ""
+}
+
+func New(options Options) *Generator {
+	options.CLIPath = ResolveCLIPath(options.CLIPath)
 	return &Generator{options: options}
 }
 
@@ -223,6 +241,11 @@ func (g *Generator) Generate(ctx context.Context, request generation.Request) (g
 func (g *Generator) client(ctx context.Context) (*sdk.Client, func(), error) {
 	if g == nil {
 		return nil, func() {}, &generation.Error{Kind: generation.ErrorConfiguration, Provider: Provider, Err: errors.New("copilot generator unavailable")}
+	}
+	if strings.TrimSpace(g.options.CLIPath) == "" {
+		// An empty path would make the SDK look for a runtime SpeechKit does
+		// not ship; say what is missing instead.
+		return nil, func() {}, &generation.Error{Kind: generation.ErrorConfiguration, Operation: "start", Provider: Provider, Err: ErrRuntimeMissing}
 	}
 	workingDirectory := g.workingDirectory()
 	if err := os.MkdirAll(workingDirectory, 0o700); err != nil {

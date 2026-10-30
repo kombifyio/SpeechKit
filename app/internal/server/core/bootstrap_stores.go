@@ -19,7 +19,7 @@ import (
 // Voice Agent mode still works (personas stay in-memory), dictation still
 // serves requests, and /readyz surfaces the missing capability. A
 // runtime-role store (store.postgres_runtime_role) is the exception: its
-// failure (an older schema or a role that could escape row-level security)
+// failure (a schema below its floor or a role that could escape row-level security)
 // is returned, and the server refuses to start.
 func ensureStore(cfg *config.Config, app *App) error {
 	if app.Store != nil {

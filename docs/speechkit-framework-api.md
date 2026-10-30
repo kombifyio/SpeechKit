@@ -404,6 +404,7 @@ which wraps `sk-e2e --strict-ready --require-functional` and requires
 | `/api/v1/meeting/snapshot` | `POST` | Deprecated overlay shortcut with `Deprecation`/`Sunset` headers; use the recording-session snapshot route. |
 | `/api/v1/settings/meeting` | `GET`, `PATCH` | Read or change Meeting Mode settings: detection, write-up provider and languages, screenshot shortcut. |
 | `/api/v1/integrations/copilot` | `GET`, `PATCH` | Read or change the GitHub Copilot write-up integration and its transcript-processing grant. |
+| `/api/v1/integrations/copilot/runtime` | `POST` | Start the one-time download of the pinned GitHub Copilot CLI (Windows x64; the installer does not bundle it) and return `202` at once; `GET /api/v1/integrations/copilot` reports `runtime.state` (`ready`, `missing`, `installing`, `failed`, `unsupported`), the download size and progress. |
 | `/api/v1/integrations/copilot/login` | `POST` | Open the GitHub sign-in in a terminal; the client re-reads the status afterwards. |
 | `/api/v1/integrations/copilot/revoke` | `POST` | Withdraw the transcript-processing grant and cancel running write-ups. |
 

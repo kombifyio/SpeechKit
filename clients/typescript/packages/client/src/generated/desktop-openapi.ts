@@ -1186,7 +1186,7 @@ export interface paths {
         };
         /**
          * Read the GitHub Copilot write-up integration.
-         * @description Asks the bundled Copilot runtime for its live status, so the answer can take a few seconds. SpeechKit never holds a GitHub token; sign-in lives in the Copilot CLI's own credential store.
+         * @description Asks the Copilot runtime for its live status, so the answer can take a few seconds. Without a runtime on the device the answer is immediate and runtime.state says missing, installing or failed. SpeechKit never holds a GitHub token; sign-in lives in the Copilot CLI's own credential store.
          */
         get: operations["getCopilotIntegration"];
         put?: never;
@@ -1215,6 +1215,26 @@ export interface paths {
          * @description Starts `gh auth login --web` in a terminal and returns at once; the outcome is not reported back. Clients re-read the integration status once the user is done.
          */
         post: operations["startCopilotLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/copilot/runtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Download the GitHub Copilot runtime.
+         * @description Starts the one-time download of the pinned Copilot CLI (Windows x64) and returns at once; the download is verified against pinned SHA-256 digests before it is installed. Clients poll the integration status for runtime.state and progress. Repeated calls share one download.
+         */
+        post: operations["installCopilotRuntime"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2601,9 +2621,10 @@ export interface components {
         CopilotIntegration: {
             enabled: boolean;
             model: string;
+            runtime: components["schemas"]["CopilotRuntime"];
             /** @description Whether the current version of the transcript-processing grant is recorded. */
             granted: boolean;
-            /** @description Whether the bundled Copilot runtime answered. */
+            /** @description Whether the Copilot runtime answered. */
             available: boolean;
             authenticated: boolean;
             /** @description The signed-in GitHub login when authenticated. */
@@ -2611,6 +2632,25 @@ export interface components {
             /** @description Runtime status text for the settings card. */
             message?: string;
             models: string[];
+        };
+        CopilotRuntime: {
+            /**
+             * @description ready: a Copilot CLI is on the device; missing: it is not downloaded yet; installing: the download runs; failed: the last download failed (see error); unsupported: no runtime exists for this platform.
+             * @enum {string}
+             */
+            state: "ready" | "missing" | "installing" | "failed" | "unsupported";
+            version?: string;
+            /**
+             * Format: int64
+             * @description Size of the one-time download.
+             */
+            downloadBytes: number;
+            /** Format: int64 */
+            doneBytes: number;
+            /** Format: int64 */
+            totalBytes: number;
+            /** @description The last download failure, until the next attempt starts. */
+            error?: string;
         };
         CopilotIntegrationPatch: {
             enabled?: boolean;
@@ -5432,6 +5472,49 @@ export interface operations {
                 content?: never;
             };
             503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    installCopilotRuntime: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A runtime is already installed; the integration status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CopilotIntegration"];
+                };
+            };
+            /** @description The download runs in the background. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CopilotRuntime"];
+                };
+            };
+            /** @description The privacy scope blocks cloud downloads. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No runtime exists for this platform. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     revokeCopilotGrant: {

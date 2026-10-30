@@ -173,9 +173,17 @@ func buildWakeVerifier(ctx context.Context, cfg *config.Config) vsserver.WakeVer
 	provider.WordTimestamps = true
 	go superviseLocalWakeSTT(ctx, provider, model)
 	phrases := vsserver.DefaultLocalWakePhrases()
-	// The deployment's spellings, codes and weak words add to the built-in
-	// ones. Its confirm_codes are not merged: they only hold for the cloud
-	// pass, where a second, unbiased transcription must agree.
+	// The product phrases and the deployment's spellings, codes and weak
+	// words add to the built-in ones. The deployment's confirm_codes are not
+	// merged: they only hold for the cloud pass, where a second, unbiased
+	// transcription must agree.
+	for id, ph := range productWakePhrases() {
+		merged := phrases[id]
+		merged.Cores = append(merged.Cores, ph.Cores...)
+		merged.Weak = append(merged.Weak, ph.Weak...)
+		merged.Codes = append(merged.Codes, ph.Codes...)
+		phrases[id] = merged
+	}
 	for id, ph := range cfg.VoiceAgent.Wake.Phrases {
 		id = strings.ToLower(strings.TrimSpace(id))
 		merged := phrases[id]
@@ -185,6 +193,16 @@ func buildWakeVerifier(ctx context.Context, cfg *config.Config) vsserver.WakeVer
 		phrases[id] = merged
 	}
 	return vsserver.NewLocalWakeVerifier(provider, phrases, cloud)
+}
+
+// productWakePhrases are the kombify wake phrases as the unbiased Parakeet
+// recognition writes them (measured 2026-10-25 on ten TTS voices).
+func productWakePhrases() map[string]vsserver.WakePhrase {
+	kombify := []string{"kombify", "combify", "kombifi", "combifi", "kombifai", "combifai", "kompify", "compify"}
+	return map[string]vsserver.WakePhrase{
+		"kombify":     {Cores: kombify, Codes: []string{"4613"}, Weak: []string{"kombi", "combi", "combie"}},
+		"hey_kombify": {Cores: kombify, Codes: []string{"4613"}, Weak: []string{"kombi", "combi", "combie"}},
+	}
 }
 
 // superviseLocalWakeSTT keeps the sidecar running: it starts it, waits for it

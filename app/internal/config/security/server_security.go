@@ -65,6 +65,9 @@ func validateServerResourceLimits(cfg *config.Config) error {
 	if cfg.Server.IdleTimeoutSec < 0 {
 		return fmt.Errorf("idle_timeout_sec must be >= 0")
 	}
+	if cfg.Server.ShutdownGraceSec < 0 || cfg.Server.ShutdownGraceSec > 15 {
+		return fmt.Errorf("shutdown_grace_sec must be between 0 and 15")
+	}
 	if cfg.Server.MaxHeaderBytes < 0 {
 		return fmt.Errorf("max_header_bytes must be >= 0")
 	}

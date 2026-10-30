@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // A runtime-role server (PostgresRuntimeRole) never runs DDL and refuses to
@@ -36,6 +38,16 @@ func (e *PostgresRuntimeRoleError) Unwrap() error { return ErrPostgresRuntimeRol
 // grants that role exactly the row privileges it serves with. Run it on the
 // non-production database first, then on production.
 func MigratePostgres(ctx context.Context, dsn, runtimeRole string) error {
+	return migratePostgres(ctx, dsn, runtimeRole, false, nil)
+}
+
+// MigrateHostedPostgres uses the same native chain for hosted publication and
+// applies only unrecorded steps. Local callers retain MigratePostgres repair.
+func MigrateHostedPostgres(ctx context.Context, dsn, runtimeRole string, indexReadback map[string][]string) error {
+	return migratePostgres(ctx, dsn, runtimeRole, true, indexReadback)
+}
+
+func migratePostgres(ctx context.Context, dsn, runtimeRole string, pendingOnly bool, indexReadback map[string][]string) error {
 	if strings.TrimSpace(dsn) == "" {
 		return errors.New("store: migrate needs the migration role's postgres DSN")
 	}
@@ -47,7 +59,7 @@ func MigratePostgres(ctx context.Context, dsn, runtimeRole string) error {
 	if err := db.PingContext(ctx); err != nil {
 		return fmt.Errorf("connect postgres: %w", err)
 	}
-	if err := runPostgresMigrations(ctx, db); err != nil {
+	if err := runPostgresMigrationChain(ctx, db, pendingOnly, indexReadback); err != nil {
 		return err
 	}
 	if runtimeRole == "" {
@@ -96,39 +108,163 @@ func grantPostgresRuntimeRole(ctx context.Context, db *sql.DB, role string) erro
 			return fmt.Errorf("store: runtime grants: %w", err)
 		}
 	}
+	var hostedOperations bool
+	if err := tx.QueryRowContext(ctx, `SELECT to_regclass('schema_migration_operations') IS NOT NULL`).Scan(&hostedOperations); err != nil {
+		return err
+	}
+	if hostedOperations {
+		if _, err := tx.ExecContext(ctx, `REVOKE INSERT, UPDATE, DELETE ON TABLE `+s+`.schema_migration_operations FROM `+r); err != nil {
+			return err
+		}
+	}
 	return tx.Commit()
 }
 
-// verifyPostgresSchema is read-only: every migration of this binary must be
-// recorded. A runtime-role server refuses an older schema instead of
-// migrating it.
-func verifyPostgresSchema(ctx context.Context, db *sql.DB) error {
+// PostgresSchemaFloor is the newest Postgres migration this code needs (its
+// schema floor). Raise it in the change that adds a migration the code depends
+// on. A runtime-role server requires every migration of the chain up to and
+// including the floor; a newer schema always passes, so a binary and its
+// schema roll out in any order.
+const PostgresSchemaFloor = "postgres:029_notebook_site"
+
+// SchemaStatus is the schema block of /healthz: the floor, the newest
+// migration this binary carries and the newest recorded one, as numbers.
+// AppliedMax is nil when the ledger could not be read.
+type SchemaStatus struct {
+	Floor       int  `json:"floor"`
+	EmbeddedMax int  `json:"embedded_max"`
+	AppliedMax  *int `json:"applied_max"`
+}
+
+// migrationNumber is the sequence number of a "postgres:NNN_name" version.
+func migrationNumber(version string) int {
+	digits := strings.TrimPrefix(version, "postgres:")
+	n := 0
+	for _, c := range digits {
+		if c < '0' || c > '9' {
+			break
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n
+}
+
+// readPostgresLedger returns the recorded versions and the versions whose
+// hosted migration operation started but never completed (dirty).
+func readPostgresLedger(ctx context.Context, db *sql.DB) (recorded, dirty map[string]bool, err error) {
 	rows, err := db.QueryContext(ctx, `SELECT version FROM schema_migrations`)
 	if err != nil {
-		return fmt.Errorf("store: read schema_migrations (run `speechkit-server migrate` with the migration role first): %w", err)
+		return nil, nil, fmt.Errorf("store: read schema_migrations (run `speechkit-server migrate` with the migration role first): %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	recorded := map[string]bool{}
+	recorded = map[string]bool{}
 	for rows.Next() {
 		var version string
 		if err := rows.Scan(&version); err != nil {
-			return fmt.Errorf("store: read schema_migrations: %w", err)
+			return nil, nil, fmt.Errorf("store: read schema_migrations: %w", err)
 		}
 		recorded[version] = true
 	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("store: read schema_migrations: %w", err)
+		return nil, nil, fmt.Errorf("store: read schema_migrations: %w", err)
 	}
-	var missing []string
-	for _, migration := range postgresMigrations() {
-		if !recorded[migration.version] {
-			missing = append(missing, migration.version)
+	dirty = map[string]bool{}
+	var operations bool
+	if err := db.QueryRowContext(ctx, `SELECT to_regclass('schema_migration_operations') IS NOT NULL`).Scan(&operations); err != nil {
+		return nil, nil, fmt.Errorf("store: read schema_migration_operations: %w", err)
+	}
+	if operations {
+		opRows, err := db.QueryContext(ctx, `SELECT version FROM schema_migration_operations WHERE completed_at IS NULL`)
+		if err != nil {
+			return nil, nil, fmt.Errorf("store: read schema_migration_operations: %w", err)
+		}
+		defer func() { _ = opRows.Close() }()
+		for opRows.Next() {
+			var version string
+			if err := opRows.Scan(&version); err != nil {
+				return nil, nil, fmt.Errorf("store: read schema_migration_operations: %w", err)
+			}
+			dirty[version] = true
+		}
+		if err := opRows.Err(); err != nil {
+			return nil, nil, fmt.Errorf("store: read schema_migration_operations: %w", err)
 		}
 	}
+	return recorded, dirty, nil
+}
+
+// verifyPostgresSchema is read-only: every migration of the chain up to and
+// including PostgresSchemaFloor must be recorded and none of them may be left
+// incomplete. A runtime-role server refuses a schema below its floor instead
+// of migrating it. Recorded versions this binary does not know and chain
+// migrations above the floor that are not recorded yet pass and are only
+// logged.
+func verifyPostgresSchema(ctx context.Context, db *sql.DB) error {
+	recorded, dirty, err := readPostgresLedger(ctx, db)
+	if err != nil {
+		return err
+	}
+	var missing, pendingAbove []string
+	known := map[string]bool{}
+	reachedFloor := false
+	for _, migration := range postgresMigrations() {
+		known[migration.version] = true
+		if reachedFloor {
+			if !recorded[migration.version] {
+				pendingAbove = append(pendingAbove, migration.version)
+			}
+			continue
+		}
+		if !recorded[migration.version] || dirty[migration.version] {
+			missing = append(missing, migration.version)
+		}
+		reachedFloor = migration.version == PostgresSchemaFloor
+	}
+	if !reachedFloor {
+		return fmt.Errorf("store: schema floor %s is not in this binary's migration chain", PostgresSchemaFloor)
+	}
 	if len(missing) > 0 {
-		return fmt.Errorf("store: postgres schema lacks %s; run `speechkit-server migrate` with the migration role first", strings.Join(missing, ", "))
+		return fmt.Errorf("store: postgres schema lacks %s (schema floor %s); run `speechkit-server migrate` with the migration role first", strings.Join(missing, ", "), PostgresSchemaFloor)
+	}
+	var unknown []string
+	for version := range recorded {
+		if !known[version] {
+			unknown = append(unknown, version)
+		}
+	}
+	if len(pendingAbove) > 0 || len(unknown) > 0 {
+		slog.InfoContext(ctx, "store: schema floor satisfied with a different schema", "floor", PostgresSchemaFloor,
+			"pending_above_floor", pendingAbove, "recorded_unknown_to_binary", unknown)
 	}
 	return nil
+}
+
+// SchemaStatus reports the schema block for /healthz. The ledger is read on
+// each call with a short timeout; a failed read reports applied_max null.
+func (s *PostgresStore) SchemaStatus(ctx context.Context) SchemaStatus {
+	status := SchemaStatus{Floor: migrationNumber(PostgresSchemaFloor)}
+	for _, migration := range postgresMigrations() {
+		status.EmbeddedMax = max(status.EmbeddedMax, migrationNumber(migration.version))
+	}
+	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	rows, err := s.db.QueryContext(readCtx, `SELECT version FROM schema_migrations WHERE version LIKE 'postgres:%'`)
+	if err != nil {
+		return status
+	}
+	defer func() { _ = rows.Close() }()
+	applied := 0
+	for rows.Next() {
+		var version string
+		if rows.Scan(&version) != nil {
+			return status
+		}
+		applied = max(applied, migrationNumber(version))
+	}
+	if rows.Err() == nil {
+		status.AppliedMax = &applied
+	}
+	return status
 }
 
 // userSchemas filters out the catalogs, TOAST and temporary schemas.

@@ -74,8 +74,13 @@ SQLite remains the simplest OSS path and should be the documented default. Postg
 A shared Postgres deployment can separate the serving role from the role that
 owns the schema. With `store.postgres_runtime_role = true` the server:
 
-- never runs DDL: it checks that every migration of the binary is recorded in
-  `schema_migrations` and refuses to start on an older schema;
+- never runs DDL: it checks that every migration up to its schema floor
+  (`store.PostgresSchemaFloor`, the newest migration the code needs) is
+  recorded in `schema_migrations` and none of them is left incomplete, and
+  refuses to start on a schema below the floor. A newer schema (versions the
+  binary does not know, or migrations above the floor not recorded yet) passes,
+  so the binary and the schema roll out in any order. `/healthz` reports
+  `schema: {floor, embedded_max, applied_max}`;
 - refuses to start unless its login role is NOSUPERUSER and NOBYPASSRLS, has no
   CREATEROLE, CREATEDB or REPLICATION, owns no database, schema, table,
   sequence, view or function, has no CREATE on the database or a schema, is a

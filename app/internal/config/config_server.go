@@ -61,11 +61,16 @@ type ServerConfig struct {
 	// DemoDailyQuota caps how many requests a Plan="demo" identity
 	// (the smoke-token surface) may make per UTC day, keyed by
 	// UserID + client IP. Zero disables the quota. Audit S-5.
-	DemoDailyQuota         int `toml:"demo_daily_quota"`
-	MaxUploadMB            int `toml:"max_upload_mb"`
-	ReadHeaderTimeoutSec   int `toml:"read_header_timeout_sec"`
-	ReadTimeoutSec         int `toml:"read_timeout_sec"`
-	IdleTimeoutSec         int `toml:"idle_timeout_sec"`
+	DemoDailyQuota       int `toml:"demo_daily_quota"`
+	MaxUploadMB          int `toml:"max_upload_mb"`
+	ReadHeaderTimeoutSec int `toml:"read_header_timeout_sec"`
+	ReadTimeoutSec       int `toml:"read_timeout_sec"`
+	IdleTimeoutSec       int `toml:"idle_timeout_sec"`
+	// ShutdownGraceSec keeps serving this long after the shutdown signal
+	// before draining, so a load balancer that still routes to this
+	// instance (Render for a few seconds after a deploy) gets answers
+	// instead of 502. Zero, the default, drains at once.
+	ShutdownGraceSec       int `toml:"shutdown_grace_sec"`
 	MaxHeaderBytes         int `toml:"max_header_bytes"`
 	MaxDecodedAudioSeconds int `toml:"max_decoded_audio_seconds"`
 	MaxVoiceAgentSessions  int `toml:"max_voiceagent_sessions"` // global cap

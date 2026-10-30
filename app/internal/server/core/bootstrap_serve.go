@@ -130,6 +130,13 @@ serveLoop:
 	for {
 		select {
 		case <-ctx.Done():
+			if grace := time.Duration(cfg.Server.ShutdownGraceSec) * time.Second; grace > 0 {
+				// Keep answering while the platform moves traffic to the new
+				// instance; closing keep-alives sends clients there.
+				slog.Info("shutdown signal received, serving through the grace period", "grace", grace)
+				srv.SetKeepAlivesEnabled(false)
+				time.Sleep(grace)
+			}
 			slog.Info("shutdown signal received, draining connections")
 			break serveLoop
 		case err, ok := <-serveErr:

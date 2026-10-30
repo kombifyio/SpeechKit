@@ -8,8 +8,9 @@ import (
 )
 
 type storeMigration struct {
-	version string
-	run     func(context.Context, *sql.DB) error
+	version   string
+	run       func(context.Context, *sql.DB) error
+	statement string
 }
 
 func runSQLiteMigrations(ctx context.Context, db *sql.DB) error {
@@ -97,10 +98,25 @@ func runSQLiteMigrations(ctx context.Context, db *sql.DB) error {
 }
 
 func runPostgresMigrations(ctx context.Context, db *sql.DB) error {
+	return runPostgresMigrationChain(ctx, db, false, nil)
+}
+
+func runPostgresMigrationChain(ctx context.Context, db *sql.DB, pendingOnly bool, indexReadback map[string][]string) error {
+	if pendingOnly {
+		if err := prepareHostedPostgresMigrations(ctx, db); err != nil {
+			return err
+		}
+	}
 	if err := ensureSchemaMigrations(ctx, db, "postgres"); err != nil {
 		return fmt.Errorf("migrate postgres ledger: %w", err)
 	}
 	for _, migration := range postgresMigrations() {
+		if pendingOnly {
+			if err := applyHostedPostgresMigration(ctx, db, migration, indexReadback[migration.version]); err != nil {
+				return fmt.Errorf("migrate %s: %w", migration.version, err)
+			}
+			continue
+		}
 		if err := applyMigration(ctx, db, "postgres", migration); err != nil {
 			return fmt.Errorf("migrate %s: %w", migration.version, err)
 		}
@@ -110,7 +126,7 @@ func runPostgresMigrations(ctx context.Context, db *sql.DB) error {
 
 // postgresMigrations is the ordered Postgres chain. The governed migration
 // (MigratePostgres) applies it; a runtime-role server only checks that every
-// version is recorded (verifyPostgresSchema).
+// version up to PostgresSchemaFloor is recorded (verifyPostgresSchema).
 func postgresMigrations() []storeMigration {
 	return []storeMigration{
 		postgresSQLMigration("postgres:001_init", postgresMigration001),
@@ -163,7 +179,7 @@ func sqliteSQLMigration(version, statement string) storeMigration {
 }
 
 func postgresSQLMigration(version, statement string) storeMigration {
-	return storeMigration{version: version, run: func(ctx context.Context, db *sql.DB) error {
+	return storeMigration{version: version, statement: statement, run: func(ctx context.Context, db *sql.DB) error {
 		_, err := db.ExecContext(ctx, statement)
 		return err
 	}}
@@ -197,8 +213,6 @@ func applyMigration(ctx context.Context, db *sql.DB, dialect string, migration s
 		return err
 	}
 
-	// Run every migration even when it is already recorded. All migrations are
-	// deliberately idempotent so startup can repair partially-upgraded DBs.
 	if err := migration.run(ctx, db); err != nil {
 		return err
 	}

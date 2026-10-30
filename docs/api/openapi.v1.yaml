@@ -2428,9 +2428,10 @@ paths:
       operationId: getCopilotIntegration
       summary: Read the GitHub Copilot write-up integration.
       description: >-
-        Asks the bundled Copilot runtime for its live status, so the answer can
-        take a few seconds. SpeechKit never holds a GitHub token; sign-in lives
-        in the Copilot CLI's own credential store.
+        Asks the Copilot runtime for its live status, so the answer can take a
+        few seconds. Without a runtime on the device the answer is immediate and
+        runtime.state says missing, installing or failed. SpeechKit never holds
+        a GitHub token; sign-in lives in the Copilot CLI's own credential store.
       responses:
         "200":
           description: Integration settings, grant state and runtime availability.
@@ -2479,6 +2480,35 @@ paths:
           description: The sign-in was started.
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/integrations/copilot/runtime:
+    post:
+      tags: [Integrations]
+      operationId: installCopilotRuntime
+      summary: Download the GitHub Copilot runtime.
+      description: >-
+        Starts the one-time download of the pinned Copilot CLI (Windows x64) and
+        returns at once; the download is verified against pinned SHA-256
+        digests before it is installed. Clients poll the integration status for
+        runtime.state and progress. Repeated calls share one download.
+      security:
+        - ControlPlaneHeader: []
+      responses:
+        "200":
+          description: A runtime is already installed; the integration status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CopilotIntegration"
+        "202":
+          description: The download runs in the background.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CopilotRuntime"
+        "403":
+          description: The privacy scope blocks cloud downloads.
+        "409":
+          description: No runtime exists for this platform.
   /api/v1/integrations/copilot/revoke:
     post:
       tags: [Integrations]
@@ -4836,18 +4866,20 @@ components:
           format: date-time
     CopilotIntegration:
       type: object
-      required: [enabled, model, granted, available, authenticated, models]
+      required: [enabled, model, granted, available, authenticated, models, runtime]
       properties:
         enabled:
           type: boolean
         model:
           type: string
+        runtime:
+          $ref: "#/components/schemas/CopilotRuntime"
         granted:
           type: boolean
           description: Whether the current version of the transcript-processing grant is recorded.
         available:
           type: boolean
-          description: Whether the bundled Copilot runtime answered.
+          description: Whether the Copilot runtime answered.
         authenticated:
           type: boolean
         login:
@@ -4860,6 +4892,33 @@ components:
           type: array
           items:
             type: string
+    CopilotRuntime:
+      type: object
+      required: [state, downloadBytes, doneBytes, totalBytes]
+      properties:
+        state:
+          type: string
+          enum: [ready, missing, installing, failed, unsupported]
+          description: >-
+            ready: a Copilot CLI is on the device; missing: it is not
+            downloaded yet; installing: the download runs; failed: the last
+            download failed (see error); unsupported: no runtime exists for
+            this platform.
+        version:
+          type: string
+        downloadBytes:
+          type: integer
+          format: int64
+          description: Size of the one-time download.
+        doneBytes:
+          type: integer
+          format: int64
+        totalBytes:
+          type: integer
+          format: int64
+        error:
+          type: string
+          description: The last download failure, until the next attempt starts.
     CopilotIntegrationPatch:
       type: object
       properties:

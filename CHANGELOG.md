@@ -72,6 +72,14 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Changed
 
+- The Windows installer now includes Phonon-2.5, so Dictation works offline
+  right after install, without downloading a model first. On processors
+  without AVX2 the setup downloads Whisper Small as before. Larger models
+  remain an optional download in Settings > Local Models.
+- The GitHub Copilot command-line runtime is no longer part of the installer.
+  SpeechKit downloads it (about 131 MB) when you turn on the Copilot
+  integration in Settings > Integrations; existing Copilot users get it in
+  the background after updating.
 - Settings has a new Local Models page next to Integrations and SpeechKit
   Server. It lists the models that run on your computer, downloads them with
   visible progress and switches which one runs. Downloading a model no longer
@@ -85,6 +93,25 @@ Developers can use the stable SDK independently of experimental integrations.
 Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
+
+## [0.77.18](https://github.com/kombifyio/SpeechKit/compare/v0.77.17...v0.77.18) (2026-10-30)
+
+
+### Features
+
+* **desktop:** ship Phonon-2.5 in the Windows installer; download the Copilot CLI on demand ([#1189](https://github.com/kombifyio/SpeechKit/issues/1189)) ([13d3b58](https://github.com/kombifyio/SpeechKit/commit/13d3b586727be2e841012feff7e80310db1eb475))
+* **store:** schema floor for the runtime-role Postgres boot ([#1195](https://github.com/kombifyio/SpeechKit/issues/1195)) ([620b622](https://github.com/kombifyio/SpeechKit/commit/620b62298a5bcbf07de37a7884f3c42e72d32065))
+
+
+### Bug Fixes
+
+* **db:** deliver governed SpeechKit native schema flow ([#1190](https://github.com/kombifyio/SpeechKit/issues/1190)) ([c4d5103](https://github.com/kombifyio/SpeechKit/commit/c4d510302240bbe217563e9af30cb739f57726af))
+* **delivery:** enforce SpeechKit Render download admission ([#1187](https://github.com/kombifyio/SpeechKit/issues/1187)) ([e902b71](https://github.com/kombifyio/SpeechKit/commit/e902b71afe9b6ef635aea3db001866df046a06f9))
+* **deps:** update module github.com/go-jose/go-jose/v3 to v4 [security] ([#1203](https://github.com/kombifyio/SpeechKit/issues/1203)) ([5a65198](https://github.com/kombifyio/SpeechKit/commit/5a6519861ae0950edaac76891f323d2db34e50e8))
+* **deps:** update module github.com/go-jose/go-jose/v4 to v4.1.6 [security] ([#1205](https://github.com/kombifyio/SpeechKit/issues/1205)) ([9da519e](https://github.com/kombifyio/SpeechKit/commit/9da519e85f7aebdf8039cdc436a08fbba830ce65))
+* **oss-export:** export the front door and local wake files so the public server image builds (D-2026-10-26-15) ([#1196](https://github.com/kombifyio/SpeechKit/issues/1196)) ([974e2eb](https://github.com/kombifyio/SpeechKit/commit/974e2eb120218edaef5e89ea51580893bf2153ec))
+* **schema:** admit the production Postgres core host beside the ai host in the migration path ([#1197](https://github.com/kombifyio/SpeechKit/issues/1197)) ([530c1ab](https://github.com/kombifyio/SpeechKit/commit/530c1ab9b39d33e0c57515e50c57d223452245bf))
+* **server:** keep serving through Render's switchover and drop the deleted models disk ([#1207](https://github.com/kombifyio/SpeechKit/issues/1207)) ([42a1429](https://github.com/kombifyio/SpeechKit/commit/42a1429a3ba7a1fc103826448effdb70e517013a))
 
 ## [0.77.17](https://github.com/kombifyio/SpeechKit/compare/v0.77.16...v0.77.17) (2026-10-26)
 
