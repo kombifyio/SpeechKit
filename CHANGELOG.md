@@ -94,6 +94,13 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## [0.77.19](https://github.com/kombifyio/SpeechKit/compare/v0.77.18...v0.77.19) (2026-10-30)
+
+
+### Bug Fixes
+
+* **release:** the production schema leg admits the two retired ledger steps; commit the regenerated go.work.sum (platform-9l42i) ([#1210](https://github.com/kombifyio/SpeechKit/issues/1210)) ([0ed8309](https://github.com/kombifyio/SpeechKit/commit/0ed8309326bfe1864aaba9e606a1118ff366d38f))
+
 ## [0.77.18](https://github.com/kombifyio/SpeechKit/compare/v0.77.17...v0.77.18) (2026-10-30)
 
 
