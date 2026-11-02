@@ -94,6 +94,12 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.78.6 (2026-11-02)
+
+### Bug Fixes
+
+* **speechkit:** export the Early Access server file and accept the released schema classifier
+
 ## 0.78.5 (2026-11-02)
 
 ### Bug Fixes
