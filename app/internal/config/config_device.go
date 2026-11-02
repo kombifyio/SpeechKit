@@ -98,6 +98,17 @@ type VocabularyConfig struct {
 
 type CustomizationConfig struct {
 	ActiveTemplateIDs []string `toml:"active_template_ids"`
+	// Terms is the operator vocabulary of this deployment: terms the
+	// recognizers should know and the mishearings that resolve back to them.
+	// They form the "operator-terms" template and are activated with it.
+	Terms []CustomizationTerm `toml:"terms"`
+}
+
+// CustomizationTerm is one [[customization.terms]] entry.
+type CustomizationTerm struct {
+	Term       string   `toml:"term"`
+	SoundsLike []string `toml:"sounds_like"`
+	Language   string   `toml:"language"`
 }
 
 // SpeechDefaultsConfig holds provider-neutral voice defaults that can be

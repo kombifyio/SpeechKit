@@ -39,10 +39,16 @@ func LoadServerModelSettings(path string) (ServerModelSettings, bool, error) {
 		return ServerModelSettings{}, false, err
 	}
 	settings = NormalizeServerModelSettings(settings)
+	if err := validateFullLocalServerSettings(settings); err != nil {
+		return ServerModelSettings{}, false, err
+	}
 	return settings, true, nil
 }
 
 func SaveServerModelSettings(path string, settings ServerModelSettings) error {
+	if err := validateFullLocalServerSettings(settings); err != nil {
+		return err
+	}
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return errors.New("server settings path is empty")

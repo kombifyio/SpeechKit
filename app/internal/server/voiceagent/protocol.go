@@ -297,15 +297,17 @@ type ErrorFrame struct {
 // Codes absent from the map carry no remediation: their message already
 // names the whole fix, or no client-side action exists.
 var errorRemediation = map[string]string{
-	"start_required":              "send a start frame as the first message on this socket",
-	"provider_unavailable":        "start with a provider this server configured, or omit provider to use its default",
-	"invalid_media_transport":     "use media_transport \"websocket\" or \"livekit\"",
-	"media_transport_unsupported": "start with a native realtime provider, or use media_transport \"websocket\"",
-	"media_transport_unavailable": "configure the LiveKit media bridge, or use media_transport \"websocket\"",
-	"audio_transport_mismatch":    "send audio through the LiveKit room, not as binary WebSocket frames",
-	"tool_response_unsupported":   "drop tool_response frames for this provider",
-	"auth_expired":                "start a new voice session through the authenticated session endpoint",
-	"per_user_limit_exceeded":     "end a voice session on another device of this account (the limit counts all of them), then start again",
+	"start_required":                "send a start frame as the first message on this socket",
+	"provider_unavailable":          "start with a provider this server configured, or omit provider to use its default",
+	"invalid_media_transport":       "use media_transport \"websocket\" or \"livekit\"",
+	"media_transport_unsupported":   "start with a native realtime provider, or use media_transport \"websocket\"",
+	"media_transport_unavailable":   "configure the LiveKit media bridge, or use media_transport \"websocket\"",
+	"audio_transport_mismatch":      "send audio through the LiveKit room, not as binary WebSocket frames",
+	"tool_response_unsupported":     "drop tool_response frames for this provider",
+	"auth_expired":                  "start a new voice session through the authenticated session endpoint",
+	"per_device_limit_exceeded":     "end a running voice conversation on this device, then start again; other devices of the account do not count",
+	"global_limit_exceeded":         "try again in a moment; the hosted voice service is at its overall capacity",
+	"account_device_limit_exceeded": "end a voice session on one of the account's other devices, then start again",
 }
 
 // ErrorRemediation returns the remediation hint for a wire error code, or ""

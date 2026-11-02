@@ -174,15 +174,20 @@ func registerHealth(app *App) {
 	app.Mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		body := map[string]any{
-			"status":  "ok",
-			"version": app.Version,
+		// Every channel reports its revision and release channel, Stable
+		// included, so a release can read back what it activated.
+		channel := app.ReleaseChannel
+		if channel == "" {
+			channel = releaseChannelStable
 		}
-		if app.Preview != nil {
-			body["revision"] = app.Preview.revision
-			body["release_channel"] = "preview"
-			body["execution_scope"] = previewExecutionScope()
-			body["capabilities"] = map[string]string{"providers": "disabled", "storage": "disabled", "customer_handoff": "enabled"}
+		body := map[string]any{
+			"status":          "ok",
+			"version":         app.Version,
+			"revision":        serverRevision(),
+			"release_channel": channel,
+		}
+		if app.EarlyAccess() {
+			body["execution_scope"] = earlyAccessExecutionScope()
 		}
 		// The Postgres store reports its schema floor, its newest migration
 		// and the newest recorded one.

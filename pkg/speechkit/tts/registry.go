@@ -27,6 +27,10 @@ type EnabledProviders struct {
 	// of Foundry / FoundrySpeech, not both.
 	FoundrySpeech *AzureSpeechOpts
 	Piper         *PiperOpts
+	// SherpaPiper registers the bundled on-device Piper voices (German and
+	// English) that run through the speechkit-tts-sherpa sidecar. A fresh
+	// install enables it with no key.
+	SherpaPiper *SherpaPiperOpts
 	// SelfHostedOpenAI registers an operator-run OpenAI-compatible TTS server
 	// (Kokoro-FastAPI, Speaches) as the "kokoro" Local Provider.
 	SelfHostedOpenAI *SelfHostedOpenAIOpts
@@ -85,6 +89,15 @@ func BuildRouter(strategy Strategy, enabled EnabledProviders) (router *Router, o
 		} else {
 			providers = append(providers, piper)
 			notes = append(notes, "TTS: Piper registered (voice_dir="+strings.TrimSpace(enabled.Piper.VoiceDir)+")")
+		}
+	}
+	if enabled.SherpaPiper != nil {
+		local, err := NewSherpaPiper(*enabled.SherpaPiper)
+		if err != nil {
+			notes = append(notes, "TTS: bundled local voices skipped: "+err.Error())
+		} else {
+			providers = append(providers, local)
+			notes = append(notes, "TTS: bundled local voices registered (sherpa-onnx Piper, de+en)")
 		}
 	}
 

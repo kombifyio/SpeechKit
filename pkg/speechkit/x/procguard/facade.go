@@ -6,10 +6,18 @@ package procguard
 
 import (
 	core "github.com/kombifyio/SpeechKit/pkg/speechkit/internal/procguard"
+	"io"
 	"os/exec"
 )
 
 var ErrUnsupportedPlatform = core.ErrUnsupportedPlatform
+var ErrNetworkConfinementRequired = core.ErrNetworkConfinementRequired
+
+func RequireSpeechConfinement() error          { return core.RequireSpeechConfinement() }
+func Start(cmd *exec.Cmd) error                { return core.Start(cmd) }
+func Run(cmd *exec.Cmd) error                  { return core.Run(cmd) }
+func PrepareChildRead(path string) error       { return core.PrepareChildRead(path) }
+func ForwardOutput(writer io.Writer) io.Writer { return core.ForwardOutput(writer) }
 
 type Process = core.Process
 

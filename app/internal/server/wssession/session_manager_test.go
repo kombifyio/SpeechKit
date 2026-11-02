@@ -360,3 +360,65 @@ func (c *mutableClock) Set(t time.Time) {
 	defer c.mu.Unlock()
 	c.t = t
 }
+
+// D-2026-10-26-14: the running cap counts one device, never the account, and
+// the global abuse ceiling counts running conversations only.
+func TestSessionManager_HouseholdDevicesAdmittedIndependently(t *testing.T) {
+	m := mustManager(t, Options{MaxGlobalSessions: 2, MaxPerIdentitySessions: 1, MaxPreparedPerIdentitySessions: 2})
+	open := func(device string) *ManagedSession {
+		t.Helper()
+		s, _, err := m.Create(Identity{UserID: "household", DeviceID: device})
+		if err != nil {
+			t.Fatalf("prepare on %q: %v", device, err)
+		}
+		if err := m.Attach(s.ID); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	kitchen, kitchenSpare, office := open("dev_kitchen"), open("dev_kitchen"), open("dev_office")
+	if _, _, err := m.Create(Identity{UserID: "household", DeviceID: "dev_kitchen"}); err != ErrIdentityLimitExceeded {
+		t.Fatalf("third prepared session on one device: %v", err)
+	}
+	if err := m.StartConversation(kitchen.ID); err != nil {
+		t.Fatalf("kitchen start: %v", err)
+	}
+	if err := m.StartConversation(office.ID); err != nil {
+		t.Fatalf("a running kitchen conversation refused the office device: %v", err)
+	}
+	if err := m.StartConversation(kitchenSpare.ID); err != ErrIdentityLimitExceeded {
+		t.Fatalf("second running conversation on one device: %v", err)
+	}
+	// Prepared sessions never take global capacity; starting one does.
+	hall := open("dev_hall")
+	if err := m.StartConversation(hall.ID); err != ErrGlobalLimitExceeded {
+		t.Fatalf("start beyond the running ceiling: %v", err)
+	}
+	m.FinishConversation(office.ID)
+	if err := m.StartConversation(hall.ID); err != nil {
+		t.Fatalf("ceiling not released by a finished conversation: %v", err)
+	}
+}
+
+// Device ids cannot multiply the per-device caps without limit: an account
+// holds sessions on at most MaxDevicesPerAccount devices at once.
+func TestSessionManager_AccountDeviceBound(t *testing.T) {
+	m := mustManager(t, Options{MaxPreparedPerIdentitySessions: 1, MaxDevicesPerAccount: 2})
+	first, _, err := m.Create(Identity{UserID: "u", DeviceID: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := m.Create(Identity{UserID: "u", DeviceID: "b"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := m.Create(Identity{UserID: "u", DeviceID: "c"}); err != ErrAccountDeviceLimitExceeded {
+		t.Fatalf("third device: %v", err)
+	}
+	if _, _, err := m.Create(Identity{UserID: "other", DeviceID: "c"}); err != nil {
+		t.Fatalf("another account was bounded: %v", err)
+	}
+	m.Remove(first.ID)
+	if _, _, err := m.Create(Identity{UserID: "u", DeviceID: "c"}); err != nil {
+		t.Fatalf("device bound not released: %v", err)
+	}
+}

@@ -120,7 +120,7 @@ func ProviderFamily(provider string) string {
 		return "foundry"
 	case "gpt-live":
 		return "openai"
-	case "piper":
+	case "piper", "sherpa-piper", "sherpapiper":
 		return "local"
 	case "vps", "openedai":
 		return "selfhosted"
@@ -181,6 +181,8 @@ func providerDisplayName(provider string) string {
 		return "Cloudflare"
 	case "piper":
 		return "Piper"
+	case "sherpa-piper", "sherpapiper":
+		return "Local voices"
 	case "openedai":
 		return "OpenAI-compatible local"
 	case "selfhosted":

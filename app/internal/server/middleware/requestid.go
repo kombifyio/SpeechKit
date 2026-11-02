@@ -8,6 +8,9 @@ import (
 	"encoding/hex"
 	"net/http"
 	"strings"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 // RequestIDHeader is the request/response header carrying the correlation id.
@@ -30,7 +33,8 @@ func RequestID() Middleware {
 				id = newRequestID()
 			}
 			w.Header().Set(RequestIDHeader, id)
-			ctx := context.WithValue(r.Context(), requestIDKey{}, id)
+			ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+			ctx = context.WithValue(ctx, requestIDKey{}, id)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

@@ -19,6 +19,10 @@ type StoreConfig struct {
 	// its own database at start.
 	PostgresRuntimeRole bool `toml:"postgres_runtime_role"`
 	SaveAudio           bool `toml:"save_audio"`
+	// MaintenanceDisabled keeps the store from running its retention passes
+	// (at open, daily and after writes). Only the Early Access service sets
+	// it, never a configuration file.
+	MaintenanceDisabled bool `toml:"-"`
 	AudioRetentionDays  int  `toml:"audio_retention_days"`
 	// MeetingRetentionDays discards finished meetings older than this. Zero
 	// keeps them forever, which is the default: a meeting is work, not a

@@ -68,17 +68,18 @@ type RunOptions struct {
 var optionalWiring []func(cfg *config.Config, app *App)
 
 type App struct {
-	Cfg           *config.Config
-	Mux           *http.ServeMux
-	Health        *HealthRegistry
-	Modes         map[Mode]bool
-	Lifecycle     *lifecycle.Registry
-	SharedDeps    *lifecycle.SharedDepRegistry
-	Version       string
-	Preview       *previewRuntime
-	AuthState     *middleware.AuthState
-	STTRouter     *stt.Router
-	AssistService *assistpkg.Service
+	Cfg        *config.Config
+	Mux        *http.ServeMux
+	Health     *HealthRegistry
+	Modes      map[Mode]bool
+	Lifecycle  *lifecycle.Registry
+	SharedDeps *lifecycle.SharedDepRegistry
+	Version    string
+	// ReleaseChannel is "stable" or "early-access".
+	ReleaseChannel string
+	AuthState      *middleware.AuthState
+	STTRouter      *stt.Router
+	AssistService  *assistpkg.Service
 
 	// Shared AI deps — populated by ensureSharedAIDeps on demand.
 	GenkitRuntime *ai.Runtime
@@ -138,15 +139,21 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	if cfg == nil {
 		return errors.New("core.Run: nil config")
 	}
-	preview, err := resolvePreviewRuntime(cfg)
+	if err := config.BindRuntimePrivacy(cfg); err != nil {
+		return err
+	}
+	channel, err := resolveReleaseChannel()
 	if err != nil {
 		return err
 	}
-	if preview != nil {
-		return runPreview(ctx, cfg, opts, preview)
+	if channel == releaseChannelEarlyAccess {
+		if err := applyEarlyAccessBounds(cfg); err != nil {
+			return err
+		}
 	}
 
 	app := newServerApp(cfg, opts)
+	app.ReleaseChannel = channel
 	registerCoreEndpoints(app)
 	initServerTelemetry(ctx, app) //nolint:contextcheck // the trace provider is process-scoped startup state, not request-scoped work.
 

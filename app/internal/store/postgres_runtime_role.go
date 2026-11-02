@@ -51,7 +51,7 @@ func migratePostgres(ctx context.Context, dsn, runtimeRole string, pendingOnly b
 	if strings.TrimSpace(dsn) == "" {
 		return errors.New("store: migrate needs the migration role's postgres DSN")
 	}
-	db, err := sql.Open("pgx", dsn)
+	db, err := openPostgres(dsn)
 	if err != nil {
 		return fmt.Errorf("open postgres: %w", err)
 	}

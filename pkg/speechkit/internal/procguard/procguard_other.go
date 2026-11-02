@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
 
 // Nothing here ties a child to this process, and nothing here pretends to.
@@ -22,21 +24,30 @@ import (
 // Prepare is a no-op: there is nothing to arrange for a child that will not
 // be adopted. It reports nothing, because Adopt is where the honest answer
 // about this platform comes from.
-func Prepare(*exec.Cmd) {}
+func preparePlatform(*exec.Cmd) {}
 
 // Adopt reports that this platform has no parent-death mechanism.
-func Adopt(*exec.Cmd) error {
+func Adopt(cmd *exec.Cmd) error {
+	if netsec.FullLocal() {
+		return adoptConfined(cmd)
+	}
 	return fmt.Errorf("%w: no child-process guard for %s", ErrUnsupportedPlatform, runtime.GOOS)
 }
 
 // AdoptOrReport always reports: this platform cannot adopt a child, and
 // saying so is the honest answer (see [Adopt]).
 func AdoptOrReport(cmd *exec.Cmd, report func(error)) {
-	report(Adopt(cmd))
+	if err := Adopt(cmd); err != nil {
+		report(err)
+	}
 }
 
 // Shutdown has nothing to terminate: Adopt never accepted a child.
-func Shutdown() {}
+func Shutdown() {
+	if netsec.FullLocal() {
+		shutdownConfined()
+	}
+}
 
 // Sweep reports that stale children cannot be identified on this platform.
 // Answering "0 stale processes found" would be indistinguishable from a clean

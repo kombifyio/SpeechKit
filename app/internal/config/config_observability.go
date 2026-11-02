@@ -104,9 +104,9 @@ type TelemetryConfig struct {
 
 	// TracesOTLPEndpoint enables exporting the framework's OpenTelemetry spans
 	// (STT routing, TTS, Voice Agent, server lifecycle) to a vendor-neutral
-	// OTLP/HTTP traces receiver. When empty (the default) the server installs
-	// no TracerProvider, so every otel.Tracer span stays a zero-cost no-op and
-	// behaviour is unchanged. Point it at any OTLP/HTTP collector; for Sentry's
+	// OTLP/HTTP traces receiver. When empty (the default), local instrumentation
+	// and W3C propagation stay active and export is disabled. Full Local admits
+	// only a homelab collector through the guarded transport. For Sentry's
 	// OTLP ingestion use the full URL
 	// https://<org>.ingest.<region>.sentry.io/api/<project>/otlp/v1/traces.
 	TracesOTLPEndpoint string `toml:"traces_otlp_endpoint"`

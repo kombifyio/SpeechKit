@@ -37,6 +37,10 @@ func ensureStore(cfg *config.Config, app *App) error {
 		SaveAudio:           cfg.Store.SaveAudio,
 		AudioRetentionDays:  cfg.Store.AudioRetentionDays,
 		MaxAudioStorageMB:   cfg.Store.MaxAudioStorageMB,
+		// Retention passes delete across every tenant on a schedule and after
+		// each write; Early Access serves on the production database and
+		// leaves them to Stable.
+		MaintenanceDisabled: app.EarlyAccess(),
 	}
 	s, err := store.New(storeCfg)
 	if err != nil {

@@ -339,9 +339,13 @@ func (a *Adapter) Run(parent context.Context) {
 		if err := a.OnStart(); err != nil {
 			code := "session_unavailable"
 			message := "No active voice conversation slot is available. Try again when the current conversation ends."
-			if errors.Is(err, ErrIdentityLimitExceeded) {
-				code = "per_user_limit_exceeded"
+			switch {
+			case errors.Is(err, ErrIdentityLimitExceeded):
+				code = "per_device_limit_exceeded"
 				message = sessionBusyMessage(start.Locale)
+			case errors.Is(err, ErrGlobalLimitExceeded):
+				code = "global_limit_exceeded"
+				message = serviceCapacityMessage(start.Locale)
 			}
 			a.sendFatalError(ctx, code, message)
 			return

@@ -31,10 +31,12 @@
 package hostconfig
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
 
 // DenyAllProfileID is the AllowedProfiles entry [PolicyFrom] emits when a
@@ -148,9 +150,8 @@ func ModeSettingsFrom(cfg *Config) speechkit.ModeSettings {
 // (meaning "all"). FixedProfiles is left empty, so a host can lock the policy
 // down further. A nil cfg yields the zero RuntimePolicy.
 //
-// Note: if config enables no modes at all, EnabledModes is empty, which
-// SpeechKit treats as "all modes enabled". Set an explicit policy if you need a
-// hard mode lockout.
+// Under Full Local the boot ceiling narrows catalog rows as well. Empty
+// filtered lists are explicit denials, never the SDK's permissive zero value.
 func PolicyFrom(cfg *Config) speechkit.RuntimePolicy {
 	if cfg == nil {
 		return speechkit.RuntimePolicy{}
@@ -166,14 +167,33 @@ func PolicyFrom(cfg *Config) speechkit.RuntimePolicy {
 	if cfg.General.VoiceAgentEnabled {
 		modes = append(modes, speechkit.ModeVoiceAgent)
 	}
+	if netsec.FullLocal() && cfg.TTS.Enabled {
+		modes = append(modes, speechkit.ModeTTS)
+	}
+	if len(modes) == 0 && netsec.FullLocal() {
+		modes = []speechkit.Mode{speechkit.ModeNone}
+	}
 
 	allowFallbacks := normalizeSelection(cfg.ModelSelection.Dictate).FallbackProfileID != "" ||
 		normalizeSelection(cfg.ModelSelection.Assist).FallbackProfileID != "" ||
 		normalizeSelection(cfg.ModelSelection.VoiceAgent).FallbackProfileID != ""
+	allowedProfiles := allowedProfilesFor(cfg.Providers.Allowed)
+	if netsec.FullLocal() {
+		var active []string
+		for _, id := range allowedProfiles {
+			if profile, ok := catalog.DefaultCatalog().Profile(id); ok && slices.Contains(modes, profile.Mode) {
+				active = append(active, id)
+			}
+		}
+		allowedProfiles = active
+		if len(allowedProfiles) == 0 {
+			allowedProfiles = []string{DenyAllProfileID}
+		}
+	}
 
 	return speechkit.RuntimePolicy{
 		EnabledModes:    modes,
-		AllowedProfiles: allowedProfilesFor(cfg.Providers.Allowed),
+		AllowedProfiles: allowedProfiles,
 		AllowFallbacks:  allowFallbacks,
 	}
 }
@@ -181,6 +201,21 @@ func PolicyFrom(cfg *Config) speechkit.RuntimePolicy {
 // allowedProfilesFor expands a provider allowlist into profile ids; nil for
 // no allowlist.
 func allowedProfilesFor(providers []string) []string {
+	if netsec.FullLocal() {
+		var ids []string
+		for _, profile := range catalog.DefaultProviderProfiles() {
+			if allowed, _ := speechkit.ProfileAllowedForBoot(profile); !allowed {
+				continue
+			}
+			if len(providers) == 0 || catalog.ProviderInAllowlist(profile.Provider, providers) {
+				ids = append(ids, profile.ID)
+			}
+		}
+		if len(ids) == 0 {
+			return []string{DenyAllProfileID}
+		}
+		return ids
+	}
 	named := false
 	for _, provider := range providers {
 		if strings.TrimSpace(provider) != "" {

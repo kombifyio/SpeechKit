@@ -3,6 +3,7 @@ package templates
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -66,8 +67,10 @@ func NormalizeTemplateIDs(ids []string) []string {
 	return normalized
 }
 
+// ListTemplates lists the selectable templates. The operator vocabulary is
+// always active and not selectable, so it is served as a pack only.
 func ListTemplates() []Template {
-	definitions := builtinDefinitions()
+	definitions := staticDefinitions()
 	templates := make([]Template, 0, len(definitions))
 	for _, definition := range definitions {
 		meta := definition.meta
@@ -108,10 +111,23 @@ func ActiveBuiltinPacks(ids []string) []speechcustomize.Pack {
 			packs = append(packs, pack)
 		}
 	}
+	// The operator vocabulary is the deployment's own: active whenever it is
+	// set, without being listed among the selectable templates.
+	if operator, ok := operatorDefinition(); ok && !slices.Contains(ids, OperatorTermsID) {
+		packs = append(packs, operator.factory())
+	}
 	return packs
 }
 
 func builtinDefinitions() map[string]templateDefinition {
+	definitions := staticDefinitions()
+	if operator, ok := operatorDefinition(); ok {
+		definitions[OperatorTermsID] = operator
+	}
+	return definitions
+}
+
+func staticDefinitions() map[string]templateDefinition {
 	return map[string]templateDefinition{
 		StandardPunctuationID: {
 			meta: Template{

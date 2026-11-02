@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/procguard"
 )
 
@@ -21,6 +22,12 @@ func (p *Provider) StartServer(ctx context.Context) error {
 		return fmt.Errorf("local STT server process context is required")
 	}
 	engine := engineForModel(p.ModelPath)
+	if netsec.FullLocal() && engine != engineWhisper {
+		return fmt.Errorf("data_profile_full_local: local STT engine is not whisper.cpp")
+	}
+	if err := procguard.RequireSpeechConfinement(); err != nil {
+		return err
+	}
 	name := engine.serverName()
 	generation, startDone, err := p.beginProcessStart()
 	if err != nil {
@@ -51,6 +58,10 @@ func (p *Provider) StartServer(ctx context.Context) error {
 	}
 	identity, err := newServerIdentity()
 	if err != nil {
+		if netsec.FullLocal() {
+			proxy.close()
+			return fmt.Errorf("native STT identity: %w", err)
+		}
 		p.log().Warn("local STT server identity check unavailable", "server", name, "error", err)
 	}
 
@@ -67,15 +78,11 @@ func (p *Provider) StartServer(ctx context.Context) error {
 	cmd.Dir = workDir
 	cmd.Env = procguard.HostSidecarEnv()
 	procguard.ConfigureHiddenProcess(cmd, subprocessPriorityLowered(p.LowerSubprocessPriority))
-	// Must run before Start: on POSIX hosts this is what puts the child in
-	// its own process group, and after the child has exec'd the parent can
-	// no longer move it (see procguard.Prepare).
-	procguard.Prepare(cmd)
 	// whisper-server prints every recognised segment to stdout, so stdout is
 	// left unset (the null device): transcripts must not reach a console or
 	// log. Its diagnostics (model load, backend, bind errors) go to stderr;
 	// speechkit-stt-sherpa logs only to stderr and never logs transcripts.
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = procguard.ForwardOutput(os.Stderr)
 
 	// gpu_mode is the *requested* mode; whether inference actually runs on a
 	// GPU depends on how the bundled whisper-server was built (a CPU-only
@@ -87,7 +94,7 @@ func (p *Provider) StartServer(ctx context.Context) error {
 	if engine == engineWhisper && args[1] == p.ModelPath && !isASCII(p.ModelPath) {
 		p.log().Warn("whisper-server model path contains non-ASCII characters that cannot be passed through argv safely; move the model to an ASCII-only path if startup fails", "model", p.ModelPath)
 	}
-	if err := cmd.Start(); err != nil {
+	if err := procguard.Start(cmd); err != nil {
 		proxy.close()
 		identity.remove()
 		return fmt.Errorf("start %s: %w", name, err)

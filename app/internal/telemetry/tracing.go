@@ -14,9 +14,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -26,7 +29,7 @@ import (
 type TracingOptions struct {
 	// Endpoint is the full OTLP/HTTP traces URL (scheme + host + path), e.g.
 	// https://oORG.ingest.de.sentry.io/api/PROJECT/otlp/v1/traces. Empty
-	// disables tracing entirely (ConfigureTracing becomes a no-op).
+	// disables export; local instrumentation and W3C propagation stay installed.
 	Endpoint string
 	// Headers are attached to every export request — e.g. an auth header such
 	// as {"x-sentry-auth": "sentry sentry_key=..."}.
@@ -41,29 +44,12 @@ type TracingOptions struct {
 	Release     string
 }
 
-// noopShutdown is returned whenever no provider was installed, so callers can
-// always `defer shutdown(ctx)` without a nil check.
-func noopShutdown(context.Context) error { return nil }
-
 // ConfigureTracing installs a process-global OTel TracerProvider that batches
 // the framework's spans to opts.Endpoint over OTLP/HTTP. It returns a shutdown
 // func that flushes pending spans and stops the provider; call it on graceful
-// shutdown. When opts.Endpoint is empty it is a no-op: no provider is set, so
-// otel.Tracer spans stay zero-cost and the prior (no-op) behaviour is kept.
+// shutdown. An absent or failed exporter leaves the shared local SDK, resource
+// and W3C propagator installed. It never substitutes a cloud destination.
 func ConfigureTracing(ctx context.Context, opts TracingOptions) (func(context.Context) error, error) {
-	if strings.TrimSpace(opts.Endpoint) == "" {
-		return noopShutdown, nil
-	}
-
-	expOpts := []otlptracehttp.Option{otlptracehttp.WithEndpointURL(opts.Endpoint)}
-	if len(opts.Headers) > 0 {
-		expOpts = append(expOpts, otlptracehttp.WithHeaders(opts.Headers))
-	}
-	exp, err := otlptracehttp.New(ctx, expOpts...)
-	if err != nil {
-		return noopShutdown, fmt.Errorf("telemetry: create OTLP trace exporter: %w", err)
-	}
-
 	sampler := sdktrace.AlwaysSample()
 	if opts.SampleRate > 0 && opts.SampleRate < 1 {
 		// ParentBased so a sampled inbound trace keeps its children sampled.
@@ -89,11 +75,29 @@ func ConfigureTracing(ctx context.Context, opts TracingOptions) (func(context.Co
 	res := resource.NewSchemaless(attrs...)
 
 	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exp),
 		sdktrace.WithSampler(sampler),
 		sdktrace.WithResource(res),
 	)
 	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+	if strings.TrimSpace(opts.Endpoint) == "" {
+		return tp.Shutdown, nil
+	}
+
+	expOpts := []otlptracehttp.Option{
+		otlptracehttp.WithEndpointURL(opts.Endpoint),
+	}
+	if netsec.FullLocal() {
+		expOpts = append(expOpts, otlptracehttp.WithHTTPClient(netsec.NewClient(traceClientOptions())))
+	}
+	if len(opts.Headers) > 0 {
+		expOpts = append(expOpts, otlptracehttp.WithHeaders(opts.Headers))
+	}
+	exp, err := otlptracehttp.New(ctx, expOpts...)
+	if err != nil {
+		return tp.Shutdown, fmt.Errorf("telemetry: create OTLP trace exporter; local tracing retained: %w", err)
+	}
+	tp.RegisterSpanProcessor(sdktrace.NewBatchSpanProcessor(exp))
 
 	return tp.Shutdown, nil
 }

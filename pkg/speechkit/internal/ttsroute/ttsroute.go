@@ -27,6 +27,7 @@ import "strings"
 //	tts.local.supertonic*              → "supertonic_local"  (ONNX in-process, multilingual)
 //	tts.local.chatterbox*              → "chatterbox_local"  (ONNX in-process, voice-clone)
 //	tts.local.piper / tts.local.piper-* → "piper"             (Piper subprocess)
+//	tts.local.sherpa-piper              → "sherpa_piper"      (bundled Piper voices via sherpa-onnx)
 func PreferredProvider(profileID string) string {
 	id := strings.TrimSpace(profileID)
 	if id == "" {
@@ -57,6 +58,8 @@ func PreferredProvider(profileID string) string {
 		return "chatterbox_local"
 	case id == "tts.local.piper", strings.HasPrefix(id, "tts.local.piper-"):
 		return "piper"
+	case id == "tts.local.sherpa-piper":
+		return "sherpa_piper"
 	default:
 		return ""
 	}

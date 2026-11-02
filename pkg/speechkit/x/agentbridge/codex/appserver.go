@@ -74,8 +74,6 @@ func startAppServer(ctx context.Context, binary, clientVersion string, logger *s
 	cmd := exec.Command(binary, "app-server") //nolint:noctx // detached long-lived child, closed via session lifecycle
 	cmd.Env = codexEnv(binary)
 	configureSysProcAttr(cmd)
-	// Must run before Start; see procguard.Prepare.
-	procguard.Prepare(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("app-server stdin: %w", err)
@@ -85,7 +83,7 @@ func startAppServer(ctx context.Context, binary, clientVersion string, logger *s
 		return nil, fmt.Errorf("app-server stdout: %w", err)
 	}
 	cmd.Stderr = nil
-	if err := cmd.Start(); err != nil {
+	if err := procguard.Start(cmd); err != nil {
 		return nil, fmt.Errorf("app-server start: %w", err)
 	}
 	// Hand the child to the OS so it cannot outlive this process when the

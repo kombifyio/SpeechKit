@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 
 	"github.com/kombifyio/SpeechKit/app/internal/productid"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
 
 var (
@@ -66,6 +68,7 @@ func ConfigureOTLP(endpoint, certFile, keyFile, caFile string) error {
 	opts := []otlploghttp.Option{
 		otlploghttp.WithEndpoint(endpoint),
 	}
+	var tlsConfig *tls.Config
 
 	if certFile != "" && keyFile != "" {
 		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
@@ -88,10 +91,19 @@ func ConfigureOTLP(endpoint, certFile, keyFile, caFile string) error {
 			tlsCfg.RootCAs = pool
 		}
 		opts = append(opts, otlploghttp.WithTLSClientConfig(tlsCfg))
+		tlsConfig = tlsCfg
 	} else {
 		// Plain HTTP — no TLS. Suitable for dev deployments and environments
 		// where TLS termination is handled by a sidecar or proxy.
 		opts = append(opts, otlploghttp.WithInsecure())
+	}
+	if netsec.FullLocal() {
+		// WithHTTPClient overrides the exporter's TLS option, so carry the
+		// operator's mTLS configuration on the guarded transport itself.
+		transport := &http.Transport{TLSClientConfig: tlsConfig, TLSHandshakeTimeout: 10 * time.Second}
+		opts = append(opts, otlploghttp.WithHTTPClient(netsec.NewClient(netsec.ClientOptions{
+			Timeout: 10 * time.Second, InnerTransport: transport,
+		})))
 	}
 
 	exp, err := otlploghttp.New(context.Background(), opts...)

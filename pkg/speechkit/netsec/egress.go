@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -27,19 +28,46 @@ type Policy struct {
 // under this policy. A host uses it to skip work that only makes sense with
 // internet access, such as a connectivity probe.
 func (p Policy) AllowsPublicEgress() bool {
+	if FullLocal() || bootError() != nil {
+		return false
+	}
 	return p.Validation == nil || !p.Validation.RequireLocal
 }
 
 var activePolicy atomic.Pointer[Policy]
+
+var policyMu sync.Mutex
+var policyGuards []func(Policy)
+
+// WithPolicy serializes a native launch with policy changes. The callback must
+// not call Configure. It receives the same policy the next Go dial will use.
+func WithPolicy(f func(Policy) error) error {
+	policyMu.Lock()
+	defer policyMu.Unlock()
+	return f(currentPolicy())
+}
+
+// RegisterPolicyGuard installs an in-process kernel-policy consumer. Guards run
+// synchronously before Configure publishes the policy to network clients.
+func RegisterPolicyGuard(f func(Policy)) {
+	policyMu.Lock()
+	defer policyMu.Unlock()
+	policyGuards = append(policyGuards, f)
+}
 
 // Configure installs the process-wide egress policy. The host calls it at
 // start and again whenever the network scope changes; guarded clients built
 // earlier pick the new policy up on their next dial. Configure(Policy{})
 // restores the unrestricted default.
 func Configure(p Policy) {
+	policyMu.Lock()
+	defer policyMu.Unlock()
 	if p.Validation != nil {
 		v := *p.Validation
 		p.Validation = &v
+	}
+	for _, guard := range policyGuards {
+		guard(p)
 	}
 	activePolicy.Store(&p)
 }

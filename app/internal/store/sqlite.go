@@ -123,6 +123,7 @@ func NewSQLiteStore(cfg StoreConfig) (*SQLiteStore, error) {
 		retentionScope:          normalizeStoreRetentionScope(cfg.RetentionScope),
 		retentionTTLDays:        max(cfg.RetentionTTLDays, 0),
 		onRetentionSweep:        cfg.OnRetentionSweep,
+		maintenanceDisabled:     cfg.MaintenanceDisabled,
 		// SQLite keeps its audio next to the database file, and with the
 		// default path that is ContentDir/audio, the same folder the Postgres
 		// backend uses. A file the other backend's database references is

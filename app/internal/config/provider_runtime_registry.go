@@ -189,6 +189,15 @@ var providerRuntimeRegistry = []ProviderRuntime{
 		// It needs no credential — the operator supplies a binary and voice
 		// files through [tts.piper] — so it is configurable without being
 		// credentialed.
+		Provider:         "sherpa_piper",
+		DisplayName:      "Local voices (German and English)",
+		ProviderKind:     framework.ProviderKindLocalBuiltIn,
+		IntegrationKind:  ProviderIntegrationLocal,
+		SetupURL:         "https://github.com/k2-fsa/sherpa-onnx",
+		SupportedModes:   []framework.Mode{framework.ModeTTS},
+		UserConfigurable: false,
+	},
+	{
 		Provider:         "piper",
 		DisplayName:      "Piper Local TTS",
 		ProviderKind:     framework.ProviderKindLocalBuiltIn,

@@ -2,13 +2,11 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	_ "embed"
 	"fmt"
 	"path/filepath"
 	"strings"
 
-	_ "github.com/jackc/pgx/v5/stdlib" // register pgx as database/sql driver
 	"github.com/kombifyio/SpeechKit/app/internal/runtimepath"
 	speechstorage "github.com/kombifyio/SpeechKit/pkg/speechkit/storage"
 )
@@ -112,7 +110,7 @@ func NewPostgresStore(cfg StoreConfig) (*PostgresStore, error) {
 		return nil, fmt.Errorf("postgres backend requires a DSN (set store.postgres_dsn in config.toml)")
 	}
 
-	db, err := sql.Open("pgx", cfg.PostgresDSN)
+	db, err := openPostgres(cfg.PostgresDSN)
 	if err != nil {
 		return nil, fmt.Errorf("open postgres: %w", err)
 	}
@@ -157,6 +155,7 @@ func NewPostgresStore(cfg StoreConfig) (*PostgresStore, error) {
 		retentionScope:          normalizeStoreRetentionScope(cfg.RetentionScope),
 		retentionTTLDays:        max(cfg.RetentionTTLDays, 0),
 		onRetentionSweep:        cfg.OnRetentionSweep,
+		maintenanceDisabled:     cfg.MaintenanceDisabled,
 	}}
 	store.startMaintenance()
 	return store, nil

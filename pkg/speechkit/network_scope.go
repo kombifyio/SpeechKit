@@ -135,6 +135,9 @@ func (s NetworkScope) AllowsProviderKind(kind ProviderKind) (bool, string) {
 // AllowsProfile reports whether the catalog profile may be activated under
 // this scope, with the disabled reason ID when it may not.
 func (s NetworkScope) AllowsProfile(p ProviderProfile) (bool, string) {
+	if allowed, reason := ProfileAllowedForBoot(p); !allowed {
+		return false, reason
+	}
 	return s.AllowsProviderKind(p.ProviderKind)
 }
 

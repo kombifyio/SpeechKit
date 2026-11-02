@@ -223,6 +223,8 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		OrgID:  id.OrgID,
 		Plan:   id.Plan,
 		Role:   id.Role,
+		// Only a verified v3 edge envelope sets it; admission counts per device.
+		DeviceID: id.DeviceID,
 	}, input.AISessionID, budget, h.reportUnstartedSession)
 	if err == nil {
 		session.AnonymousGuide, session.AnonymousLocale = h.anonymous, input.Locale
@@ -257,10 +259,13 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, wssession.ErrVoiceBudgetUnavailable):
 			httpx.WriteError(w, http.StatusForbidden, "voice_budget_unavailable", "Reserve new Voice quota before starting a voice session.")
+		case errors.Is(err, wssession.ErrAccountDeviceLimitExceeded):
+			httpx.WriteError(w, http.StatusConflict, "account_device_limit_exceeded", "This account already holds voice sessions on its maximum number of devices. End a session on another device, then start again.")
 		case errors.Is(err, ErrIdentityLimitExceeded):
-			httpx.WriteError(w, http.StatusConflict, "per_user_limit_exceeded", sessionBusyMessage(""))
+			httpx.WriteError(w, http.StatusConflict, "per_device_limit_exceeded", sessionBusyMessage(""))
 		case errors.Is(err, ErrGlobalLimitExceeded):
-			httpx.WriteError(w, http.StatusServiceUnavailable, "global_limit_exceeded", err.Error())
+			w.Header().Set("Retry-After", globalLimitRetryAfter)
+			httpx.WriteError(w, http.StatusServiceUnavailable, "global_limit_exceeded", serviceCapacityMessage(""))
 		default:
 			httpx.WriteError(w, http.StatusInternalServerError, "create_failed", err.Error())
 		}

@@ -8,13 +8,17 @@ internal class VoiceAgentCallerIdentity(private val packages: PackageManager) {
     @RequiresApi(28)
     fun attested(uid: Int): Boolean {
         val resolved = packages.getPackagesForUid(uid)?.toList().orEmpty()
-        return resolved.isNotEmpty() && resolved.all { name ->
-            val expected = PINS[name] ?: return@all false
-            runCatching { packages.hasSigningCertificate(name, expected.chunked(2).map { it.toInt(16).toByte() }.toByteArray(),
-                PackageManager.CERT_INPUT_SHA256) }.getOrDefault(false)
-        }
+        return resolved.isNotEmpty() && resolved.all { name -> pinned(packages, name) }
     }
     companion object {
+        /** [name] is a Companion package carrying that channel's pinned app-signing certificate. */
+        @RequiresApi(28)
+        fun pinned(packages: PackageManager, name: String): Boolean {
+            val expected = PINS[name] ?: return false
+            return runCatching { packages.hasSigningCertificate(name, expected.chunked(2).map { it.toInt(16).toByte() }.toByteArray(),
+                PackageManager.CERT_INPUT_SHA256) }.getOrDefault(false)
+        }
+
         // Play readback: Companion0.8.3 run37057452288, source7b5c5acd079ec699c2fc9e16d955af6f26cc2fc9.
         // Preview app certificate: verified public application links, read2026-10-02.
         private val PINS = mapOf(

@@ -41,8 +41,7 @@ func ttsProviderProfiles() []speechkit.ProviderProfile {
 				{ID: "kokoro.en.bf-emma", Name: "Emma (BR-EN, female)", ModelID: "kokoro-v1_0|bf_emma"},
 			},
 			AllowInference: false,
-			Default:        true,
-			Recommended:    true,
+			Recommended:    false,
 			Experimental:   true,
 		},
 		// Supertonic-3 is the most-trended Hugging Face TTS model of
@@ -96,6 +95,33 @@ func ttsProviderProfiles() []speechkit.ProviderProfile {
 			},
 			AllowInference: false,
 			Experimental:   true,
+		},
+		// The voices a fresh install speaks with: Piper VITS German (Thorsten)
+		// and English (Lessac) run by sherpa-onnx inside the
+		// speechkit-tts-sherpa sidecar. Both ship in the installer, so the
+		// default needs no cloud key and no first-run download. Kokoro stays
+		// in the catalog as an experimental English-only stub; it is not the
+		// default because no local runtime implements it.
+		{
+			ID:            "tts.local.sherpa-piper",
+			Mode:          speechkit.ModeTTS,
+			Name:          "Local voices (German and English)",
+			ProviderKind:  speechkit.ProviderKindLocalBuiltIn,
+			ExecutionMode: speechkit.ExecutionModeLocal,
+			Provider:      "sherpa_piper",
+			ModelID:       "sherpa-onnx-piper",
+			Source:        "Local Built-in",
+			Description:   "On-device Piper VITS voices run by sherpa-onnx: Thorsten (German) and Lessac (English), both medium quality, bundled with the Windows installer. No cloud key and no network. The speechkit-tts-sherpa sidecar shares the sherpa-onnx runtime already shipped for speech-to-text.",
+			License:       "apache-2.0",
+			Capabilities:  []speechkit.Capability{speechkit.CapabilityTTS},
+			AdapterKind:   "sherpa_piper",
+			Variants: []speechkit.ModelVariant{
+				{ID: "sherpa.de.thorsten-medium", Name: "Thorsten (DE, male)", ModelID: "vits-piper-de_DE-thorsten-medium", Recommended: true},
+				{ID: "sherpa.en.lessac-medium", Name: "Lessac (EN, female)", ModelID: "vits-piper-en_US-lessac-medium"},
+			},
+			AllowInference: true,
+			Default:        true,
+			Recommended:    true,
 		},
 		// Piper retained as an additional Local Built-in option for the
 		// Home-Assistant-aligned crowd — Piper is HA Voice's canonical

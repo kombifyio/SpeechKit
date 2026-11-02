@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "speechkit.data-profile-projection/v1",
+  "sourceVersion": "v0.8.6-0.20261024123507-22de9f4b9424",
+  "sourceCommit": "22de9f4b94243c4dc7e34cf87d8f38a5ca98f5c0",
+  "sourceSum": "h1:Tz7YBiJb48/4gLdHOjP/Ry+SyHJzSezrpJgq2WhKoI4=",
+  "sourceFiles": {
+    "edition/edition.go": "5b2c15e02809f1825576e25f470ac231e35d7a4fbc7de9734c37bffff6a61c1e",
+    "denial/envelope.go": "bde2db1d14719dc67252b3c054e7b574abdaea554b81347d649a1ce9e994af9f",
+    "dataprofile/dataprofile.go": "8ef15eb1c6830fa5a27a254439f12aa028203f414882a25447e15fc3910b8632",
+    "dataprofile/egress.go": "bd88545fd8a3b4ea5e537f07adcc35e07bf8e6c0d5fc0a25748c95d80d5a475e"
+  },
+  "projectedFiles": {
+    "internal/editionv1/edition.go": "f746e0b9de5c6ba542c90512c70a2ec26c7f13bd16c394be6ab1be2e5ceb9762",
+    "internal/denialv1/envelope.go": "4f0aba66ca8981e9019f0335b3988969cd0041123465d5222decdea61bc68485",
+    "internal/dataprofilev1/dataprofile.go": "1529b61bd4195250c2ad71d2a20f9598a75f7d0b864d6072651f4453cdcfd999",
+    "internal/dataprofilev1/egress.go": "8e66ab7474c7bb348c4edfa75f1fda78340cbc30f91f499f4887998e2f6c0da5",
+    "internal/dataprofilev1/LICENSE": "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff"
+  },
+  "transformations": [
+    "comment-only lines removed",
+    "canonical import paths rewritten",
+    "generated provenance header",
+    "LF line endings",
+    "license line endings normalized to LF",
+    "gofmt"
+  ]
+}

@@ -20,6 +20,8 @@ import (
 
 	"github.com/hajimehoshi/go-mp3"
 	skAudio "github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/procguard"
 )
 
 // TargetSampleRate is the canonical rate every STT provider expects.
@@ -363,6 +365,9 @@ const ffmpegTimeout = 30 * time.Second
 // stream that lacks seekable file boundaries. label is what ends up in
 // DecodedAudio.SourceFormat so the response carries a stable identifier.
 func decodeViaFFmpeg(ctx context.Context, raw []byte, label, inputFormat string, limits DecodeLimits) (*DecodedAudio, error) {
+	if err := procguard.RequireSpeechConfinement(); err != nil {
+		return nil, err
+	}
 	if _, err := exec.LookPath(ffmpegBinary); err != nil {
 		return nil, ErrFFmpegUnavailable
 	}
@@ -388,9 +393,16 @@ func decodeViaFFmpeg(ctx context.Context, raw []byte, label, inputFormat string,
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	if err := cmd.Run(); err != nil {
+	var runErr error
+	if netsec.FullLocal() {
+		cmd.Env = procguard.HostSidecarEnv()
+		runErr = procguard.Run(cmd)
+	} else {
+		runErr = cmd.Run()
+	}
+	if runErr != nil {
 		return nil, fmt.Errorf("audio: ffmpeg decode (%s): %w; stderr=%q",
-			label, err, strings.TrimSpace(stderr.String()))
+			label, runErr, strings.TrimSpace(stderr.String()))
 	}
 	if stdout.Exceeded() {
 		return nil, decodeLimitError(limits, stdout.Limit(), stdout.ActualBytes(), 0)

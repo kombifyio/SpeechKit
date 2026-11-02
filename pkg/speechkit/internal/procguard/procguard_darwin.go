@@ -71,7 +71,7 @@ var (
 // It cannot fail — it only fills in a field — so it returns nothing. The
 // honest report about whether the child ended up tied to this process is
 // [Adopt]'s error.
-func Prepare(cmd *exec.Cmd) {
+func preparePlatform(cmd *exec.Cmd) {
 	if cmd == nil {
 		return
 	}

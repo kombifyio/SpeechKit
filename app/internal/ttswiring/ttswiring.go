@@ -228,6 +228,16 @@ func ResolveEnabledProvidersWithAuth(cfg *config.Config, auth Auth) (tts.Enabled
 		}
 	}
 
+	// The bundled on-device voices are the fresh-install default. They need
+	// no key and no operator setup: the sidecar and the voice directory ship
+	// with the desktop, and an explicit voices_dir overrides the lookup.
+	if allowed("sherpa_piper", cfg.TTS.Sherpa.Enabled || ttsroute.PreferredProvider(cfg.ModelSelection.TTS.PrimaryProfileID) == tts.ProviderSherpaPiper) {
+		enabled.SherpaPiper = &tts.SherpaPiperOpts{
+			Binary:    cfg.TTS.Sherpa.Binary,
+			VoicesDir: cfg.TTS.Sherpa.VoicesDir,
+		}
+	}
+
 	if allowed("piper", cfg.TTS.Piper.Enabled) {
 		if voiceDir := strings.TrimSpace(cfg.TTS.Piper.VoiceDir); voiceDir == "" {
 			notes = append(notes, "TTS: Piper enabled but voice_dir is empty; skipping")

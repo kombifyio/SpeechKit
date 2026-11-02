@@ -117,17 +117,36 @@ func (a *Adapter) logSessionEnd(reason string) {
 	)
 }
 
-// sessionBusyMessage is the sentence a device may show or speak when the
-// account's running-conversation cap is reached. Short and complete without a
-// status code; locale is a BCP-47 tag or empty.
+// sessionBusyMessage is the sentence a device may show or speak when its own
+// running-conversation cap is reached. Other devices of the account never
+// count (D-2026-10-26-14). Short and complete without a status code; locale
+// is a BCP-47 tag or empty.
 func sessionBusyMessage(locale string) string {
 	tag := strings.ToLower(strings.TrimSpace(locale))
 	switch {
 	case strings.HasPrefix(tag, "de"):
-		return "Gerade läuft schon ein anderes Gespräch auf deinem Konto. Beende es oder versuche es gleich noch einmal."
+		return "Auf diesem Gerät laufen schon zu viele Gespräche. Beende eines oder versuche es gleich noch einmal."
 	case strings.HasPrefix(tag, "es"):
-		return "Ya hay otra conversación en curso en tu cuenta. Termínala o inténtalo de nuevo en un momento."
+		return "Este dispositivo ya tiene demasiadas conversaciones en curso. Termina una o inténtalo de nuevo en un momento."
 	default:
-		return "Another voice conversation is already running on your account. End it or try again in a moment."
+		return "This device already has too many voice conversations running. End one or try again in a moment."
+	}
+}
+
+// globalLimitRetryAfter is the Retry-After (seconds) of a refusal at the
+// global abuse ceiling (platform/standards/API-FIRST-STANDARD.md §18.4).
+const globalLimitRetryAfter = "30"
+
+// serviceCapacityMessage is the sentence for a refusal at the global abuse
+// ceiling: an overall service limit, never a missing right of the account.
+func serviceCapacityMessage(locale string) string {
+	tag := strings.ToLower(strings.TrimSpace(locale))
+	switch {
+	case strings.HasPrefix(tag, "de"):
+		return "Der Sprachdienst ist gerade insgesamt ausgelastet. Versuche es gleich noch einmal."
+	case strings.HasPrefix(tag, "es"):
+		return "El servicio de voz está al límite de su capacidad. Inténtalo de nuevo en un momento."
+	default:
+		return "The voice service is at its overall capacity right now. Try again in a moment."
 	}
 }

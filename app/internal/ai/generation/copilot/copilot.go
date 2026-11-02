@@ -13,6 +13,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/app/internal/ai/copilotruntime"
 	"github.com/kombifyio/SpeechKit/app/internal/ai/generation"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
 
 const Provider = "github_copilot"
@@ -239,6 +240,10 @@ func (g *Generator) Generate(ctx context.Context, request generation.Request) (g
 }
 
 func (g *Generator) client(ctx context.Context) (*sdk.Client, func(), error) {
+	if netsec.FullLocal() {
+		return nil, func() {}, &generation.Error{Kind: generation.ErrorConsent, Operation: "start", Provider: Provider,
+			Err: errors.New("data_profile_full_local: GitHub Copilot is not admitted")}
+	}
 	if g == nil {
 		return nil, func() {}, &generation.Error{Kind: generation.ErrorConfiguration, Provider: Provider, Err: errors.New("copilot generator unavailable")}
 	}

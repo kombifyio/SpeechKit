@@ -6,6 +6,9 @@
         <package android:name="io.kombify.companion.preview" />
     </queries>
 
+    <!-- speechkit.coinstall.v1: bind the Companion's turn service (release and preview channel). -->
+    <uses-permission android:name="io.kombify.companion.permission.BIND_COINSTALL" />
+    <uses-permission android:name="io.kombify.companion.preview.permission.BIND_COINSTALL" />
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- The model card warns before a download on a metered network. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />

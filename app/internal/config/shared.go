@@ -203,6 +203,10 @@ func (s *Shared) commit(cause Cause, fn func(*Config) error, persist bool) (Chan
 		s.mu.Unlock()
 		return Change{}, err
 	}
+	if err := next.ValidateFullLocalSelections(); err != nil {
+		s.mu.Unlock()
+		return Change{}, err
+	}
 	switch cause {
 	case CauseUserEdit:
 		if err := s.cur.CheckPolicyEdit(next); err != nil {

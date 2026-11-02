@@ -206,6 +206,8 @@ func (h *StreamHandler) createSession(w http.ResponseWriter, r *http.Request) {
 		OrgID:  id.OrgID,
 		Plan:   id.Plan,
 		Role:   id.Role,
+		// Only a verified v3 edge envelope sets it; admission counts per device.
+		DeviceID: id.DeviceID,
 	})
 	if err == nil {
 		// Capture the edge-resolved voice preferences at mint time: the WS
@@ -218,10 +220,13 @@ func (h *StreamHandler) createSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		switch {
+		case errors.Is(err, wssession.ErrAccountDeviceLimitExceeded):
+			httpx.WriteError(w, http.StatusConflict, "account_device_limit_exceeded", "This account already holds streaming sessions on its maximum number of devices. End one, then start again.")
 		case errors.Is(err, wssession.ErrIdentityLimitExceeded):
-			httpx.WriteError(w, http.StatusConflict, "per_user_limit_exceeded", err.Error())
+			httpx.WriteError(w, http.StatusConflict, "per_device_limit_exceeded", "This device already holds its maximum number of streaming sessions. End one, then start again.")
 		case errors.Is(err, wssession.ErrGlobalLimitExceeded):
-			httpx.WriteError(w, http.StatusServiceUnavailable, "global_limit_exceeded", err.Error())
+			w.Header().Set("Retry-After", "30")
+			httpx.WriteError(w, http.StatusServiceUnavailable, "global_limit_exceeded", "The streaming service is at its overall capacity. Try again in a moment.")
 		default:
 			httpx.WriteError(w, http.StatusInternalServerError, "create_failed", err.Error())
 		}

@@ -2,7 +2,7 @@
 // the Server-Target's ticket-authenticated WebSocket surfaces (Voice Agent,
 // streaming Dictation):
 //
-//   - A Session Manager that tracks active sessions, enforces per-identity
+//   - A Session Manager that tracks active sessions, enforces per-device
 //     and global concurrency limits, and mints HMAC-signed one-time tickets
 //     so browser clients can upgrade a WebSocket without sending
 //     Authorization headers.
@@ -34,13 +34,19 @@ import (
 
 // Common errors reported by the session manager.
 var (
-	ErrSessionNotFound        = errors.New("ws session: session not found")
-	ErrSessionAlreadyActive   = errors.New("ws session: session already has an active WS connection")
-	ErrSessionExpired         = errors.New("ws session: session ticket expired")
-	ErrInvalidTicket          = errors.New("ws session: ticket signature or payload invalid")
-	ErrGlobalLimitExceeded    = errors.New("ws session: global session limit exceeded")
-	ErrIdentityLimitExceeded  = errors.New("ws session: per-identity session limit exceeded")
-	ErrVoiceBudgetUnavailable = errors.New("ws session: voice budget expired or already claimed")
+	ErrSessionNotFound      = errors.New("ws session: session not found")
+	ErrSessionAlreadyActive = errors.New("ws session: session already has an active WS connection")
+	ErrSessionExpired       = errors.New("ws session: session ticket expired")
+	ErrInvalidTicket        = errors.New("ws session: ticket signature or payload invalid")
+	ErrGlobalLimitExceeded  = errors.New("ws session: global session limit exceeded")
+	// ErrIdentityLimitExceeded reports that one device of an account reached
+	// its own cap. Sessions of the account's other devices never count
+	// (D-2026-10-26-14), so the wire code is per_device_limit_exceeded.
+	ErrIdentityLimitExceeded = errors.New("ws session: per-device session limit exceeded")
+	// ErrAccountDeviceLimitExceeded is the abuse bound on how many distinct
+	// devices one account holds sessions on at once; it never counts sessions.
+	ErrAccountDeviceLimitExceeded = errors.New("ws session: account device limit exceeded")
+	ErrVoiceBudgetUnavailable     = errors.New("ws session: voice budget expired or already claimed")
 	// ErrSessionOwnerMismatch rejects a renewal whose edge-verified subject
 	// or org differs from the session owner.
 	ErrSessionOwnerMismatch = errors.New("ws session: renewal identity does not own the session")
@@ -57,6 +63,17 @@ type Identity struct {
 	OrgID  string
 	Plan   string
 	Role   string
+	// DeviceID is the edge-signed device of the caller (middleware Identity
+	// from a v3 edge envelope); empty for a caller without one. Admission
+	// counts per (UserID, DeviceID), never per account (D-2026-10-26-14).
+	DeviceID string
+}
+
+// admissionKey is the unit every per-identity cap counts: one device of one
+// account. All callers without a signed device share the account's empty
+// device, which keeps the previous per-account behaviour for them.
+func (id Identity) admissionKey() string {
+	return id.UserID + "\x00" + id.DeviceID
 }
 
 // VoicePrefs mirrors middleware.VoicePrefs (field-for-field, so handlers can
@@ -109,22 +126,29 @@ type Options struct {
 	// TicketTTL limits how long a minted ticket remains valid. Defaults to
 	// 90 seconds.
 	TicketTTL time.Duration
-	// MaxGlobalSessions caps concurrent sessions across all callers.
-	// Defaults to 100.
+	// MaxGlobalSessions is the abuse ceiling across all callers. With
+	// separate prepared-session admission it counts running conversations
+	// only and is claimed by StartConversation, so prepared and idle sessions
+	// never count; otherwise it counts every session. Defaults to 100.
 	MaxGlobalSessions int
-	// MaxPerIdentitySessions caps concurrent sessions per caller, or running
-	// conversations when separate prepared-session admission is enabled.
-	// Defaults to 3.
+	// MaxPerIdentitySessions caps concurrent sessions per device of an
+	// account (Identity.admissionKey), or running conversations per device
+	// when separate prepared-session admission is enabled. Defaults to 3.
 	MaxPerIdentitySessions int
 	// MaxAnonymousSessions caps the restricted public-guide identity, which is
 	// not an account and must not inherit a raised per-account cap. Zero uses
 	// MaxPerIdentitySessions.
 	MaxAnonymousSessions int
 	// MaxPreparedPerIdentitySessions opts a surface into separate admission for
-	// unstarted sessions (including attached standby sockets). Zero preserves
+	// unstarted sessions (including attached standby sockets), counted per
+	// device like MaxPerIdentitySessions. Zero preserves
 	// the shared transport's legacy total-session cap. The active conversation
 	// cap remains MaxPerIdentitySessions and is claimed by StartConversation.
 	MaxPreparedPerIdentitySessions int
+	// MaxDevicesPerAccount bounds the distinct devices one account holds
+	// sessions on at once, so device ids cannot multiply the per-device caps
+	// without limit. Defaults to DefaultMaxDevicesPerAccount.
+	MaxDevicesPerAccount int
 	// Clock is a time source; nil means time.Now. Tests can override.
 	Clock func() time.Time
 }
@@ -133,16 +157,17 @@ type Options struct {
 type SessionManager struct {
 	mu                sync.RWMutex
 	sessions          map[string]*ManagedSession
-	byUser            map[string]int
+	byDevice          map[string]int // Identity.admissionKey -> sessions
 	opts              Options
 	voiceBudgetClaims map[string]int64
 }
 
 // SessionStats reports current session occupancy and configured capacity.
 type SessionStats struct {
-	TotalSessions          int `json:"total_sessions"`
-	ActiveSessions         int `json:"active_sessions"`
-	PendingSessions        int `json:"pending_sessions"`
+	TotalSessions   int `json:"total_sessions"`
+	ActiveSessions  int `json:"active_sessions"`
+	PendingSessions int `json:"pending_sessions"`
+	// IdentitySessions counts the account's sessions over all its devices.
 	IdentitySessions       int `json:"identity_sessions,omitempty"`
 	MaxGlobalSessions      int `json:"max_global_sessions"`
 	MaxPerIdentitySessions int `json:"max_per_identity_sessions"`
@@ -288,12 +313,15 @@ func NewSessionManager(opts Options) (*SessionManager, error) {
 	if opts.MaxPerIdentitySessions <= 0 {
 		opts.MaxPerIdentitySessions = 3
 	}
+	if opts.MaxDevicesPerAccount <= 0 {
+		opts.MaxDevicesPerAccount = DefaultMaxDevicesPerAccount
+	}
 	if opts.Clock == nil {
 		opts.Clock = time.Now
 	}
 	return &SessionManager{
 		sessions: make(map[string]*ManagedSession),
-		byUser:   make(map[string]int),
+		byDevice: make(map[string]int),
 		opts:     opts,
 	}, nil
 }
@@ -352,25 +380,33 @@ func (m *SessionManager) createWithVoiceBudget(owner Identity, aiSessionID strin
 		}
 	}
 
-	if len(m.sessions) >= m.opts.MaxGlobalSessions {
+	// With separate prepared-session admission the global ceiling counts
+	// running conversations only (StartConversation); a prepared or idle
+	// session never takes global capacity (D-2026-10-26-14).
+	if m.opts.MaxPreparedPerIdentitySessions <= 0 && len(m.sessions) >= m.opts.MaxGlobalSessions {
 		failedCreate()
 		return nil, "", ErrGlobalLimitExceeded
 	}
-	atLimit := m.byUser[owner.UserID] >= m.sessionCapLocked(owner)
+	key := owner.admissionKey()
+	atLimit := m.byDevice[key] >= m.sessionCapLocked(owner)
 	// The restricted public-guide identity is not an account. Its verified
 	// anonymous role retains the existing total-session cap, even though the
 	// public and account routes share this manager.
 	if m.opts.MaxPreparedPerIdentitySessions > 0 && owner.Role != "anonymous" {
-		prepared, _ := m.conversationCountsLocked(owner.UserID)
+		prepared, _ := m.conversationCountsLocked(key)
 		atLimit = prepared >= m.opts.MaxPreparedPerIdentitySessions
 	}
 	if atLimit {
 		failedCreate()
 		return nil, "", ErrIdentityLimitExceeded
 	}
+	if m.byDevice[key] == 0 && owner.Role != "anonymous" && m.devicesLocked(owner.UserID) >= m.opts.MaxDevicesPerAccount {
+		failedCreate()
+		return nil, "", ErrAccountDeviceLimitExceeded
+	}
 
 	m.sessions[session.ID] = session
-	m.byUser[owner.UserID]++
+	m.byDevice[key]++
 	if budget.ReservationID != "" {
 		delay := m.opts.TicketTTL
 		if remaining := time.Unix(budget.ExpiresAt, 0).Sub(now); remaining < delay {
@@ -416,11 +452,13 @@ func (m *SessionManager) Stats(userID string) SessionStats {
 
 	stats := SessionStats{
 		TotalSessions:          len(m.sessions),
-		IdentitySessions:       m.byUser[userID],
 		MaxGlobalSessions:      m.opts.MaxGlobalSessions,
 		MaxPerIdentitySessions: m.opts.MaxPerIdentitySessions,
 	}
 	for _, session := range m.sessions {
+		if userID != "" && session.Owner.UserID == userID {
+			stats.IdentitySessions++
+		}
 		if m.opts.MaxPreparedPerIdentitySessions > 0 {
 			if session.conversationStarted {
 				stats.ActiveSessions++
@@ -454,17 +492,22 @@ func (m *SessionManager) StartConversation(id string) error {
 		return ErrSessionAlreadyActive
 	}
 	if m.opts.MaxPreparedPerIdentitySessions > 0 {
-		_, active := m.conversationCountsLocked(s.Owner.UserID)
+		// The device cap counts only this device's own conversations and is
+		// reported first; the abuse ceiling counts those of every caller.
+		_, active := m.conversationCountsLocked(s.Owner.admissionKey())
 		if active >= m.sessionCapLocked(s.Owner) {
 			return ErrIdentityLimitExceeded
+		}
+		if m.runningLocked() >= m.opts.MaxGlobalSessions {
+			return ErrGlobalLimitExceeded
 		}
 	}
 	s.conversationStarted = true
 	return nil
 }
 
-// sessionCapLocked is the running-conversation cap of an owner: accounts get
-// MaxPerIdentitySessions, the anonymous public guide its own smaller cap.
+// sessionCapLocked is the running-conversation cap of one device: accounts get
+// MaxPerIdentitySessions per device, the anonymous public guide its own smaller cap.
 func (m *SessionManager) sessionCapLocked(owner Identity) int {
 	if owner.Role == "anonymous" && m.opts.MaxAnonymousSessions > 0 {
 		return m.opts.MaxAnonymousSessions
@@ -472,9 +515,37 @@ func (m *SessionManager) sessionCapLocked(owner Identity) int {
 	return m.opts.MaxPerIdentitySessions
 }
 
-func (m *SessionManager) conversationCountsLocked(userID string) (prepared, active int) {
+// DefaultMaxDevicesPerAccount matches the edge-device registry's limit of
+// devices per account.
+const DefaultMaxDevicesPerAccount = 32
+
+// devicesLocked counts the distinct devices an account holds sessions on.
+func (m *SessionManager) devicesLocked(userID string) int {
+	prefix := Identity{UserID: userID}.admissionKey()
+	devices := 0
+	for key := range m.byDevice {
+		if strings.HasPrefix(key, prefix) {
+			devices++
+		}
+	}
+	return devices
+}
+
+// runningLocked counts started conversations across all callers.
+func (m *SessionManager) runningLocked() int {
+	running := 0
 	for _, s := range m.sessions {
-		if s.Owner.UserID != userID {
+		if s.conversationStarted {
+			running++
+		}
+	}
+	return running
+}
+
+// conversationCountsLocked counts one device's prepared and running sessions.
+func (m *SessionManager) conversationCountsLocked(key string) (prepared, active int) {
+	for _, s := range m.sessions {
+		if s.Owner.admissionKey() != key {
 			continue
 		}
 		if s.conversationStarted {
@@ -599,7 +670,7 @@ func (m *SessionManager) removeLocked(s *ManagedSession) *ManagedSession {
 	}
 	s.State = StateClosed
 	delete(m.sessions, s.ID)
-	m.decrementUserLocked(s.Owner.UserID)
+	m.decrementDeviceLocked(s.Owner.admissionKey())
 	return receipt
 }
 
@@ -623,14 +694,14 @@ func (m *SessionManager) sweepExpiredPendingLocked() []*ManagedSession {
 	return receipts
 }
 
-// decrementUserLocked lowers the per-identity counter and drops the map entry
-// at zero so byUser does not grow one entry per distinct user forever. Caller
-// must hold m.mu.
-func (m *SessionManager) decrementUserLocked(userID string) {
-	if n := m.byUser[userID]; n > 1 {
-		m.byUser[userID] = n - 1
+// decrementDeviceLocked lowers the per-device counter and drops the map
+// entry at zero so byDevice does not grow one entry per distinct device
+// forever. Caller must hold m.mu.
+func (m *SessionManager) decrementDeviceLocked(key string) {
+	if n := m.byDevice[key]; n > 1 {
+		m.byDevice[key] = n - 1
 	} else {
-		delete(m.byUser, userID)
+		delete(m.byDevice, key)
 	}
 }
 

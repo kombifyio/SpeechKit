@@ -16,6 +16,7 @@ type TTSConfig struct {
 	Foundry     TTSFoundry     `toml:"foundry"`
 	Local       TTSLocal       `toml:"local"`
 	Piper       TTSPiper       `toml:"piper"`
+	Sherpa      TTSSherpa      `toml:"sherpa"`
 }
 
 type TTSOpenAI struct {
@@ -72,6 +73,16 @@ type TTSLocal struct {
 	Voice string `toml:"voice"`
 	// APIKeyEnv optionally names an env var whose value is sent as bearer.
 	APIKeyEnv string `toml:"api_key_env"`
+}
+
+// TTSSherpa configures the bundled on-device voices (German and English)
+// that speechkit-tts-sherpa speaks through sherpa-onnx. Enabled is implied
+// by the default profile tts.local.sherpa-piper, so a fresh install speaks
+// with both fields empty. Set VoicesDir only to point at a different copy.
+type TTSSherpa struct {
+	Enabled   bool   `toml:"enabled"`
+	Binary    string `toml:"binary"`
+	VoicesDir string `toml:"voices_dir"`
 }
 
 // TTSPiper configures the offline Piper subprocess TTS provider.

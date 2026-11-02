@@ -7,6 +7,7 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/secrets"
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
 
 type ProviderCredentialStatus struct {
@@ -168,6 +169,13 @@ func SetProviderCredentialEnvName(cfg *Config, target, envName string) error {
 
 func ResolveProviderCredentialValue(cfg *Config, target string) (string, string, error) {
 	target = NormalizeProviderCredentialTarget(target)
+	if netsec.FullLocal() && target != "" {
+		switch catalog.ProviderFamily(ProviderForCredentialTarget(target)) {
+		case "local", "ollama", "selfhosted":
+		default:
+			return "", "", fmt.Errorf("data_profile_full_local: provider credential %q is not admitted", target)
+		}
+	}
 	switch target {
 	case "":
 		return "", "", nil

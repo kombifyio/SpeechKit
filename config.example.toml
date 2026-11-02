@@ -474,6 +474,15 @@ port = 8081
 # url = "http://127.0.0.1:8880"  # OpenAI-compatible TTS server (Kokoro-FastAPI, Speaches); registers the "kokoro" Local Provider
 # voice = "af_bella"             # server-specific voice id
 
+[tts.sherpa]
+# Bundled on-device voices (German Thorsten, English Lessac) spoken by
+# sherpa-runtime\speechkit-tts-sherpa.exe. This is the fresh-install default:
+# both voices ship with the installer, so no cloud key and no download are
+# needed. Leave voices_dir empty to use models\tts next to the app.
+enabled = true
+binary = ""
+voices_dir = ""
+
 [tts.piper]
 # Offline Piper subprocess TTS — Home-Assistant compatible voices, MIT licensed.
 # Pair with Ollama + whisper.cpp for a fully offline Voice-Companion stack.
@@ -772,7 +781,8 @@ vad_silence_duration_ms = 700
 # # editing the lower-level [tts.providers.*] blocks.
 # #
 # # Catalog IDs (see pkg/speechkit/catalog.go):
-# #   tts.local.kokoro-82m                Local Built-in (Apache-2.0, ~50MB ONNX, EN, RECOMMENDED v0.37.3 default)
+# #   tts.local.sherpa-piper              Local Built-in (bundled German + English voices, fresh-install default)
+# #   tts.local.kokoro-82m                Local Built-in (Apache-2.0, English only, no local runtime yet)
 # #   tts.local.supertonic-3              Local Built-in (OpenRAIL, multilingual 32 langs incl. DE)
 # #   tts.local.chatterbox-multilingual   Local Built-in (MIT, 24 langs, voice-clone)
 # #   tts.local.piper                     Local Built-in (MIT, HA-compatible voice catalog)
@@ -781,7 +791,7 @@ vad_silence_duration_ms = 700
 # #   tts.openai.gpt-4o-mini-tts          Direct Provider (OpenAI GPT-4o mini TTS, 13 voices)
 # #   tts.google.studio-o-de              Direct Provider (Studio-O DE, opt-in BYOK via [providers.google]; never a default)
 # primary_profile_id = "tts.openai.gpt-4o-mini-tts"
-# fallback_profile_id = "tts.local.kokoro-82m"     # Local fallback when cloud is unavailable
+# fallback_profile_id = "tts.local.sherpa-piper"   # Bundled local voices when cloud is unavailable
 # mode_source = "local"
 
 # ── External Coding Agent Bridge (desktop-only, default OFF) ─────────────────

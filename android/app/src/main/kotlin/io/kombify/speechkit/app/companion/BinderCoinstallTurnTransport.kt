@@ -34,9 +34,13 @@ class BinderCoinstallTurnTransport internal constructor(
 
     constructor(context: Context) : this(
         bind = { conn ->
-            val intent = Intent(CoinstallContract.BIND_ACTION)
-                .setPackage(CoinstallContract.COMPANION_PACKAGE)
-            context.bindService(intent, conn, Context.BIND_AUTO_CREATE)
+            // Only a genuine, pinned Companion receives a turn; none installed is the local-Assist fallback.
+            val companion = CompanionPackage.resolve(context.packageManager, ownPackage = context.packageName)
+            companion != null && context.bindService(
+                Intent(CoinstallContract.BIND_ACTION).setPackage(companion),
+                conn,
+                Context.BIND_AUTO_CREATE,
+            )
         },
         unbindService = { conn -> context.unbindService(conn) },
     )

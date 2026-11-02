@@ -30,6 +30,14 @@ import (
 // payload = "speechkit.edge_auth.v2" LF key id LF METHOD LF signed path LF
 // user LF org LF plan LF role LF ts LF nonce.
 //
+// Version v3 (`X-Edge-Auth-Signature: v3=...`, domain "speechkit.edge_auth.v3")
+// additionally binds X-Edge-Device-Id directly after the role: the device the
+// edge resolved for the caller (a registered edge device such as `dev_...`, or
+// `client:<oauth client>` for an app without a registered device). Session
+// admission counts per account and device (D-2026-10-26-14), so the device is
+// read only from a verified v3 envelope, never from a client header; a v2
+// envelope carries no device and counts as the account's unassigned device.
+//
 // The server accepts an envelope only for a known key id, within
 // edgeHMACMaxSkew of its own clock, for the method and path it was signed for,
 // and only once: a nonce seen inside the window is rejected. The request body
@@ -41,9 +49,15 @@ const (
 	EdgeAuthNonceHeader      = "X-Edge-Auth-Nonce"
 	EdgeAuthSignedPathHeader = "X-Edge-Auth-Signed-Path"
 
-	edgeEnvelopeVersion = "v2"
-	edgeEnvelopeDomain  = "speechkit.edge_auth.v2"
-	edgeNonceMaxLen     = 128
+	// EdgeDeviceIDHeader carries the edge-resolved device; only v3 signs it.
+	EdgeDeviceIDHeader = "X-Edge-Device-Id"
+
+	edgeEnvelopeVersion   = "v2"
+	edgeEnvelopeDomain    = "speechkit.edge_auth.v2"
+	edgeEnvelopeVersionV3 = "v3"
+	edgeEnvelopeDomainV3  = "speechkit.edge_auth.v3"
+	edgeNonceMaxLen       = 128
+	edgeDeviceIDMaxLen    = 128
 
 	// EdgeAuthKeyIDEnv names the key id of the primary edge secret;
 	// EdgeAuthNextKeyIDEnv the id of the rotation secret held in
@@ -100,7 +114,18 @@ func verifyEdgeEnvelope(r *http.Request, keys []EdgeKey, replay *edgeReplayGuard
 	if signature == "" || keyID == "" || ts == "" || nonce == "" || len(nonce) > edgeNonceMaxLen || signedPath == "" || userID == "" || orgID == "" || replay == nil {
 		return Identity{}, false
 	}
-	presented, ok := strings.CutPrefix(signature, edgeEnvelopeVersion+"=")
+	// v3 binds the device; v2 binds none, and a device header beside a v2
+	// envelope is unsigned and therefore ignored.
+	deviceID := ""
+	presented, ok := strings.CutPrefix(signature, edgeEnvelopeVersionV3+"=")
+	if ok {
+		deviceID = strings.TrimSpace(r.Header.Get(EdgeDeviceIDHeader))
+		if !validEdgeDeviceID(deviceID) {
+			return Identity{}, false
+		}
+	} else {
+		presented, ok = strings.CutPrefix(signature, edgeEnvelopeVersion+"=")
+	}
 	if !ok || presented == "" {
 		return Identity{}, false
 	}
@@ -121,7 +146,7 @@ func verifyEdgeEnvelope(r *http.Request, keys []EdgeKey, replay *edgeReplayGuard
 	if err != nil || !edgeTimestampFresh(ts, now) {
 		return Identity{}, false
 	}
-	payload := edgeEnvelopePayload(keyID, r.Method, signedPath, userID, orgID, plan, role, ts, nonce)
+	payload := edgeEnvelopePayload(keyID, r.Method, signedPath, userID, orgID, plan, role, deviceID, ts, nonce)
 	if !hmacEqual([]byte(presented), []byte(signEdgePayload(secret, payload))) {
 		return Identity{}, false
 	}
@@ -130,11 +155,31 @@ func verifyEdgeEnvelope(r *http.Request, keys []EdgeKey, replay *edgeReplayGuard
 	if !replay.claim(keyID+"\x00"+nonce, time.Unix(secs, 0).Add(edgeHMACMaxSkew), now) {
 		return Identity{}, false
 	}
-	return Identity{UserID: userID, OrgID: orgID, Plan: plan, Role: role, Source: "edge_hmac"}, true
+	return Identity{UserID: userID, OrgID: orgID, Plan: plan, Role: role, DeviceID: deviceID, Source: "edge_hmac"}, true
 }
 
-func edgeEnvelopePayload(keyID, method, signedPath, userID, orgID, plan, role, ts, nonce string) string {
-	return strings.Join([]string{edgeEnvelopeDomain, keyID, strings.ToUpper(method), signedPath, userID, orgID, plan, role, ts, nonce}, "\n")
+// edgeEnvelopePayload is the v2 payload for an empty deviceID and the v3
+// payload (device directly after role) otherwise.
+func edgeEnvelopePayload(keyID, method, signedPath, userID, orgID, plan, role, deviceID, ts, nonce string) string {
+	if deviceID == "" {
+		return strings.Join([]string{edgeEnvelopeDomain, keyID, strings.ToUpper(method), signedPath, userID, orgID, plan, role, ts, nonce}, "\n")
+	}
+	return strings.Join([]string{edgeEnvelopeDomainV3, keyID, strings.ToUpper(method), signedPath, userID, orgID, plan, role, deviceID, ts, nonce}, "\n")
+}
+
+// validEdgeDeviceID admits a non-empty, bounded, printable ASCII token
+// without whitespace, so a v3 device is never empty and never splits the
+// line-separated payload.
+func validEdgeDeviceID(deviceID string) bool {
+	if deviceID == "" || len(deviceID) > edgeDeviceIDMaxLen {
+		return false
+	}
+	for i := 0; i < len(deviceID); i++ {
+		if c := deviceID[i]; c <= 0x20 || c >= 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 func signEdgePayload(secret, payload string) string {
@@ -178,11 +223,21 @@ func SignEdgeEnvelope(r *http.Request, key EdgeKey, id Identity, signedAt time.T
 	} else {
 		r.Header.Del("X-Edge-Role")
 	}
+	version := edgeEnvelopeVersion
+	if id.DeviceID != "" {
+		if !validEdgeDeviceID(id.DeviceID) {
+			return errors.New("edge envelope: device id is invalid")
+		}
+		version = edgeEnvelopeVersionV3
+		r.Header.Set(EdgeDeviceIDHeader, id.DeviceID)
+	} else {
+		r.Header.Del(EdgeDeviceIDHeader)
+	}
 	r.Header.Set(EdgeAuthKeyIDHeader, key.ID)
 	r.Header.Set(EdgeAuthTimestampHeader, ts)
 	r.Header.Set(EdgeAuthNonceHeader, nonce)
 	r.Header.Set(EdgeAuthSignedPathHeader, signedPath)
-	payload := edgeEnvelopePayload(key.ID, r.Method, signedPath, id.UserID, id.OrgID, id.Plan, id.Role, ts, nonce)
-	r.Header.Set(EdgeAuthSignatureHeader, edgeEnvelopeVersion+"="+signEdgePayload(key.Secret, payload))
+	payload := edgeEnvelopePayload(key.ID, r.Method, signedPath, id.UserID, id.OrgID, id.Plan, id.Role, id.DeviceID, ts, nonce)
+	r.Header.Set(EdgeAuthSignatureHeader, version+"="+signEdgePayload(key.Secret, payload))
 	return nil
 }

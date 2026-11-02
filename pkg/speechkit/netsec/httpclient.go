@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/internal/dataprofilev1"
 )
 
 // Headers in this set are logged as the literal string "[REDACTED]" when
@@ -32,8 +34,14 @@ type ClientOptions struct {
 	// TLSMinVersion pins the minimum TLS version (default: tls.VersionTLS12).
 	TLSMinVersion uint16
 
+	// TLSConfig supplies caller-owned CA and client certificates. The transport
+	// clones it before applying the default minimum TLS version.
+	TLSConfig *tls.Config
+
 	// InnerTransport, if non-nil, is wrapped by the RedactingRoundTripper.
 	// Normally nil — the function constructs a hardened *http.Transport.
+	// Full Local additionally guards a clone of a concrete *http.Transport
+	// and refuses opaque transports whose dial cannot be admitted.
 	InnerTransport http.RoundTripper
 
 	// DisableKeepAlives turns off connection reuse. Leave false for best perf.
@@ -48,6 +56,7 @@ type ClientOptions struct {
 	// downloads and update checks; no audio, transcripts, prompts or
 	// credentials). While [Policy.AllowSetupTraffic] is true such a client is
 	// not bound by [Policy.Validation]; DialValidation still applies.
+	// The immutable Full Local ceiling has no setup-traffic exception.
 	SetupTraffic bool
 }
 
@@ -76,11 +85,37 @@ func NewClient(opts ClientOptions) *http.Client {
 	if minTLS == 0 {
 		minTLS = tls.VersionTLS12
 	}
+	tlsConfig := &tls.Config{MinVersion: minTLS}
+	if opts.TLSConfig != nil {
+		tlsConfig = opts.TLSConfig.Clone()
+		if tlsConfig.MinVersion == 0 {
+			tlsConfig.MinVersion = minTLS
+		}
+	}
 	// The pointer is kept, not copied: providers adjust their Validation field
 	// after construction and the dial must see the current value.
 	local := opts.DialValidation
 
 	inner := opts.InnerTransport
+	if inner != nil {
+		// A custom transport must expose the actual connection seam. Opaque
+		// transports cannot attest that a preflight check is the dial they use.
+		if t, ok := inner.(*http.Transport); ok {
+			original := t
+			t = t.Clone()
+			t.DialTLSContext = nil
+			t.DialTLS = nil //nolint:staticcheck // prevent a legacy TLS hook bypass
+			t.Dial = nil    //nolint:staticcheck // prevent a legacy dial hook bypass
+			// A caller's proxy/custom dial can emit packets before a peer check.
+			// Keep its TLS settings, but use only the admitted native dial in
+			// this Full Local clone. Standard still uses original unchanged.
+			t.DialContext = guardedDialContext(&net.Dialer{Timeout: 10 * time.Second}, local, opts.SetupTraffic)
+			t.Proxy = nil
+			inner = &bootTransport{base: original, guarded: t}
+		} else {
+			inner = &bootTransport{base: inner}
+		}
+	}
 	if inner == nil {
 		dialer := &net.Dialer{
 			Timeout:   10 * time.Second,
@@ -93,7 +128,7 @@ func NewClient(opts ClientOptions) *http.Client {
 		var proxy func(*http.Request) (*url.URL, error)
 		if local == nil {
 			proxy = func(req *http.Request) (*url.URL, error) {
-				if len(activeValidations(nil, opts.SetupTraffic)) > 0 {
+				if FullLocal() || len(activeValidations(nil, opts.SetupTraffic)) > 0 {
 					return nil, nil
 				}
 				return http.ProxyFromEnvironment(req)
@@ -108,9 +143,7 @@ func NewClient(opts ClientOptions) *http.Client {
 			TLSHandshakeTimeout:   10 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
 			DisableKeepAlives:     opts.DisableKeepAlives,
-			TLSClientConfig: &tls.Config{ //nolint:gosec // G402: minTLS default is tls.VersionTLS12, validated above
-				MinVersion: minTLS,
-			},
+			TLSClientConfig:       tlsConfig,
 		}
 	}
 
@@ -153,10 +186,40 @@ func activeValidations(local *ValidationOptions, setupTraffic bool) []Validation
 // active option set before opening a connection. With no option set active it
 // is a plain dial.
 func guardedDialContext(dialer *net.Dialer, local *ValidationOptions, setupTraffic bool) func(context.Context, string, string) (net.Conn, error) {
+	return guardedDial(dialer.DialContext, local, setupTraffic)
+}
+
+func guardedDial(next dataprofile.DialFunc, local *ValidationOptions, setupTraffic bool) dataprofile.DialFunc {
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		if err := bootError(); err != nil {
+			return nil, err
+		}
+		if FullLocal() {
+			// The canonical guard resolves through admitted DNS, pins every IP,
+			// and verifies the peer. The existing scope may only narrow it.
+			return dataprofile.GuardDial(func(ctx context.Context, network, address string) (net.Conn, error) {
+				if strings.HasPrefix(network, "unix") {
+					return next(ctx, network, address)
+				}
+				host, _, err := net.SplitHostPort(address)
+				if err != nil {
+					return nil, err
+				}
+				ip := net.ParseIP(host)
+				if i := strings.LastIndex(host, "%"); i >= 0 {
+					ip = net.ParseIP(host[:i])
+				}
+				for _, v := range activeValidations(local, false) {
+					if err := ValidateResolvedIP(ip, v); err != nil {
+						return nil, err
+					}
+				}
+				return next(ctx, network, address)
+			})(ctx, network, address)
+		}
 		validations := activeValidations(local, setupTraffic)
 		if len(validations) == 0 {
-			return dialer.DialContext(ctx, network, address)
+			return next(ctx, network, address)
 		}
 		check := func(ip net.IP) error {
 			for _, v := range validations {
@@ -176,7 +239,7 @@ func guardedDialContext(dialer *net.Dialer, local *ValidationOptions, setupTraff
 			if err := check(ip); err != nil {
 				return nil, fmt.Errorf("netsec: dial target %s: %w", address, err)
 			}
-			return dialer.DialContext(ctx, network, address)
+			return next(ctx, network, address)
 		}
 
 		resolved, err := net.DefaultResolver.LookupIPAddr(ctx, host)
@@ -195,7 +258,7 @@ func guardedDialContext(dialer *net.Dialer, local *ValidationOptions, setupTraff
 
 		var lastErr error
 		for _, addr := range resolved {
-			conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(addr.String(), port))
+			conn, err := next(ctx, network, net.JoinHostPort(addr.String(), port))
 			if err == nil {
 				return conn, nil
 			}
@@ -203,6 +266,21 @@ func guardedDialContext(dialer *net.Dialer, local *ValidationOptions, setupTraff
 		}
 		return nil, fmt.Errorf("netsec: dial %s: %w", address, lastErr)
 	}
+}
+
+type bootTransport struct{ base, guarded http.RoundTripper }
+
+func (t *bootTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if err := bootError(); err != nil {
+		return nil, err
+	}
+	if FullLocal() {
+		if t.guarded == nil {
+			return nil, fmt.Errorf("%s: opaque HTTP transport has no guarded dial", dataprofile.ReasonFullLocal)
+		}
+		return t.guarded.RoundTrip(req)
+	}
+	return t.base.RoundTrip(req)
 }
 
 // RedactingRoundTripper is an http.RoundTripper that records redacted

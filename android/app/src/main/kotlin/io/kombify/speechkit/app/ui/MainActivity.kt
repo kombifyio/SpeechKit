@@ -60,6 +60,7 @@ import io.kombify.speechkit.app.keyboard.KeyboardIconChoice
 import io.kombify.speechkit.app.keyboard.KeyboardIconPreferences
 import io.kombify.speechkit.app.keyboard.iconChoicesFor
 import io.kombify.speechkit.app.build.ShippedDefaults
+import io.kombify.speechkit.app.companion.CompanionPackage
 import io.kombify.speechkit.app.companion.CompanionProvision
 import io.kombify.speechkit.app.companion.CompanionProvisioner
 import io.kombify.speechkit.app.companion.ConnectCloudIntent
@@ -666,7 +667,8 @@ private fun ServerConnectionCard(
     }
 
     fun openCompanion() {
-        val launch = context.packageManager.getLaunchIntentForPackage(CoinstallContract.COMPANION_PACKAGE)
+        val installed = CompanionPackage.resolve(context.packageManager, ownPackage = context.packageName)
+        val launch = installed?.let(context.packageManager::getLaunchIntentForPackage)
         if (launch != null) {
             context.startActivity(launch)
             return
@@ -674,7 +676,7 @@ private fun ServerConnectionCard(
         context.startActivity(
             Intent(
                 Intent.ACTION_VIEW,
-                Uri.parse("market://details?id=${CoinstallContract.COMPANION_PACKAGE}"),
+                Uri.parse("market://details?id=${CoinstallContract.COMPANION_RELEASE_PACKAGE}"),
             ),
         )
     }

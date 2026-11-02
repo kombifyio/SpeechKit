@@ -41,6 +41,7 @@ func DefaultManifests() []ProviderOptionManifest {
 		geminiTTSManifest(),
 		huggingFaceTTSManifest(),
 		piperTTSManifest(),
+		sherpaPiperTTSManifest(),
 		xaiTTSManifest(),
 		deepgramVoiceAgentManifest(),
 		assemblyAIVoiceAgentManifest(),
@@ -367,6 +368,15 @@ func huggingFaceTTSManifest() ProviderOptionManifest {
 	})
 }
 
+func sherpaPiperTTSManifest() ProviderOptionManifest {
+	return manifest("sherpa_piper", "Local voices (sherpa-onnx Piper)", ModalityTTS, []string{"tts.local.sherpa-piper"}, []OptionSupport{
+		derived(OptionLanguage, TypeString, "Language", "A German locale selects the bundled Thorsten voice; every other locale selects Lessac.", "https://github.com/k2-fsa/sherpa-onnx"),
+		derived(OptionVoice, TypeString, "Voice", "An explicit voice id overrides the locale when it names one of the bundled voices.", "https://github.com/k2-fsa/sherpa-onnx"),
+		derived(OptionSpeed, TypeFloat, "Speed", "Passed to sherpa-onnx as the speech-speed multiplier (1 keeps the trained pace).", "https://github.com/k2-fsa/sherpa-onnx"),
+		unsupported(OptionAudioFormat, TypeString, "Audio format", "The sidecar always returns 16-bit PCM WAV."),
+	})
+}
+
 func piperTTSManifest() ProviderOptionManifest {
 	return manifest("piper", "Piper Local TTS", ModalityTTS, []string{"tts.local.piper"}, []OptionSupport{
 		native(OptionVoice, TypeString, "Voice model", "--model", "https://github.com/rhasspy/piper"),
@@ -522,7 +532,7 @@ func noStoreSupport(provider, modality string) OptionSupport {
 		deepgramMIP = "https://developers.deepgram.com/docs/the-deepgram-model-improvement-partnership-program"
 	)
 	switch provider {
-	case "local", "vps", "ollama", "piper":
+	case "local", "vps", "ollama", "piper", "sherpa_piper":
 		return providerDefault(OptionNoStore, TypeBool, label,
 			"Runs on this device or on a host the user operates, so no request content reaches a vendor.", "")
 	case "deepgram":

@@ -23,6 +23,7 @@ import (
 
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
@@ -132,6 +133,10 @@ func (c *Config) providerDecision(provider string) (bool, string, string) {
 // identifier the option manifests use ("vps", "gemini", "piper", ...); an
 // empty modality skips the retention check (LLM surfaces have no manifest).
 func (c *Config) ProviderConstructionAllowed(adapter, modality string) (bool, string) {
+	if !c.fullLocalConstructionAllowed(adapter, modality) {
+		reportPolicyBlocked("DataProfile", adapter)
+		return false, "data_profile_full_local"
+	}
 	if ok, reason, policy := c.providerDecision(adapter); !ok {
 		reportPolicyBlocked(policy, adapter)
 		return false, reason
@@ -165,6 +170,15 @@ func userOperatedProvider(provider string) bool {
 // google) is judged by its own surface. Without such a manifest the provider
 // id is used.
 func (c *Config) ProfileAllowedUnderRetention(profileID, provider, modality string) (bool, string) {
+	if netsec.FullLocal() {
+		profile, ok := catalog.DefaultCatalog().Profile(profileID)
+		if !ok {
+			return false, "data_profile_full_local"
+		}
+		if allowed, reason := framework.ProfileAllowedForBoot(profile); !allowed {
+			return false, reason
+		}
+	}
 	if userOperatedProvider(provider) {
 		return true, ""
 	}
@@ -185,6 +199,9 @@ func (c *Config) ProfileAllowedUnderRetention(profileID, provider, modality stri
 // the allowlist names github_copilot (or the reference client has no list)
 // and Copilot is enabled, where a Copilot\Enabled=0 pin wins over config.
 func (c *Config) CopilotAllowed() (bool, string) {
+	if netsec.FullLocal() {
+		return false, "data_profile_full_local"
+	}
 	if c == nil {
 		return false, framework.PolicyReasonProviderNotAllowed
 	}

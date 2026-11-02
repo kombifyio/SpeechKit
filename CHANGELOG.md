@@ -94,6 +94,50 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.78.4 (2026-11-02)
+
+### Bug Fixes
+
+* read SpeechKit release identity from the product tree
+
+## 0.78.3 (2026-11-02)
+
+### Features
+
+* **speechkit:** kombify product vocabulary via operator terms, synced to signed-in desktops
+* **speechkit:** kombify terms learn the mishearings seen on Early Access
+
+### Bug Fixes
+
+* **ci:** SpeechKit Early Access keeps the service-relative Dockerfile path
+* **ci:** SpeechKit Early Access runs from speechkit/ after the consolidation
+
+## 0.78.2 (2026-11-01)
+
+### Features
+
+* **coinstall:** Companion implements ICoinstallService so the SpeechKit assistant and keyboard reach it
+* **speechkit:** count voice sessions per device from the signed edge identity
+
+### Bug Fixes
+
+* **coinstall:** keep CompanionPackage free of ecosystem coupling for the OSS boundary
+* **speechkit:** bound devices per account, drop the heartbeat, keep the OSS boundary ( review)
+
+## 0.78.1 (2026-11-01)
+
+### Bug Fixes
+
+* **box:** the public publisher and the publication workflows follow the consolidated repository layout
+
+## 0.78.0 (2026-11-01)
+
+### Bug Fixes
+
+* **speechkit:** release tooling and repository references follow the consolidated repository layout
+
+
+
 ## [0.77.19](https://github.com/kombifyio/SpeechKit/compare/v0.77.18...v0.77.19) (2026-10-30)
 
 

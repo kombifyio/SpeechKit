@@ -2,13 +2,14 @@ package config
 
 // privacy.go holds the [privacy] config section and the helpers every
 // enforcement point uses to resolve the effective network scope. The scope is
-// a Device-Target concept; the Server-Target keeps its own deployment
-// hardening and ignores this block.
+// enforced by the Device-Target; the Standard Server-Target retains its own
+// deployment hardening. Full Local additionally caps both hosts at boot.
 
 import (
 	"fmt"
 
 	framework "github.com/kombifyio/SpeechKit/pkg/speechkit"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 )
 
@@ -70,7 +71,7 @@ type PrivacyConfig struct {
 // address keeps working. A user who stored the stricter device_only keeps it.
 func (c *Config) NetworkScope() framework.NetworkScope {
 	scope := c.ConfiguredNetworkScope()
-	if scope == framework.NetworkScopeOpen && c.Policy().EnforcesLocalOnly() {
+	if scope == framework.NetworkScopeOpen && (netsec.FullLocal() || c.Policy().EnforcesLocalOnly()) {
 		return framework.NetworkScopeLocalNetwork
 	}
 	return scope
@@ -95,7 +96,11 @@ func (c *Config) ConfiguredNetworkScope() framework.NetworkScope {
 // setup traffic carries no audio, transcripts, prompts or credentials, the
 // on-device model it fetches is what makes local-only processing possible,
 // and administrators control update traffic with Update\Enabled.
+// Full Local overrides that setup opt-in for the whole process lifetime.
 func (c *Config) SetupTrafficAllowed() bool {
+	if netsec.FullLocal() {
+		return false
+	}
 	scope := c.ConfiguredNetworkScope()
 	if !scope.Restricted() {
 		return true

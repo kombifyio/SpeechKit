@@ -149,7 +149,11 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 	if err != nil {
 		return nil, status, err
 	}
-	h.StartNativeCleanup(ctx)
+	// The cleanup loop walks the provider-resource journal of every tenant
+	// once a minute; Early Access leaves that to Stable.
+	if !app.EarlyAccess() {
+		h.StartNativeCleanup(ctx)
+	}
 	return h, status, nil
 }
 
@@ -285,6 +289,12 @@ func buildVoiceAgentToolRouter(cfg *config.Config) vsserver.SessionToolRouter {
 }
 
 func buildLiveKitIssuer(cfg *config.Config, app *App) *vsserver.LiveKitTokenIssuer {
+	if netsec.FullLocal() {
+		if app != nil && app.Health != nil {
+			app.Health.SetReady("livekit.token_mint", StatusOK, "disabled (data_profile_full_local)")
+		}
+		return nil
+	}
 	lk := cfg.Server.LiveKit
 	if !lk.Enabled {
 		if app != nil && app.Health != nil {

@@ -24,20 +24,24 @@ the sidecars stay on the compose network. An existing Ollama can replace the
 The Kokoro-FastAPI container runs `espeak-ng` (GPL-3.0) as a separate
 phonemizer program. It is not linked into SpeechKit.
 
-### Why Kokoro and not Piper
+### Why Kokoro for this server image
 
-SpeechKit's in-process Piper adapter (`[tts.piper]`) runs the `piper` CLI as
-a subprocess. That CLI is the archived MIT `rhasspy/piper`, whose maintained
-successor `OHF-Voice/piper1-gpl` is GPL-3.0. The default voices
-`en_US-amy-medium` and `de_DE-thorsten-medium` are fine-tuned from the
-`lessac` voice, whose training data carries a restrictive Blizzard 2013
-license. The server image also does not bundle Piper. Kokoro-82M is
-Apache-2.0 end to end, so it is the default.
+The on-device default (`tts.local.sherpa-piper`) speaks Piper VITS Thorsten
+(German; the dataset is CC0-1.0 and the weights are a fine-tune of Lessac)
+and Lessac (English, Blizzard 2013) through sherpa-onnx, with no network and
+no cloud key. Its phoneme tables are espeak-ng data (GPL-3.0), kept beside
+the voices and not linked into SpeechKit.
 
-Kokoro has no German voice. For German, run [Speaches](https://github.com/speaches-ai/speaches)
-(MIT) instead of Kokoro-FastAPI. It serves the same `/v1/audio/speech` API
-with Piper voices. Point `[tts.local] url` at it and set `voice` to the
-Speaches voice ID.
+This server image does not carry those voices. Its default stays Kokoro-82M
+(Apache-2.0 end to end) behind `[tts.local]`. The other Piper adapter
+(`[tts.piper]`) runs the `piper` CLI as a subprocess. That CLI is the archived
+MIT `rhasspy/piper`, whose maintained successor `OHF-Voice/piper1-gpl` is
+GPL-3.0, and the voices an operator fetches for it are not pinned.
+
+Kokoro has no German voice. For German on the server, run
+[Speaches](https://github.com/speaches-ai/speaches) (MIT) instead of
+Kokoro-FastAPI. It serves the same `/v1/audio/speech` API with Piper voices.
+Point `[tts.local] url` at it and set `voice` to the Speaches voice ID.
 
 ## Server profile
 

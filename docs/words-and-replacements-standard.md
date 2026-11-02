@@ -197,6 +197,16 @@ V1 ships with built-in examples:
   spoken replacements for API, SDK, JSON, YAML, GitHub, TypeScript, PowerShell,
   Wails, Auth0, Cloudflare, dot, slash, underscore, dash, arrow, and equals.
 
+An operator can add one more template of its own, `operator-terms`, with
+`[[customization.terms]]` entries (`term`, `sounds_like`, optional `language`)
+in the server config. The framework ships none. It is empty and absent from the
+catalog until terms are set, then always active, so a deployment brings its own
+product vocabulary without a fork: the terms reach the providers as keyterms or
+a prompt, and each `sounds_like` mishearing resolves back to `term` after
+recognition. The pack is served like any template at
+`/customization/templates/operator-terms/pack`, which lets a client install the
+same vocabulary for its local providers.
+
 The native Template Catalog API is:
 
 | Operation | Meaning |

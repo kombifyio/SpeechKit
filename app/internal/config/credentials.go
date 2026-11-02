@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/app/internal/secrets"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
 
 const (
@@ -295,6 +296,11 @@ func googleSTTKeyEnvCandidates(cfg *Config) []string {
 
 // dopplerGet tries to resolve a secret via `doppler secrets get` CLI.
 func dopplerGet(key string) string {
+	// An external CLI owns its own sockets and is outside the Go guard.
+	// Local env/token-store resolution remains available without cloud access.
+	if netsec.FullLocal() {
+		return ""
+	}
 	dopplerPath := findDopplerExecutable()
 	if dopplerPath == "" {
 		return ""

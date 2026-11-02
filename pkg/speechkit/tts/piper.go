@@ -111,9 +111,12 @@ func (p *Piper) Health(ctx context.Context) error {
 	if p == nil {
 		return errors.New("piper: nil provider")
 	}
+	if err := procguard.RequireSpeechConfinement(); err != nil {
+		return err
+	}
 	cmd := exec.CommandContext(ctx, p.binary, "--version") // #nosec G204 -- operator-supplied Piper binary path, executed only as configured local TTS provider.
 	cmd.Env = procguard.HostSidecarEnv()
-	if err := cmd.Run(); err != nil {
+	if err := procguard.Run(cmd); err != nil {
 		return fmt.Errorf("piper: probing binary %q: %w", p.binary, err)
 	}
 	return nil
@@ -125,6 +128,9 @@ func (p *Piper) Health(ctx context.Context) error {
 func (p *Piper) Synthesize(ctx context.Context, text string, opts SynthesizeOpts) (*Result, error) {
 	if p == nil {
 		return nil, errors.New("piper: nil provider")
+	}
+	if err := procguard.RequireSpeechConfinement(); err != nil {
+		return nil, err
 	}
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -154,7 +160,7 @@ func (p *Piper) Synthesize(ctx context.Context, text string, opts SynthesizeOpts
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	if err := procguard.Run(cmd); err != nil {
 		return nil, fmt.Errorf("piper: run %q: %w (stderr: %s)", p.binary, err, strings.TrimSpace(stderr.String()))
 	}
 	audio := stdout.Bytes()

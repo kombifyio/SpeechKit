@@ -120,9 +120,7 @@ private val companionProvisionExecutor: Executor = Executors.newSingleThreadExec
 }
 
 private fun companionInstalled(context: Context): Boolean =
-    runCatching {
-        context.packageManager.getPackageInfo(CoinstallContract.COMPANION_PACKAGE, 0)
-    }.isSuccess
+    CompanionPackage.resolve(context.packageManager, ownPackage = context.packageName) != null
 
 // ANDROID_ID is the contract v1 ProvisionRequest.deviceId: Companion keys
 // idempotent provisioning on it (docs/architecture/android-coinstall-contract.md).
@@ -169,8 +167,9 @@ private fun bindCompanion(context: Context): CompanionProvision {
 
         override fun onServiceDisconnected(name: ComponentName?) = Unit
     }
-    val intent = Intent(CoinstallContract.BIND_ACTION)
-        .setPackage(CoinstallContract.COMPANION_PACKAGE)
+    val companion = CompanionPackage.resolve(context.packageManager, ownPackage = context.packageName)
+        ?: return CompanionProvision.Unavailable
+    val intent = Intent(CoinstallContract.BIND_ACTION).setPackage(companion)
     val bound = runCatching {
         context.bindService(intent, conn, Context.BIND_AUTO_CREATE)
     }.getOrDefault(false)

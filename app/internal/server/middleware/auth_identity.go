@@ -13,7 +13,11 @@ type Identity struct {
 	OrgID  string `json:"org_id"`
 	Plan   string `json:"plan"`
 	Role   string `json:"role,omitempty"` // "admin" | "" (default)
-	Source string `json:"source"`         // "none" | "bearer" | "edge_hmac" | "basic" | "admin_session"
+	// DeviceID is the edge-resolved device of the caller, set only from a
+	// verified v3 edge envelope (auth_edge_envelope.go), empty otherwise.
+	// Session admission counts per (UserID, DeviceID) (D-2026-10-26-14).
+	DeviceID string `json:"device_id,omitempty"`
+	Source   string `json:"source"` // "none" | "bearer" | "edge_hmac" | "basic" | "admin_session"
 }
 
 type identityCtxKey struct{}

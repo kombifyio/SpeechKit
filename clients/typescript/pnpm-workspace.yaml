@@ -3,5 +3,21 @@ packages:
   - apps/*
 allowBuilds:
   esbuild: true
+# Vite+ (D-2026-10-30-06): one pinned version of the toolchain. `vite` is the
+# vite-plus-core build of Vite 8 (bundled Vite 8.3.5 at 1.4.0) and `vp dev`,
+# `vp build` and `vp test` need every package that imports `vite` to resolve to it.
+# Move both entries together with the other fleet repositories.
+catalog:
+  vite: npm:@voidzero-dev/vite-plus-core@1.4.0
+  vite-plus: 1.4.0
+# The vite-plus-core alias is version 1.x of the Vite 8 line, so peers that declare
+# `vite ^8` (@inlang/paraglide-js) would otherwise warn.
+peerDependencyRules:
+  allowedVersions:
+    vite: "*"
+overrides:
+  # A transitive `vite` (paraglide-js) must be the instance the lab build uses.
+  vite: "catalog:"
+  vite-plus: "catalog:"
 minimumReleaseAgeExclude:
   - '@inlang/paraglide-js@2.29.1'

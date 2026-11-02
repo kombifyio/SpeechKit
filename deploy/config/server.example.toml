@@ -280,6 +280,13 @@ enabled        = false
 api_key_env    = "GROQ_API_KEY"
 stt_model      = "whisper-large-v3-turbo"
 
+# Vocabulary of your own deployment (product and place names, jargon). Each term
+# is a recognition hint for the providers; each sounds_like entry is a common
+# mishearing that is replaced by the term after recognition.
+# [[customization.terms]]
+# term = "Acme Cloud"
+# sounds_like = ["acme klaud", "ac me cloud"]
+
 [routing]
 # Server-Target containers ship without an in-process whisper.cpp, so the STT
 # router must reach cloud providers (HF, OpenAI). The kernel default is

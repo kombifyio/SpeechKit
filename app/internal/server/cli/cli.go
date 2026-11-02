@@ -12,8 +12,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/kombifyio/SpeechKit/app/host/applog"
+	"github.com/kombifyio/SpeechKit/app/internal/auditlog"
 	"github.com/kombifyio/SpeechKit/app/internal/config"
 	"github.com/kombifyio/SpeechKit/app/internal/config/security"
 	"github.com/kombifyio/SpeechKit/app/internal/server/core"
@@ -119,6 +122,12 @@ func runOnce(opts Options) int {
 	}
 
 	setupLogger(cfg)
+	stopAudit, err := configureLocalAudit(cfg)
+	if err != nil {
+		slog.Error("configure local audit", "err", err)
+		return 2
+	}
+	defer stopAudit()
 	for _, note := range defaultNotes {
 		// codeql[go/clear-text-logging] runtime default note names the env var, not the key value
 		slog.Info("server runtime default", "msg", note)
@@ -148,6 +157,31 @@ func runOnce(opts Options) int {
 
 	slog.Info(banner + " stopped cleanly")
 	return 0
+}
+
+// Configure the canonical opt-in local sink before provider events are emitted.
+func configureLocalAudit(cfg *config.Config) (func(), error) {
+	if !cfg.Audit.Enabled && !cfg.Audit.ForwardRequired && !cfg.Audit.EventLogEnabled {
+		return func() {}, nil
+	}
+	dir := ""
+	if cfg.Audit.Enabled {
+		executable, err := os.Executable()
+		if err != nil {
+			return nil, err
+		}
+		dir, err = applog.Dir(filepath.Dir(executable))
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := auditlog.ConfigureFromOptions(auditlog.ConfigOptions{
+		Enabled: cfg.Audit.Enabled, Dir: dir, RetentionDays: cfg.Audit.RetentionDays,
+		ForwardRequired: cfg.Audit.ForwardRequired, EventLogEnabled: cfg.Audit.EventLogEnabled,
+	}); err != nil {
+		return nil, err
+	}
+	return func() { _ = auditlog.ConfigureFromOptions(auditlog.ConfigOptions{}) }, nil
 }
 
 func defaultConfigPath() string {

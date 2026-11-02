@@ -94,7 +94,7 @@ func Adopt(cmd *exec.Cmd) error {
 // The kill-on-close job is what ties a child to this process, and a child
 // joins it after it has started (Adopt). Nothing about the command has to be
 // arranged beforehand, so this is a real no-op rather than a gap.
-func Prepare(*exec.Cmd) {}
+func preparePlatform(*exec.Cmd) {}
 
 // Shutdown has nothing to do on Windows.
 //

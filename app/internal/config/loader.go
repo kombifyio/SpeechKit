@@ -16,6 +16,7 @@ import (
 	customtemplates "github.com/kombifyio/SpeechKit/app/internal/customize/templates"
 	"github.com/kombifyio/SpeechKit/app/internal/productid"
 	"github.com/kombifyio/SpeechKit/app/internal/voiceagentprofile"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
 
 var (
@@ -92,6 +93,9 @@ func normalizeFreshConfig(cfg *Config) {
 	EnableAlwaysOnLLM(cfg)
 	normalizeWakewordConfig(cfg)
 	EnforcePolicy(cfg)
+	if netsec.FullLocal() {
+		ApplyEgressPolicy(cfg)
+	}
 }
 
 // Load reads config from the given path. Falls back to defaults if file not found.
@@ -99,6 +103,9 @@ func normalizeFreshConfig(cfg *Config) {
 // policy of an unnamed product cannot be read, and reading none would be
 // fail-open.
 func Load(path string) (*Config, error) {
+	if err := netsec.BindBootProfile(); err != nil {
+		return nil, err
+	}
 	if _, err := productid.Current(); err != nil {
 		return nil, err
 	}
@@ -207,6 +214,9 @@ func Load(path string) (*Config, error) {
 	// The backfill chain above may copy legacy values over pinned ones (the
 	// [feedback] save_audio bridge, for one); the policy has the last word.
 	EnforcePolicy(cfg)
+	if netsec.FullLocal() {
+		ApplyEgressPolicy(cfg)
+	}
 	return cfg, nil
 }
 
@@ -253,6 +263,9 @@ func recoverUnreadableConfig(path string, data []byte, decodeErr error) *Config 
 // the policy so no code path can save its way around it. Outside this
 // package every write goes through Shared, which calls it under its lock.
 func save(path string, cfg *Config) error {
+	if err := cfg.ValidateFullLocalSelections(); err != nil {
+		return err
+	}
 	if path == "" {
 		path = defaultConfigPath()
 	}
@@ -272,6 +285,9 @@ func save(path string, cfg *Config) error {
 	EnforcePolicy(cfg)
 
 	var buf bytes.Buffer
+	if err := cfg.ValidateFullLocalSelections(); err != nil {
+		return err
+	}
 	if err := toml.NewEncoder(&buf).Encode(persistable(cfg)); err != nil {
 		return fmt.Errorf("encode config: %w", err)
 	}
@@ -391,6 +407,13 @@ func NormalizeCustomizationDefaults(cfg *Config) {
 		return
 	}
 	cfg.Customization.ActiveTemplateIDs = customtemplates.NormalizeActiveTemplateIDs(cfg.Customization.ActiveTemplateIDs)
+	terms := make([]customtemplates.OperatorTerm, 0, len(cfg.Customization.Terms))
+	for _, term := range cfg.Customization.Terms {
+		terms = append(terms, customtemplates.OperatorTerm{Term: term.Term, SoundsLike: term.SoundsLike, Language: term.Language})
+	}
+	if len(terms) > 0 {
+		customtemplates.SetOperatorTerms(terms)
+	}
 }
 
 // normalizeWakewordConfig pins the wake-word backend to a canonical,

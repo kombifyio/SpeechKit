@@ -15,6 +15,8 @@ import (
 	"runtime"
 	"strconv"
 	"time"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/procguard"
 )
 
 // errForeignListener reports a listener on the whisper-server port that is
@@ -90,6 +92,12 @@ func newServerIdentity() (*serverIdentity, error) {
 	if err := os.WriteFile(filepath.Join(dir, token[:32]+".txt"), []byte(id.nonce), 0o600); err != nil {
 		id.remove()
 		return nil, err
+	}
+	for _, path := range []string{filepath.Join(dir, token[:32]+".txt"), dir} {
+		if err := procguard.PrepareChildRead(path); err != nil {
+			id.remove()
+			return nil, err
+		}
 	}
 	return id, nil
 }

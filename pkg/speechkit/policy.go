@@ -1,6 +1,35 @@
 package speechkit
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
+)
+
+// ProfileAllowedForBoot applies the immutable deployment ceiling to the actual
+// catalog row, independently of a caller's empty (= all) runtime allowlist.
+// Speech engines are identified by their catalog contract, never by the broad
+// LocalProvider family, which also includes Parakeet and Kokoro. The bundled
+// sherpa-onnx Piper voices (sherpa_piper) are a local engine, like Piper.
+func ProfileAllowedForBoot(profile ProviderProfile) (bool, string) {
+	if !netsec.FullLocal() {
+		return true, ""
+	}
+	allowed := false
+	switch NormalizeMode(profile.Mode) {
+	case ModeDictation:
+		allowed = profile.ID == "stt.local.whispercpp" && profile.ModelID == "whisper.cpp"
+	case ModeTTS:
+		allowed = (profile.AdapterKind == "piper_local" && profile.Provider == "piper") ||
+			(profile.AdapterKind == "sherpa_piper" && profile.Provider == "sherpa_piper")
+	case ModeAssist, ModeVoiceAgent:
+		allowed = profile.ProviderKind == ProviderKindLocalBuiltIn || profile.ProviderKind == ProviderKindLocalProvider
+	}
+	if !allowed {
+		return false, "data_profile_full_local"
+	}
+	return true, ""
+}
 
 // ModeBehavior describes how much mode-specific intelligence a host enables.
 type ModeBehavior string
@@ -32,6 +61,9 @@ func FilterProviderProfiles(profiles []ProviderProfile, policy RuntimePolicy) []
 
 	filtered := make([]ProviderProfile, 0, len(profiles))
 	for _, profile := range profiles {
+		if allowed, _ := ProfileAllowedForBoot(profile); !allowed {
+			continue
+		}
 		mode := NormalizeMode(profile.Mode)
 		if mode == ModeNone || !enabledModes[mode] {
 			continue
@@ -66,6 +98,9 @@ func ValidateRuntimePolicy(profiles []ProviderProfile, policy RuntimePolicy) err
 		if !ok {
 			return fmt.Errorf("speechkit: allowed profile %q not found", profileID)
 		}
+		if allowed, reason := ProfileAllowedForBoot(profile); !allowed {
+			return fmt.Errorf("%s: profile %q", reason, profileID)
+		}
 		mode := NormalizeMode(profile.Mode)
 		if !enabledModes[mode] {
 			return fmt.Errorf("speechkit: allowed profile %q belongs to disabled mode %q", profileID, mode)
@@ -87,6 +122,9 @@ func ValidateRuntimePolicy(profiles []ProviderProfile, policy RuntimePolicy) err
 		profile, ok := byID[profileID]
 		if !ok {
 			return fmt.Errorf("speechkit: fixed profile %q not found", profileID)
+		}
+		if allowed, reason := ProfileAllowedForBoot(profile); !allowed {
+			return fmt.Errorf("%s: profile %q", reason, profileID)
 		}
 		if len(allowedProfiles) > 0 && !allowedProfiles[profileID] {
 			return fmt.Errorf("speechkit: fixed profile %q is not allowed by policy", profileID)
@@ -144,6 +182,9 @@ func ValidateModeSettingsForPolicy(profiles []ProviderProfile, settings ModeSett
 			profile, ok := byID[profileID]
 			if !ok {
 				return fmt.Errorf("speechkit: %s profile %q for %q not found", label, profileID, mode)
+			}
+			if allowed, reason := ProfileAllowedForBoot(profile); !allowed {
+				return fmt.Errorf("%s: %s profile %q", reason, label, profileID)
 			}
 			if err := ValidateProfileForMode(profile, mode); err != nil {
 				return err

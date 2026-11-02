@@ -472,6 +472,7 @@ func defaults() *Config {
 			},
 		},
 	}
+	applyFullLocalDefaults(cfg)
 	return cfg
 }
 

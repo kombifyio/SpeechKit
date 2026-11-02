@@ -37,6 +37,7 @@ func (h *Handler) config(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"version":                   h.version,
+		"privacy":                   h.cfg.EffectivePrivacy(),
 		"public_url":                strings.TrimRight(strings.TrimSpace(h.cfg.Server.PublicURL), "/"),
 		"modes":                     h.cfg.Server.Modes,
 		"auth_mode":                 h.cfg.Server.AuthMode,

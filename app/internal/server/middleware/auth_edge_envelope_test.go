@@ -239,3 +239,59 @@ func TestLegacyEdgeHMACRejected(t *testing.T) {
 		t.Fatalf("legacy HMAC accepted; got %d", code)
 	}
 }
+
+// The v3 envelope binds the edge-resolved device; SpeechKit counts sessions per
+// device on it (D-2026-10-26-14), so only a signed device may reach Identity.
+func TestEdgeEnvelopeV3DeviceBinding(t *testing.T) {
+	key := EdgeKey{ID: "primary", Secret: envelopeTestSecret}
+	device := "dev_" + strings.Repeat("A", 43)
+	for _, tc := range []struct {
+		name       string
+		device     string
+		mutate     func(*http.Request)
+		want       int
+		wantDevice string
+	}{
+		{name: "v3 device accepted", device: device, want: http.StatusOK, wantDevice: device},
+		{name: "client bucket accepted", device: "client:abc123", want: http.StatusOK, wantDevice: "client:abc123"},
+		{name: "v3 device swapped", device: device, mutate: func(r *http.Request) { r.Header.Set(EdgeDeviceIDHeader, "dev_"+strings.Repeat("B", 43)) }, want: http.StatusUnauthorized},
+		{name: "v3 device stripped", device: device, mutate: func(r *http.Request) { r.Header.Del(EdgeDeviceIDHeader) }, want: http.StatusUnauthorized},
+		{name: "v3 downgraded to v2", device: device, mutate: func(r *http.Request) {
+			r.Header.Set(EdgeAuthSignatureHeader, "v2="+strings.TrimPrefix(r.Header.Get(EdgeAuthSignatureHeader), "v3="))
+		}, want: http.StatusUnauthorized},
+		{name: "unsigned device beside v2 ignored", mutate: func(r *http.Request) { r.Header.Set(EdgeDeviceIDHeader, device) }, want: http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got Identity
+			h := envelopeAuth(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				got = IdentityFromContext(r.Context())
+				w.WriteHeader(http.StatusOK)
+			}))
+			r := httptest.NewRequest(http.MethodPost, "/api/v1/voiceagent/sessions", nil)
+			if err := SignEdgeEnvelope(r, key, Identity{UserID: "user-42", OrgID: "org-1", Plan: "pro", DeviceID: tc.device}, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			if tc.mutate != nil {
+				tc.mutate(r)
+			}
+			if code := serve(h, r); code != tc.want {
+				t.Fatalf("status %d, want %d", code, tc.want)
+			}
+			if tc.want == http.StatusOK && got.DeviceID != tc.wantDevice {
+				t.Fatalf("device %q, want %q", got.DeviceID, tc.wantDevice)
+			}
+		})
+	}
+	if err := SignEdgeEnvelope(httptest.NewRequest(http.MethodPost, "/x", nil), key, Identity{UserID: "u", OrgID: "o", DeviceID: "dev with space"}, time.Now()); err == nil {
+		t.Fatal("a device id with whitespace was signed")
+	}
+}
+
+// Fixed vector shared with the fronting edge signer, so both implementations
+// build the same v3 payload.
+func TestEdgeEnvelopeV3PayloadVector(t *testing.T) {
+	payload := edgeEnvelopePayload("primary", "post", "/api/v1/voiceagent/sessions", "auth0|user-42", "org-1", "pro", "", "dev_"+strings.Repeat("A", 43), "1767225600", "nonce-1")
+	if got := signEdgePayload("speechkit-edge-v3-vector-secret", payload); got != "mGH2JLj00hb7yfKbEJVvJ6V_vMrsRnC6ehrV5LRlMac" {
+		t.Fatalf("v3 vector signature %s", got)
+	}
+}

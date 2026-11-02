@@ -275,6 +275,9 @@ func noConfiguredTTSSecret(cfg *Config) bool {
 	if cfg.TTS.Piper.Enabled && strings.TrimSpace(cfg.TTS.Piper.VoiceDir) != "" {
 		return false
 	}
+	if cfg.TTS.Sherpa.Enabled || strings.TrimSpace(cfg.ModelSelection.TTS.PrimaryProfileID) == DefaultTTSPrimaryProfileID {
+		return false
+	}
 	return true
 }
 

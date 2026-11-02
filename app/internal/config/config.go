@@ -62,10 +62,11 @@ const (
 	DefaultAssistPrimaryProfileID     = hostconfig.DefaultAssistPrimaryProfileID
 	DefaultVoiceAgentPrimaryProfileID = hostconfig.DefaultVoiceAgentPrimaryProfileID
 	// DefaultTTSPrimaryProfileID is the Voice-Output profile pre-selected for
-	// fresh installs. Kokoro is the local built-in default; OpenAI
-	// gpt-4o-mini-tts is the cloud fallback once a key is configured. Opt-in cloud
-	// voices such as Google Cloud TTS are never the default.
-	DefaultTTSPrimaryProfileID  = "tts.local.kokoro-82m"
+	// fresh installs. The bundled sherpa-onnx Piper voices (German and
+	// English) speak with no cloud key; OpenAI gpt-4o-mini-tts is the cloud
+	// fallback once a key is configured. Opt-in cloud voices such as Google
+	// Cloud TTS are never the default.
+	DefaultTTSPrimaryProfileID  = "tts.local.sherpa-piper"
 	DefaultTTSFallbackProfileID = "tts.openai.gpt-4o-mini-tts"
 )
 

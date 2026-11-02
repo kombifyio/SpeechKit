@@ -13,6 +13,7 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/config"
 	"github.com/kombifyio/SpeechKit/app/internal/models/sttbatteries"
 	"github.com/kombifyio/SpeechKit/app/internal/providerpolicy"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/allproviders"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/openaicompat"
@@ -53,6 +54,9 @@ func buildSTTRouter(cfg *config.Config) (*stt.Router, []namedProvider, []string)
 	enabled := allproviders.EnabledProviders{Secrets: config.ResolveSecret}
 	var notes []string
 	credential := func(target string) (string, string) {
+		if allowed, _ := cfg.ProviderConstructionAllowed(target, provideropts.ModalitySTT); !allowed {
+			return "", ""
+		}
 		key, source, err := config.ResolveProviderCredentialValue(cfg, target)
 		if err != nil {
 			source = config.ProviderCredentialEnvName(cfg, target)
@@ -157,7 +161,7 @@ func buildSTTRouter(cfg *config.Config) (*stt.Router, []namedProvider, []string)
 	}
 
 	// Google Cloud STT.
-	if cfg.Providers.Google.Enabled {
+	if allowed, _ := cfg.ProviderConstructionAllowed("google", provideropts.ModalitySTT); cfg.Providers.Google.Enabled && allowed {
 		if key, ok := config.GoogleSTTUsable(cfg); ok {
 			_, source := credential(config.GoogleSTTCredentialTarget(cfg))
 			enabled.Google = &allproviders.GoogleOpts{
@@ -174,7 +178,7 @@ func buildSTTRouter(cfg *config.Config) (*stt.Router, []namedProvider, []string)
 	}
 
 	// VPS (self-hosted OpenAI-compatible). Model defaults to whisper-1.
-	if cfg.VPS.Enabled && strings.TrimSpace(cfg.VPS.URL) != "" {
+	if allowed, _ := cfg.ProviderConstructionAllowed("vps", provideropts.ModalitySTT); cfg.VPS.Enabled && strings.TrimSpace(cfg.VPS.URL) != "" && allowed {
 		key := config.ResolveSecret(cfg.VPS.APIKeyEnv)
 		enabled.VPS = &allproviders.VPSOpts{URL: cfg.VPS.URL, APIKey: key, Model: cfg.VPS.Model}
 		notes = append(notes, "VPS STT registered (url="+config.LogSafeURL(cfg.VPS.URL)+", model="+firstNonEmpty(strings.TrimSpace(cfg.VPS.Model), "whisper-1")+")")
@@ -184,7 +188,7 @@ func buildSTTRouter(cfg *config.Config) (*stt.Router, []namedProvider, []string)
 	// local target, but lifecycle (StartServer) is managed separately — see
 	// MaybeStartLocalSTT. This keeps the server usable with cloud-only
 	// providers while still surfacing a local option.
-	if cfg.Local.Enabled && strings.TrimSpace(cfg.Local.ModelPath) != "" {
+	if allowed, _ := cfg.ProviderConstructionAllowed("local", provideropts.ModalitySTT); cfg.Local.Enabled && strings.TrimSpace(cfg.Local.ModelPath) != "" && allowed {
 		enabled.Local = &allproviders.LocalOpts{Port: cfg.Local.Port, ModelPath: cfg.Local.ModelPath, GPU: cfg.Local.GPU}
 		notes = append(notes, "Local whisper.cpp configured (not yet started; see readiness probe)")
 	}

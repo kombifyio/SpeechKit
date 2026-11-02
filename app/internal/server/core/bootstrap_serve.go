@@ -298,11 +298,6 @@ func serverMiddlewareChain(ctx context.Context, cfg *config.Config, app *App) (f
 			DemoDailyQuota: cfg.Server.DemoDailyQuota,
 		}),
 	)
-	if app.Preview != nil {
-		return func(next http.Handler) http.Handler {
-			return app.Preview.transport(chain(app.Preview.principal(next)))
-		}, nil
-	}
 	return chain, nil
 }
 
