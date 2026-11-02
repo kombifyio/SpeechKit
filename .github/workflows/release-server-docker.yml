@@ -8,6 +8,26 @@ on:
       tag:
         description: 'Release tag (for example v0.40.5)'
         required: true
+      production_nonce:
+        description: 'Private production transfer nonce'
+        required: false
+        type: string
+      recipient_key:
+        description: 'Ephemeral public key for the production capability'
+        required: false
+        type: string
+      expected_image:
+        description: 'Expected production image config digest'
+        required: false
+        type: string
+      source_sha:
+        description: 'Private source revision'
+        required: false
+        type: string
+      parent_run:
+        description: 'Private parent workflow run'
+        required: false
+        type: string
       force_publish:
         description: 'Publish even when the tag gate would normally skip'
         required: true
@@ -21,13 +41,13 @@ permissions:
   attestations: write
 
 concurrency:
-  group: release-server-docker-${{ github.ref }}
+  group: release-server-docker-${{ github.ref }}-${{ inputs.production_nonce || 'public' }}
   cancel-in-progress: false
 
 jobs:
   plan:
     name: Resolve Docker Release Plan
-    if: github.repository == 'kombifyio/SpeechKit'
+    if: github.repository == 'kombifyio/SpeechKit' && (github.event_name != 'workflow_dispatch' || inputs.production_nonce == '')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -128,3 +148,64 @@ jobs:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
+
+      - name: Record public image digest
+        env:
+          TAG: ${{ needs.plan.outputs.tag }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          anonymous_status="$(curl -sS -o /dev/null -w '%{http_code}' "https://ghcr.io/token?scope=repository%3Akombifyio%2Fspeechkit-server%3Apull&service=ghcr.io" || echo 000)"
+          anonymous=false
+          if [[ "$anonymous_status" == 200 ]]; then anonymous=true; fi
+          jq -n --arg tag "$TAG" --arg digest "$DIGEST" --arg revision "$GITHUB_SHA" --argjson anonymous_pull "$anonymous" '{v:1,kind:"speechkit-public-image",tag:$tag,digest:$digest,revision:$revision,anonymous_pull:$anonymous_pull}' > "$RUNNER_TEMP/public-image-receipt.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: public-image-receipt-${{ needs.plan.outputs.tag }}
+          path: ${{ runner.temp }}/public-image-receipt.json
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-production-transfer:
+    name: Authorize and verify exact production image
+    if: github.repository == 'kombifyio/SpeechKit' && github.event_name == 'workflow_dispatch' && inputs.production_nonce != '' && github.ref == 'refs/heads/main' && github.actor == 'kombify-release-publisher3[bot]' && github.actor_id == '275293319'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      NONCE: ${{ inputs.production_nonce }}
+      RECIPIENT_KEY: ${{ inputs.recipient_key }}
+      IMAGE_ID: ${{ inputs.expected_image }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      PARENT_RUN: ${{ inputs.parent_run }}
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check existing image or encrypt this job capability
+        id: prepare
+        run: node scripts/ci/production-relay.mjs prepare
+      - name: Offer encrypted job capability
+        if: steps.prepare.outputs.state == 'waiting'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: production-capability-${{ inputs.production_nonce }}
+          path: ${{ runner.temp }}/production-capability.json
+          if-no-files-found: error
+          retention-days: 1
+      - name: Verify both exact registry tags
+        if: steps.prepare.outputs.state == 'waiting'
+        run: node scripts/ci/production-relay.mjs wait
+      - name: Publish verified registry receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: production-image-receipt-${{ inputs.production_nonce }}
+          path: ${{ runner.temp }}/production-image-receipt.json
+          if-no-files-found: error
+          retention-days: 1
