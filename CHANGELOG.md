@@ -94,6 +94,13 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.78.16 (2026-11-02)
+
+### Bug Fixes
+
+* **speechkit:** attribute the managed relay release change
+* **speechkit:** publish the managed production image through the governed App relay
+
 ## 0.78.15 (2026-11-02)
 
 ### Bug Fixes
