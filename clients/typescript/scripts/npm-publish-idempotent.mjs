@@ -99,7 +99,7 @@ const runNpm = async (args, options = {}) => {
   try {
     return await execFileAsync('npm', args, {
       cwd: options.cwd,
-      env: process.env,
+      env: options.env ?? process.env,
       maxBuffer: 10 * 1024 * 1024,
     })
   } catch (error) {
@@ -139,6 +139,11 @@ const main = async () => {
   const candidateDirectory = await mkdtemp(resolve(tmpdir(), 'speechkit-npm-candidate-'))
   const publishedDirectory = await mkdtemp(resolve(tmpdir(), 'speechkit-npm-published-'))
   const registryArgument = `--registry=${registry}`
+  // The workflow token publishes a package this repository owns and cannot
+  // read an existing organization package. Reads use NPM_READ_TOKEN when set.
+  const readEnv = process.env.NPM_READ_TOKEN
+    ? { ...process.env, NODE_AUTH_TOKEN: process.env.NPM_READ_TOKEN, NPM_TOKEN: process.env.NPM_READ_TOKEN }
+    : process.env
 
   try {
     const candidatePack = await runNpm([
@@ -152,7 +157,7 @@ const main = async () => {
 
     const readPublished = async (spec) => {
       try {
-        const { stdout } = await runNpm(['view', spec, 'dist', '--json', registryArgument])
+        const { stdout } = await runNpm(['view', spec, 'dist', '--json', registryArgument], { env: readEnv })
         const dist = JSON.parse(stdout)
         if (!dist || typeof dist !== 'object' || Array.isArray(dist)) {
           throw new Error(`${spec} exists but npm view returned invalid dist metadata.`)
@@ -172,7 +177,7 @@ const main = async () => {
         '--pack-destination',
         publishedDirectory,
         registryArgument,
-      ])
+      ], { env: readEnv })
       return parseSinglePack({ stdout: packed.stdout, directory: publishedDirectory, expectedSpec: spec })
     }
 

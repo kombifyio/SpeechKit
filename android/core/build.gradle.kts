@@ -120,6 +120,16 @@ publishing {
                         url.set("https://www.apache.org/licenses/LICENSE-2.0")
                     }
                 }
+                // Without this, GitHub Packages publishes to a repository named
+                // after the package and answers 422 for this repository's URL.
+                withXml {
+                    val xml = asNode() as groovy.util.Node
+                    val management = xml.appendNode("distributionManagement")
+                    val repository = management.appendNode("repository")
+                    repository.appendNode("id", "github")
+                    repository.appendNode("name", "GitHub Packages")
+                    repository.appendNode("url", "https://maven.pkg.github.com/kombifyio/SpeechKit")
+                }
             }
         }
     }

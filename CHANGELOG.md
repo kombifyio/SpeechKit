@@ -94,6 +94,18 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.78.8 (2026-11-02)
+
+### Bug Fixes
+
+* **speechkit:** name the Android POM package repository without the organization
+
+## 0.78.7 (2026-11-02)
+
+### Bug Fixes
+
+* **speechkit:** publish the release assets, clients and Android libraries
+
 ## 0.78.6 (2026-11-02)
 
 ### Bug Fixes
