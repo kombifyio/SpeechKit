@@ -190,7 +190,7 @@ func (p *Provider) deepgramFluxEndpoint(model string, opts FluxStreamOptions, fo
 			q.Add("language_hint", hint)
 		}
 	}
-	for _, term := range dedupeTrimmed(opts.Keyterms, deepgramMaxKeyterms) {
+	for _, term := range normalizedDeepgramTerms(opts.Keyterms, deepgramMaxKeyterms) {
 		q.Add("keyterm", term)
 	}
 	if v, ok := clampFluxRange(opts.EOTThreshold, FluxEOTThresholdMin, FluxEOTThresholdMax); ok {
@@ -348,29 +348,6 @@ func normalizeFluxLanguageHints(hints []string) []string {
 	}
 	if len(out) == 0 {
 		return nil
-	}
-	return out
-}
-
-func dedupeTrimmed(values []string, limit int) []string {
-	if len(values) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(values))
-	seen := map[string]struct{}{}
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
-		if limit > 0 && len(out) >= limit {
-			break
-		}
 	}
 	return out
 }

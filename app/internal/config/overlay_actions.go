@@ -185,11 +185,3 @@ func ToggleDictationProcessingMode(mode string) string {
 	}
 	return DictationProcessingModeAuto
 }
-
-// NextDictateSTTProfile cycles Deepgram Nova-3 and AssemblyAI Universal 3.5.
-func NextDictateSTTProfile(current string) (primary, fallback string) {
-	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(current)), "stt.assemblyai.") {
-		return DictateDeepgramProfileID, DictateAssemblyAIProfileID
-	}
-	return DictateAssemblyAIProfileID, DictateDeepgramProfileID
-}

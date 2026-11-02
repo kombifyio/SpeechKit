@@ -94,6 +94,12 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.78.10 (2026-11-02)
+
+### Bug Fixes
+
+* **speechkit:** Deepgram keyterm budget, local fallback under load, overlay model switch
+
 ## 0.78.9 (2026-11-02)
 
 ### Features

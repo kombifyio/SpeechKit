@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
@@ -34,6 +35,11 @@ const (
 	deepgramBaseURL          = "https://api.deepgram.com"
 	deepgramMaxResponseBytes = 16 << 20
 	deepgramMaxKeyterms      = 100
+	// deepgramKeytermTokenBudget stays below Listen's limit of 500 tokens
+	// across all keyterms. Past it Deepgram rejects the whole request with
+	// 400 "Keyterm limit exceeded", so a long vocabulary would silently turn
+	// every dictation into a failure.
+	deepgramKeytermTokenBudget = 450
 )
 
 // Tuning holds provider-specific Deepgram STT controls. These map to
@@ -447,6 +453,7 @@ func normalizedDeepgramTerms(terms []string, limit int) []string {
 	}
 	out := make([]string, 0, min(len(terms), limit))
 	seen := make(map[string]struct{}, len(terms))
+	budget := deepgramKeytermTokenBudget
 	for _, term := range terms {
 		term = strings.TrimSpace(term)
 		if term == "" {
@@ -457,12 +464,25 @@ func normalizedDeepgramTerms(terms []string, limit int) []string {
 			continue
 		}
 		seen[key] = struct{}{}
+		cost := deepgramKeytermTokenEstimate(term)
+		if cost > budget {
+			continue
+		}
+		budget -= cost
 		out = append(out, term)
 		if limit > 0 && len(out) >= limit {
 			break
 		}
 	}
 	return out
+}
+
+// deepgramKeytermTokenEstimate over-estimates the tokens Deepgram counts for
+// one keyterm. Measured against the live API (2026-11-02): short terms cost
+// about 7 tokens each and longer ones about 4 plus 0.4 per character, so the
+// estimate takes at least 8 and 4 plus half a token per character.
+func deepgramKeytermTokenEstimate(term string) int {
+	return max(8, 4+(utf8.RuneCountInString(term)+1)/2)
 }
 
 // ParseKeyterms splits a free-text vocabulary list on newlines, commas and

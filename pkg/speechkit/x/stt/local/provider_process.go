@@ -356,18 +356,16 @@ func (p *Provider) runtimeExitError() error {
 }
 
 // SetSubprocessPriorityLowered toggles the process-wide default for whether
-// STT subprocesses are spawned at BELOW_NORMAL priority (default true). No-op
-// on non-Windows. Providers with an explicit LowerSubprocessPriority ignore
-// it. It forwards to [procguard.SetSubprocessPriorityLowered], so the default
-// is shared with every other SpeechKit subprocess.
+// SpeechKit subprocesses are spawned at BELOW_NORMAL priority. No-op on
+// non-Windows. The STT server itself stays at normal priority unless its
+// provider sets LowerSubprocessPriority. It forwards to
+// [procguard.SetSubprocessPriorityLowered].
 func SetSubprocessPriorityLowered(lowered bool) {
 	procguard.SetSubprocessPriorityLowered(lowered)
 }
 
-// subprocessPriorityLowered resolves the effective setting for a provider.
+// subprocessPriorityLowered resolves the effective setting for a provider:
+// lowered only when the provider asks for it (see LowerSubprocessPriority).
 func subprocessPriorityLowered(override *bool) bool {
-	if override != nil {
-		return *override
-	}
-	return procguard.SubprocessPriorityLowered()
+	return override != nil && *override
 }

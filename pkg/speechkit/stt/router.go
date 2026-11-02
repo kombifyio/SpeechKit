@@ -74,6 +74,12 @@ type Router struct {
 	// result. Zero means 15 seconds. The wait never outlives the caller's
 	// context deadline.
 	ParallelTimeout time.Duration
+	// LocalFallbackProfileID names the cloud profile a local-only route
+	// falls back to when the local engine fails or stalls. Empty keeps
+	// local-only strict (the policy pin, or no fallback chosen). The local
+	// attempt then gets its own deadline (localAttemptTimeout) so the
+	// fallback still has time before the caller's deadline.
+	LocalFallbackProfileID string
 	// ConnectivityProbe is the TCP address used to test internet connectivity.
 	// Defaults to "1.1.1.1:443" when empty.
 	ConnectivityProbe string
@@ -260,6 +266,9 @@ func (r *Router) Route(ctx context.Context, audio []byte, audioDurationSecs floa
 
 	switch r.Strategy {
 	case StrategyLocalOnly:
+		if r.LocalFallbackProfileID != "" {
+			return r.transcribeLocalWithFallback(ctx, audio, audioDurationSecs, opts)
+		}
 		return r.transcribeLocal(ctx, audio, opts)
 	case StrategyCloudOnly:
 		return r.transcribeCloud(ctx, audio, opts)
@@ -598,6 +607,41 @@ func (r *Router) transcribeLocal(ctx context.Context, audio []byte, opts Transcr
 		r.emitProviderSelected(ctx, local.Name(), r.Strategy)
 	}
 	return result, err
+}
+
+// transcribeLocalWithFallback tries the local engine within
+// localAttemptTimeout and hands the audio to LocalFallbackProfileID when it
+// fails or stalls. A busy machine slows the local engine to many times real
+// time; without its own deadline the local attempt used the caller's whole
+// budget and the dictation failed with no transcript.
+func (r *Router) transcribeLocalWithFallback(ctx context.Context, audio []byte, durationSecs float64, opts TranscribeOpts) (*Result, error) {
+	localCtx, cancel := context.WithTimeout(ctx, localAttemptTimeout(durationSecs))
+	result, err := r.transcribeLocal(localCtx, audio, opts)
+	cancel()
+	if err == nil {
+		return result, nil
+	}
+	if ctx.Err() != nil {
+		return nil, err
+	}
+	err = netsec.RedactURLError(err)
+	r.log().Warn("local transcribe failed; using fallback profile", "profile", r.LocalFallbackProfileID, "err", err)
+	fallbackOpts := opts
+	fallbackOpts.ProviderProfileID = r.LocalFallbackProfileID
+	result, cloudErr := r.transcribeCloud(ctx, audio, fallbackOpts)
+	if cloudErr != nil {
+		return nil, errors.Join(fmt.Errorf("local: %w", err), cloudErr)
+	}
+	return result, nil
+}
+
+// localAttemptTimeout bounds one local attempt before the fallback takes
+// over: 5 s plus the audio length, at most 45 s. An idle machine decodes far
+// faster than real time (under 2 s for 30 s of audio), so only a stalled or
+// starved engine reaches it.
+func localAttemptTimeout(durationSecs float64) time.Duration {
+	timeout := 5*time.Second + time.Duration(max(durationSecs, 0)*float64(time.Second))
+	return min(timeout, 45*time.Second)
 }
 
 // defaultParallelTimeout is the parallel race budget when ParallelTimeout is zero.

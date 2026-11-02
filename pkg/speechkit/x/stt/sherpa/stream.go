@@ -231,8 +231,17 @@ func (h *handler) openStream(w http.ResponseWriter, r *http.Request, st StreamTr
 	h.streams.mu.Unlock()
 
 	s, err := st.OpenStream(rate)
+	// A client that gave up while the open waited for a busy engine never
+	// learns the id; registering the stream anyway held one of the slots
+	// until the idle sweep and answered later opens with 503.
+	abandoned := err == nil && r.Context().Err() != nil
 	h.streams.mu.Lock()
 	h.streams.opening--
+	if abandoned {
+		h.streams.mu.Unlock()
+		go (&openStream{s: s}).close()
+		return
+	}
 	if err == nil {
 		if h.streams.open == nil {
 			h.streams.open = make(map[string]*openStream)
