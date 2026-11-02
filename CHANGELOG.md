@@ -94,6 +94,12 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.78.5 (2026-11-02)
+
+### Bug Fixes
+
+* **speechkit:** release the public server image without the private host log
+
 ## 0.78.4 (2026-11-02)
 
 ### Bug Fixes

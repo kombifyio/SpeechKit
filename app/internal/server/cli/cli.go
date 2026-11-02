@@ -15,10 +15,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/kombifyio/SpeechKit/app/host/applog"
 	"github.com/kombifyio/SpeechKit/app/internal/auditlog"
 	"github.com/kombifyio/SpeechKit/app/internal/config"
 	"github.com/kombifyio/SpeechKit/app/internal/config/security"
+	"github.com/kombifyio/SpeechKit/app/internal/runtimepath"
 	"github.com/kombifyio/SpeechKit/app/internal/server/core"
 )
 
@@ -159,6 +159,39 @@ func runOnce(opts Options) int {
 	return 0
 }
 
+// auditDir keeps the local audit sink next to the executable when that
+// directory is writable, and otherwise under the per-user local data
+// directory. The public server image cannot import app/host (it is not
+// exported), so the exported server uses runtimepath.LocalDataDir, the
+// exported half of applog.Dir, instead of the private host log directory.
+func auditDir(exeDir string) (string, error) {
+	if strings.TrimSpace(exeDir) != "" {
+		beside := filepath.Join(exeDir, "logs")
+		if dirWritable(beside) {
+			return beside, nil
+		}
+	}
+	local, err := runtimepath.LocalDataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(local, "logs"), nil
+}
+
+func dirWritable(dir string) bool {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return false
+	}
+	probe, err := os.CreateTemp(dir, ".write-probe-*")
+	if err != nil {
+		return false
+	}
+	name := probe.Name()
+	_ = probe.Close()
+	_ = os.Remove(name)
+	return true
+}
+
 // Configure the canonical opt-in local sink before provider events are emitted.
 func configureLocalAudit(cfg *config.Config) (func(), error) {
 	if !cfg.Audit.Enabled && !cfg.Audit.ForwardRequired && !cfg.Audit.EventLogEnabled {
@@ -170,7 +203,7 @@ func configureLocalAudit(cfg *config.Config) (func(), error) {
 		if err != nil {
 			return nil, err
 		}
-		dir, err = applog.Dir(filepath.Dir(executable))
+		dir, err = auditDir(filepath.Dir(executable))
 		if err != nil {
 			return nil, err
 		}
