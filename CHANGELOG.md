@@ -94,6 +94,12 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.78.14 (2026-11-02)
+
+### Features
+
+* **observability:** Sentry release and trace coverage for agents Workers, AI edge Workers and SpeechKit server
+
 ## 0.78.13 (2026-11-02)
 
 ### Bug Fixes

@@ -52,6 +52,9 @@ const (
 // RunOptions exposes bootstrap-time knobs that don't belong in config.toml.
 type RunOptions struct {
 	Version string
+	// SourceRevision is the exact source commit of the build (empty when
+	// unknown); trace export reports it as the release.
+	SourceRevision string
 	// HandlerHooks lets tests inject extra routes onto the mux before the
 	// server starts listening. Production leaves this nil.
 	HandlerHooks func(mux *http.ServeMux, app *App)
@@ -75,6 +78,8 @@ type App struct {
 	Lifecycle  *lifecycle.Registry
 	SharedDeps *lifecycle.SharedDepRegistry
 	Version    string
+	// SourceRevision is the exact source commit of the build, or empty.
+	SourceRevision string
 	// ReleaseChannel is "stable" or "early-access".
 	ReleaseChannel string
 	AuthState      *middleware.AuthState

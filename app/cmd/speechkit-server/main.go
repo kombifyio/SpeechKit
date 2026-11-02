@@ -39,6 +39,10 @@ import (
 // version is overridden at build time via `-ldflags="-X main.version=..."`.
 var version = "dev"
 
+// sourceSHA is the exact source commit of the build, set via
+// `-ldflags="-X main.sourceSHA=..."`; empty for local builds.
+var sourceSHA = ""
+
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "migrate" {
 		if err := migrate(os.Args[2:]); err != nil {
@@ -54,8 +58,9 @@ func main() {
 		os.Exit(1)
 	}
 	cli.Run(cli.Options{
-		Banner:  "speechkit-server",
-		Version: version,
+		Banner:         "speechkit-server",
+		Version:        version,
+		SourceRevision: sourceSHA,
 		// Empty default → Run() leaves cfg.Server.Modes as it came
 		// from config.toml, which itself defaults to nil = all three
 		// modes enabled. This is the "kitchen sink" deploy.

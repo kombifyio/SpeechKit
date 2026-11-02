@@ -12,6 +12,7 @@ package telemetry
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
@@ -42,7 +43,15 @@ type TracingOptions struct {
 	ServiceName string
 	Environment string
 	Release     string
+	// Revision is the exact lowercase 40-hex source commit of the build. It
+	// tags the resource as vcs.ref.head.revision and as sentry.release, the
+	// attribute Sentry's OTLP ingestion reads as the release; any other value
+	// is ignored.
+	Revision string
 }
+
+// exactRevision admits only a full lowercase commit SHA as a release.
+var exactRevision = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 // ConfigureTracing installs a process-global OTel TracerProvider that batches
 // the framework's spans to opts.Endpoint over OTLP/HTTP. It returns a shutdown
@@ -68,6 +77,12 @@ func ConfigureTracing(ctx context.Context, opts TracingOptions) (func(context.Co
 	}
 	if r := strings.TrimSpace(opts.Release); r != "" {
 		attrs = append(attrs, attribute.String("service.version", r))
+	}
+	if rev := strings.ToLower(strings.TrimSpace(opts.Revision)); exactRevision.MatchString(rev) {
+		attrs = append(attrs,
+			attribute.String("vcs.ref.head.revision", rev),
+			attribute.String("sentry.release", rev),
+		)
 	}
 	// NewSchemaless avoids the schema-URL conflict that resource.Merge with
 	// resource.Default() raises; service.name/environment are all a backend

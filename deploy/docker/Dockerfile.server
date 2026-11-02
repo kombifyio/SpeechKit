@@ -52,13 +52,15 @@ COPY . .
 # Static-ish build with stripped symbols. CGO is enabled because the Framework
 # kernel pulls in the Silero VAD ONNX runtime.
 ARG VERSION=dev
+# Exact source commit of the build; the server reports it as its release.
+ARG SOURCE_SHA=
 ENV CGO_ENABLED=1 \
     GOOS=linux \
     GOARCH=amd64
 
 RUN go build \
         -tags=server \
-        -ldflags="-s -w -X main.version=${VERSION}" \
+        -ldflags="-s -w -X main.version=${VERSION} -X main.sourceSHA=${SOURCE_SHA}" \
         -o /out/speechkit-server \
         ./app/cmd/speechkit-server
 

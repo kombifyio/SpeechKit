@@ -44,6 +44,7 @@ func initServerTelemetry(ctx context.Context, app *App) {
 		ServiceName: serviceName,
 		Environment: environment,
 		Release:     app.Version,
+		Revision:    app.SourceRevision,
 	})
 	app.telemetryShutdown = shutdown
 	if err != nil {

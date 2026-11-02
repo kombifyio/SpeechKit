@@ -13,11 +13,12 @@ import (
 
 func newServerApp(cfg *config.Config, opts RunOptions) *App {
 	return &App{
-		Cfg:     cfg,
-		Mux:     http.NewServeMux(),
-		Health:  NewHealthRegistry(),
-		Modes:   resolveModes(cfg.Server.Modes),
-		Version: opts.Version,
+		Cfg:            cfg,
+		Mux:            http.NewServeMux(),
+		Health:         NewHealthRegistry(),
+		Modes:          resolveModes(cfg.Server.Modes),
+		Version:        opts.Version,
+		SourceRevision: opts.SourceRevision,
 	}
 }
 

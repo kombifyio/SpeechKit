@@ -32,6 +32,10 @@ type Options struct {
 	// Each binary's main.go forwards its own version string here.
 	Version string
 
+	// SourceRevision is the exact source commit of the build, set via
+	// -ldflags="-X main.sourceSHA=..."; empty for local builds.
+	SourceRevision string
+
 	// DefaultModes is the mode set used when neither `[server].modes`
 	// in config nor the `--modes` flag are provided. nil means all
 	// server modes: Dictation, Assist, and Voice Agent.
@@ -150,7 +154,7 @@ func runOnce(opts Options) int {
 	ctx, stop := core.NotifySignals(context.Background())
 	defer stop()
 
-	if err := core.Run(ctx, cfg, core.RunOptions{Version: version}); err != nil {
+	if err := core.Run(ctx, cfg, core.RunOptions{Version: version, SourceRevision: strings.TrimSpace(opts.SourceRevision)}); err != nil {
 		slog.Error(banner+" terminated with error", "err", err)
 		return 1
 	}
