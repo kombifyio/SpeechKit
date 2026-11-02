@@ -44,9 +44,9 @@ type TracingOptions struct {
 	Environment string
 	Release     string
 	// Revision is the exact lowercase 40-hex source commit of the build. It
-	// tags the resource as vcs.ref.head.revision and as sentry.release, the
-	// attribute Sentry's OTLP ingestion reads as the release; any other value
-	// is ignored.
+	// tags the resource as vcs.ref.head.revision and every span as
+	// sentry.release, the attribute Sentry's OTLP ingestion reads as the
+	// release; any other value is ignored.
 	Revision string
 }
 
@@ -78,11 +78,12 @@ func ConfigureTracing(ctx context.Context, opts TracingOptions) (func(context.Co
 	if r := strings.TrimSpace(opts.Release); r != "" {
 		attrs = append(attrs, attribute.String("service.version", r))
 	}
-	if rev := strings.ToLower(strings.TrimSpace(opts.Revision)); exactRevision.MatchString(rev) {
-		attrs = append(attrs,
-			attribute.String("vcs.ref.head.revision", rev),
-			attribute.String("sentry.release", rev),
-		)
+	revision := strings.ToLower(strings.TrimSpace(opts.Revision))
+	if !exactRevision.MatchString(revision) {
+		revision = ""
+	}
+	if revision != "" {
+		attrs = append(attrs, attribute.String("vcs.ref.head.revision", revision))
 	}
 	// NewSchemaless avoids the schema-URL conflict that resource.Merge with
 	// resource.Default() raises; service.name/environment are all a backend
@@ -93,6 +94,11 @@ func ConfigureTracing(ctx context.Context, opts TracingOptions) (func(context.Co
 		sdktrace.WithSampler(sampler),
 		sdktrace.WithResource(res),
 	)
+	if revision != "" {
+		// Sentry's OTLP ingestion reads the release from the span attribute
+		// sentry.release; it keeps resource attributes only as resource.*.
+		tp.RegisterSpanProcessor(releaseStamp{release: attribute.String("sentry.release", revision)})
+	}
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
 	if strings.TrimSpace(opts.Endpoint) == "" {
@@ -116,3 +122,13 @@ func ConfigureTracing(ctx context.Context, opts TracingOptions) (func(context.Co
 
 	return tp.Shutdown, nil
 }
+
+// releaseStamp sets the build's release attribute on every span at start.
+type releaseStamp struct{ release attribute.KeyValue }
+
+func (r releaseStamp) OnStart(_ context.Context, s sdktrace.ReadWriteSpan) {
+	s.SetAttributes(r.release)
+}
+func (releaseStamp) OnEnd(sdktrace.ReadOnlySpan)      {}
+func (releaseStamp) Shutdown(context.Context) error   { return nil }
+func (releaseStamp) ForceFlush(context.Context) error { return nil }

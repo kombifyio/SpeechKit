@@ -94,6 +94,12 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.78.15 (2026-11-02)
+
+### Bug Fixes
+
+* **speechkit:** stamp sentry.release on every exported span
+
 ## 0.78.14 (2026-11-02)
 
 ### Features
