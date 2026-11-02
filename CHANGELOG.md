@@ -94,6 +94,12 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.78.12 (2026-11-02)
+
+### Bug Fixes
+
+* **box,speechkit:** keep tracker ids out of exported firmware and refresh localization exports
+
 ## 0.78.11 (2026-11-02)
 
 ### Features
