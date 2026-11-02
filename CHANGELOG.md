@@ -94,6 +94,12 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.78.13 (2026-11-02)
+
+### Bug Fixes
+
+* **speechkit:** overlay model button cycles the active Dictation models
+
 ## 0.78.12 (2026-11-02)
 
 ### Bug Fixes
