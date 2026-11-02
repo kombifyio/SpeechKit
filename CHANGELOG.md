@@ -94,6 +94,12 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.78.9 (2026-11-02)
+
+### Features
+
+* **speechkit:** LFM3-1.7B as an additional local LLM for Assist and the Voice Agent, llama.cpp b12032
+
 ## 0.78.8 (2026-11-02)
 
 ### Bug Fixes
