@@ -96,6 +96,7 @@ type Handler struct {
 	trustedProxies     httpx.TrustedProxies
 	toolRouter         SessionToolRouter
 	usage              UsageReporter
+	settlement         *usageSettlement
 	native             *nativeVoiceSessions
 	wakeVerifier       WakeVerifier
 	anonymous          bool
@@ -170,6 +171,7 @@ func New(opts HandlerOptions) (*Handler, error) {
 		trustedProxies:     trustedProxies,
 		toolRouter:         opts.ToolRouter,
 		usage:              opts.Usage,
+		settlement:         newUsageSettlement(),
 		native:             newNativeVoiceSessions(opts.PublicURL, opts.Store, opts.AssemblyAIKey, opts.RegisteredAgentSigningSecret, opts.NativeConsentReader),
 		wakeVerifier:       opts.WakeVerifier,
 	}, nil

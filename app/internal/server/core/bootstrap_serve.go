@@ -165,6 +165,16 @@ serveLoop:
 		}
 	}
 
+	// A Voice hold lives only in this process: settle every reservation
+	// before the listener closes, so a deploy leaves no hold open in Cloud.
+	// Creates arriving meanwhile are refused and settled at zero.
+	if app.VoiceAgentShutdown != nil {
+		voiceCtx, voiceCancel := context.WithTimeout(context.WithoutCancel(ctx), 8*time.Second)
+		if err := app.VoiceAgentShutdown(voiceCtx); err != nil {
+			slog.Warn("Voice reservations not all settled at shutdown", "err", err)
+		}
+		voiceCancel()
+	}
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 	defer cancel()
 	// Drain the HA-capable Box path before any shared lifecycle or claim-ledger

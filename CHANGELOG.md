@@ -94,6 +94,19 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.78.18 (2026-11-03)
+
+### Features
+
+* **agents:** cut over to the single kombify /mcp connector; retire kombify-knowledge and tools
+
+### Bug Fixes
+
+* **companion:** correct the Android artifact source identity
+* pin Stage memory exchange to Gateway version
+* **release:** reviewed release message for merge batch 96ee5fce
+* **speechkit,box:** settle voice holds at shutdown, retry receipts, stop the always-warm mint loop
+
 ## 0.78.17 (2026-11-03)
 
 ### Features

@@ -93,6 +93,10 @@ type App struct {
 	TTSRouter     *tts.Router
 	TTSEnabled    bool
 
+	// VoiceAgentShutdown settles the Voice reservations of this process
+	// before it exits (set when the voiceagent mode is mounted).
+	VoiceAgentShutdown func(context.Context) error
+
 	// DeviceAgentBridgeMounted is set only after every bridge dependency has
 	// been constructed and the four credential-bearing local handlers have
 	// been mounted. The global auth carve-out is conditional on this runtime
@@ -384,6 +388,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		}
 		h.Mount(app.Mux)
 		h.MountAnonymous(app.Mux)
+		app.VoiceAgentShutdown = h.Shutdown
 		switch {
 		case strings.HasPrefix(status, "degraded"), strings.HasPrefix(status, "unavailable"):
 			app.Health.SetReady("mode.voiceagent", StatusDegraded, status)

@@ -54,6 +54,8 @@ var (
 	// running, renewable Voice budget (pending, unreserved or bound to an
 	// agent authorization that renewal cannot extend).
 	ErrVoiceBudgetNotRenewable = errors.New("ws session: voice budget is not renewable")
+	// ErrDraining refuses a create once shutdown settled the live sessions.
+	ErrDraining = errors.New("ws session: server is shutting down")
 )
 
 // Identity is the caller's resolved identity from the auth middleware.
@@ -160,6 +162,8 @@ type SessionManager struct {
 	byDevice          map[string]int // Identity.admissionKey -> sessions
 	opts              Options
 	voiceBudgetClaims map[string]int64
+	draining          bool
+	finalizing        int // pending receipts handed out and not yet finished
 }
 
 // SessionStats reports current session occupancy and configured capacity.
@@ -355,7 +359,7 @@ func (m *SessionManager) createWithVoiceBudget(owner Identity, aiSessionID strin
 	defer func() {
 		m.mu.Unlock()
 		for _, receipt := range receipts {
-			receipt.pendingFinalizer(receipt)
+			m.finalize(receipt)
 		}
 	}()
 
@@ -377,7 +381,12 @@ func (m *SessionManager) createWithVoiceBudget(owner Identity, aiSessionID strin
 		if budget.ReservationID != "" && finalize != nil {
 			session.State = StateClosed
 			receipts = append(receipts, session)
+			m.finalizing++
 		}
+	}
+	if m.draining {
+		failedCreate()
+		return nil, "", ErrDraining
 	}
 
 	// With separate prepared-session admission the global ceiling counts
@@ -565,7 +574,7 @@ func (m *SessionManager) Attach(id string) error {
 	defer func() {
 		m.mu.Unlock()
 		if receipt != nil {
-			receipt.pendingFinalizer(receipt)
+			m.finalize(receipt)
 		}
 	}()
 	s, ok := m.sessions[id]
@@ -616,7 +625,7 @@ func (m *SessionManager) FinishConversation(id string) {
 	}
 	m.mu.Unlock()
 	if receipt != nil {
-		receipt.pendingFinalizer(receipt)
+		m.finalize(receipt)
 	}
 }
 
@@ -639,8 +648,74 @@ func (m *SessionManager) Remove(id string) {
 	receipt := m.removeLocked(s)
 	m.mu.Unlock()
 	if receipt != nil {
-		receipt.pendingFinalizer(receipt)
+		m.finalize(receipt)
 	}
+}
+
+// Drain ends every session before the process exits, because the hold of a
+// session lives only in this process: an unconnected preparation settles at
+// zero through its finalizer, an attached adapter is stopped and settles its
+// connected time itself. Later creates fail with ErrDraining (settled at
+// zero). Drain stops the adapters and returns the zero settlements of the
+// unconnected sessions, which the caller runs (they may block on the
+// ledger). Settled reports when the last reserved session has finished.
+func (m *SessionManager) Drain() []func() {
+	m.mu.Lock()
+	m.draining = true
+	var receipts []*ManagedSession
+	var stops []func()
+	for _, s := range m.sessions {
+		if stop := s.stopConversation; stop != nil {
+			s.closing = true
+			stops = append(stops, stop)
+			continue
+		}
+		if s.HasWSClient {
+			// Attached, adapter not bound yet: closing makes
+			// SetConversationStop fail, and the upgrade path settles it.
+			s.closing = true
+			continue
+		}
+		if receipt := m.removeLocked(s); receipt != nil {
+			receipts = append(receipts, receipt)
+		}
+	}
+	m.mu.Unlock()
+	for _, stop := range stops {
+		stop()
+	}
+	settle := make([]func(), 0, len(receipts))
+	for _, receipt := range receipts {
+		settle = append(settle, func() { m.finalize(receipt) })
+	}
+	return settle
+}
+
+// finalize runs a pending receipt outside the lock; Settled counts it until
+// it returns.
+func (m *SessionManager) finalize(receipt *ManagedSession) {
+	defer func() {
+		m.mu.Lock()
+		m.finalizing--
+		m.mu.Unlock()
+	}()
+	receipt.pendingFinalizer(receipt)
+}
+
+// Settled reports whether no session holding a Voice reservation is left
+// and every pending receipt handed out has finished.
+func (m *SessionManager) Settled() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.finalizing > 0 {
+		return false
+	}
+	for _, s := range m.sessions {
+		if s.VoiceBudget.ReservationID != "" {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *SessionManager) closePending(id string) {
@@ -652,7 +727,7 @@ func (m *SessionManager) closePending(id string) {
 	}
 	m.mu.Unlock()
 	if receipt != nil {
-		receipt.pendingFinalizer(receipt)
+		m.finalize(receipt)
 	}
 }
 
@@ -663,6 +738,7 @@ func (m *SessionManager) removeLocked(s *ManagedSession) *ManagedSession {
 		// HTTP minter may still be filling preference/credential overlays.
 		receipt = &ManagedSession{ID: s.ID, AISessionID: s.AISessionID, Owner: s.Owner,
 			VoiceBudget: s.VoiceBudget, State: StateClosed, pendingFinalizer: s.pendingFinalizer}
+		m.finalizing++
 	}
 	s.pendingFinalizer = nil
 	if s.pendingTimer != nil {

@@ -88,6 +88,7 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 	if err := h.manager.SetConversationStop(sessionID, stop); err != nil {
 		_ = conn.CloseNow()
 		h.reportUnstartedSession(session)
+		h.manager.Remove(sessionID)
 		return
 	}
 

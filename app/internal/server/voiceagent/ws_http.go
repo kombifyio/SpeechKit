@@ -263,6 +263,9 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, http.StatusConflict, "account_device_limit_exceeded", "This account already holds voice sessions on its maximum number of devices. End a session on another device, then start again.")
 		case errors.Is(err, ErrIdentityLimitExceeded):
 			httpx.WriteError(w, http.StatusConflict, "per_device_limit_exceeded", sessionBusyMessage(""))
+		case errors.Is(err, wssession.ErrDraining):
+			w.Header().Set("Retry-After", "1")
+			httpx.WriteError(w, http.StatusServiceUnavailable, "server_restarting", "The voice service is restarting. Try again in a moment.")
 		case errors.Is(err, ErrGlobalLimitExceeded):
 			w.Header().Set("Retry-After", globalLimitRetryAfter)
 			httpx.WriteError(w, http.StatusServiceUnavailable, "global_limit_exceeded", serviceCapacityMessage(""))

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
@@ -62,18 +63,146 @@ func (h *Handler) reportUnstartedSession(session *ManagedSession) {
 	})
 }
 
+// usageRetryDelays spaces the retries of a final receipt over about ten
+// minutes, inside the hold's receipt grace in Cloud. The event id is stable,
+// so a retry never charges twice.
+var usageRetryDelays = []time.Duration{2 * time.Second, 10 * time.Second, 30 * time.Second, 90 * time.Second, 180 * time.Second, 300 * time.Second}
+
+// usageSettlement counts the final receipts in flight (first send and
+// retries), so shutdown waits for each of them before the process exits.
+type usageSettlement struct {
+	mu       sync.Mutex
+	inflight int
+	stop     chan struct{} // closed at shutdown: retries no longer back off
+	stopOnce sync.Once
+}
+
+func newUsageSettlement() *usageSettlement {
+	return &usageSettlement{stop: make(chan struct{})}
+}
+
+func (s *usageSettlement) begin() {
+	s.mu.Lock()
+	s.inflight++
+	s.mu.Unlock()
+}
+
+func (s *usageSettlement) end() {
+	s.mu.Lock()
+	s.inflight--
+	s.mu.Unlock()
+}
+
+func (s *usageSettlement) idle() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.inflight == 0
+}
+
+// pause waits out one retry delay; once shutdown has begun every retry
+// follows a second after the previous one.
+func (s *usageSettlement) pause(delay time.Duration) {
+	select {
+	case <-s.stop:
+		time.Sleep(time.Second)
+	default:
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-s.stop:
+		}
+	}
+}
+
 func (h *Handler) reportVoiceUsage(credential string, usage VoiceUsage) {
 	if h.usage == nil {
 		return
 	}
+	s := h.settlement
+	if s != nil {
+		s.begin()
+	}
 	// Teardown may outlive the request/credential. The existing hosted service
 	// reporter signs a fresh, bounded owner-specific accounting request.
+	err := h.sendVoiceUsage(credential, usage)
+	if err == nil || s == nil || !usageRetryable(err) {
+		if err != nil {
+			slog.Error("voiceagent: usage report failed", "session_id", usage.SessionID, "reservation_id", usage.ReservationID, "code", "usage_report_failed") // #nosec G706 -- IDs are structured attributes; upstream details may contain credentials.
+		}
+		if s != nil {
+			s.end()
+		}
+		return
+	}
+	slog.Warn("voiceagent: usage report failed; retrying", "session_id", usage.SessionID, "reservation_id", usage.ReservationID, "code", "usage_report_retry") // #nosec G706 -- IDs are structured attributes; upstream details may contain credentials.
+	go func() {
+		defer s.end()
+		for i, delay := range usageRetryDelays {
+			s.pause(delay)
+			err := h.sendVoiceUsage(credential, usage)
+			if err == nil {
+				slog.Info("voiceagent: usage report settled after retry", "session_id", usage.SessionID, "reservation_id", usage.ReservationID, "attempt", i+2) // #nosec G706 -- IDs are structured attributes.
+				return
+			}
+			if !usageRetryable(err) {
+				break
+			}
+		}
+		slog.Error("voiceagent: usage report failed", "session_id", usage.SessionID, "reservation_id", usage.ReservationID, "code", "usage_report_failed") // #nosec G706 -- IDs are structured attributes; upstream details may contain credentials.
+	}()
+}
+
+func (h *Handler) sendVoiceUsage(credential string, usage VoiceUsage) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := h.usage.Report(ctx, credential, usage); err != nil {
-		slog.Warn("voiceagent: usage report failed", "session_id", usage.SessionID, "code", "usage_report_failed") // #nosec G706 -- session ID is a structured attribute; upstream details may contain credentials.
-	}
+	return h.usage.Report(ctx, credential, usage)
 }
+
+// Shutdown settles every Voice reservation this process holds before it
+// exits: unconnected sessions at zero, live ones with their connected time,
+// and the receipts still being retried are sent again every second until
+// they land or ctx ends.
+func (h *Handler) Shutdown(ctx context.Context) error {
+	if h == nil || h.manager == nil {
+		return nil
+	}
+	s := h.settlement
+	if s != nil {
+		s.stopOnce.Do(func() { close(s.stop) })
+	}
+	// Settlements run side by side: each may wait on the ledger.
+	for _, settle := range h.manager.Drain() {
+		go settle()
+	}
+	for !h.manager.Settled() || (s != nil && !s.idle()) {
+		select {
+		case <-ctx.Done():
+			return errors.New("voiceagent: Voice reservations still unsettled at shutdown")
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	return nil
+}
+
+// usageRejectedError is a non-2xx answer of the usage endpoint.
+type usageRejectedError struct{ status int }
+
+func (e usageRejectedError) Error() string {
+	return fmt.Sprintf("voiceagent usage rejected with status %d", e.status)
+}
+
+// usageRetryable: transport failures, 5xx and 429 may succeed later; any
+// other refusal and a local validation error will not.
+func usageRetryable(err error) bool {
+	var rejected usageRejectedError
+	if errors.As(err, &rejected) {
+		return rejected.status >= 500 || rejected.status == http.StatusTooManyRequests
+	}
+	return errors.Is(err, errUsageTransport)
+}
+
+var errUsageTransport = errors.New("voiceagent usage transport failed")
 
 type HTTPUsageReporter struct {
 	Endpoint string
@@ -152,14 +281,14 @@ func (r *HTTPUsageReporter) report(ctx context.Context, usage VoiceUsage, author
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := client.Do(req)
 		if err != nil {
-			lastErr = fmt.Errorf("send voiceagent usage: %w", err)
+			lastErr = fmt.Errorf("send voiceagent usage: %w: %w", errUsageTransport, err)
 			continue
 		}
 		_ = resp.Body.Close()
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			return nil
 		}
-		lastErr = fmt.Errorf("voiceagent usage rejected with status %d", resp.StatusCode)
+		lastErr = usageRejectedError{status: resp.StatusCode}
 		if resp.StatusCode < 500 {
 			break
 		}
