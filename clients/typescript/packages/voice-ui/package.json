@@ -1,6 +1,6 @@
 {
   "name": "@kombifyio/speechkit-voice-ui",
-  "version": "0.78.16",
+  "version": "0.78.17",
   "description": "Framework-neutral SpeechKit voice UI kit: custom elements (split button, voice-agent overlay, visualizer, consent), design tokens, and the speechkit.voice_ui.v1 behavior spec.",
   "license": "Apache-2.0",
   "type": "module",
@@ -87,6 +87,6 @@
     "@kombifyio/speechkit-voiceagent-client": "workspace:*",
     "@types/node": "^26.6.5",
     "esbuild": "^0.28.2",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   }
 }

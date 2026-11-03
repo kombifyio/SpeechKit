@@ -1,6 +1,6 @@
 {
   "name": "@kombifyio/speechkit-typescript-clients",
-  "version": "0.78.16",
+  "version": "0.78.17",
   "private": true,
   "description": "pnpm workspace for the OSS SpeechKit TypeScript client packages.",
   "license": "Apache-2.0",
@@ -17,6 +17,6 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   }
 }

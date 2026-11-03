@@ -94,6 +94,16 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.78.17 (2026-11-03)
+
+### Features
+
+* consume current policy for finite Stage memory operations
+
+### Bug Fixes
+
+* use verified delegation entitlements in RIL A2A
+
 ## 0.78.16 (2026-11-02)
 
 ### Bug Fixes

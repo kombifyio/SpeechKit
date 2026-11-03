@@ -19,7 +19,7 @@ import {
 export interface WireSocket {
   /** Browser WebSocket and Node ws both expose queued outbound bytes. */
   readonly bufferedAmount?: number;
-  send(data: string | ArrayBufferLike | ArrayBufferView): void;
+  send(data: string | ArrayBuffer | ArrayBufferView<ArrayBuffer>): void;
   close(code?: number, reason?: string): void;
   addEventListener(type: "open", listener: () => void): void;
   addEventListener(type: "close", listener: (event: { code: number; reason: string }) => void): void;
@@ -165,7 +165,7 @@ export class VoiceAgentSession {
       this.fail("invalid_audio");
       return;
     }
-    this.send(pcm16, pcm16.byteLength);
+    this.send(wireBytes(pcm16), pcm16.byteLength);
   }
 
   endAudio(): void {
@@ -250,7 +250,7 @@ export class VoiceAgentSession {
     this.send(text, bytes);
   }
 
-  private send(data: string | ArrayBufferLike | ArrayBufferView, bytes: number): void {
+  private send(data: string | ArrayBuffer | ArrayBufferView<ArrayBuffer>, bytes: number): void {
     if (this.terminal) return;
     if (!this.opened) { this.fail("ws_not_ready"); return; }
     if (bytes + (this.socket.bufferedAmount ?? 0) > this.maxOutboundBytes) {
@@ -446,6 +446,13 @@ export class VoiceAgentClientError extends Error {
 }
 
 /** Invalid or overflowing host budgets retain the bounded default. */
+/** The socket sends only ArrayBuffer-backed bytes; a view over shared memory goes out as a copy. */
+function wireBytes(data: ArrayBuffer | ArrayBufferView): ArrayBuffer | ArrayBufferView<ArrayBuffer> {
+  if (data instanceof ArrayBuffer) return data;
+  if (data.buffer instanceof ArrayBuffer) return data as ArrayBufferView<ArrayBuffer>;
+  return new Uint8Array(data.buffer, data.byteOffset, data.byteLength).slice();
+}
+
 function positiveLimit(value: number | undefined, fallback: number, maximum = 2_147_483_647): number {
   return value !== undefined && Number.isFinite(value) && value >= 1 && value <= maximum
     ? Math.floor(value) : fallback;

@@ -336,7 +336,7 @@ export function downsampleToInt16(
   input: Float32Array,
   sourceRate: number,
   targetRate: number,
-): { pcm16: Int16Array; remaining: Float32Array } {
+): { pcm16: Int16Array<ArrayBuffer>; remaining: Float32Array } {
   if (sourceRate === targetRate) {
     return { pcm16: floatToInt16(input), remaining: new Float32Array(0) };
   }
@@ -358,7 +358,7 @@ export function downsampleToInt16(
   };
 }
 
-function floatToInt16(input: Float32Array): Int16Array {
+function floatToInt16(input: Float32Array): Int16Array<ArrayBuffer> {
   const out = new Int16Array(input.length);
   for (let i = 0; i < input.length; i++) {
     out[i] = clampInt16((input[i] ?? 0) * 0x7fff);
