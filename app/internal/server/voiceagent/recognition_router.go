@@ -29,20 +29,31 @@ type DictationStreamStarter interface {
 const voiceEndpointingMs = 800
 
 // NewRouterRecognizer streams a registered-agent turn's speech to the router's live recognition.
-// It returns nil when the router has no provider that streams, so callers keep the batch path.
-func NewRouterRecognizer(router DictationStreamStarter) cascaded.RecognitionStreamer {
+// profileID is the server's Dictation primary profile: streaming Dictation pins it, and without it
+// the router opens its first streaming provider in registration order (OpenAI before Deepgram in
+// the hosted configuration), whose stream could not be finished for a voice turn, so every hosted
+// turn fell back to batch recognition (finish_failed). It returns nil when the router has no
+// provider that streams, so callers keep the batch path.
+func NewRouterRecognizer(router DictationStreamStarter, profileID string) cascaded.RecognitionStreamer {
 	if router == nil || !router.HasDictationStreaming() {
 		return nil
 	}
-	return routerRecognizer{router: router}
+	return routerRecognizer{router: router, profileID: strings.TrimSpace(profileID)}
 }
 
-type routerRecognizer struct{ router DictationStreamStarter }
+type routerRecognizer struct {
+	router    DictationStreamStarter
+	profileID string
+}
 
-func (r routerRecognizer) OpenRecognition(ctx context.Context, locale string, onFinal func()) (cascaded.Recognition, error) {
+func (r routerRecognizer) OpenRecognition(ctx context.Context, opts cascaded.RecognitionOptions, onFinal func()) (cascaded.Recognition, error) {
 	stream, err := r.router.StartDictationStream(ctx, speechkit.DictationStreamOptions{
-		Language:      strings.TrimSpace(locale),
-		EndpointingMs: voiceEndpointingMs,
+		Language:          strings.TrimSpace(opts.Locale),
+		EndpointingMs:     voiceEndpointingMs,
+		ProviderProfileID: r.profileID,
+		// The session's vocabulary (product terms such as Homelab or kombify): without it the
+		// Companion's live recognition heard them as ordinary words.
+		Keyterms: opts.Keyterms,
 	}, speaker.AudioFormat{Encoding: speaker.AudioEncodingLinear16, SampleRateHz: 16000, Channels: 1})
 	if err != nil {
 		return nil, err

@@ -102,6 +102,10 @@ type CustomizationConfig struct {
 	// recognizers should know and the mishearings that resolve back to them.
 	// They form the "operator-terms" template and are activated with it.
 	Terms []CustomizationTerm `toml:"terms"`
+	// VocabularyRef is a second name of the operator vocabulary: a signed
+	// vocabulary preference naming it (or "operator-terms") keeps the terms
+	// active; the preference "none" drops them for that request.
+	VocabularyRef string `toml:"vocabulary_ref"`
 }
 
 // CustomizationTerm is one [[customization.terms]] entry.
@@ -118,7 +122,12 @@ type SpeechDefaultsConfig struct {
 	// MainLanguage is the user's own locale the overlay language switch
 	// rotates back to after English. Distinct from Language, which is the
 	// current pin (including the multilanguage sentinel).
-	MainLanguage   string  `toml:"main_language"`
+	MainLanguage string `toml:"main_language"`
+	// LanguageSource records who set Language: LanguageSourceUser for a
+	// choice made in Settings or with the overlay language switch, which is
+	// never rewritten, and LanguageSourceDefault for a value SpeechKit chose.
+	// Only a default migrates when the shipped default changes.
+	LanguageSource string  `toml:"language_source"`
 	DetectLanguage bool    `toml:"detect_language"`
 	Punctuation    bool    `toml:"punctuation"`
 	SmartFormat    bool    `toml:"smart_format"`

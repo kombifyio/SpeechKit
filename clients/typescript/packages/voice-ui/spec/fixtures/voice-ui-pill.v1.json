@@ -1,0 +1,39 @@
+{
+  "version": "speechkit.voice_ui.v1",
+  "description": "In-Composer voice pill fixtures (spec §Voice pill, tokens.json → pill). Web (speechkit-voice-pill, voicePillView/formatVoicePillElapsed) and native ports must produce the same view per (mode, phase), the same status-derived phase, the same elapsed text and the same reduced-motion rendering.",
+  "views": [
+    { "mode": "dictation", "phase": "requesting", "expected": { "indicator": "requesting", "label": "sk.voice.state.requesting", "elapsed": false, "busy": true, "dot": "pending", "bars": "hidden" } },
+    { "mode": "dictation", "phase": "listening", "expected": { "indicator": "listening", "label": "sk.voice.state.capturing", "elapsed": true, "busy": false, "dot": "live", "bars": "input level" } },
+    { "mode": "dictation", "phase": "processing", "expected": { "indicator": "processing", "label": "sk.voice.state.processing", "elapsed": false, "busy": true, "dot": "none", "bars": "sweep" } },
+    { "mode": "dictation", "phase": "error", "expected": { "indicator": "error", "label": "sk.voice.state.denied", "elapsed": false, "busy": false, "dot": "hollow danger ring", "bars": "hidden" } },
+    { "mode": "voice_agent", "phase": "requesting", "expected": { "indicator": "requesting", "label": "sk.voice.agent.connecting", "elapsed": false, "busy": true, "dot": "pending", "bars": "hidden" } },
+    { "mode": "voice_agent", "phase": "listening", "expected": { "indicator": "listening", "label": "sk.voice.state.capturing", "elapsed": false, "busy": false, "dot": "live", "bars": "input level" } },
+    { "mode": "voice_agent", "phase": "processing", "expected": { "indicator": "processing", "label": "sk.voice.state.processing", "elapsed": false, "busy": true, "dot": "none", "bars": "sweep" } },
+    { "mode": "voice_agent", "phase": "speaking", "expected": { "indicator": "speaking", "label": "sk.voice.state.speaking", "elapsed": false, "busy": false, "dot": "none", "bars": "output level" } },
+    { "mode": "voice_agent", "phase": "error", "expected": { "indicator": "error", "label": "sk.voice.state.denied", "elapsed": false, "busy": false, "dot": "hollow danger ring", "bars": "hidden" } }
+  ],
+  "status_derived_phase": [
+    { "status": "idle", "expected_phase": null },
+    { "status": "cancelled", "expected_phase": null },
+    { "status": "capturing", "expected_phase": "listening" },
+    { "status": "processing", "expected_phase": "processing" },
+    { "status": "speaking", "expected_phase": "speaking" },
+    { "status": "denied", "expected_phase": "error" }
+  ],
+  "elapsed": [
+    { "ms": 0, "text": "0:00" },
+    { "ms": 999, "text": "0:00" },
+    { "ms": 9000, "text": "0:09" },
+    { "ms": 65000, "text": "1:05" },
+    { "ms": 3725000, "text": "62:05" },
+    { "ms": -500, "text": "0:00" }
+  ],
+  "reduced_motion": {
+    "triggers": ["prefers-reduced-motion: reduce", "static attribute"],
+    "dot": "no pulse; solid live dot while listening, hollow ring on error",
+    "bars": "no sweep, wave or level transform; resting heights 0.45, 0.7, 1, 0.7, 0.45",
+    "colour_transition": "none",
+    "elapsed": "keeps ticking once per second (text, not motion)",
+    "announcements": "unchanged: the phase label once per change; the timer never on its own"
+  }
+}

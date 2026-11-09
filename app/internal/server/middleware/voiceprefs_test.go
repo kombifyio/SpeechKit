@@ -246,3 +246,180 @@ func TestAuth_EdgeHMACAttachesPartialPrefSet(t *testing.T) {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func setVoicePrefV2Headers(req *http.Request) {
+	req.Header.Set(VoicePrefHeaderSTTModel, "stt.deepgram.nova-3")
+	req.Header.Set(VoicePrefHeaderTTSModel, "tts.local.kokoro-82m")
+	req.Header.Set(VoicePrefHeaderTTSVoice, "kokoro.en.af-bella")
+	req.Header.Set(VoicePrefHeaderVAModel, "realtime.builtin.pipeline")
+	req.Header.Set(VoicePrefHeaderVocabulary, "kombify.product")
+	req.Header.Set(VoicePrefHeaderScope, "edge:dev_0123456789abcdef")
+	req.Header.Set(VoicePrefHeaderVALocale, "de-DE")
+}
+
+// signVoicePrefV2Headers mints the v2 signature over the Gateway contract
+// payload: the v1 lines, then stt-model, tts-model, tts-voice, va-model,
+// vocabulary, scope, va-locale (absent values sign as "").
+func signVoicePrefV2Headers(t *testing.T, req *http.Request, secret, sub, org, ts string) {
+	t.Helper()
+	payload := strings.Join([]string{
+		"v2", sub, org, ts,
+		req.Header.Get(VoicePrefHeaderSTTPrimary),
+		req.Header.Get(VoicePrefHeaderSTTSecondary),
+		req.Header.Get(VoicePrefHeaderVAProvider),
+		req.Header.Get(VoicePrefHeaderVAPersona),
+		req.Header.Get(VoicePrefHeaderSTTModel),
+		req.Header.Get(VoicePrefHeaderTTSModel),
+		req.Header.Get(VoicePrefHeaderTTSVoice),
+		req.Header.Get(VoicePrefHeaderVAModel),
+		req.Header.Get(VoicePrefHeaderVocabulary),
+		req.Header.Get(VoicePrefHeaderScope),
+		req.Header.Get(VoicePrefHeaderVALocale),
+	}, "\n")
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(payload))
+	req.Header.Set(VoicePrefHeaderTimestamp, ts)
+	req.Header.Set(VoicePrefHeaderV2Signature, "v2="+hex.EncodeToString(mac.Sum(nil)))
+}
+
+var wantV1Prefs = VoicePrefs{STTPrimary: "deepgram", STTSecondary: "assemblyai", VAProvider: "deepgram", VAPersona: "concise-de"}
+
+func TestAuth_EdgeHMACAttachesSignedV2VoicePrefs(t *testing.T) {
+	t.Setenv("TEST_EDGE_SECRET", "edge-secret-xyz")
+	want := wantV1Prefs
+	want.STTModel = "stt.deepgram.nova-3"
+	want.TTSModel = "tts.local.kokoro-82m"
+	want.TTSVoice = "kokoro.en.af-bella"
+	want.VAModel = "realtime.builtin.pipeline"
+	want.Vocabulary = "kombify.product"
+	want.Scope = "edge:dev_0123456789abcdef"
+	want.VALocale = "de-DE"
+	handler := Auth(AuthOptions{Mode: "edge_hmac", EdgeSecretEnv: "TEST_EDGE_SECRET"})(prefsProbeHandler(t, want))
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/voice-agent/sessions", nil)
+	signEdgeHeaders(t, req, "edge-secret-xyz")
+	setVoicePrefHeaders(req)
+	setVoicePrefV2Headers(req)
+	ts := nowUnixString()
+	signVoicePrefHeaders(t, req, "edge-secret-xyz", "user-42", "org-kombify", ts)
+	signVoicePrefV2Headers(t, req, "edge-secret-xyz", "user-42", "org-kombify", ts)
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// A locale-only account (no v1 value) still reaches SpeechKit under v2.
+func TestAuth_EdgeHMACAttachesV2OnlyLocale(t *testing.T) {
+	t.Setenv("TEST_EDGE_SECRET", "edge-secret-xyz")
+	handler := Auth(AuthOptions{Mode: "edge_hmac", EdgeSecretEnv: "TEST_EDGE_SECRET"})(prefsProbeHandler(t, VoicePrefs{VALocale: "de-DE"}))
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/voice-agent/sessions", nil)
+	signEdgeHeaders(t, req, "edge-secret-xyz")
+	req.Header.Set(VoicePrefHeaderVALocale, "de-DE")
+	ts := nowUnixString()
+	signVoicePrefHeaders(t, req, "edge-secret-xyz", "user-42", "org-kombify", ts)
+	signVoicePrefV2Headers(t, req, "edge-secret-xyz", "user-42", "org-kombify", ts)
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// An absent, tampered, foreign or stale v2 signature drops every v2 field;
+// a valid v1 signature on the same request keeps the v1 fields.
+func TestAuth_EdgeHMACIgnoresInvalidV2PrefOverlay(t *testing.T) {
+	cases := []struct {
+		name    string
+		want    VoicePrefs
+		prepare func(t *testing.T, req *http.Request, ts string)
+	}{
+		{
+			name:    "absent v2 signature",
+			want:    wantV1Prefs,
+			prepare: func(t *testing.T, req *http.Request, ts string) {},
+		},
+		{
+			name: "tampered v2 value after signing",
+			want: wantV1Prefs,
+			prepare: func(t *testing.T, req *http.Request, ts string) {
+				signVoicePrefV2Headers(t, req, "edge-secret-xyz", "user-42", "org-kombify", ts)
+				req.Header.Set(VoicePrefHeaderVALocale, "en-US")
+			},
+		},
+		{
+			name: "v2 signature minted with the wrong secret",
+			want: wantV1Prefs,
+			prepare: func(t *testing.T, req *http.Request, ts string) {
+				signVoicePrefV2Headers(t, req, "some-other-secret", "user-42", "org-kombify", ts)
+			},
+		},
+		{
+			name: "v2 signature bound to a different caller",
+			want: wantV1Prefs,
+			prepare: func(t *testing.T, req *http.Request, ts string) {
+				signVoicePrefV2Headers(t, req, "edge-secret-xyz", "someone-else", "org-kombify", ts)
+			},
+		},
+		{
+			name: "v2 signature presented under the v1 version tag",
+			want: wantV1Prefs,
+			prepare: func(t *testing.T, req *http.Request, ts string) {
+				signVoicePrefV2Headers(t, req, "edge-secret-xyz", "user-42", "org-kombify", ts)
+				req.Header.Set(VoicePrefHeaderV2Signature, "v1="+strings.TrimPrefix(req.Header.Get(VoicePrefHeaderV2Signature), "v2="))
+			},
+		},
+		{
+			name: "stale timestamp outside the replay window drops both versions",
+			want: VoicePrefs{},
+			prepare: func(t *testing.T, req *http.Request, _ string) {
+				stale := strconv.FormatInt(time.Now().Add(-time.Hour).Unix(), 10)
+				signVoicePrefHeaders(t, req, "edge-secret-xyz", "user-42", "org-kombify", stale)
+				signVoicePrefV2Headers(t, req, "edge-secret-xyz", "user-42", "org-kombify", stale)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("TEST_EDGE_SECRET", "edge-secret-xyz")
+			handler := Auth(AuthOptions{Mode: "edge_hmac", EdgeSecretEnv: "TEST_EDGE_SECRET"})(prefsProbeHandler(t, tc.want))
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/voice-agent/sessions", nil)
+			signEdgeHeaders(t, req, "edge-secret-xyz")
+			setVoicePrefHeaders(req)
+			setVoicePrefV2Headers(req)
+			ts := nowUnixString()
+			signVoicePrefHeaders(t, req, "edge-secret-xyz", "user-42", "org-kombify", ts)
+			tc.prepare(t, req, ts)
+
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("request must not fail on an invalid pref overlay; got %d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+// A signed v2 set on a non-HMAC auth path is ignored like v1.
+func TestAuth_NonEdgeSourcesIgnoreV2VoicePrefHeaders(t *testing.T) {
+	t.Setenv("TEST_BEARER_TOKEN", "service-token-123")
+	t.Setenv("TEST_EDGE_SECRET_2", "edge-secret-abc")
+	handler := Auth(AuthOptions{Mode: "bearer_or_edge", BearerTokenEnv: "TEST_BEARER_TOKEN", EdgeSecretEnv: "TEST_EDGE_SECRET_2"})(prefsProbeHandler(t, VoicePrefs{}))
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/voice-agent/sessions", nil)
+	req.Header.Set("Authorization", "Bearer service-token-123")
+	setVoicePrefV2Headers(req)
+	ts := nowUnixString()
+	signVoicePrefV2Headers(t, req, "edge-secret-abc", "service", "default", ts)
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}

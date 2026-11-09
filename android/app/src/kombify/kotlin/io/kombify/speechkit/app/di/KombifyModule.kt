@@ -28,6 +28,12 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object KombifyModule {
 
+    /**
+     * Prefix of the account claims (tenant_id, org_id, organization_id) in
+     * the bearers of the kombify login, read through ShippedDefaults.
+     */
+    const val TOKEN_CLAIM_NAMESPACE: String = "https://kombify.io/"
+
     @Provides
     @Singleton
     fun provideSttRouter(): SttRouter {

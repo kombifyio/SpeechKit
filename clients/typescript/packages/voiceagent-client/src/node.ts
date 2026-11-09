@@ -77,14 +77,21 @@ export async function openNodeSession(options: NodeOpenOptions): Promise<NodeSes
   const Impl = options.WebSocketImpl ?? (await abortable(loadWsImpl(), options.signal));
   throwIfAborted(options.signal);
   let socket: WireSocket;
-  try { socket = new Impl(url, [ticketSubprotocol(ticket)]); }
-  catch { throw new VoiceAgentClientError("ws_setup_failed"); }
+  try {
+    socket = new Impl(url, [ticketSubprotocol(ticket)]);
+  } catch {
+    throw new VoiceAgentClientError("ws_setup_failed");
+  }
 
   const sessionOptions: SessionOptions = {
     start: options.start,
-    ...(options.connectTimeoutMs !== undefined ? { connectTimeoutMs: options.connectTimeoutMs } : {}),
+    ...(options.connectTimeoutMs !== undefined
+      ? { connectTimeoutMs: options.connectTimeoutMs }
+      : {}),
     ...(options.readyTimeoutMs !== undefined ? { readyTimeoutMs: options.readyTimeoutMs } : {}),
-    ...(options.maxOutboundBytes !== undefined ? { maxOutboundBytes: options.maxOutboundBytes } : {}),
+    ...(options.maxOutboundBytes !== undefined
+      ? { maxOutboundBytes: options.maxOutboundBytes }
+      : {}),
     ...(options.signal !== undefined ? { signal: options.signal } : {}),
     ...(options.hooks !== undefined ? { hooks: options.hooks } : {}),
     ...(options.tools !== undefined ? { tools: options.tools } : {}),
@@ -103,7 +110,10 @@ export async function openNodeSession(options: NodeOpenOptions): Promise<NodeSes
 async function loadWsImpl(): Promise<WSConstructor> {
   try {
     // Dynamic import keeps `ws` optional at install time (peerDependency).
-    const mod = (await import("ws")) as unknown as { WebSocket?: WSConstructor; default?: WSConstructor };
+    const mod = (await import("ws")) as unknown as {
+      WebSocket?: WSConstructor;
+      default?: WSConstructor;
+    };
     const ctor = mod.WebSocket ?? mod.default;
     if (!ctor) {
       throw new Error("ws import returned no constructor");
@@ -117,4 +127,10 @@ async function loadWsImpl(): Promise<WSConstructor> {
 }
 
 export { VoiceAgentSession, VoiceAgentClientError } from "./session.js";
-export type { SessionHooks, SessionOptions, ToolHandler, ToolContext, WireSocket } from "./session.js";
+export type {
+  SessionHooks,
+  SessionOptions,
+  ToolHandler,
+  ToolContext,
+  WireSocket,
+} from "./session.js";

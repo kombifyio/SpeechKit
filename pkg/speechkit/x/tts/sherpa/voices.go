@@ -11,8 +11,8 @@ import (
 // Bundled voice directory names. The installer lays both out under models\tts,
 // sharing one espeak-ng-data tree.
 const (
-	VoiceDirGerman  = "vits-piper-de_DE-thorsten-medium"
-	VoiceDirEnglish = "vits-piper-en_US-lessac-medium"
+	VoiceDirGerman  = "vits-piper-de_DE-ramona-low"
+	VoiceDirEnglish = "vits-piper-en_US-ljspeech-medium"
 	EspeakDataDir   = "espeak-ng-data"
 )
 

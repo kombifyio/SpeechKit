@@ -1,0 +1,37 @@
+Ramona (de_DE-ramona-low), Piper VITS voice
+
+Model: trained from scratch by the Piper project (https://github.com/rhasspy/piper)
+on the de_DE part of the M-AILABS Speech Dataset, as the voice's MODEL_CARD states;
+exported for sherpa-onnx by k2-fsa
+(https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models).
+Piper's code is MIT-licensed and the sherpa-onnx export tooling is Apache-2.0;
+neither licence covers these weights, which follow the dataset licence below.
+
+Dataset: The M-AILABS Speech Dataset
+(https://www.caito.de/2019/01/03/the-m-ailabs-speech-dataset/)
+
+Copyright (c) 2017-2019 by the original creators @ M-AILABS
+
+Redistribution and use in any form, including any commercial use, with or
+without modification are permitted provided that the following conditions are
+met:
+
+* Redistributions of source data must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+* Neither the name of the copyright holder nor the names of its contributors
+  may be used to endorse or promote products derived from this downloaded data,
+  source-code or binary-code without specific prior written permission.
+
+THIS DATA IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
+EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE and/or DATA, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Phoneme data: espeak-ng-data, GPL-3.0-or-later
+(https://github.com/espeak-ng/espeak-ng), read as data, not linked.

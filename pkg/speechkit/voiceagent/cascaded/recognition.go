@@ -14,7 +14,15 @@ import (
 // user is still speaking, so the turn's transcript is ready the moment the
 // user stops instead of after a batch upload of the whole utterance.
 type RecognitionStreamer interface {
-	OpenRecognition(ctx context.Context, locale string, onFinal func()) (Recognition, error)
+	OpenRecognition(ctx context.Context, opts RecognitionOptions, onFinal func()) (Recognition, error)
+}
+
+// RecognitionOptions configures one turn's live recognition.
+type RecognitionOptions struct {
+	Locale string
+	// Keyterms bias recognition towards the session's vocabulary (product
+	// names and other coined words), the same terms batch recognition gets.
+	Keyterms []string
 }
 
 // Recognition is one live recognition of a single turn. onFinal (given to
@@ -76,12 +84,12 @@ func (p *Provider) startLiveTurnLocked(ctx context.Context, preRoll []byte) {
 	if len(preRoll) > 0 {
 		turn.chunks <- preRoll
 	}
-	locale := p.locale
+	opts := RecognitionOptions{Locale: p.locale, Keyterms: p.keyterms}
 	p.liveTurn = turn
 	go func() {
 		defer close(turn.worker)
 		defer p.recoverGoroutine("liveRecognition")
-		rec, err := p.recognizer.OpenRecognition(turnCtx, locale, func() {
+		rec, err := p.recognizer.OpenRecognition(turnCtx, opts, func() {
 			turn.mu.Lock()
 			turn.endHeard = true
 			turn.mu.Unlock()

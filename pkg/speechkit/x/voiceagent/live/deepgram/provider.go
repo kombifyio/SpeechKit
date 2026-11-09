@@ -26,12 +26,18 @@ import (
 const (
 	deepgramAgentURL = "wss://agent.deepgram.com/v1/agent/converse"
 
-	deepgramListenModelDefault   = "flux-general-multi"
-	deepgramSpeakModelDefaultEN  = "aura-2-thalia-en"
-	deepgramSpeakModelDefaultDE  = "aura-2-viktoria-de"
-	deepgramSpeakModelFluxEN     = "flux-kit-en"
-	deepgramThinkProviderDefault = "open_ai"
-	deepgramThinkModelDefault    = "gpt-4o-mini"
+	deepgramListenModelDefault  = "flux-general-multi"
+	deepgramSpeakModelDefaultEN = "aura-2-thalia-en"
+	deepgramSpeakModelDefaultDE = "aura-2-viktoria-de"
+	deepgramSpeakModelFluxEN    = "flux-kit-en"
+
+	// deepgramVoiceAgentProfileID names the catalog profile whose think chain
+	// (catalog.VoiceAgentThinkChain) supplies the default and fallback think
+	// models; the package keeps no think model of its own.
+	deepgramVoiceAgentProfileID = "realtime.deepgram.voice-agent"
+	// deepgramThinkRetries is how often a failed turn is retried on the same
+	// think model before it moves to the next one in the chain.
+	deepgramThinkRetries = 1
 
 	// Flux listen tuning ranges from the Voice Agent Settings schema. Values
 	// outside these bounds are rejected by Deepgram, so a misconfigured
@@ -57,8 +63,10 @@ const (
 //
 // The think (LLM) leg is configurable: Deepgram drives the LLM server-side, so
 // ThinkProvider/ThinkModel select which model reasons over the transcript.
-// Defaults target a widely-available option; the wiring layer overrides them
-// from deployment config. Listen defaults to Deepgram Flux for turn-aware
+// Unset, the catalog default think chain applies (catalog.VoiceAgentThinkChain).
+// A think-provider error inside a turn never ends the session: the turn is
+// retried on the same model, then on the next managed model of the chain, and
+// only an exhausted chain reports a recoverable turn failure. Listen defaults to Deepgram Flux for turn-aware
 // conversational STT and speak defaults to a Deepgram Aura-2 voice.
 type Provider struct {
 	// Optional overrides; zero values fall back to the package defaults.
@@ -89,6 +97,10 @@ type Provider struct {
 	// use Deepgram's managed LLM for ThinkProvider/ThinkModel (no key needed).
 	ThinkEndpointURL string
 	ThinkAPIKey      string
+	// ThinkHeaders are extra request headers on a bring-your-own think
+	// endpoint (ThinkEndpointURL), for example a routing hint the endpoint's
+	// proxy needs. The Authorization header stays ThinkAPIKey's.
+	ThinkHeaders map[string]string
 
 	// Logger receives this provider's diagnostics. Nil falls back to
 	// slog.Default() at log time.
@@ -97,6 +109,21 @@ type Provider struct {
 	mu         sync.RWMutex
 	conn       *websocket.Conn
 	lastConfig *live.LiveConfig
+
+	// Turn recovery state, owned by the Receive loop and reset by Connect.
+	turnMu             sync.Mutex
+	ready              bool   // SettingsApplied seen: errors are turn errors from now on
+	pendingUtterance   string // the user turn not yet answered
+	turnAttempts       int    // retries of pendingUtterance on the current think model
+	thinkIndex         int    // position in thinkCandidates() of the active think model
+	turnEffectful      bool   // a tool ran in this turn: never re-asked
+	reasking           bool   // a re-ask of pendingUtterance is in flight
+	reaskEcho          string // the echoed user text of that re-ask, swallowed once
+	thinkUpdatePending bool   // an UpdateThink awaits ThinkUpdated
+	fallbackReask      bool   // this turn moved to a fallback after a think error
+	fallbackAccepted   bool   // Deepgram acknowledged that update
+	fallbackEchoSeen   bool   // Deepgram echoed the re-asked user turn
+	fallbackAmbiguous  bool   // an abandoned update may still be acknowledged
 
 	closeMu  sync.Mutex
 	closed   bool

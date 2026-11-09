@@ -108,7 +108,7 @@ func (a *Adapter) sendConversationReceipt(ctx context.Context, receipt a2a.Voice
 	}
 	writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	return a.Conn.Write(writeCtx, websocket.MessageText, data)
+	return a.connWrite(writeCtx, websocket.MessageText, data)
 }
 
 func validConversationRequestID(value string) bool {

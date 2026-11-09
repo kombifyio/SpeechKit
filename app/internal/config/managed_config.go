@@ -42,6 +42,7 @@ var managedUserEditableKeys = []string{
 	// Language.
 	"general.language",
 	"speech.language",
+	"speech.language_source",
 	"meeting.summary_language",
 	"meeting.additional_summary_languages",
 	// Appearance, overlay position and other UI preferences.

@@ -112,9 +112,9 @@ func (a *Adapter) writeOutputAudio(ctx context.Context, data []byte, epoch uint6
 	if epoch <= a.mutedThrough {
 		return false, true
 	}
-	writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	writeCtx, cancel := context.WithTimeout(ctx, transportWriteTimeout)
 	defer cancel()
-	if err := a.Conn.Write(writeCtx, websocket.MessageBinary, data); err != nil {
+	if err := a.connWrite(writeCtx, websocket.MessageBinary, data); err != nil {
 		return false, false
 	}
 	if a.continuousDuplex {

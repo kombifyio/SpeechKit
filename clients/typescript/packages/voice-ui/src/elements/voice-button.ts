@@ -4,13 +4,13 @@ import {
   INDICATOR_CSS,
   RecordingIndicator,
   sessionStatusToIndicatorState,
-  type RecordingIndicatorState
+  type RecordingIndicatorState,
 } from "../core/indicator.js";
 import { SpeechKitVoiceNoticeElement } from "./voice-notice.js";
 import type {
   SpeechKitVoiceDenial,
   SpeechKitVoiceEvent,
-  SpeechKitVoiceSessionState
+  SpeechKitVoiceSessionState,
 } from "../core/voice-surface.js";
 
 const LONG_PRESS_MS = 500;
@@ -206,7 +206,7 @@ export class SpeechKitVoiceButtonElement extends SpeechKitElement {
     this.#denialPopover.setAttribute("part", "denial");
     this.#denialPopover.hidden = true;
     this.#notice = document.createElement(
-      SpeechKitVoiceNoticeElement.tagName
+      SpeechKitVoiceNoticeElement.tagName,
     ) as SpeechKitVoiceNoticeElement;
     this.#notice.addEventListener("speechkit-dismiss", () => this.#hideDenial());
     this.#notice.addEventListener("speechkit-retry", () => this.#hideDenial());
@@ -340,7 +340,7 @@ export class SpeechKitVoiceButtonElement extends SpeechKitElement {
     this.#indicator.setLevelFeed(Boolean(controller?.subscribeLevel));
     if (controller?.subscribeLevel) {
       this.#unsubscribeLevel = controller.subscribeLevel((level, source) =>
-        this.#indicator.setLevel(level, source)
+        this.#indicator.setLevel(level, source),
       );
     }
   }
@@ -365,7 +365,7 @@ export class SpeechKitVoiceButtonElement extends SpeechKitElement {
       if (event.type === "voice.transcript_draft" || event.type === "voice.transcript_final") {
         this.emitKitEvent("speechkit-transcript", {
           text: event.text ?? "",
-          final: event.type === "voice.transcript_final"
+          final: event.type === "voice.transcript_final",
         });
       } else if (event.type === "voice.denied" && event.error) {
         this.emitKitEvent<SpeechKitVoiceDenial>("speechkit-denied", event.error);
@@ -385,7 +385,10 @@ export class SpeechKitVoiceButtonElement extends SpeechKitElement {
     const indicator = sessionStatusToIndicatorState(status, this.#requesting);
     this.#indicator.setState(indicator);
     this.#primary.dataset.indicator = indicator;
-    this.#primary.toggleAttribute("aria-busy", indicator === "requesting" || indicator === "processing");
+    this.#primary.toggleAttribute(
+      "aria-busy",
+      indicator === "requesting" || indicator === "processing",
+    );
     const stateText =
       indicator === "requesting"
         ? messages["sk.voice.state.requesting"]
@@ -402,7 +405,10 @@ export class SpeechKitVoiceButtonElement extends SpeechKitElement {
     const primaryLabel = capturing
       ? messages["sk.voice.button.dictation.stop"]
       : messages["sk.voice.button.dictation.start"];
-    this.#primary.setAttribute("aria-label", stateText ? `${primaryLabel} (${stateText})` : primaryLabel);
+    this.#primary.setAttribute(
+      "aria-label",
+      stateText ? `${primaryLabel} (${stateText})` : primaryLabel,
+    );
     this.#primary.title = primaryLabel;
 
     const wantsAgent = this.hasAttribute("agent");
@@ -454,11 +460,15 @@ function missingControllerDenial(): SpeechKitVoiceDenial {
     required_features: [],
     missing_features: [],
     retryable: false,
-    remediation: "Assign a VoiceUiController (or wrap in <speechkit-voice-provider>) before enabling the agent segment.",
+    remediation:
+      "Assign a VoiceUiController (or wrap in <speechkit-voice-provider>) before enabling the agent segment.",
     user_guidance: {
       title: "Voice conversation is not available",
       body: "This surface has no live voice controller, so no session or audio capture was started.",
-      next_steps: ["Use dictation instead.", "Contact the host application if voice conversation should be available here."]
-    }
+      next_steps: [
+        "Use dictation instead.",
+        "Contact the host application if voice conversation should be available here.",
+      ],
+    },
   };
 }

@@ -76,9 +76,9 @@ func (f *frontDoor) isLocalHandoff() bool {
 	return f.localHandoff
 }
 
-// executeBridgeTool runs a claimed tool call: the front-door handoff locally,
-// everything else through the session tool router.
-func (a *Adapter) executeBridgeTool(ctx context.Context, call ToolCall) (map[string]any, bool) {
+// executeServerTool runs a claimed tool call: the front-door handoff. Any
+// other claimed name has no executor and reports that to the model.
+func (a *Adapter) executeServerTool(ctx context.Context, call ToolCall) (map[string]any, bool) {
 	if call.Name == handoffToolName && a.front != nil && a.front.isLocalHandoff() {
 		request := ""
 		if value, ok := call.Args["request"].(string); ok {
@@ -98,5 +98,5 @@ func (a *Adapter) executeBridgeTool(ctx context.Context, call ToolCall) (map[str
 		}
 		return map[string]any{"status": "handed_over", "message": "The Companion takes over now. Do not say anything more."}, true
 	}
-	return a.ToolRouter.Execute(ctx, a.Session, call)
+	return nil, false
 }

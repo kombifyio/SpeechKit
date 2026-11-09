@@ -22,6 +22,12 @@ type StreamTranscriber interface {
 	OpenStream(sampleRate int) (Stream, error)
 }
 
+// TermStreamTranscriber opens streams that boost dictionary terms (see
+// TermTranscriber); the stream open request carries them as "keyterm".
+type TermStreamTranscriber interface {
+	OpenStreamTerms(sampleRate int, terms []string) (Stream, error)
+}
+
 // Stream is one recording decoded while it arrives. Its methods are called
 // from one goroutine at a time.
 type Stream interface {
@@ -230,7 +236,15 @@ func (h *handler) openStream(w http.ResponseWriter, r *http.Request, st StreamTr
 	h.streams.opening++
 	h.streams.mu.Unlock()
 
-	s, err := st.OpenStream(rate)
+	var (
+		s   Stream
+		err error
+	)
+	if tst, ok := st.(TermStreamTranscriber); ok && len(query["keyterm"]) > 0 {
+		s, err = tst.OpenStreamTerms(rate, Keyterms(query["keyterm"]))
+	} else {
+		s, err = st.OpenStream(rate)
+	}
 	// A client that gave up while the open waited for a busy engine never
 	// learns the id; registering the stream anyway held one of the slots
 	// until the idle sweep and answered later opens with 503.

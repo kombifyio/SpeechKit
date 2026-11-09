@@ -317,13 +317,15 @@ data class VoiceAgentErrorFrame(
     val remediation: String? = null,
     @Json(name = "request_id") val requestId: String? = null,
     val fatal: Boolean = false,
+    /** The user-facing reason class ([VoiceErrorClass] wire value). */
+    @Json(name = "class") val errorClass: String? = null,
 ) : VoiceAgentServerFrame {
     constructor(type: String = VoiceAgentMsg.ERROR, code: String = "", message: String = "",
         remediation: String? = null, requestId: String? = null) :
-        this(type, code, message, remediation, requestId, false)
+        this(type, code, message, remediation, requestId, false, null)
     fun copy(type: String = this.type, code: String = this.code, message: String = this.message,
         remediation: String? = this.remediation, requestId: String? = this.requestId): VoiceAgentErrorFrame =
-        VoiceAgentErrorFrame(type, code, message, remediation, requestId, fatal)
+        VoiceAgentErrorFrame(type, code, message, remediation, requestId, fatal, errorClass)
 }
 
 /** Terminal; the server closes the socket after sending it. */

@@ -16,9 +16,15 @@
     <string name="speechkit_ime_action_retry">إعادة المحاولة</string>
     <string name="speechkit_ime_switch_keyboard">العودة إلى لوحة المفاتيح</string>
     <string name="speechkit_ime_language_chip">لغة الإملاء</string>
+    <string name="speechkit_ime_language_multi">متعدد</string>
     <string name="speechkit_ime_error_generic">فشل الإملاء</string>
     <string name="speechkit_ime_error_not_configured">لم يتم إعداد أي خادم: افتح تطبيق SpeechKit</string>
     <string name="speechkit_ime_error_mic_denied">تم رفض إذن الميكروفون</string>
+    <string name="speechkit_ime_error_limit">تم بلوغ حد الإملاء حاليًا</string>
+    <string name="speechkit_ime_error_outage">خدمة الإملاء غير متاحة. حاول بعد قليل</string>
+    <string name="speechkit_ime_error_right">الإملاء غير مضمَّن في هذا الحساب</string>
+    <string name="speechkit_ime_error_consent">اسمح بالصوت السحابي في تطبيق SpeechKit</string>
+    <string name="speechkit_ime_error_expired">انتهت جلسة الإملاء</string>
     <string name="speechkit_ime_action_voice_agent">المساعد الصوتي</string>
     <string name="speechkit_ime_agent_action_dictation">الإملاء</string>
     <string name="speechkit_ime_agent_action_end">إنهاء المحادثة</string>
@@ -36,4 +42,9 @@
     <string name="speechkit_ime_agent_error_no_server">يحتاج المساعد الصوتي إلى خادم SpeechKit مقترن</string>
     <string name="speechkit_ime_agent_error_audio">تعذر متابعة الصوت</string>
     <string name="speechkit_ime_agent_error_generic">فشل الاتصال الصوتي</string>
+    <string name="speechkit_ime_agent_class_limit">تم بلوغ حد الصوت حاليًا</string>
+    <string name="speechkit_ime_agent_class_outage">الخدمة الصوتية غير متاحة. حاول بعد قليل</string>
+    <string name="speechkit_ime_agent_class_right">لا يمكن لهذا الحساب استخدام المحادثة الصوتية</string>
+    <string name="speechkit_ime_agent_class_consent">اسمح بالصوت السحابي في تطبيق SpeechKit</string>
+    <string name="speechkit_ime_agent_class_expired">انتهت الجلسة الصوتية. ابدأ محادثة جديدة</string>
 </resources>

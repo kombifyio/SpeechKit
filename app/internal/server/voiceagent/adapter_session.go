@@ -17,8 +17,8 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/config"
 )
 
-// applyVoicePrefDefaults fills the provider and persona a client omitted from
-// the start frame with the user's edge-resolved voice preferences captured at
+// applyVoicePrefDefaults fills the provider, persona and locale a client
+// omitted from the start frame with the user's edge-resolved voice preferences captured at
 // session-mint time (middleware.VoicePrefsFromContext → ManagedSession).
 // Explicit start-frame values always win. Preferences are best-effort per the
 // voice-preferences contract: a preferred provider that is not configured on
@@ -36,16 +36,22 @@ func (a *Adapter) applyVoicePrefDefaults(start *StartFrame) (personaFromPref boo
 	}
 	// Provider default only matters when production provider selection runs
 	// (a.Provider == nil); tests that pre-inject a provider keep their frame.
+	// The v2 model (catalog profile id) wins over the v1 provider name; a
+	// model this server cannot serve falls through to the v1 value, then to
+	// the server default.
 	if a.Provider == nil && strings.TrimSpace(start.Provider) == "" {
-		if pref := normalizeProviderName(prefs.VAProvider); pref != "" {
+		for _, pref := range []string{voiceAgentProviderForModel(prefs.VAModel), normalizeProviderName(prefs.VAProvider)} {
+			if pref == "" {
+				continue
+			}
 			if _, ok := a.Providers[pref]; ok {
 				start.Provider = pref
-			} else {
-				slog.Info("voiceagent: preferred provider not configured on this server; using default",
-					"preferred_provider", pref,
-					"session_id", a.Session.ID,
-				)
+				break
 			}
+			slog.Info("voiceagent: preferred provider not configured on this server; using default",
+				"preferred_provider", pref,
+				"session_id", a.Session.ID,
+			)
 		}
 	}
 	if strings.TrimSpace(start.PersonaID) == "" {
@@ -54,7 +60,49 @@ func (a *Adapter) applyVoicePrefDefaults(start *StartFrame) (personaFromPref boo
 			personaFromPref = true
 		}
 	}
+	// The account's voice_agent.locale (v2) is the session locale when the
+	// client named none, so STT, the agent and TTS run in the person's
+	// language without every client sending it.
+	if strings.TrimSpace(start.Locale) == "" {
+		if locale := strings.TrimSpace(prefs.VALocale); validPrefLocale(locale) {
+			start.Locale = locale
+		}
+	}
 	return personaFromPref
+}
+
+// voiceAgentProviderForModel maps a catalog voice-agent profile id (v2
+// x-speechkit-pref-va-model) to this server's provider name; "" when the id
+// names no provider family.
+func voiceAgentProviderForModel(model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return ""
+	}
+	if model == "realtime.builtin.pipeline" {
+		return "cascaded"
+	}
+	return normalizeProviderName(model)
+}
+
+// validPrefLocale accepts a BCP-47 shaped tag (language plus optional
+// subtags, e.g. "de", "de-DE", "zh-Hans"); anything else is ignored so a
+// malformed preference never reaches a provider.
+func validPrefLocale(locale string) bool {
+	if locale == "" || len(locale) > 35 {
+		return false
+	}
+	for i, part := range strings.Split(locale, "-") {
+		if len(part) == 0 || len(part) > 8 || (i == 0 && (len(part) < 2 || len(part) > 3)) {
+			return false
+		}
+		for _, r := range part {
+			if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || i > 0 && r >= '0' && r <= '9') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // resolvePersonaConfig resolves the persona/role config for the session.

@@ -264,6 +264,12 @@ func (r *Router) Route(ctx context.Context, audio []byte, audioDurationSecs floa
 		span.End()
 	}()
 
+	if netsec.DataProfileEU(ctx) {
+		if r.Strategy == StrategyLocalOnly {
+			return nil, fmt.Errorf("data_profile_processor_ineligible: hosted EU dictation cannot use the local-only strategy")
+		}
+		return r.transcribeCloud(ctx, audio, opts)
+	}
 	switch r.Strategy {
 	case StrategyLocalOnly:
 		if r.LocalFallbackProfileID != "" {
@@ -282,6 +288,10 @@ func (r *Router) Route(ctx context.Context, audio []byte, audioDurationSecs floa
 // the normal STT routing decision for Dictation/Assist.
 func (r *Router) StartSpeakerStream(ctx context.Context, opts speaker.Options, format speaker.AudioFormat) (speaker.SpeakerStream, error) {
 	candidates := r.streamingCandidates(opts)
+	candidates, err := euDictationCandidates(ctx, candidates, opts.ProviderProfileID, opts.Model)
+	if err != nil {
+		return nil, err
+	}
 	var errs []error
 	for _, p := range candidates {
 		streamer, ok := p.(speaker.StreamingProvider)
@@ -307,6 +317,10 @@ func (r *Router) StartSpeakerStream(ctx context.Context, opts speaker.Options, f
 // choose this path explicitly per recording session.
 func (r *Router) StartDictationStream(ctx context.Context, opts speechkit.DictationStreamOptions, format speaker.AudioFormat) (speechkit.DictationStream, error) {
 	candidates := PrioritizeProviderProfile(r.dictationStreamingCandidates(opts.ProviderProfileID), opts.ProviderProfileID)
+	candidates, err := euDictationCandidates(ctx, candidates, opts.ProviderProfileID, opts.Model)
+	if err != nil {
+		return nil, err
+	}
 	var errs []error
 	for _, p := range candidates {
 		streamer, ok := speechkit.AsDictationStreamProvider(p)
@@ -574,6 +588,10 @@ func (r *Router) probeInternet(ctx context.Context) bool {
 func (r *Router) transcribeCloud(ctx context.Context, audio []byte, opts TranscribeOpts) (*Result, error) {
 	_, cloud := r.snapshot()
 	cloud = PrioritizeProviderProfile(withoutUnrequestedExplicitOnly(cloud, opts.ProviderProfileID), opts.ProviderProfileID)
+	cloud, err := euDictationCandidates(ctx, cloud, opts.ProviderProfileID, opts.Model)
+	if err != nil {
+		return nil, err
+	}
 
 	var errs []error
 	for _, p := range cloud {

@@ -34,9 +34,15 @@ token_env = "SPEECHKIT_BOX_MEDIA_TOKEN"
 device_id = "kitchen-speaker"
 pairing_id = "pairing-kitchen-2026-07"
 room_id = "kitchen"
+locale = "en-US"
+
+[[server.device_agent.box_media.mappings]]
+transcript = "turn on the kitchen light"
+command_id = "kitchen-light-on"
+
+[[server.device_agent.box_media.mappings]]
 transcript = "turn off the kitchen light"
 command_id = "kitchen-light-off"
-locale = "en-US"
 
 [[server.device_agent.devices]]
 device_id = "kitchen-speaker"
@@ -64,7 +70,7 @@ expires_at = "2026-07-31T00:00:00Z"
 	if bridge.MaxRequestAgeSec != 300 || bridge.FutureSkewSec != 30 || bridge.ClaimRetentionSec != 3600 || bridge.MaxClaims != 2048 {
 		t.Fatalf("decoded claim settings = %+v", bridge.EffectiveClaimSettings())
 	}
-	if media := bridge.BoxMedia; !media.Enabled || media.ListenAddr != "192.168.10.10:8444" || media.TokenEnv != "SPEECHKIT_BOX_MEDIA_TOKEN" || media.CommandID != "kitchen-light-off" {
+	if media := bridge.BoxMedia; !media.Enabled || media.ListenAddr != "192.168.10.10:8444" || media.TokenEnv != "SPEECHKIT_BOX_MEDIA_TOKEN" || len(media.Mappings) != 2 || media.Mappings[0].CommandID != "kitchen-light-on" || media.Mappings[1].Transcript != "turn off the kitchen light" {
 		t.Fatalf("decoded Box media config = %+v", media)
 	}
 	if len(bridge.Devices) != 1 {
@@ -198,10 +204,44 @@ func TestValidateServerProductionAuthRejectsIncompleteBoxMediaConfig(t *testing.
 		}, "device kitchen-speaker credential"},
 		{"unknown device", func(_ *testing.T, cfg *config.Config) { cfg.Server.DeviceAgent.BoxMedia.DeviceID = "other-device" }, "existing paired device"},
 		{"wrong pairing epoch", func(_ *testing.T, cfg *config.Config) { cfg.Server.DeviceAgent.BoxMedia.PairingID = "pairing-old" }, "current pairing epoch"},
-		{"unknown command", func(_ *testing.T, cfg *config.Config) { cfg.Server.DeviceAgent.BoxMedia.CommandID = "other-command" }, "existing G0 rule"},
+		{"missing mappings", func(_ *testing.T, cfg *config.Config) { cfg.Server.DeviceAgent.BoxMedia.Mappings = nil }, "mappings must contain"},
+		{"unbounded mappings", func(_ *testing.T, cfg *config.Config) {
+			media := &cfg.Server.DeviceAgent.BoxMedia
+			for len(media.Mappings) <= config.MaxServerDeviceAgentBoxMediaMappings {
+				media.Mappings = append(media.Mappings, media.Mappings[0])
+			}
+		}, "mappings must contain"},
+		{"missing command", func(_ *testing.T, cfg *config.Config) { cfg.Server.DeviceAgent.BoxMedia.Mappings[0].CommandID = "" }, "command_id must be"},
+		{"missing transcript", func(_ *testing.T, cfg *config.Config) { cfg.Server.DeviceAgent.BoxMedia.Mappings[1].Transcript = " " }, "transcript must be"},
+		{"unknown command", func(_ *testing.T, cfg *config.Config) {
+			cfg.Server.DeviceAgent.BoxMedia.Mappings[1].CommandID = "other-command"
+		}, "existing G0 rule"},
 		{"different transcript", func(_ *testing.T, cfg *config.Config) {
-			cfg.Server.DeviceAgent.BoxMedia.Transcript = "turn on the kitchen light"
+			cfg.Server.DeviceAgent.BoxMedia.Mappings[1].Transcript = "switch off the kitchen light"
 		}, "exactly match"},
+		{"duplicate command", func(_ *testing.T, cfg *config.Config) {
+			media := &cfg.Server.DeviceAgent.BoxMedia
+			media.Mappings = append(media.Mappings, media.Mappings[1])
+		}, "duplicates the command_id"},
+		{"ambiguous transcript", func(_ *testing.T, cfg *config.Config) {
+			cfg.Server.DeviceAgent.BoxMedia.Mappings[1].Transcript = "Turn  ON the kitchen light"
+		}, "ambiguous"},
+		{"foreign device rule", func(t *testing.T, cfg *config.Config) {
+			appendSecondDevice(t, cfg)
+			cfg.Server.DeviceAgent.BoxMedia.Mappings[1] = config.ServerDeviceAgentBoxMediaMappingConfig{
+				Transcript: "turn off the office light", CommandID: "office-light-off",
+			}
+		}, "existing G0 rule"},
+		{"foreign locale", func(_ *testing.T, cfg *config.Config) {
+			cfg.Server.DeviceAgent.Devices[0].LocalRules[1].Locale = "de-DE"
+		}, "exactly match"},
+		{"second light", func(_ *testing.T, cfg *config.Config) {
+			cfg.Server.DeviceAgent.Devices[0].LocalRules[1].EntityID = "light.pantry"
+		}, "one selected light"},
+		{"turn_off missing", func(_ *testing.T, cfg *config.Config) {
+			media := &cfg.Server.DeviceAgent.BoxMedia
+			media.Mappings = media.Mappings[:1]
+		}, "both turn_on and turn_off"},
 	}
 
 	for _, tc := range tests {
@@ -497,8 +537,16 @@ func enableValidBoxMediaConfig(t *testing.T, cfg *config.Config) {
 		DeviceID:        "kitchen-speaker",
 		PairingID:       "pairing-kitchen-2026-07",
 		RoomID:          "kitchen",
-		Transcript:      "turn off the kitchen light",
-		CommandID:       "kitchen-light-off",
 		Locale:          "en-US",
+		Mappings: []config.ServerDeviceAgentBoxMediaMappingConfig{
+			{Transcript: "turn on the kitchen light", CommandID: "kitchen-light-on"},
+			{Transcript: "turn off the kitchen light", CommandID: "kitchen-light-off"},
+		},
 	}
+	device := &cfg.Server.DeviceAgent.Devices[0]
+	device.LocalRules = append(device.LocalRules, config.ServerDeviceAgentLocalRuleConfig{
+		RuleID: "kitchen-light-on", TriggerText: "turn on the kitchen light", Locale: "en-US",
+		Action: "turn_on", EntityID: "light.kitchen",
+		NotBefore: "2026-07-01T00:00:00Z", ExpiresAt: "2026-07-31T00:00:00Z",
+	})
 }

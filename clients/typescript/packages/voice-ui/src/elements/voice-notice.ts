@@ -6,7 +6,7 @@ import {
   voiceNoticeKind,
   voiceNoticeKindForDenial,
   voiceNoticeMessage,
-  type VoiceNoticeKind
+  type VoiceNoticeKind,
 } from "../core/notice.js";
 import type { SpeechKitVoiceDenial } from "../core/voice-surface.js";
 
@@ -149,7 +149,7 @@ export class SpeechKitVoiceNoticeElement extends SpeechKitElement {
       "no-retry",
       "no-dismiss",
       "request-id",
-      "flat"
+      "flat",
     ];
   }
 
@@ -260,8 +260,8 @@ export class SpeechKitVoiceNoticeElement extends SpeechKitElement {
         detail: { reason: this.#reasonCode(denial) },
         bubbles: true,
         composed: true,
-        cancelable: true
-      })
+        cancelable: true,
+      }),
     );
     this.#dismissedKey = this.#key(denial);
     this.requestUpdate();
@@ -331,8 +331,16 @@ export class SpeechKitVoiceNoticeElement extends SpeechKitElement {
     const extra = this.#details ? stripUrls(this.#details) : "";
 
     const key = JSON.stringify([
-      message, kind, retryable, requestId, steps, extra, reason, this.#expanded,
-      this.hasAttribute("no-dismiss"), this.resolvedLocale()
+      message,
+      kind,
+      retryable,
+      requestId,
+      steps,
+      extra,
+      reason,
+      this.#expanded,
+      this.hasAttribute("no-dismiss"),
+      this.resolvedLocale(),
     ]);
     if (key === this.#renderedKey) return;
     this.#renderedKey = key;

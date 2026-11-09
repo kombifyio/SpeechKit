@@ -91,6 +91,7 @@ class SystemSpeechRecognizerSession internal constructor(
                     languageTag = toLanguageTag(options.language),
                     partialResults = options.interimResults,
                     preferOffline = preferOffline,
+                    biasingStrings = options.keyterms,
                 ),
                 SegmentCallbacks(segmentId),
             )

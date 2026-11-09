@@ -189,6 +189,14 @@ signature change does. Additive APIs are allowed in pre-1.0 patches.
 `:app` and `:heliboard` are not a published contract. Changing them is not an
 SDK break.
 
+The hosted Voice budget renewal and Cloud session identity cutover changes
+public `:domain` and `:net` binary signatures, including `ConnectionProfile.Server`,
+`CloudSession`, `VoiceAgentController`, `CreateVoiceAgentSessionResponse`, and
+Cloud bearer and account methods. `CloudSessionStore` implementers must migrate
+to its conditional save and sign-out methods. Release preparation must call
+out this breaking Android SDK change; consumers must rebuild against the new
+artifacts and update any store implementation.
+
 The voice reliability slice removes the public-source
 `ImeVoiceAgentController.audio: Flow<ByteArray>` property and replaces it with
 `consumeAudio(flush, play)`. Both repository hosts and controller tests migrate

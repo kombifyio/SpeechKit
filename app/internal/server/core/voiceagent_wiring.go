@@ -13,9 +13,12 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/app/internal/config"
-	"github.com/kombifyio/SpeechKit/app/internal/server/toolbridge"
+	internalcustomize "github.com/kombifyio/SpeechKit/app/internal/customize"
 	vsserver "github.com/kombifyio/SpeechKit/app/internal/server/voiceagent"
+	speechcustomize "github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
+	speechstorage "github.com/kombifyio/SpeechKit/pkg/speechkit/storage"
 	dgstt "github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/deepgram"
 	localstt "github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/local"
 )
@@ -119,6 +122,11 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 		// untouched; vsserver.New treats negatives as "disabled".
 		idleTimeout = -1
 	}
+	// 0 keeps the adapter default (15 s); a negative value disables it.
+	heartbeat := time.Duration(cfg.Server.VoiceAgentHeartbeatSec) * time.Second
+	if cfg.Server.VoiceAgentHeartbeatSec < 0 {
+		heartbeat = -1
+	}
 	maxSessionDuration := time.Duration(cfg.Server.VoiceAgentMaxSessionSec) * time.Second
 	if cfg.Server.VoiceAgentMaxSessionSec <= 0 {
 		maxSessionDuration = 0
@@ -133,18 +141,21 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 		AllowedOrigins:     cfg.Server.CORSAllowedOrigins,
 		TrustedProxyCIDRs:  cfg.Server.TrustedProxyCIDRs,
 		IdleTimeout:        idleTimeout,
+		Heartbeat:          heartbeat,
 		MaxSessionDuration: maxSessionDuration,
 		RequireVoiceBudget: cfg.Server.RequireVoiceBudget,
 		Store:              app.Store,
 		LiveKit:            buildLiveKitIssuer(cfg, app),
 		ReadLimit:          cfg.Server.WSReadLimitBytes,
-		ToolRouter:         buildVoiceAgentToolRouter(cfg),
 		Usage:              usageReporter,
 		AssemblyAIKey:      resolveRealtimeAPIKey(cfg, ProviderAssemblyAI),
 
 		RegisteredAgentSigningSecret: func() string { return os.Getenv("KOMBIFY_A2A_DELEGATION_SIGNING_SECRET") },
 		NativeConsentReader:          buildNativeVoiceConsentReader(),
 		WakeVerifier:                 buildWakeVerifier(ctx, cfg),
+		Vocabulary:                   buildVoiceAgentVocabulary(cfg, app),
+		PlainAgent:                   buildPlainVoiceAgent(app),
+		NativeCallbackHeaders:        nativeCallbackHeaders(app),
 	})
 	if err != nil {
 		return nil, status, err
@@ -155,6 +166,67 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 		h.StartNativeCleanup(ctx)
 	}
 	return h, status, nil
+}
+
+// nativeCallbackHeaders routes a native vendor's think callback back to this service: a session
+// minted on the Early Access service exists only there, and the Gateway sends a request to the
+// Early Access service only when it carries the opt-in header.
+func nativeCallbackHeaders(app *App) map[string]string {
+	if !app.EarlyAccess() {
+		return nil
+	}
+	return map[string]string{"x-kombify-release-channel": releaseChannelEarlyAccess}
+}
+
+// buildPlainVoiceAgent is the plain voice model that answers a Companion turn the Companion cannot
+// serve, after a spoken notice. Without a configured model the turn keeps its typed error.
+func buildPlainVoiceAgent(app *App) vsserver.CascadedAgent {
+	if app == nil || app.AgentFlow == nil {
+		return nil
+	}
+	return vsserver.NewAgentFlowAdapter(app.AgentFlow)
+}
+
+// buildVoiceAgentVocabulary resolves a session's recognition keyterms (the
+// canonical terms; providers cap them to their own limits) with
+// the same customization resolver Dictation and Assist use: the configured
+// templates, the operator vocabulary ([[customization.terms]]) and the
+// owner's own words, narrowed by the signed vocabulary preference.
+func buildVoiceAgentVocabulary(cfg *config.Config, app *App) vsserver.VocabularyResolver {
+	active := append([]string(nil), cfg.Customization.ActiveTemplateIDs...)
+	return func(ctx context.Context, userID, orgID string, prefs vsserver.VoicePrefs, locale string) []string {
+		scope := speechstorage.ScopeFromContext(ctx)
+		scope.UserID, scope.TenantID = userID, orgID
+		ctx = speechstorage.WithScope(ctx, scope)
+		ctx = internalcustomize.WithVocabularyRef(ctx, prefs.Vocabulary)
+		service := internalcustomize.NewService(internalcustomize.ServiceOptions{
+			Store:             app.Store,
+			ScopeOrder:        speechcustomize.DefaultServerScopeOrder(),
+			ActiveTemplateIDs: active,
+		})
+		resolved, err := service.Resolve(ctx, speechcustomize.Context{
+			Mode:              speechcustomize.ModeVoiceAgent,
+			Language:          locale,
+			ActiveTemplateIDs: active,
+		})
+		if err != nil {
+			slog.Debug("voiceagent: resolve vocabulary failed", "err", err)
+			return nil
+		}
+		// Canonical terms only: the Voice Agent has no post-STT replacement,
+		// so a boosted mishearing would reach the conversation as written.
+		return internalcustomize.CanonicalTerms(resolved.Words)
+	}
+}
+
+// keytermOptions carries session keyterms as the provider option layer of a
+// LiveConfig; providers whose manifest maps keyterms send them on their
+// listen leg.
+func keytermOptions(keyterms []string) provideropts.Values {
+	if len(keyterms) == 0 {
+		return nil
+	}
+	return provideropts.Values{provideropts.OptionKeyterms: append([]string(nil), keyterms...)}
 }
 
 // buildWakeVerifier backs the two-stage wake word check. With a Parakeet
@@ -209,12 +281,26 @@ func productWakePhrases() map[string]vsserver.WakePhrase {
 	}
 }
 
-// superviseLocalWakeSTT keeps the sidecar running: it starts it, waits for it
-// to exit and starts it again with a growing pause (5 s up to 5 min, reset
-// after a run of 10 minutes). While it is down the wake check uses the cloud
-// verifier at once (Provider.Ready is false).
+// superviseLocalWakeSTT keeps the wake check's sidecar running (see
+// superviseLocalSTT). While it is down the wake check uses the cloud verifier
+// at once (Provider.Ready is false).
 func superviseLocalWakeSTT(ctx context.Context, provider *localstt.Provider, model string) {
+	superviseLocalSTT(ctx, provider, model, "voiceagent: local wake STT", "the cloud verifier decides", nil)
+}
+
+// superviseLocalSTT keeps a local STT sidecar running: it starts it, waits for
+// it to exit and starts it again with a growing pause (5 s up to 5 min, reset
+// after a run of 10 minutes). name prefixes the log lines ("<name> ready",
+// "<name> exited; <fallback>"). onState, when set, hears every transition:
+// starting before each start, ready, and down with the error after a failed
+// start or an exit, so a readiness component follows the live sidecar.
+func superviseLocalSTT(ctx context.Context, provider *localstt.Provider, model, name, fallback string, onState func(state localSTTState, err error)) {
 	defer provider.StopServer()
+	report := func(state localSTTState, err error) {
+		if onState != nil {
+			onState(state, err)
+		}
+	}
 	const (
 		minPause = 5 * time.Second
 		maxPause = 5 * time.Minute
@@ -222,13 +308,21 @@ func superviseLocalWakeSTT(ctx context.Context, provider *localstt.Provider, mod
 	pause := minPause
 	for ctx.Err() == nil {
 		started := time.Now()
+		report(localSTTStarting, nil)
 		if err := provider.StartServer(ctx); err != nil {
-			slog.Warn("voiceagent: local wake STT did not start; the cloud verifier decides", "model", model, "retry_in", pause.String(), "err", err)
+			slog.Warn(name+" did not start; "+fallback, "model", model, "retry_in", pause.String(), "err", err)
+			report(localSTTDown, err)
 		} else {
-			slog.Info("voiceagent: local wake STT ready", "model", model, "start_ms", time.Since(started).Milliseconds())
+			slog.Info(name+" ready", "model", model, "start_ms", time.Since(started).Milliseconds())
+			report(localSTTReady, nil)
 			select {
 			case <-provider.RuntimeDone():
-				slog.Warn("voiceagent: local wake STT exited; the cloud verifier decides", "model", model, "retry_in", pause.String(), "err", provider.RuntimeError())
+				exitErr := provider.RuntimeError()
+				slog.Warn(name+" exited; "+fallback, "model", model, "retry_in", pause.String(), "err", exitErr)
+				if exitErr == nil {
+					exitErr = errLocalSTTExited
+				}
+				report(localSTTDown, exitErr)
 			case <-ctx.Done():
 				return
 			}
@@ -245,6 +339,17 @@ func superviseLocalWakeSTT(ctx context.Context, provider *localstt.Provider, mod
 	}
 }
 
+// localSTTState is a transition superviseLocalSTT reports.
+type localSTTState int
+
+const (
+	localSTTStarting localSTTState = iota
+	localSTTReady
+	localSTTDown
+)
+
+var errLocalSTTExited = errors.New("local STT sidecar exited")
+
 func buildCloudWakeVerifier(cfg *config.Config) vsserver.WakeVerifier {
 	key := resolveRealtimeAPIKey(cfg, ProviderDeepgram)
 	if key == "" {
@@ -257,35 +362,6 @@ func buildCloudWakeVerifier(cfg *config.Config) vsserver.WakeVerifier {
 		phrases[id] = vsserver.WakePhrase{Cores: ph.Cores, Confirm: ph.Confirm, ConfirmCodes: ph.ConfirmCodes}
 	}
 	return vsserver.NewSTTWakeVerifier(p, phrases, cfg.VoiceAgent.Wake.Keyterms)
-}
-
-// buildVoiceAgentToolRouter constructs the generic tool bridge from
-// [server.voiceagent.tool_bridge]. Fail-closed: disabled or misconfigured
-// bridges yield a nil router — sessions run tool-less rather than broken.
-func buildVoiceAgentToolRouter(cfg *config.Config) vsserver.SessionToolRouter {
-	tb := cfg.Server.VoiceAgent.ToolBridge
-	if !tb.Enabled {
-		return nil
-	}
-	bridge, err := toolbridge.New(toolbridge.Options{
-		ManifestURL:        tb.ManifestURL,
-		InvokeURL:          tb.InvokeURL,
-		Timeout:            time.Duration(tb.TimeoutMs) * time.Millisecond,
-		MaxCallsPerSession: tb.MaxCallsPerSession,
-	})
-	if err != nil {
-		// validation.go could not gain this check in this change (parked WIP);
-		// degrade loudly instead of shipping a half-configured bridge.
-		slog.Error("voiceagent: tool bridge enabled but misconfigured; running tool-less", "err", err)
-		return nil
-	}
-	slog.Info("voiceagent: tool bridge enabled",
-		"manifest_url", tb.ManifestURL,
-		"invoke_url", tb.InvokeURL,
-		"timeout_ms", tb.TimeoutMs,
-		"max_calls_per_session", tb.MaxCallsPerSession,
-	)
-	return &toolBridgeRouter{bridge: bridge, sessions: make(map[string]toolBridgeSessionMeta)}
 }
 
 func buildLiveKitIssuer(cfg *config.Config, app *App) *vsserver.LiveKitTokenIssuer {
@@ -448,12 +524,18 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 			STT: app.STTRouter, SpeakerStreamer: app.STTRouter, TTS: vsserver.NewDownlinkTTS(ttsImpl),
 			Config: vsserver.CascadedConfig{TTSFormat: "wav", TTSSpeed: nonZeroFloat(cfg.TTS.Speed, 1.0)},
 		}
+		// The plain voice model answers a turn the Companion cannot serve (unavailable or failed), after a
+		// spoken notice; without a configured model the turn keeps its typed error.
+		if app.AgentFlow != nil {
+			deps.Agent = vsserver.NewAgentFlowAdapter(app.AgentFlow)
+			status += " + plain-model fallback"
+		}
 		// Speech is recognised while the user speaks (the router's live recognition, by the same
 		// provider and endpoint configuration as streaming Dictation) whenever the router has a
 		// provider that streams; every turn it cannot serve is recognised from the buffered audio.
 		// SPEECHKIT_VOICE_STREAMING_STT=off keeps the batch recognition alone.
 		if strings.ToLower(strings.TrimSpace(os.Getenv("SPEECHKIT_VOICE_STREAMING_STT"))) != "off" {
-			if recognizer := vsserver.NewRouterRecognizer(app.STTRouter); recognizer != nil {
+			if recognizer := vsserver.NewRouterRecognizer(app.STTRouter, cfg.ModelSelection.Dictate.PrimaryProfileID); recognizer != nil {
 				deps.Recognizer = recognizer
 				status += " + streaming recognition"
 			}

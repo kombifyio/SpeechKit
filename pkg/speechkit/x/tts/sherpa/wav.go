@@ -5,7 +5,8 @@ import (
 	"math"
 )
 
-// WAVSampleRate is the rate the bundled Piper medium voices emit.
+// WAVSampleRate is the fallback rate when the engine reports none; the
+// bundled voices report their own (LJSpeech medium 22050 Hz, Ramona low 16000 Hz).
 const WAVSampleRate = 22050
 
 // EncodeWAV wraps mono float32 samples in [-1, 1] as a 16-bit PCM WAV.

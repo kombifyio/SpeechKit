@@ -48,7 +48,7 @@ var (
 	ErrBoxMediaBridgeRequired                = errors.New("box media: device-agent bridge is required")
 	ErrBoxMediaLocalSTTRequired              = errors.New("box media: a proven local-only STT transcriber is required")
 	ErrBoxMediaTokenInvalid                  = errors.New("box media: an independent pairing token is required")
-	ErrBoxMediaRuleInvalid                   = errors.New("box media: the single transcript mapping is invalid")
+	ErrBoxMediaMappingInvalid                = errors.New("box media: the transcript mapping set is invalid")
 	ErrBoxMediaTurnBudgetExceedsWriteTimeout = errors.New("box media: STT and turn budgets leave no write-timeout headroom")
 )
 
@@ -68,36 +68,53 @@ type BoxMediaLocalTranscriber interface {
 	TranscribeLocal(context.Context, []byte, string) (*BoxMediaTranscript, error)
 }
 
-// BoxMediaRuleOptions defines exactly one server-owned transcript-to-command
-// mapping for the Phase-A representative light. There is no rule collection,
+// MaxBoxMediaMappings bounds the closed mapping set: a few exact phrasings
+// per action for one light, never a general command vocabulary.
+const MaxBoxMediaMappings = 8
+
+// BoxMediaMappingSetOptions defines the closed, server-owned set of exact
+// transcript-to-command mappings for the pilot light. The selected binding
+// (device, pairing epoch, room, locale) is shared by every entry, and every
+// entry re-resolves one existing G0 policy rule of that binding. The set
+// targets exactly one light and covers turn_on and turn_off. There is no
 // fuzzy matching, search, intent inference, or fallback.
-type BoxMediaRuleOptions struct {
-	DeviceID   string
-	PairingID  string
-	RoomID     string
+type BoxMediaMappingSetOptions struct {
+	DeviceID  string
+	PairingID string
+	RoomID    string
+	Locale    string
+	Mappings  []BoxMediaMappingOptions
+}
+
+// BoxMediaMappingOptions maps one exact transcript to one G0 command id.
+type BoxMediaMappingOptions struct {
 	Transcript string
 	CommandID  string
-	Locale     string
 }
 
 type BoxMediaHandlerOptions struct {
 	Bridge            *Bridge
 	LocalSTT          BoxMediaLocalTranscriber
 	MediaPairingToken string
-	Rule              BoxMediaRuleOptions
+	Mappings          BoxMediaMappingSetOptions
 	STTTimeout        time.Duration
 	TurnTimeout       time.Duration
 	OnIncompleteWrite func(wrote, want int, err error)
 }
 
 type boxMediaRule struct {
-	deviceID       string
-	pairingID      string
-	roomID         string
 	utterance      string
 	normalizedText string
 	commandID      string
 	locale         string
+}
+
+type boxMediaMappingSet struct {
+	deviceID     string
+	pairingID    string
+	roomID       string
+	locale       string
+	byTranscript map[string]boxMediaRule
 }
 
 // BoxMediaHandler accepts one complete L16 turn over a dedicated HTTPS
@@ -107,7 +124,7 @@ type BoxMediaHandler struct {
 	bridge            *Bridge
 	localSTT          BoxMediaLocalTranscriber
 	mediaToken        string
-	rule              boxMediaRule
+	mappings          boxMediaMappingSet
 	sttTimeout        time.Duration
 	turnTimeout       time.Duration
 	onIncompleteWrite func(wrote, want int, err error)
@@ -120,7 +137,7 @@ func NewBoxMediaHandler(opts BoxMediaHandlerOptions) (*BoxMediaHandler, error) {
 	if opts.LocalSTT == nil || !opts.LocalSTT.LocalOnly() {
 		return nil, ErrBoxMediaLocalSTTRequired
 	}
-	rule, err := opts.Bridge.newBoxMediaRule(opts.Rule)
+	mappings, err := opts.Bridge.newBoxMediaMappingSet(opts.Mappings)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +157,7 @@ func NewBoxMediaHandler(opts BoxMediaHandlerOptions) (*BoxMediaHandler, error) {
 		return nil, fmt.Errorf("%w: %s+%s", ErrBoxMediaTurnBudgetExceedsWriteTimeout, sttTimeout, turnTimeout)
 	}
 	return &BoxMediaHandler{
-		bridge: opts.Bridge, localSTT: opts.LocalSTT, mediaToken: mediaToken, rule: rule,
+		bridge: opts.Bridge, localSTT: opts.LocalSTT, mediaToken: mediaToken, mappings: mappings,
 		sttTimeout: sttTimeout, turnTimeout: turnTimeout, onIncompleteWrite: opts.OnIncompleteWrite,
 	}, nil
 }
@@ -170,38 +187,75 @@ func boundedBoxMediaTimeout(value, fallback time.Duration) (time.Duration, error
 	return value, nil
 }
 
-func (b *Bridge) newBoxMediaRule(raw BoxMediaRuleOptions) (boxMediaRule, error) {
-	rule := boxMediaRule{
+// newBoxMediaMappingSet resolves the closed mapping set at load. Every entry
+// must re-resolve one unexpired G0 policy rule at the exact selected device,
+// current pairing epoch, authoritative room and locale. Duplicate command
+// ids, ambiguous (repeated normalized) transcripts, foreign rules, a second
+// light, or a set that does not cover turn_on and turn_off fail closed.
+func (b *Bridge) newBoxMediaMappingSet(raw BoxMediaMappingSetOptions) (boxMediaMappingSet, error) {
+	set := boxMediaMappingSet{
 		deviceID: strings.TrimSpace(raw.DeviceID), pairingID: strings.TrimSpace(raw.PairingID),
-		roomID: strings.TrimSpace(raw.RoomID), commandID: strings.TrimSpace(raw.CommandID),
-		locale: strings.TrimSpace(raw.Locale),
+		roomID: strings.TrimSpace(raw.RoomID),
 	}
-	rule.utterance, rule.normalizedText = normalizePolicyText(raw.Transcript)
-	if !validBridgeID(rule.deviceID) || !validBridgeID(rule.pairingID) || !validBridgeID(rule.roomID) ||
-		!validBridgeID(rule.commandID) || rule.utterance == "" || len(rule.utterance) > maxPolicyTriggerTextBytes {
-		return boxMediaRule{}, ErrBoxMediaRuleInvalid
+	if !validBridgeID(set.deviceID) || !validBridgeID(set.pairingID) || !validBridgeID(set.roomID) {
+		return boxMediaMappingSet{}, fmt.Errorf("%w: binding identity is invalid", ErrBoxMediaMappingInvalid)
 	}
-	locale, ok := normalizePolicyLocale(rule.locale)
+	locale, ok := normalizePolicyLocale(raw.Locale)
 	if !ok {
-		return boxMediaRule{}, ErrBoxMediaRuleInvalid
+		return boxMediaMappingSet{}, fmt.Errorf("%w: locale is invalid", ErrBoxMediaMappingInvalid)
 	}
-	rule.locale = locale
-	binding, ok := b.bindings[rule.deviceID]
-	if !ok || binding.pairingID != rule.pairingID || binding.roomID != rule.roomID {
-		return boxMediaRule{}, fmt.Errorf("%w: mapping identity does not match a paired device", ErrBoxMediaRuleInvalid)
+	set.locale = locale
+	binding, ok := b.bindings[set.deviceID]
+	if !ok || binding.pairingID != set.pairingID || binding.roomID != set.roomID {
+		return boxMediaMappingSet{}, fmt.Errorf("%w: mapping identity does not match a paired device", ErrBoxMediaMappingInvalid)
 	}
 	if !boxMediaBindingHasRFC1918Source(binding) {
-		return boxMediaRule{}, fmt.Errorf("%w: selected device binding requires one RFC1918 IPv4 source prefix", ErrBoxMediaRuleInvalid)
+		return boxMediaMappingSet{}, fmt.Errorf("%w: selected device binding requires one RFC1918 IPv4 source prefix", ErrBoxMediaMappingInvalid)
 	}
-	policy, ok := b.policy.rules[rule.commandID]
-	if !ok || policy.deviceID != rule.deviceID || policy.roomID != rule.roomID ||
-		policy.normalizedText != rule.normalizedText || policy.locale != rule.locale {
-		return boxMediaRule{}, fmt.Errorf("%w: mapping does not match the existing G0 policy rule", ErrBoxMediaRuleInvalid)
+	if len(raw.Mappings) == 0 || len(raw.Mappings) > MaxBoxMediaMappings {
+		return boxMediaMappingSet{}, fmt.Errorf("%w: the set must contain 1..%d entries", ErrBoxMediaMappingInvalid, MaxBoxMediaMappings)
 	}
-	// Always execute the server-owned policy wording rather than the raw
-	// configuration or STT result.
-	rule.utterance = policy.utterance
-	return rule, nil
+	now := b.now().UTC()
+	set.byTranscript = make(map[string]boxMediaRule, len(raw.Mappings))
+	seenCommands := make(map[string]struct{}, len(raw.Mappings))
+	states := make(map[string]bool, 2)
+	entityID := ""
+	for index, entry := range raw.Mappings {
+		rule := boxMediaRule{commandID: strings.TrimSpace(entry.CommandID), locale: set.locale}
+		rule.utterance, rule.normalizedText = normalizePolicyText(entry.Transcript)
+		if !validBridgeID(rule.commandID) || rule.utterance == "" || len(rule.utterance) > maxPolicyTriggerTextBytes {
+			return boxMediaMappingSet{}, fmt.Errorf("%w: entry %d is missing a command id or transcript", ErrBoxMediaMappingInvalid, index)
+		}
+		if _, duplicate := seenCommands[rule.commandID]; duplicate {
+			return boxMediaMappingSet{}, fmt.Errorf("%w: entry %d duplicates command %q", ErrBoxMediaMappingInvalid, index, rule.commandID)
+		}
+		seenCommands[rule.commandID] = struct{}{}
+		if _, ambiguous := set.byTranscript[rule.normalizedText]; ambiguous {
+			return boxMediaMappingSet{}, fmt.Errorf("%w: entry %d repeats a normalized transcript", ErrBoxMediaMappingInvalid, index)
+		}
+		policy, ok := b.policy.rules[rule.commandID]
+		if !ok || policy.deviceID != set.deviceID || policy.roomID != set.roomID ||
+			policy.normalizedText != rule.normalizedText || policy.locale != set.locale {
+			return boxMediaMappingSet{}, fmt.Errorf("%w: entry %d does not match an existing G0 policy rule of the selected binding", ErrBoxMediaMappingInvalid, index)
+		}
+		if !now.Before(policy.expiresAt) {
+			return boxMediaMappingSet{}, fmt.Errorf("%w: entry %d selects an expired G0 policy rule", ErrBoxMediaMappingInvalid, index)
+		}
+		if entityID == "" {
+			entityID = policy.entityID
+		} else if policy.entityID != entityID {
+			return boxMediaMappingSet{}, fmt.Errorf("%w: entry %d targets a second light", ErrBoxMediaMappingInvalid, index)
+		}
+		states[policy.expectedState] = true
+		// Always execute the server-owned policy wording rather than the raw
+		// configuration or STT result.
+		rule.utterance = policy.utterance
+		set.byTranscript[rule.normalizedText] = rule
+	}
+	if !states[ExpectedStateOn] || !states[ExpectedStateOff] {
+		return boxMediaMappingSet{}, fmt.Errorf("%w: the set must cover turn_on and turn_off of the selected light", ErrBoxMediaMappingInvalid)
+	}
+	return set, nil
 }
 
 func boxMediaBindingHasRFC1918Source(binding deviceBinding) bool {
@@ -267,11 +321,11 @@ func (h *BoxMediaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeBoxMediaError(w, http.StatusForbidden, "device_binding_denied", "pairing_id_mismatch", false, "no", "Use the server-issued pairing epoch for this device.")
 		return
 	}
-	if binding.roomID != h.rule.roomID {
+	if binding.roomID != h.mappings.roomID {
 		writeBoxMediaError(w, http.StatusForbidden, "device_binding_denied", "box_media_mapping_mismatch", false, "no", "Use the Box media mapping assigned to this paired device.")
 		return
 	}
-	if binding.deviceID != h.rule.deviceID || binding.pairingID != h.rule.pairingID {
+	if binding.deviceID != h.mappings.deviceID || binding.pairingID != h.mappings.pairingID {
 		writeBoxMediaError(w, http.StatusForbidden, "device_binding_denied", "box_media_mapping_mismatch", false, "no", "Use the Box media mapping assigned to this paired device.")
 		return
 	}
@@ -303,7 +357,7 @@ func (h *BoxMediaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sttCtx, sttCancel := context.WithTimeout(r.Context(), h.sttTimeout)
-	transcript, err := h.localSTT.TranscribeLocal(sttCtx, audio.PCMToWAV(l16ToPCM16LE(body)), h.rule.locale)
+	transcript, err := h.localSTT.TranscribeLocal(sttCtx, audio.PCMToWAV(l16ToPCM16LE(body)), h.mappings.locale)
 	sttCancel()
 	if err != nil || transcript == nil || strings.TrimSpace(transcript.Provider) == "" || len(strings.TrimSpace(transcript.Provider)) > 128 {
 		writeBoxMediaError(w, http.StatusServiceUnavailable, "local_stt_unavailable", "local_stt_failed", true, "no", "Retry after the local SpeechKit STT provider is ready.")
@@ -313,8 +367,11 @@ func (h *BoxMediaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeBoxMediaError(w, http.StatusForbidden, "local_policy_denied", "box_media_transcript_mismatch", false, "no", "Repeat the exact configured local light phrase.")
 		return
 	}
+	// Exact lookup in the closed set: one normalized transcript selects at
+	// most one mapping. No fuzzy matching, search, or fallback.
 	_, normalizedTranscript := normalizePolicyText(transcript.Text)
-	if normalizedTranscript == "" || normalizedTranscript != h.rule.normalizedText {
+	rule, matched := h.mappings.byTranscript[normalizedTranscript]
+	if normalizedTranscript == "" || !matched {
 		writeBoxMediaError(w, http.StatusForbidden, "local_policy_denied", "box_media_transcript_mismatch", false, "no", "Repeat the exact configured local light phrase.")
 		return
 	}
@@ -322,11 +379,11 @@ func (h *BoxMediaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	turnCtx, turnCancel := context.WithTimeout(r.Context(), h.turnTimeout)
 	result, err := h.bridge.ExecuteTurn(turnCtx, TurnRequest{
 		RequestID: requestID, SessionID: "box-media-" + requestID,
-		CommandID: h.rule.commandID, DeviceID: binding.deviceID, PairingID: binding.pairingID,
+		CommandID: rule.commandID, DeviceID: binding.deviceID, PairingID: binding.pairingID,
 		// The dedicated media credential never crosses into the four G0
 		// routes. The server uses its retained bridge binding internally.
-		RoomID: binding.roomID, PairingToken: binding.token, Text: h.rule.utterance,
-		Locale: h.rule.locale, InputSHA256: inputSHA,
+		RoomID: binding.roomID, PairingToken: binding.token, Text: rule.utterance,
+		Locale: rule.locale, InputSHA256: inputSHA,
 	})
 	turnCancel()
 	if err != nil {

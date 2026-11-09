@@ -80,6 +80,7 @@ type Agent struct {
 	panelRequests    map[string]struct{}
 	timingMu         sync.Mutex
 	lastTiming       map[string]int64
+	lastTimingTurn   string
 }
 
 // New validates config and returns an [Agent]. It fails when Endpoint is
@@ -293,7 +294,7 @@ func (a *Agent) streamTurn(ctx context.Context, input cascaded.AgentInput, turnI
 		if len(serverTiming) > 400 {
 			serverTiming = serverTiming[:400]
 		}
-		a.recordTiming(headerMs, firstDeltaMs, time.Since(sent).Milliseconds(), serverTiming, orchestratorTimings)
+		a.recordTiming(turnID, headerMs, firstDeltaMs, time.Since(sent).Milliseconds(), serverTiming, orchestratorTimings)
 		slog.Info("speechkit a2a turn timing", "target", a.targetAgentID, "status", response.StatusCode,
 			"header_ms", headerMs, "first_delta_ms", firstDeltaMs, "total_ms", time.Since(sent).Milliseconds(), "server_timing", serverTiming,
 			"orchestrator", orchestratorTimings)
@@ -310,6 +311,9 @@ func (a *Agent) streamTurn(ctx context.Context, input cascaded.AgentInput, turnI
 				code = "permission_denied"
 			case http.StatusTooManyRequests:
 				code = "rate_limited"
+			case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+				// The agent's service was not reachable behind the perimeter: the turn never ran.
+				code = "provider_unavailable"
 			default:
 				code = "provider_failed"
 			}

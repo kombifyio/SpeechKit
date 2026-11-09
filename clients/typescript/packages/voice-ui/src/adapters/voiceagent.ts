@@ -12,14 +12,17 @@
 
 import {
   openBrowserSession,
-  type BrowserSession
+  type BrowserSession,
 } from "@kombifyio/speechkit-voiceagent-client/browser";
-import { accumulateTranscript, type StartFrame } from "@kombifyio/speechkit-voiceagent-client/protocol";
+import {
+  accumulateTranscript,
+  type StartFrame,
+} from "@kombifyio/speechkit-voiceagent-client/protocol";
 import type { VoiceUiController } from "../core/controller.js";
 import {
   checkMicrophonePermission,
   microphoneReasonFromError,
-  releaseMediaStream
+  releaseMediaStream,
 } from "../core/permission.js";
 import {
   createSpeechKitVoiceSessionState,
@@ -29,7 +32,7 @@ import {
   type SpeechKitVoiceMode,
   type SpeechKitVoiceSessionState,
   type SpeechKitVoiceSurface,
-  type SpeechKitVoiceSurfaceContract
+  type SpeechKitVoiceSurfaceContract,
 } from "../core/voice-surface.js";
 
 export interface VoiceAgentUiControllerOptions {
@@ -75,10 +78,10 @@ function contractFor(options: VoiceAgentUiControllerOptions): SpeechKitVoiceSurf
       wakeword_local: false,
       tts: true,
       barge_in: true,
-      local_pairing: false
+      local_pairing: false,
     },
     session: {},
-    provider: options.start?.provider !== undefined ? { provider_id: options.start.provider } : {}
+    provider: options.start?.provider !== undefined ? { provider_id: options.start.provider } : {},
   };
 }
 
@@ -105,14 +108,14 @@ function denialFromError(code: string, retryable: boolean): SpeechKitVoiceDenial
         ? ["Allow or connect a microphone, then try again."]
         : retryable
           ? ["Check the connection and try again."]
-          : ["Check the voice-agent configuration."]
-    }
+          : ["Check the voice-agent configuration."],
+    },
   };
 }
 
 function defaultAudioStream(): Promise<MediaStream> {
   return navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 }
+    audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
   });
 }
 
@@ -145,7 +148,7 @@ function createMicLevelMeter(stream: MediaStream, onLevel: (level: number) => vo
  * host-fed ones.
  */
 export function createVoiceAgentUiController(
-  options: VoiceAgentUiControllerOptions
+  options: VoiceAgentUiControllerOptions,
 ): VoiceAgentUiController {
   const contract = contractFor(options);
   let state = createSpeechKitVoiceSessionState(contract);
@@ -179,7 +182,7 @@ export function createVoiceAgentUiController(
     const full: SpeechKitVoiceEvent = {
       surface: contract.surface,
       mode: contract.mode,
-      ...event
+      ...event,
     };
     state = reduceSpeechKitVoiceEvent(state, full);
     for (const listener of listeners) listener(state);
@@ -191,11 +194,27 @@ export function createVoiceAgentUiController(
     attempt = null;
     if (!closing) return;
     closing.abort.abort();
-    try { closing.detachMic?.(); } catch { /* release the other media resources */ }
+    try {
+      closing.detachMic?.();
+    } catch {
+      /* release the other media resources */
+    }
     releaseMediaStream(closing.stream);
-    try { closing.disposeMicMeter?.(); } catch { /* continue transport cleanup */ }
-    try { closing.session?.flushPlayback(); } catch { /* playback already gone */ }
-    try { closing.session?.close(); } catch { /* socket already gone */ }
+    try {
+      closing.disposeMicMeter?.();
+    } catch {
+      /* continue transport cleanup */
+    }
+    try {
+      closing.session?.flushPlayback();
+    } catch {
+      /* playback already gone */
+    }
+    try {
+      closing.session?.close();
+    } catch {
+      /* socket already gone */
+    }
     emitLevel(0, "input");
     emitLevel(0, "output");
   }
@@ -226,7 +245,7 @@ export function createVoiceAgentUiController(
       diag(`microphone failed: ${(err as Error)?.message ?? String(err)}`);
       emit({
         type: "voice.denied",
-        error: denialFromError(microphoneReasonFromError(err), true)
+        error: denialFromError(microphoneReasonFromError(err), true),
       });
       return;
     }
@@ -245,9 +264,13 @@ export function createVoiceAgentUiController(
         ...(options.token !== undefined ? { token: options.token } : {}),
         ...(options.basePath !== undefined ? { basePath: options.basePath } : {}),
         start: options.start ?? {},
-        onPlaybackLevel: (level) => { if (isCurrent(current)) emitLevel(level, "output"); },
+        onPlaybackLevel: (level) => {
+          if (isCurrent(current)) emitLevel(level, "output");
+        },
         hooks: {
-          onState: (agentState) => { if (isCurrent(current)) diag(`agent state: ${agentState}`); },
+          onState: (agentState) => {
+            if (isCurrent(current)) diag(`agent state: ${agentState}`);
+          },
           onUserTranscript: (text, done) => {
             if (!isCurrent(current)) return;
             current.userBuffer = accumulateTranscript(current.userBuffer, text);
@@ -264,7 +287,9 @@ export function createVoiceAgentUiController(
             emit({ type: "voice.agent_turn", output_text: current.agentBuffer, final: done });
             if (done) current.agentBuffer = "";
           },
-          onAudio: (chunk) => { if (isCurrent(current)) current.session?.playChunk(chunk); },
+          onAudio: (chunk) => {
+            if (isCurrent(current)) current.session?.playChunk(chunk);
+          },
           onInterrupted: (frame) => {
             if (!isCurrent(current)) return;
             current.session?.flushPlayback();
@@ -299,8 +324,8 @@ export function createVoiceAgentUiController(
             diag(`session closed: ${reason}`);
             cleanup();
             emit({ type: "voice.tts_finished" });
-          }
-        }
+          },
+        },
       });
       if (!isCurrent(current)) {
         opened.close();
@@ -325,7 +350,7 @@ export function createVoiceAgentUiController(
       diag(`connect failed: ${(err as Error).message}`);
       emit({
         type: "voice.denied",
-        error: denialFromError("session_connect_failed", true)
+        error: denialFromError("session_connect_failed", true),
       });
       return;
     }
@@ -336,8 +361,11 @@ export function createVoiceAgentUiController(
     start(_mode?: SpeechKitVoiceMode) {
       if (attempt || disposed) return;
       const current: Attempt = {
-        abort: new AbortController(), userBuffer: "", agentBuffer: "",
-        interrupting: false, awaitingInterruptAck: false
+        abort: new AbortController(),
+        userBuffer: "",
+        agentBuffer: "",
+        interrupting: false,
+        awaitingInterruptAck: false,
       };
       attempt = current;
       // Offer Stop throughout permission/mint setup, without claiming capture yet.
@@ -363,9 +391,13 @@ export function createVoiceAgentUiController(
       // mutes late downlink audio until the server acknowledges interruption.
       current.awaitingInterruptAck = true;
       current.interrupting = true;
-      try { session.session.cancel(); }
-      finally { current.interrupting = false; }
-      if (isCurrent(current)) emit({ type: "voice.barge_in", reason_code: "user_interrupt_button" });
+      try {
+        session.session.cancel();
+      } finally {
+        current.interrupting = false;
+      }
+      if (isCurrent(current))
+        emit({ type: "voice.barge_in", reason_code: "user_interrupt_button" });
     },
     subscribe(listener) {
       listeners.add(listener);
@@ -384,6 +416,6 @@ export function createVoiceAgentUiController(
       cleanup();
       listeners.clear();
       levelListeners.clear();
-    }
+    },
   };
 }

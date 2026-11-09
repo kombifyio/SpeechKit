@@ -17,5 +17,10 @@ export const zhHans = renderCatalog(zhMessages);
 export const hi = renderCatalog(hiMessages);
 export const ar = renderCatalog(arMessages);
 export const VOICE_UI_CATALOGS: Record<VoiceUiLocale, VoiceUiMessageCatalog> = {
-  en, de, es, "zh-Hans": zhHans, hi, ar,
+  en,
+  de,
+  es,
+  "zh-Hans": zhHans,
+  hi,
+  ar,
 };

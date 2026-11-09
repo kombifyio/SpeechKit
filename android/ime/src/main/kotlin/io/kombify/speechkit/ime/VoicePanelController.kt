@@ -8,6 +8,8 @@ import io.kombify.speechkit.ime.host.isDictationBlocked
 import io.kombify.speechkit.log.VoiceLog
 import io.kombify.speechkit.net.PlanDenial
 import io.kombify.speechkit.net.SpeechKitApiException
+import io.kombify.speechkit.net.VoiceErrorClass
+import io.kombify.speechkit.stt.LANGUAGE_MULTI
 import io.kombify.speechkit.stt.streaming.DictationSegmentOptions
 import io.kombify.speechkit.stt.streaming.StreamingSttSession
 import io.kombify.speechkit.stt.streaming.TranscriptEvent
@@ -86,7 +88,7 @@ class VoicePanelController(
     private val sessionFactory: suspend () -> StreamingSttSession,
     private val audioCapture: AudioCapture,
     private val micPermission: MicPermissionGate,
-    initialLanguage: String = "de",
+    initialLanguage: String = LANGUAGE_MULTI,
 ) : VoiceInputHost {
 
     private val _state = MutableStateFlow<VoicePanelState>(VoicePanelState.Idle)
@@ -149,9 +151,14 @@ class VoicePanelController(
         if (state.value is VoicePanelState.Error) beginDictation()
     }
 
-    /** Language chip / IME subtype switch. Applies from the next segment on. */
-    fun setLanguage(language: String) {
-        _language.value = language
+    /**
+     * Language chip tap: multilanguage -> English -> German -> multilanguage.
+     * Dictation starts multilingual; the keyboard subtype is a layout, not a
+     * speech-language choice, so only this explicit tap pins a language.
+     */
+    fun cycleLanguage() {
+        val index = DICTATION_LANGUAGES.indexOf(_language.value)
+        _language.value = DICTATION_LANGUAGES[(index + 1).mod(DICTATION_LANGUAGES.size)]
     }
 
     /** Result relay from [MicPermissionTrampolineActivity] via the service. */
@@ -204,12 +211,18 @@ class VoicePanelController(
                     // A plan denial is not a hiccup: retrying cannot change it.
                     // The panel offers the plans page instead.
                     val planCode = planDenialCode(error)
+                    // SpeechKit names the reason class of its own refusals (the
+                    // stream cap is a limit, a 503 an outage): the panel says that,
+                    // never the server's English sentence.
+                    val errorClass = (error as? SpeechKitApiException)?.errorClass
                     _state.value = VoicePanelState.Error(
                         code = planCode
+                            ?: errorClass?.let(::classPanelCode)
                             ?: (error as? SpeechKitApiException)?.code
                             ?: ERROR_CONNECT_FAILED,
                         message = error.message ?: "session open failed",
-                        retryable = planCode == null,
+                        retryable = planCode == null && errorClass != VoiceErrorClass.RIGHT &&
+                            errorClass != VoiceErrorClass.CONSENT,
                     )
                     return@launch
                 }
@@ -368,6 +381,22 @@ class VoicePanelController(
         /** The plan includes it, but the hosted voice minutes are used up. */
         const val ERROR_PLAN_BUDGET = "plan_budget_exhausted"
 
+        /** Panel codes of SpeechKit's served reason classes ([VoiceErrorClass]). */
+        const val ERROR_LIMIT = "class_limit"
+        const val ERROR_OUTAGE = "class_outage"
+        const val ERROR_RIGHT = "class_right"
+        const val ERROR_CONSENT = "class_consent"
+        const val ERROR_EXPIRED = "class_expired"
+
+        /** The stable panel code of a served reason class. */
+        fun classPanelCode(errorClass: VoiceErrorClass): String = when (errorClass) {
+            VoiceErrorClass.LIMIT -> ERROR_LIMIT
+            VoiceErrorClass.OUTAGE -> ERROR_OUTAGE
+            VoiceErrorClass.RIGHT -> ERROR_RIGHT
+            VoiceErrorClass.CONSENT -> ERROR_CONSENT
+            VoiceErrorClass.EXPIRED -> ERROR_EXPIRED
+        }
+
         /** Whether [code] is one of the plan denial codes: the panel offers the plans page, not a retry. */
         fun isPlanDenialCode(code: String?): Boolean =
             code == ERROR_PLAN_DENIED || code == ERROR_PLAN_BUDGET
@@ -379,3 +408,5 @@ class VoicePanelController(
             }
     }
 }
+
+private val DICTATION_LANGUAGES = listOf(LANGUAGE_MULTI, "en", "de")

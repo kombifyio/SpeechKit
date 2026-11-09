@@ -16,8 +16,15 @@ import io.kombify.speechkit.app.companion.BinderCoinstallTurnTransport
 import io.kombify.speechkit.app.companion.CoinstallTurnClient
 import io.kombify.speechkit.app.companion.CompanionProvisioner
 import io.kombify.speechkit.app.companion.recoverCloudSession
+import io.kombify.speechkit.app.companion.voiceRenewalProfile
+import io.kombify.speechkit.app.build.ShippedDefaults
+import io.kombify.speechkit.domain.ConnectionProfile
+import io.kombify.speechkit.domain.ConnectionProfileSource
+import io.kombify.speechkit.net.VoiceRenewalProfileSource
 import io.kombify.speechkit.assistant.intent.CloudSessionRecovery
 import io.kombify.speechkit.assistant.intent.CompanionTurnExecutor
+import io.kombify.speechkit.assistant.service.NeuralReplyVoice
+import io.kombify.speechkit.app.voice.NeuralVoiceEngine
 import io.kombify.speechkit.net.StoredServerProfile
 import io.kombify.speechkit.store.RoomStore
 import io.kombify.speechkit.store.Store
@@ -52,14 +59,19 @@ object AppModule {
         @ApplicationContext context: Context,
         client: CoinstallTurnClient,
     ): CompanionTurnExecutor = object : CompanionTurnExecutor by client {
-        // An assistant's implicit general query follows the selected account.
-        // The keyboard's explicit Companion action keeps its separate client.
-        override fun hasSession(): Boolean =
-            StoredServerProfile.cloudSelected(context) &&
-                StoredServerProfile.loadCloud(context) != null &&
-                !StoredServerProfile.hasOwnCloudSession(context) &&
-                client.hasSession()
+        // Privacy rule: an assistant transcript goes to the hosted Companion only while the person chose
+        // the hosted Cloud connection. On-device, SpeechKit origin and self-hosted dictation keep the transcript on the
+        // device (local Assist). Within Cloud, the Companion is the default route unless this device signed
+        // in on its own, which may be another account. The keyboard's explicit Companion action keeps its
+        // separate client.
+        override fun available(): Boolean = companionRouteAllowed(context) && client.available()
     }
+
+    /** The hosted Cloud connection is selected and its session came from the Companion, not a separate sign-in. */
+    private fun companionRouteAllowed(context: Context): Boolean =
+        StoredServerProfile.cloudSelected(context) &&
+            StoredServerProfile.loadCloud(context) != null &&
+            !StoredServerProfile.hasOwnCloudSession(context)
 
     @Provides
     @Singleton
@@ -68,6 +80,25 @@ object AppModule {
         companion: CompanionProvisioner,
     ): CloudSessionRecovery =
         CloudSessionRecovery { failed -> recoverCloudSession(context, companion, failed) }
+
+    @Provides
+    @Singleton
+    fun provideVoiceRenewalProfileSource(
+        @ApplicationContext context: Context,
+        companion: CompanionProvisioner,
+        profiles: ConnectionProfileSource,
+    ): VoiceRenewalProfileSource = object : VoiceRenewalProfileSource {
+        override val claimNamespace: String = ShippedDefaults.tokenClaimNamespace
+
+        override suspend fun profileForRenewal(original: ConnectionProfile): ConnectionProfile =
+            voiceRenewalProfile(context, companion, profiles, original, claimNamespace)
+    }
+
+    /** The optional downloaded neural voice for assistant replies; the platform voice is its fallback. */
+    @Provides
+    @Singleton
+    fun provideNeuralReplyVoice(@ApplicationContext context: Context): NeuralReplyVoice =
+        NeuralVoiceEngine.get(context)
 
     @Provides
     @Singleton

@@ -23,6 +23,12 @@ func ApplyServerModelSettings(cfg *Config, settings ServerModelSettings) []strin
 		return nil
 	}
 	var notes []string
+	// The server's own local model (the image's bundled Phonon-2.5 or an
+	// operator [local] model) as configured before the settings file applies.
+	localModel := ""
+	if cfg.Local.Enabled {
+		localModel = strings.TrimSpace(cfg.Local.ModelPath)
+	}
 	notes = append(notes, ApplyServerAuthSettings(cfg, settings.ServerAuth)...)
 	notes = append(notes, ApplyServerAdminAuthSettings(cfg, settings.AdminAuth)...)
 	notes = append(notes, applyServerCredentialSettings(cfg, settings.Credentials)...)
@@ -89,8 +95,35 @@ func ApplyServerModelSettings(cfg *Config, settings ServerModelSettings) []strin
 		cfg.TTS.Enabled = *settings.TTS.Enabled
 		notes = append(notes, "server settings: TTS enabled updated")
 	}
+	notes = append(notes, keepBuiltInLocalDictation(cfg, settings.Modes.Dictation, localModel)...)
 	EnableAlwaysOnLLM(cfg)
 	return notes
+}
+
+// keepBuiltInLocalDictation keeps the server's own local model as the
+// "built-in" Dictation provider. The built-in branch of
+// applyDictationModeSetting selects the self-hosted whisper-server client
+// ([vps]); without a [vps] url that client is never registered, and turning
+// [local] off with it left the router without any STT provider (503 on every
+// dictation). When the settings select the built-in provider, no whisper-server
+// URL is configured and a local model was configured before, the local model
+// stays the built-in provider.
+func keepBuiltInLocalDictation(cfg *Config, mode ServerModeSetting, localModel string) []string {
+	if localModel == "" || strings.TrimSpace(cfg.VPS.URL) != "" || !modeSettingDefined(mode) {
+		return nil
+	}
+	if mode.Enabled != nil && !*mode.Enabled {
+		return nil
+	}
+	switch normalizedProviderKind(mode) {
+	case "direct_provider", "cloud_provider", "local_provider":
+		return nil
+	}
+	cfg.Local.Enabled = true
+	cfg.Local.ModelPath = localModel
+	cfg.VPS.Enabled = false
+	cfg.Routing.Strategy = "local-only"
+	return []string{"server settings: built-in Dictation provider is the local model (" + localModel + "); no whisper-server URL is configured"}
 }
 
 func ApplyServerAdminAuthSettings(cfg *Config, auth ServerAdminAuthSettings) []string {

@@ -227,6 +227,7 @@ extern int p2_verbose;
 
 typedef struct P2Engine P2Engine;
 typedef struct P2Tokens P2Tokens;   /* the detokeniser, further down */
+typedef struct P2Bias   P2Bias;     /* word boosting (bias.c), further down */
 
 /* weights_dir holds weights.bin, weights.json and tokens.txt from convert_weights.py. Maps the weights, expands the
  * decoder tables (0.02 s) and starts the thread pool. NULL on failure, with the reason on stderr. */
@@ -279,6 +280,9 @@ typedef struct {
  * (threadpool.h). Thread count, GEMM mode and chunking come from the environment (P2_THREADS, P2_GEMM, P2_CHUNK…)
  * read on first use. */
 int  p2_transcribe(const P2Engine *e, const float *audio, int n_samples, int sample_rate, P2Result *out);
+/* p2_transcribe with word boosting (bias.c); a NULL bias transcribes exactly as p2_transcribe. */
+int  p2_transcribe_bias(const P2Engine *e, const float *audio, int n_samples, int sample_rate, const P2Bias *bias,
+                        P2Result *out);
 
 /* The same from log-mel features [n_frames × 128] in p2_mel_spectrogram's layout, as one window whatever its
  * length (the encoder chunks beyond 40 s), for feature-level tests. */
@@ -311,6 +315,8 @@ const P2Tokens *p2_engine_tokens(const P2Engine *e);
 typedef struct P2Stream P2Stream;
 
 P2Stream *p2_stream_open(const P2Engine *e, int sample_rate);
+/* p2_stream_open with word boosting for every window it decodes; the caller keeps bias alive until the stream closes. */
+P2Stream *p2_stream_open_bias(const P2Engine *e, int sample_rate, const P2Bias *bias);
 void      p2_stream_close(P2Stream *s);
 /* Append samples; returns how many segments this call added (a window that went quiet is re-decoded as two or more),
  * or -1 on failure. */
@@ -405,6 +411,20 @@ void p2_joint(const P2Model *m, const float *enc_t, const float *dec_out, float 
 
 /* Greedy TDT decode over enc_out [T × 640]. Returns the token count; caller frees *out_tokens. */
 int  p2_greedy_decode(const P2Model *m, const float *enc_out, int T, P2Token **out_tokens);
+
+/* The frames a TDT step advances for its duration logits [5]. */
+int  p2_tdt_duration(const float *duration_logits);
+
+/* ── Word boosting (bias.c, SpeechKit) ────────────────────────────────────── */
+
+/* Dictionary terms as a token trie for p2_greedy_decode_bias: each term is boosted by boost (natural-log
+ * probability) wherever the model already rates its next piece plausible. NULL when no term has a segmentation into
+ * the vocabulary, or on failure. Immutable once built, so one bias may serve concurrent decodes. */
+P2Bias *p2_bias_new(const P2Tokens *t, const char *const *terms, int n_terms, float boost);
+void    p2_bias_free(P2Bias *b);
+int     p2_bias_terms(const P2Bias *b);   /* terms that made it into the trie */
+/* p2_greedy_decode with the dictionary's boost; a NULL bias decodes exactly as p2_greedy_decode. */
+int     p2_greedy_decode_bias(const P2Model *m, const float *enc_out, int T, const P2Bias *bias, P2Token **out_tokens);
 
 /* ── Detokeniser (tokens.c) ───────────────────────────────────────────────── */
 

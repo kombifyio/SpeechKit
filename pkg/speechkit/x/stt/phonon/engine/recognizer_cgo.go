@@ -55,6 +55,74 @@ type Recognizer struct {
 	weights unsafe.Pointer
 	// streams are the open streams, closed before the engine they run on.
 	streams map[*Stream]struct{}
+	// biases are the word-boosting tries built for dictionaries, by their
+	// terms; an open stream pins the one it decodes with.
+	biases map[string]*bias
+}
+
+// bias is one dictionary's trie in C memory and the streams using it.
+type bias struct {
+	b    *C.P2Bias
+	refs int
+}
+
+// termBoost is the log-probability a started dictionary term's next piece
+// gains (bias.c gives a term's first piece less). Tuned 2026-11-02 on German
+// dictated sentences with product names (term recall 4/15 -> 9/15) and checked
+// against LibriSpeech clips under the same dictionary.
+const termBoost = 8.0
+
+// maxBiases bounds the cached tries: a dictionary changes rarely, so a few
+// cover drafts, finals and a recent edit.
+const maxBiases = 4
+
+// biasLocked returns the trie for terms, building it on first use, or nil
+// when no term fits the vocabulary. The caller holds r.mu.
+func (r *Recognizer) biasLocked(terms []string) *bias {
+	if len(terms) == 0 {
+		return nil
+	}
+	key := strings.Join(terms, "\n")
+	if b, ok := r.biases[key]; ok {
+		return b
+	}
+	cterms := make([]*C.char, len(terms))
+	for i, term := range terms {
+		cterms[i] = C.CString(term)
+	}
+	defer func() {
+		for _, c := range cterms {
+			C.free(unsafe.Pointer(c))
+		}
+	}()
+	// cgo refuses a Go slice of C pointers handed to C only when it holds Go
+	// pointers; these are C strings, so the slice may be passed as is.
+	built := C.p2_bias_new(C.p2_engine_tokens(r.engine), (**C.char)(unsafe.Pointer(&cterms[0])), C.int(len(cterms)), C.float(termBoost))
+	if built == nil {
+		return nil
+	}
+	if r.biases == nil {
+		r.biases = make(map[string]*bias)
+	}
+	for k, old := range r.biases {
+		if len(r.biases) < maxBiases {
+			break
+		}
+		if old.refs == 0 {
+			C.p2_bias_free(old.b)
+			delete(r.biases, k)
+		}
+	}
+	b := &bias{b: built}
+	r.biases[key] = b
+	return b
+}
+
+func (b *bias) ptr() *C.P2Bias {
+	if b == nil {
+		return nil
+	}
+	return b.b
 }
 
 // NewRecognizer loads the model in cfg.ModelDir: it checks Fermion's container
@@ -107,6 +175,13 @@ func NewRecognizer(cfg phonon.Config) (*Recognizer, error) {
 // Transcribe decodes 16 kHz mono samples. Audio over 35 seconds is cut into
 // pause-aligned windows by the engine, each decoded on its own.
 func (r *Recognizer) Transcribe(samples []float32) (sherpa.Result, error) {
+	return r.TranscribeTerms(samples, nil)
+}
+
+// TranscribeTerms is Transcribe with the dictionary terms boosted while the
+// engine decodes: a term the speaker said and the model nearly heard comes out
+// as written. Terms that fit no piece of the vocabulary are ignored.
+func (r *Recognizer) TranscribeTerms(samples []float32, terms []string) (sherpa.Result, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.engine == nil {
@@ -117,7 +192,8 @@ func (r *Recognizer) Transcribe(samples []float32) (sherpa.Result, error) {
 		return result, nil
 	}
 	var out C.P2Result
-	rc := C.p2_transcribe(r.engine, (*C.float)(unsafe.Pointer(&samples[0])), C.int(len(samples)), C.int(sherpa.SampleRate), &out)
+	rc := C.p2_transcribe_bias(r.engine, (*C.float)(unsafe.Pointer(&samples[0])), C.int(len(samples)), C.int(sherpa.SampleRate),
+		r.biasLocked(terms).ptr(), &out)
 	if rc != 0 {
 		return sherpa.Result{}, fmt.Errorf("phonon: the engine could not decode the audio (code %d)", int(rc))
 	}
@@ -149,23 +225,34 @@ func segment(s *C.P2Segment) sherpa.Segment {
 // as [Recognizer.Transcribe]. Decodes share the recognizer's lock with
 // Transcribe.
 type Stream struct {
-	r *Recognizer
-	s *C.P2Stream
+	r    *Recognizer
+	s    *C.P2Stream
+	bias *bias
 }
 
 // OpenStream starts a stream of mono samples at sampleRate, which the engine
 // resamples to 16 kHz as they arrive.
 func (r *Recognizer) OpenStream(sampleRate int) (sherpa.Stream, error) {
+	return r.OpenStreamTerms(sampleRate, nil)
+}
+
+// OpenStreamTerms is OpenStream with the dictionary terms boosted in every
+// window and draft the stream decodes (see TranscribeTerms).
+func (r *Recognizer) OpenStreamTerms(sampleRate int, terms []string) (sherpa.Stream, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.engine == nil {
 		return nil, errors.New("phonon: recognizer is closed")
 	}
-	s := C.p2_stream_open(r.engine, C.int(sampleRate))
+	b := r.biasLocked(terms)
+	s := C.p2_stream_open_bias(r.engine, C.int(sampleRate), b.ptr())
 	if s == nil {
 		return nil, errors.New("phonon: the engine could not open a stream")
 	}
-	st := &Stream{r: r, s: s}
+	if b != nil {
+		b.refs++
+	}
+	st := &Stream{r: r, s: s, bias: b}
 	if r.streams == nil {
 		r.streams = make(map[*Stream]struct{})
 	}
@@ -243,6 +330,9 @@ func (st *Stream) closeLocked() {
 		C.p2_stream_close(st.s)
 		st.s = nil
 		delete(st.r.streams, st)
+		if st.bias != nil {
+			st.bias.refs--
+		}
 	}
 }
 
@@ -254,6 +344,10 @@ func (r *Recognizer) Close() {
 		for st := range r.streams {
 			st.closeLocked()
 		}
+		for _, b := range r.biases {
+			C.p2_bias_free(b.b)
+		}
+		r.biases = nil
 		C.p2_engine_close(r.engine)
 		C.free(r.weights)
 		r.engine, r.weights = nil, nil

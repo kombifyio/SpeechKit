@@ -119,6 +119,8 @@
     <string name="settings_connection_account_not_provisioned">Your kombify account is not set up yet. Finish setting it up, then refresh.</string>
     <string name="settings_connection_account_open_dashboard">Open kombify</string>
     <string name="settings_connection_account_unavailable">Could not load your plan. Check your connection and refresh.</string>
+    <string name="settings_connection_account_support_code">Support code: %1$s</string>
+    <string name="settings_connection_account_plan_unknown">Your plan details are not available right now. Refresh to try again.</string>
     <string name="settings_connection_self_host_show">Your own SpeechKit server</string>
     <string name="settings_connection_self_host_hide">Hide your own server</string>
     <string name="onboarding_welcome">Welcome to SpeechKit</string>
@@ -215,10 +217,26 @@
     <string name="settings_on_device_pause">Pause download</string>
     <string name="settings_on_device_ready_active">%1$s is downloaded and dictates on this device.</string>
     <string name="settings_on_device_ready_inactive">%1$s is downloaded. Choose the offline model above to dictate with it.</string>
+    <string name="settings_on_device_cloud_active">kombify Cloud is active, so dictation uses the cloud. %1$s takes over when the cloud cannot be reached.</string>
+    <string name="settings_on_device_use_device">Dictate on this device instead</string>
     <string name="settings_on_device_delete">Delete %1$s (%2$d MB)</string>
     <string name="settings_on_device_failed">Download failed: %1$s</string>
     <string name="settings_on_device_needs_download">Until %1$s is downloaded, the system recognizer keeps dictating.</string>
     <string name="settings_on_device_metered">You are on a metered connection; the download is %1$d MB.</string>
     <string name="settings_on_device_download">Download %1$s (%2$d MB)</string>
     <string name="settings_on_device_discard_partial">Remove the partial download (%1$d MB)</string>
+    <string name="settings_voice_title">Offline voice</string>
+    <string name="settings_voice_subtitle">Replies from the assistant are spoken by the system voice. Download a natural voice and they are read aloud on this phone instead, without a network. German and English replies; other languages keep the system voice.</string>
+    <string name="settings_voice_unsupported">Natural voices need a 64-bit phone.</string>
+    <string name="settings_voice_ready">%1$s is downloaded and speaks replies on this device.</string>
+    <string name="settings_voice_play_sample">Play sample</string>
+    <string name="settings_voice_stop_sample">Stop</string>
+    <string name="settings_voice_sample_failed">The sample could not be played; the system voice is used.</string>
+    <string name="settings_vocabulary_title">Vocabulary</string>
+    <string name="settings_vocabulary_subtitle">The terms of your signed-in account. Every dictation sends them to the recognizer, and an on-device result has the misheard variants replaced by the correct term.</string>
+    <string name="settings_vocabulary_empty">No vocabulary yet. Sign in to fetch your terms.</string>
+    <string name="settings_vocabulary_count">%1$d terms in this account</string>
+    <string name="settings_vocabulary_sample_heard">Misheard variant</string>
+    <string name="settings_vocabulary_sample_result">Recognized\\ as</string>
+    <string name="settings_vocabulary_no_aliases">This account has no misheard variants yet.</string>
 </resources>

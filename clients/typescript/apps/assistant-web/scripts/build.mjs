@@ -19,7 +19,15 @@ import { buildSync } from "esbuild";
 
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(appRoot, "..", "..", "..", "..");
-const outPath = join(repoRoot, "app", "internal", "server", "assistantui", "assets", "assistant.html");
+const outPath = join(
+  repoRoot,
+  "app",
+  "internal",
+  "server",
+  "assistantui",
+  "assets",
+  "assistant.html",
+);
 
 const result = buildSync({
   entryPoints: [join(appRoot, "src", "main.ts")],
@@ -30,13 +38,13 @@ const result = buildSync({
   minify: true,
   legalComments: "none",
   write: false,
-  loader: { ".png": "dataurl" }
+  loader: { ".png": "dataurl" },
 });
 const script = result.outputFiles[0].text.trim();
 
 const tokensCss = readFileSync(
   join(appRoot, "..", "..", "packages", "voice-ui", "src", "tokens", "tokens.css"),
-  "utf8"
+  "utf8",
 );
 const pageCss = readFileSync(join(appRoot, "src", "page.css"), "utf8");
 const style = `${tokensCss}\n${pageCss}`.trim();
@@ -60,7 +68,7 @@ if (process.argv.includes("--check")) {
   }
   if (current.replaceAll("\r\n", "\n") !== html.replaceAll("\r\n", "\n")) {
     console.error(
-      "assistant.html is out of date. Run: pnpm --filter @kombifyio/speechkit-assistant-web build"
+      "assistant.html is out of date. Run: pnpm --filter @kombifyio/speechkit-assistant-web build",
     );
     process.exit(1);
   }

@@ -356,13 +356,21 @@ Under LiveKit media, WebSocket binary audio is rejected for the session.
 `GET /v1/voiceagent/sessions/{id}/livekit-token` refreshes the token for the
 session owner or an admin. The endpoint never returns LiveKit API secrets.
 
-Hosted sessions end when their Voice budget reservation expires; the edge
-bounds each reservation by the caller's access-token lifetime. Before that,
-the client sends `POST /v1/voiceagent/sessions/{id}/renew` with a fresh access
-token. The edge reserves new minutes for that token's subject; the server
-adopts the grant only for a live session of the same owner, settles the
-previous reservation and moves the deadline. Without an adopted grant the
-session ends at its current deadline.
+Hosted sessions end when their Voice budget reservation expires. The session
+creation response reports this deadline as `budget_expires_at`, separate from
+`expires_at`, which is the WebSocket ticket deadline. A hosted reservation may
+last up to four hours, limited by the available Voice minutes and the current
+billing period. The server can enforce a separate maximum session duration;
+renewal does not extend it. Registered-agent and direct-endpoint sessions also
+have a delegated authorization deadline and cannot extend it with budget renewal.
+
+Before the current budget deadline, a client can send
+`POST /v1/voiceagent/sessions/{id}/renew` with a current access token. The edge
+reserves new minutes for that token's subject; the server adopts a later grant
+only for a live session of the same owner, settles the previous reservation and
+moves the deadline. A grant the server rejects does not extend the session.
+If the response is lost, the client cannot tell whether the grant was adopted;
+it must not assume a new deadline or automatically replay the request.
 
 ## Authentication
 
@@ -447,8 +455,8 @@ and is no longer accepted; edge signers must send the envelope.
 
 ### Edge-resolved user voice preferences
 
-An edge that manages per-user voice preferences (contract
-`speechkit.voice_prefs.v1`) may inject them on the requests it signs:
+An edge that manages per-user voice preferences (contracts
+`speechkit.voice_prefs.v1` and `.v2`) may inject them on the requests it signs:
 
 | Header | Meaning |
 | --- | --- |
@@ -458,6 +466,14 @@ An edge that manages per-user voice preferences (contract
 | `x-speechkit-pref-va-persona` | Default Voice Agent persona id |
 | `x-speechkit-pref-ts` | Unix-seconds timestamp of the preference signature |
 | `x-speechkit-pref-signature` | `v1=<hex>` HMAC covering the preference set |
+| `x-speechkit-pref-stt-model` | v2: Dictation catalog profile id, e.g. `stt.deepgram.nova-3`; ahead of `stt-primary` |
+| `x-speechkit-pref-tts-model` | v2: TTS catalog profile id |
+| `x-speechkit-pref-tts-voice` | v2: voice name inside the TTS model |
+| `x-speechkit-pref-va-model` | v2: Voice Agent catalog profile id, e.g. `realtime.builtin.pipeline`; ahead of `va-provider` |
+| `x-speechkit-pref-vocabulary` | v2: transcription vocabulary set ref: `operator-terms` or `customization.vocabulary_ref` keeps the operator vocabulary, another template id activates that template, `none` turns the operator vocabulary off, empty keeps the default (Dictation, Assist, Voice Agent listen leg) |
+| `x-speechkit-pref-scope` | v2: `<category>:<device>` the edge resolved the settings for |
+| `x-speechkit-pref-va-locale` | v2: account Voice Agent locale (BCP-47), the session locale when `start.locale` is empty |
+| `x-speechkit-pref-v2-signature` | `v2=<hex>` HMAC covering the v1 and v2 values |
 
 The preference headers carry their own versioned signature with the same
 shared secret, independent of the identity envelope. The edge signs
@@ -466,19 +482,27 @@ shared secret, independent of the identity envelope. The edge signs
 v1 \n user_id \n org_id \n ts \n stt-primary \n stt-secondary \n va-provider \n va-persona
 ```
 
+and, under `x-speechkit-pref-v2-signature` with the same secret and timestamp,
+
+```
+v2 \n user_id \n org_id \n ts \n stt-primary \n stt-secondary \n va-provider \n va-persona \n
+stt-model \n tts-model \n tts-voice \n va-model \n vocabulary \n scope \n va-locale
+```
+
 (absent values sign as empty strings; when the caller has no stored
 preferences, no pref header is sent at all). The server honours the
 preference headers only when the request's identity was established via a
 verified edge envelope (`edge_hmac`, or the edge half of `bearer_or_edge`)
-AND this signature verifies against that identity within the same 5-minute
+AND the signature of their version verifies against that identity (an
+invalid v2 signature drops only the v2 values) within the same 5-minute
 window as `X-Edge-Auth-Ts`. A missing or invalid preference signature
 degrades to "no preference" — it never fails the request, because
 preferences are an overlay, not an authorization input. Values are
 provider/persona names only — never keys or credentials.
 
 Server-side precedence per request: explicit request override (batch or
-streaming `provider_profile_id`, Voice Agent `start.provider` / `persona_id`)
-→ injected preference header → the server's `[model_selection]` primary →
+streaming `provider_profile_id`, Voice Agent `start.provider` / `persona_id` /
+`locale`) → injected preference header (a v2 model before the v1 provider) → the server's `[model_selection]` primary →
 the routing fallback order. Preferences are best-effort: an unknown or
 unconfigured provider or persona falls back to the next step instead of
 failing the request, and responses report the provider actually used. For
@@ -567,6 +591,118 @@ Find those servers from a machine on the same LAN:
 speechkitctl discover
 speechkitctl discover --json
 ```
+
+`advertise_port` (default: the `listen_addr` port) sets the announced port,
+for a listener that the host publishes on a different port. The TXT record
+also carries `id=dev_<43 base64url characters>`, the server's stable,
+non-secret instance id from `server-instance-id` in the state directory (the
+directory of the server settings file, default `/var/lib/speechkit/data`).
+Clients ignore a malformed `id`.
+
+### Announce-only mode (container bridge networks)
+
+Multicast from a container in a bridge network never reaches the LAN. Run a
+second container from the same image in the host network that only announces;
+it binds nothing but mDNS (UDP 5353, shared with a system responder through
+`SO_REUSEPORT`), makes no other network call and needs no configuration file,
+store, provider key or token:
+
+```bash
+docker run -d --network host --user 2000:2000 --cap-drop ALL   --entrypoint /app/speechkit-server speechkit-server:dev   --discovery-only --discovery-port 8080   --discovery-modes dictation,assist,voiceagent   [--discovery-instance wohnzimmer] [--discovery-url http://192.168.1.20:8080]
+```
+
+| Flag | Default |
+|---|---|
+| `--discovery-port` | `advertise_port`, else the `listen_addr` port, else 8080 |
+| `--discovery-modes` | `dictation,assist,voiceagent` |
+| `--discovery-instance` | host name |
+| `--discovery-url` | `http://<primary LAN IPv4>:<port>` |
+| `--config` | optional; the flags override `[server.discovery]` |
+
+The primary LAN IPv4 is the address of the default-route interface; loopback,
+link-local, `172.17.0.0/16` and container or VM bridge interfaces (`docker*`,
+`br-*`, `veth*`, `virbr*` and similar) are never used, and host name
+resolution is not consulted. The A record names only that address. The
+announcer re-reads the address every 30 seconds and re-announces after a
+change. Mount the server's state directory to announce its `id=`; the
+announcer then also writes `discovery-announcement.json` there, which the
+server reads to report its LAN URL. The health probe for the same container
+makes no network call:
+
+```bash
+/app/speechkit-server --discovery-only --probe   # exit 0 while the announcer runs
+```
+
+The responder runs as UID 2000 with no capabilities: UDP 5353 is above the
+privileged port range, so binding it needs no `CAP_NET_BIND_SERVICE`.
+
+## Account link (`[server.cloud_link]`)
+
+A self-hosted server can link itself to a person's account on an OAuth 2.0
+identity provider that offers the device authorization grant (RFC 8628), and
+then check in with that account's device registry. Off by default; while off,
+or while `[privacy] network_scope` is `local_network` or `device_only` (also
+under Full Local or a local-only machine policy), nothing calls out.
+
+```toml
+[server.cloud_link]
+enabled = true
+issuer = "https://id.example.com/"        # its /.well-known/openid-configuration is read
+client_id = "<public device-code client>"
+audience = "https://api.example.com"
+gateway_url = "https://api.example.com"   # registry base URL
+# scope = "openid profile email offline_access"   # default
+# display_name = "wohnzimmer"             # default: [server.discovery] instance_name, then host name
+```
+
+Every value except `scope` and `display_name` is required; a missing one
+fails with the key to set. Link from a shell in the server container:
+
+```bash
+speechkit-server cloud-link start  --config /etc/speechkit/config.toml   # prints URL and code, waits for approval
+speechkit-server cloud-link status --config /etc/speechkit/config.toml [--json]
+speechkit-server cloud-link unlink --config /etc/speechkit/config.toml
+```
+
+The same operations are admin-only HTTP endpoints (the `/setup` admin session
+with its CSRF header, or a bearer with `bearer_role = "admin"`):
+`GET /v1/server/cloud-link`, `POST /v1/server/cloud-link/start`,
+`POST /v1/server/cloud-link/unlink`.
+
+After approval the server keeps only the refresh token, in
+`cloud-link-credential.json` (mode 0600) in the state directory, replaced
+atomically on every rotation. The running server checks in with
+`PUT <gateway_url>/v1/connect/edge-devices/<instance id>` and the access
+token, at the interval the registry returns (`poll_after_seconds`, default
+60 seconds):
+
+```json
+{
+  "schema": "kombify.edge_device.checkin.v1",
+  "kind": "speechkit-server",
+  "board": "speechkit-server-linux-amd64",
+  "firmware_version": "<server version>",
+  "display_name": "<instance name>",
+  "local_ip": "192.168.1.20",
+  "reported": {
+    "lan_url": "http://192.168.1.20:8080",
+    "modes": ["assist", "dictation", "voiceagent"],
+    "stt": "<dictate primary profile>",
+    "tts": "<tts primary profile>",
+    "llm": "<assist primary profile>",
+    "execution": "local"
+  }
+}
+```
+
+`local_ip` and `lan_url` come from `advertise_url`, else from the
+announce-only container's `discovery-announcement.json`, else (outside a
+container) from the server's own primary LAN address; without one they are
+omitted. Unlink deletes the registry entry
+(`DELETE <gateway_url>/v1/connect/edge-devices/<instance id>`), revokes the
+refresh token where the issuer names a revocation endpoint, and deletes the
+credential file even when a remote step fails. A refresh token the provider
+no longer accepts marks the link `relink_required`.
 
 ## Relation to the Framework kernel
 

@@ -78,7 +78,7 @@ export class AssistantWaveformVisual {
     const styles = getComputedStyle(this.element);
     return {
       output: styles.getPropertyValue("--sk-assistant-wave-output").trim() || "#38bdf8",
-      input: styles.getPropertyValue("--sk-assistant-wave-input").trim() || "#34d399"
+      input: styles.getPropertyValue("--sk-assistant-wave-input").trim() || "#34d399",
     };
   }
 
@@ -117,7 +117,7 @@ export class AssistantWaveformVisual {
     height: number,
     colors: WaveColors,
     history: WaveSample[],
-    dim: number
+    dim: number,
   ): void {
     const n = history.length;
     const step = width / n;
@@ -148,7 +148,7 @@ export class AssistantWaveformVisual {
     colors: WaveColors,
     history: WaveSample[],
     dim: number,
-    dpr: number
+    dpr: number,
   ): void {
     const cx = width / 2;
     const cy = height / 2;

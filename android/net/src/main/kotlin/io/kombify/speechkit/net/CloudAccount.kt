@@ -3,6 +3,7 @@ package io.kombify.speechkit.net
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 import com.squareup.moshi.Moshi
+import io.kombify.speechkit.log.VoiceLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -58,6 +59,8 @@ data class CloudAccount(
     val hostedDictation: Boolean,
     val voiceAgent: Boolean,
     val assist: Boolean,
+    /** False when the budgets call failed: plan name and minutes are then unknown, not "free". */
+    val planKnown: Boolean = true,
 ) {
     val allIncluded: Boolean get() = hostedDictation && voiceAgent && assist
 }
@@ -72,7 +75,16 @@ sealed interface CloudAccountResult {
     data object SignedOut : CloudAccountResult
 
     /** Network or server trouble; the sign-in itself is not in question. */
-    data class Unavailable(val httpStatus: Int? = null) : CloudAccountResult
+    data class Unavailable(val httpStatus: Int? = null, val call: String? = null) : CloudAccountResult {
+        /** Short code for support, e.g. `profile 401`; null when nothing is known. */
+        val supportCode: String?
+            get() = when {
+                call != null && httpStatus != null -> "$call $httpStatus"
+                call != null -> "$call network"
+                httpStatus != null -> httpStatus.toString()
+                else -> null
+            }
+    }
 }
 
 /**
@@ -92,6 +104,11 @@ class CloudAccountApi(
 
     private class Reply(val status: Int, val body: String)
 
+    private fun Reply.logIfFailed(call: String): Reply {
+        if (status !in 200..299) VoiceLog.w(VoiceLog.NET, "cloud account $call failed http=$status")
+        return this
+    }
+
     /**
      * @param recover renews a rejected bearer (Companion re-provision or refresh
      *   token) and returns the new one, or null. Called at most once. Null
@@ -106,66 +123,77 @@ class CloudAccountApi(
         accessToken: String,
         recover: suspend (rejected: String) -> String?,
         sessionGone: () -> Boolean = { false },
+        cloudSessionGeneration: String? = null,
     ): CloudAccountResult = withContext(Dispatchers.IO) {
         try {
-            var token = CloudBearer.fresh(accessToken) ?: accessToken
-            // A refused refresh signs the session out but still hands back the
-            // old bearer for the request in flight; it must not read as Loaded.
+            var token = CloudBearer.fresh(accessToken, cloudSessionGeneration)
+                ?: return@withContext CloudAccountResult.SignedOut
             if (sessionGone()) return@withContext CloudAccountResult.SignedOut
-            var profile = get(KombifyCloudAuth.PROFILE_PATH, token)
+            var profile = get(KombifyCloudAuth.PROFILE_PATH, token).logIfFailed(CALL_PROFILE)
             if (profile.status == 401) {
                 token = recover(token) ?: return@withContext if (sessionGone()) {
                     CloudAccountResult.SignedOut
                 } else {
-                    CloudAccountResult.Unavailable(profile.status)
+                    CloudAccountResult.Unavailable(profile.status, CALL_PROFILE)
                 }
-                profile = get(KombifyCloudAuth.PROFILE_PATH, token)
+                profile = get(KombifyCloudAuth.PROFILE_PATH, token).logIfFailed(CALL_PROFILE)
                 if (profile.status == 401) return@withContext CloudAccountResult.SignedOut
             }
             if (profile.status == 403 && profile.body.contains("identity_not_provisioned")) {
                 return@withContext CloudAccountResult.NotProvisioned
             }
             if (profile.status !in 200..299) {
-                return@withContext CloudAccountResult.Unavailable(profile.status)
+                return@withContext CloudAccountResult.Unavailable(profile.status, CALL_PROFILE)
             }
             val identity = runCatching { profileAdapter.fromJson(profile.body) }.getOrNull()
 
             val bearer = token
             val (decide, budgets) = coroutineScope {
-                val decision = async { postDecide(bearer) }
-                val budgetCall = async { get(KombifyCloudAuth.BUDGETS_PATH, bearer) }
+                val decision = async { postDecide(bearer).logIfFailed(CALL_DECIDE) }
+                val budgetCall = async { get(KombifyCloudAuth.BUDGETS_PATH, bearer).logIfFailed(CALL_BUDGETS) }
                 decision.await() to budgetCall.await()
             }
             if (decide.status !in 200..299) {
-                return@withContext CloudAccountResult.Unavailable(decide.status)
+                return@withContext CloudAccountResult.Unavailable(decide.status, CALL_DECIDE)
             }
             val missing = runCatching { decideAdapter.fromJson(decide.body) }.getOrNull()?.missing
-                ?: return@withContext CloudAccountResult.Unavailable(decide.status)
-            // The plan name rides on the budgets answer: without it the view
-            // would call every paying user "Free".
-            val usage = (if (budgets.status in 200..299) {
-                runCatching { budgetsAdapter.fromJson(budgets.body) }.getOrNull()
+                ?: run {
+                    VoiceLog.w(VoiceLog.NET, "cloud account $CALL_DECIDE unreadable http=${decide.status}")
+                    return@withContext CloudAccountResult.Unavailable(decide.status, CALL_DECIDE)
+                }
+            // The plan name rides on the budgets answer. When that call fails the
+            // card still shows the features from the decision, with plan and
+            // minutes left out (planKnown = false), rather than calling a paying
+            // user "Free" or failing the whole card.
+            val usage = if (budgets.status in 200..299) {
+                runCatching { budgetsAdapter.fromJson(budgets.body) }.getOrNull().also {
+                    if (it == null) {
+                        VoiceLog.w(VoiceLog.NET, "cloud account $CALL_BUDGETS unreadable http=${budgets.status}")
+                    }
+                }
             } else {
                 null
-            }) ?: return@withContext CloudAccountResult.Unavailable(budgets.status)
+            }
 
             fun has(key: String) = key !in missing
             CloudAccountResult.Loaded(
                 CloudAccount(
                     email = identity?.email.orEmpty(),
                     name = identity?.name.orEmpty(),
-                    plan = usage.plan?.trim()?.takeIf { it.isNotEmpty() },
-                    voiceMinutes = usage.budgets
-                        .firstOrNull { it.key == CloudFeatureKeys.MINUTES_BUDGET }
+                    plan = usage?.plan?.trim()?.takeIf { it.isNotEmpty() },
+                    voiceMinutes = usage?.budgets
+                        ?.firstOrNull { it.key == CloudFeatureKeys.MINUTES_BUDGET }
                         ?.toVoiceMinutes(),
                     hostedDictation = has(CloudFeatureKeys.SERVER_HOSTED) && has(CloudFeatureKeys.MANAGED_STT),
                     voiceAgent = has(CloudFeatureKeys.VOICE_AGENT_LIVE),
                     assist = has(CloudFeatureKeys.SERVER_HOSTED),
+                    planKnown = usage != null,
                 ),
             )
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
+            VoiceLog.w(VoiceLog.NET, "cloud account request failed ${e.javaClass.simpleName}")
             CloudAccountResult.Unavailable()
         }
     }
@@ -197,6 +225,9 @@ class CloudAccountApi(
 
     private companion object {
         val JSON = "application/json".toMediaType()
+        const val CALL_PROFILE = "profile"
+        const val CALL_DECIDE = "decide"
+        const val CALL_BUDGETS = "budgets"
     }
 }
 

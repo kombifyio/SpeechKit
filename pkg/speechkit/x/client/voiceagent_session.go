@@ -35,10 +35,14 @@ type VoiceAgentTicket struct {
 // PersonaID is required if the deployment has any personas; the server's
 // resolver falls back to the configured default persona when empty.
 type VoiceAgentStartFrame struct {
-	PersonaID            string `json:"persona_id,omitempty"`
-	RoleID               string `json:"role_id,omitempty"`
-	SequenceID           string `json:"sequence_id,omitempty"`
-	Provider             string `json:"provider,omitempty"`
+	PersonaID  string `json:"persona_id,omitempty"`
+	RoleID     string `json:"role_id,omitempty"`
+	SequenceID string `json:"sequence_id,omitempty"`
+	Provider   string `json:"provider,omitempty"`
+	// MediaProvider selects native conversation media (for example
+	// "deepgram") for a session the edge bound to a registered agent; the
+	// agent keeps reasoning and tools. Empty keeps the session's default.
+	MediaProvider        string `json:"media_provider,omitempty"`
 	MediaTransport       string `json:"media_transport,omitempty"` // "websocket" (default) or "livekit"
 	Voice                string `json:"voice,omitempty"`
 	Locale               string `json:"locale,omitempty"`
@@ -65,6 +69,12 @@ type VoiceAgentFrame struct {
 	StepID     string   `json:"step_id,omitempty"`
 	StepIndex  int      `json:"step_index,omitempty"`
 	Status     string   `json:"status,omitempty"`
+	// Class is the served failure class of an error frame: limit, outage,
+	// right, consent or expired; empty for a code without one.
+	Class string `json:"class,omitempty"`
+	// ProviderMetadata carries provider-native detail, such as the
+	// `turn_timing` phase durations on a turn_end event.
+	ProviderMetadata map[string]any `json:"provider_metadata,omitempty"`
 }
 
 // VoiceAgentMessage is a single inbound event. Exactly one of Audio or Frame
@@ -207,6 +217,9 @@ func (s *VoiceAgentSession) SendStart(ctx context.Context, frame VoiceAgentStart
 	}
 	if frame.Provider != "" {
 		payload["provider"] = frame.Provider
+	}
+	if frame.MediaProvider != "" {
+		payload["media_provider"] = frame.MediaProvider
 	}
 	if frame.Voice != "" {
 		payload["voice"] = frame.Voice

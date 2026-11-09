@@ -814,7 +814,32 @@ components:
         code:
           type: string
           description: Stable machine-readable error code.
-        message: { type: string }
+        class:
+          type: string
+          enum: [limit, outage, right, consent, expired]
+          description: |
+            The user-facing reason class (cascaded.ErrorClass). Clients render
+            their localized text from it: limit = a usage limit of the account
+            or device is reached; outage = the service or a provider could not
+            answer; right = the account, plan or agent lacks the right;
+            consent = cloud voice or recording consent is missing; expired =
+            the session's authorization ran out (auth_expired,
+            authorization_expired, ticket_expired only). The class follows
+            the code alone (cascaded.FailureClass), never the HTTP status, and
+            is absent for a code the model leaves unclassed: credential
+            rejections (unauthenticated, invalid_ticket, auth_required, a plain
+            401), deployment settings (audio_download_disabled), binding faults
+            (origin_not_allowed, voice_session_owner_mismatch,
+            voice_agent_binding_mismatch) and request or protocol faults
+            (invalid_frame, conversation_control_busy, audio_transport_mismatch,
+            tool_response_unsupported). Clients apply their own code rules
+            then. SpeechKit HTTP error bodies carry the same field as
+            error.class. A think-provider error is retried and answered by the
+            catalog fallback inside the turn; only an exhausted chain, an error
+            after a tool call or a refused re-ask sends a non-fatal outage.
+        message:
+          type: string
+          description: English guidance for logs and integrators; never the text a surface shows.
         fatal:
           type: boolean
           default: false
@@ -857,6 +882,11 @@ components:
             Start a new authorized session; clients do not renew credentials or
             replay an interrupted turn. Provider/media readiness is bounded to
             15 seconds. A terminal frame seals further downlink.
+            `idle` also ends a session whose client streamed input audio and
+            then sent nothing for 30 seconds before the input turn was
+            concluded (a stalled uplink; never longer than the idle timeout).
+            A provider audio send blocked for 5 seconds ends the session with
+            error `audio_upstream_failed`.
 
     PongFrame:
       type: object

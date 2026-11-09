@@ -110,7 +110,12 @@ export class SpeechKitClient {
 
   /** GET /v1/config — server config summary. */
   config(overrides?: RequestOverrides): Promise<Record<string, unknown>> {
-    return this.requestJSON<Record<string, unknown>>("GET", this.v1("/config"), undefined, overrides);
+    return this.requestJSON<Record<string, unknown>>(
+      "GET",
+      this.v1("/config"),
+      undefined,
+      overrides,
+    );
   }
 
   // ── Catalog ──────────────────────────────────────────────────────────
@@ -120,7 +125,12 @@ export class SpeechKitClient {
     const path = mode
       ? this.v1(`/catalog/profiles?mode=${encodeURIComponent(mode)}`)
       : this.v1("/catalog/profiles");
-    const body = await this.requestJSON<{ profiles?: ProviderProfile[] }>("GET", path, undefined, overrides);
+    const body = await this.requestJSON<{ profiles?: ProviderProfile[] }>(
+      "GET",
+      path,
+      undefined,
+      overrides,
+    );
     return body.profiles ?? [];
   }
 
@@ -162,12 +172,20 @@ export class SpeechKitClient {
     if (options.language) form.append("language", options.language);
     if (options.model) form.append("model", options.model);
     if (options.prompt) form.append("prompt", options.prompt);
-    if (options.provider_profile_id) form.append("provider_profile_id", options.provider_profile_id);
+    if (options.provider_profile_id)
+      form.append("provider_profile_id", options.provider_profile_id);
     if (options.keyterms?.length) form.append("keyterms", options.keyterms.join(","));
-    if (options.vocabulary_hints) form.append("vocabulary_hints", JSON.stringify(options.vocabulary_hints));
+    if (options.vocabulary_hints)
+      form.append("vocabulary_hints", JSON.stringify(options.vocabulary_hints));
     if (options.options) form.append("options", JSON.stringify(options.options));
-    if (options.provider_options) form.append("provider_options", JSON.stringify(options.provider_options));
-    return this.requestRaw<TranscribeResponse>("POST", this.v1("/dictation/transcribe"), form, overrides);
+    if (options.provider_options)
+      form.append("provider_options", JSON.stringify(options.provider_options));
+    return this.requestRaw<TranscribeResponse>(
+      "POST",
+      this.v1("/dictation/transcribe"),
+      form,
+      overrides,
+    );
   }
 
   // ── Assist ───────────────────────────────────────────────────────────
@@ -177,7 +195,12 @@ export class SpeechKitClient {
     payload: Record<string, unknown>,
     overrides?: RequestOverrides,
   ): Promise<Record<string, unknown>> {
-    return this.requestJSON<Record<string, unknown>>("POST", this.v1("/assist/process"), payload, overrides);
+    return this.requestJSON<Record<string, unknown>>(
+      "POST",
+      this.v1("/assist/process"),
+      payload,
+      overrides,
+    );
   }
 
   // ── Voice Agent ──────────────────────────────────────────────────────
@@ -192,11 +215,19 @@ export class SpeechKitClient {
     payload: Record<string, unknown> = {},
     overrides?: RequestOverrides,
   ): Promise<VoiceAgentSessionTicket> {
-    return this.requestJSON<VoiceAgentSessionTicket>("POST", this.v1("/voiceagent/sessions"), payload, overrides);
+    return this.requestJSON<VoiceAgentSessionTicket>(
+      "POST",
+      this.v1("/voiceagent/sessions"),
+      payload,
+      overrides,
+    );
   }
 
   /** GET /v1/voiceagent/sessions/{id}/transcript. */
-  voiceAgentSessionTranscript(id: number, overrides?: RequestOverrides): Promise<VoiceAgentTranscript> {
+  voiceAgentSessionTranscript(
+    id: number,
+    overrides?: RequestOverrides,
+  ): Promise<VoiceAgentTranscript> {
     return this.requestJSON<VoiceAgentTranscript>(
       "GET",
       this.v1(`/voiceagent/sessions/${id}/transcript`),
@@ -218,24 +249,45 @@ export class SpeechKitClient {
   // ── TTS ──────────────────────────────────────────────────────────────
 
   /** POST /v1/tts/synthesize. */
-  ttsSynthesize(input: TTSSynthesizeRequest, overrides?: RequestOverrides): Promise<TTSSynthesizeResponse> {
-    return this.requestJSON<TTSSynthesizeResponse>("POST", this.v1("/tts/synthesize"), input, overrides);
+  ttsSynthesize(
+    input: TTSSynthesizeRequest,
+    overrides?: RequestOverrides,
+  ): Promise<TTSSynthesizeResponse> {
+    return this.requestJSON<TTSSynthesizeResponse>(
+      "POST",
+      this.v1("/tts/synthesize"),
+      input,
+      overrides,
+    );
   }
 
   /** GET /v1/tts/voices. */
   async ttsVoices(overrides?: RequestOverrides): Promise<Voice[]> {
-    const body = await this.requestJSON<{ voices?: Voice[] }>("GET", this.v1("/tts/voices"), undefined, overrides);
+    const body = await this.requestJSON<{ voices?: Voice[] }>(
+      "GET",
+      this.v1("/tts/voices"),
+      undefined,
+      overrides,
+    );
     return body.voices ?? [];
   }
 
   // ── Vocabulary ───────────────────────────────────────────────────────
 
   /** GET /v1/vocabulary/dictionary?language=. */
-  async vocabularyEntries(language?: string, overrides?: RequestOverrides): Promise<DictionaryEntry[]> {
+  async vocabularyEntries(
+    language?: string,
+    overrides?: RequestOverrides,
+  ): Promise<DictionaryEntry[]> {
     const path = language
       ? this.v1(`/vocabulary/dictionary?language=${encodeURIComponent(language)}`)
       : this.v1("/vocabulary/dictionary");
-    const body = await this.requestJSON<{ entries?: DictionaryEntry[] }>("GET", path, undefined, overrides);
+    const body = await this.requestJSON<{ entries?: DictionaryEntry[] }>(
+      "GET",
+      path,
+      undefined,
+      overrides,
+    );
     return body.entries ?? [];
   }
 
@@ -243,8 +295,14 @@ export class SpeechKitClient {
 
   /** GET /v1/transcripts. */
   async transcripts(limit?: number, overrides?: RequestOverrides): Promise<Transcript[]> {
-    const path = limit && limit > 0 ? this.v1(`/transcripts?limit=${limit}`) : this.v1("/transcripts");
-    const body = await this.requestJSON<{ transcripts?: Transcript[] }>("GET", path, undefined, overrides);
+    const path =
+      limit && limit > 0 ? this.v1(`/transcripts?limit=${limit}`) : this.v1("/transcripts");
+    const body = await this.requestJSON<{ transcripts?: Transcript[] }>(
+      "GET",
+      path,
+      undefined,
+      overrides,
+    );
     return body.transcripts ?? [];
   }
 
@@ -313,7 +371,9 @@ export class SpeechKitClient {
     const timeoutMs = overrides?.timeoutMs ?? this.timeoutMs;
     const controller = new AbortController();
     const timer =
-      timeoutMs > 0 ? setTimeout(() => controller.abort(new Error("speechkit timeout")), timeoutMs) : null;
+      timeoutMs > 0
+        ? setTimeout(() => controller.abort(new Error("speechkit timeout")), timeoutMs)
+        : null;
     if (overrides?.signal) {
       overrides.signal.addEventListener("abort", () => controller.abort(overrides.signal?.reason));
     }

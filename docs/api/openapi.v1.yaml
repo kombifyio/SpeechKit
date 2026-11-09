@@ -5215,6 +5215,9 @@ components:
         auditDegraded:
           type: boolean
           description: Audit forwarding is required but failing; cloud sessions are refused.
+        localModelLoading:
+          type: boolean
+          description: A request waits while the local speech model loads and warms up.
       additionalProperties: true
     Features:
       type: object

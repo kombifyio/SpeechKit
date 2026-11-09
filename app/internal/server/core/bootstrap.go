@@ -22,6 +22,7 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/config"
 	"github.com/kombifyio/SpeechKit/app/internal/server/assist"
 	"github.com/kombifyio/SpeechKit/app/internal/server/catalog"
+	"github.com/kombifyio/SpeechKit/app/internal/server/cloudlink"
 	"github.com/kombifyio/SpeechKit/app/internal/server/configapi"
 	"github.com/kombifyio/SpeechKit/app/internal/server/customization"
 	deviceagentserver "github.com/kombifyio/SpeechKit/app/internal/server/deviceagent"
@@ -109,6 +110,10 @@ type App struct {
 	// the four G0 routes.
 	BoxMediaRuntime *boxMediaServerRuntime
 
+	// CloudLink is the account link of this server ([server.cloud_link]);
+	// always set, it reports itself disabled when the section is off.
+	CloudLink *cloudlink.Manager
+
 	// PersonaRegistry holds the in-memory persona / role / sequence catalog.
 	// Populated by ensurePersonaRegistry — loaded from TOML seeds at boot;
 	// admin CRUD writes land here too (M5a). Durable persistence is
@@ -177,7 +182,15 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			// codeql[go/clear-text-logging] wiring note names the env var, not the key value
 			slog.Info("STT wiring", "msg", note)
 		}
+		if local := supervisedLocalSTT(cfg, sttRouter); local != nil {
+			for i := range providers {
+				if providers[i].provider == stt.STTProvider(local) {
+					providers[i].supervised = true
+				}
+			}
+		}
 		registerProviderHealth(app, providers, app.ModeEnabled(ModeDictation)) //nolint:contextcheck // health probes own their short-lived contexts and are not request-scoped.
+		startLocalSTT(ctx, app, cfg, sttRouter)
 	}
 	initServerLifecycle(app) //nolint:contextcheck // lifecycle hooks are process-scoped startup state, not request-scoped work.
 

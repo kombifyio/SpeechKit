@@ -794,14 +794,10 @@ export interface paths {
          *     as degraded; the WebSocket start emits a provider connection error such
          *     as `provider_connect_failed`.
          *
-         *     Deployments with the voice-agent tool bridge enabled
-         *     (`[server.voiceagent.tool_bridge]`) additionally accept an opaque
-         *     per-session credential header on this request (default
-         *     `X-Edge-Obo-Subject-Token`, configurable via `credential_header`).
-         *     The header is honoured only when the request authenticated via
-         *     edge-HMAC; its value is held memory-only for the session's
-         *     server-side tool calls and never appears in any response, ticket,
-         *     or log. See `docs/server/toolbridge.v1.md`.
+         *     A request authenticated via edge-HMAC may carry an opaque
+         *     per-session delegated credential (`X-Edge-Obo-Subject-Token`). Its
+         *     value is held memory-only for the session's registered-agent turns
+         *     and usage report and never appears in any response, ticket, or log.
          *
          *     Edge-injected user voice preferences (`x-speechkit-pref-va-provider`,
          *     `x-speechkit-pref-va-persona`) are likewise captured at this
@@ -2141,6 +2137,13 @@ export interface components {
              * @description Ticket expiry timestamp.
              */
             expires_at: string;
+            /**
+             * Format: date-time
+             * @description Current Voice budget deadline, present when a budget was reserved.
+             *     This is distinct from the WebSocket ticket expiry. A hosted session
+             *     may request a new budget before this deadline via the renewal endpoint.
+             */
+            budget_expires_at?: string;
             livekit?: components["schemas"]["LiveKitJoinInfo"];
         };
         CreateDictationStreamSessionResponse: {

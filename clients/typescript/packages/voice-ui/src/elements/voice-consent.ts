@@ -4,14 +4,14 @@ import {
   VOICE_CONSENT_STORAGE_KEY,
   type VoiceConsentAdapter,
   type VoiceConsentDecision,
-  type VoiceConsentScope
+  type VoiceConsentScope,
 } from "../core/consent.js";
 
 export {
   VOICE_CONSENT_STORAGE_KEY,
   type VoiceConsentAdapter,
   type VoiceConsentDecision,
-  type VoiceConsentScope
+  type VoiceConsentScope,
 };
 
 /**
@@ -22,7 +22,7 @@ export {
  */
 export function createLocalStorageConsentAdapter(
   surface = "default",
-  storageKey = VOICE_CONSENT_STORAGE_KEY
+  storageKey = VOICE_CONSENT_STORAGE_KEY,
 ): VoiceConsentAdapter {
   return createVoiceConsentStore({ surface, storageKey });
 }

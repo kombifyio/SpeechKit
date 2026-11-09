@@ -14,6 +14,9 @@ object ShippedDefaults {
 
     val cloudAuthClientId: String get() = ""
 
+    /** Self-hosted bearers carry plain tenant_id/org_id claims. */
+    val tokenClaimNamespace: String get() = ""
+
     val showLabTabs: Boolean get() = true
 
     fun shippedProfile(): ConnectionProfile.Server? = null

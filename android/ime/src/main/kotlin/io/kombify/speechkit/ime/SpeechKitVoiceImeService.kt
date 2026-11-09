@@ -6,7 +6,6 @@ import android.os.Build
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
-import android.view.inputmethod.InputMethodSubtype
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -26,6 +25,8 @@ import io.kombify.speechkit.domain.ConnectionProfileSource
 import io.kombify.speechkit.net.DictationController
 import io.kombify.speechkit.net.VoiceAgentAudio
 import io.kombify.speechkit.net.VoiceAgentController
+import io.kombify.speechkit.net.VoiceRenewalProfileSource
+import io.kombify.speechkit.stt.LANGUAGE_MULTI
 import io.kombify.speechkit.stt.streaming.StreamingSttSession
 import io.kombify.speechkit.ui.ServiceWindowOwner
 import kotlinx.coroutines.CoroutineScope
@@ -53,6 +54,9 @@ class SpeechKitVoiceImeService : InputMethodService() {
     @Inject
     lateinit var profileSource: ConnectionProfileSource
 
+    @Inject
+    lateinit var voiceRenewalProfiles: VoiceRenewalProfileSource
+
     private lateinit var serviceScope: CoroutineScope
     private lateinit var controller: VoicePanelController
     private lateinit var agentController: ImeVoiceAgentController
@@ -74,11 +78,18 @@ class SpeechKitVoiceImeService : InputMethodService() {
                 override fun request() =
                     MicPermissionTrampolineActivity.launch(this@SpeechKitVoiceImeService)
             },
-            initialLanguage = subtypeLanguage(currentSubtype()),
+            initialLanguage = LANGUAGE_MULTI,
         )
         agentController = ImeVoiceAgentController(
             scope = serviceScope,
-            controllerFactory = { VoiceAgentController(profileSource.currentProfile()) },
+            controllerFactory = {
+                val profile = profileSource.currentProfile()
+                VoiceAgentController(
+                    profile,
+                    renewalProfile = { voiceRenewalProfiles.profileForRenewal(profile) },
+                    renewalClaimNamespace = voiceRenewalProfiles.claimNamespace,
+                )
+            },
             audioCapture = MicAudioCapture(),
             micPermission = object : MicPermissionGate {
                 override fun isGranted(): Boolean = ContextCompat.checkSelfPermission(
@@ -183,7 +194,7 @@ class SpeechKitVoiceImeService : InputMethodService() {
                             language = language,
                             onMicToggle = controller::toggleMic,
                             onRetry = controller::retry,
-                            onLanguageToggle = { controller.setLanguage(nextLanguage(language)) },
+                            onLanguageToggle = controller::cycleLanguage,
                             onSwitchKeyboard = ::switchBackToKeyboard,
                             onStartAgent = {
                                 agentMode = true
@@ -209,11 +220,6 @@ class SpeechKitVoiceImeService : InputMethodService() {
         agentPlayer.release()
         windowOwner?.onPause()
         super.onFinishInputView(finishingInput)
-    }
-
-    override fun onCurrentInputMethodSubtypeChanged(newSubtype: InputMethodSubtype) {
-        super.onCurrentInputMethodSubtypeChanged(newSubtype)
-        controller.setLanguage(subtypeLanguage(newSubtype))
     }
 
     /** A voice panel has no use for the fullscreen extract editor. */
@@ -256,26 +262,4 @@ class SpeechKitVoiceImeService : InputMethodService() {
         }
     }
 
-    private fun currentSubtype(): InputMethodSubtype? =
-        (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
-            .currentInputMethodSubtype
-
-    companion object {
-        internal val SUPPORTED_LANGUAGES = listOf("de", "en")
-
-        internal fun subtypeLanguage(subtype: InputMethodSubtype?): String {
-            // languageTag exists since API 24 (minSdk is 26); locale is the
-            // legacy fallback for subtypes created without a tag.
-            val locale = subtype?.let {
-                it.languageTag.ifEmpty { @Suppress("DEPRECATION") it.locale }
-            }.orEmpty()
-            val language = locale.substringBefore('-').substringBefore('_').lowercase()
-            return if (language in SUPPORTED_LANGUAGES) language else SUPPORTED_LANGUAGES.first()
-        }
-
-        internal fun nextLanguage(current: String): String {
-            val index = SUPPORTED_LANGUAGES.indexOf(current)
-            return SUPPORTED_LANGUAGES[(index + 1).mod(SUPPORTED_LANGUAGES.size)]
-        }
-    }
 }

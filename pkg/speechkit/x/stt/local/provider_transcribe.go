@@ -17,6 +17,26 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 )
 
+// waitForStartup blocks until the StartServer call that owns done finishes
+// (model load and warmup) or ctx ends. While it waits, the startup-wait
+// observer reports the model-loading state to the host.
+func (p *Provider) waitForStartup(ctx context.Context, done <-chan struct{}) error {
+	select {
+	case <-done:
+		return nil
+	default:
+	}
+	p.log().Info("local STT server: waiting for model load and warmup to complete...")
+	p.notifyStartupWait(true)
+	defer p.notifyStartupWait(false)
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("local %s not ready: cancelled while waiting for startup", engineForModel(p.ModelPath).serverName())
+	}
+}
+
 // Transcribe implements [stt.STTProvider] against the child's
 // /v1/audio/transcriptions route. A Parakeet model takes no prompt, so none
 // is sent to it. When a [Provider.StartServer] call is in
@@ -32,12 +52,8 @@ func (p *Provider) Transcribe(ctx context.Context, audioData []byte, opts stt.Tr
 		done := p.startDone
 		p.processMu.Unlock()
 		if done != nil {
-			p.log().Info("local STT server: waiting for startup to complete...")
-			select {
-			case <-done:
-				// startup finished — check ready below
-			case <-ctx.Done():
-				return nil, fmt.Errorf("local %s not ready: cancelled while waiting for startup", engineForModel(p.ModelPath).serverName())
+			if err := p.waitForStartup(ctx, done); err != nil {
+				return nil, err
 			}
 		}
 		if !p.ready.Load() {
@@ -61,7 +77,9 @@ func (p *Provider) Transcribe(ctx context.Context, audioData []byte, opts stt.Tr
 	if err != nil {
 		return nil, fmt.Errorf("create form file: %w", err)
 	}
-	if _, err := part.Write(audioData); err != nil {
+	// The server path hands over decoded PCM, the desktop a WAV; both local
+	// servers (sherpa, whisper.cpp) accept only a WAV container.
+	if _, err := part.Write(stt.EnsureTranscriptionWAV(audioData)); err != nil {
 		return nil, fmt.Errorf("write audio data: %w", err)
 	}
 
@@ -80,6 +98,13 @@ func (p *Provider) Transcribe(ctx context.Context, audioData []byte, opts stt.Tr
 	}
 	if err := writer.WriteField("model", "whisper-1"); err != nil {
 		return nil, fmt.Errorf("write model field: %w", err)
+	}
+	if engine == engineSherpa && resolved.UseVocabularyKeyterms {
+		for _, term := range resolved.Keyterms {
+			if err := writer.WriteField("keyterm", term); err != nil {
+				return nil, fmt.Errorf("write keyterm field: %w", err)
+			}
+		}
 	}
 	if engine == engineWhisper && resolved.Prompt != "" {
 		if err := writer.WriteField("prompt", resolved.Prompt); err != nil {

@@ -50,6 +50,8 @@
   --sk-indicator-bar-width: 3px;
   --sk-indicator-bar-gap: 2px;
   --sk-indicator-height: 14px;
+  --sk-pill-height: 24px;
+  --sk-pill-gap: 6px;
   --sk-accent: oklch(0.65 0.13 210);
   --sk-accent-contrast: #ffffff;
   --sk-surface: color-mix(in srgb, #ffffff 72%, transparent);

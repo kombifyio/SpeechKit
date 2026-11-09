@@ -52,9 +52,9 @@ fun recoverCloudSession(
     return recoverCloudSession(
         hasOwnSession = StoredServerProfile.hasOwnCloudSession(context),
         recoverOwn = {
-            val renewed = runBlocking { CloudBearer.recoverRejected(rejected) }
+            val renewed = runBlocking { CloudBearer.recoverRejected(rejected, server.cloudSessionGeneration) }
             val stored = StoredServerProfile.loadCloud(context)
-            if (renewed != null && stored != null) ConnectionProfile.Server(stored.baseUrl, renewed) else null
+            if (renewed != null && stored != null) stored.copy(bearerToken = renewed) else null
         },
         recoverCompanion = {
             val cached = companion.currentSession()

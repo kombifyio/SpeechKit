@@ -2,6 +2,7 @@ package io.kombify.speechkit.app.build
 
 import io.kombify.speechkit.BuildConfig
 import io.kombify.speechkit.domain.ConnectionProfile
+import io.kombify.speechkit.app.di.KombifyModule
 
 /**
  * What this build was shipped with, for surfaces that need to explain where a
@@ -23,6 +24,9 @@ object ShippedDefaults {
 
     val cloudAuthClientId: String
         get() = BuildConfig.CLOUD_AUTH_CLIENT_ID.trim()
+
+    /** Account claims of the cloud bearers this build signs in to or is provisioned with. */
+    val tokenClaimNamespace: String get() = KombifyModule.TOKEN_CLAIM_NAMESPACE
 
     /** Dev/Voice lab tabs are not a tester surface. */
     val showLabTabs: Boolean get() = false

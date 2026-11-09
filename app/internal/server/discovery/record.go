@@ -15,6 +15,9 @@ type Record struct {
 	URL          string   `json:"url"`
 	Modes        []string `json:"modes,omitempty"`
 	Version      string   `json:"version,omitempty"`
+	// ID is the server's stable, non-secret instance id (dev_…), when the
+	// announcement carried a well-formed one.
+	ID string `json:"id,omitempty"`
 }
 
 var credentialTXTKeys = map[string]struct{}{
@@ -51,11 +54,16 @@ func ParseTXT(instanceName string, lines []string) (Record, bool) {
 			modes = append(modes, m)
 		}
 	}
+	id := strings.TrimSpace(attrs["id"])
+	if !ValidInstanceID(id) {
+		id = ""
+	}
 	return Record{
 		InstanceName: instanceName,
 		URL:          url,
 		Modes:        modes,
 		Version:      strings.TrimSpace(attrs["version"]),
+		ID:           id,
 	}, true
 }
 

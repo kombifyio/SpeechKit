@@ -16,6 +16,7 @@ import (
 	internalcustomize "github.com/kombifyio/SpeechKit/app/internal/customize"
 	"github.com/kombifyio/SpeechKit/app/internal/server/audio"
 	"github.com/kombifyio/SpeechKit/app/internal/server/httpx"
+	"github.com/kombifyio/SpeechKit/app/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/app/internal/server/storageauth"
 	"github.com/kombifyio/SpeechKit/app/internal/store"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
@@ -87,6 +88,7 @@ func (h *Handler) transcribe(r *http.Request, raw []byte, contentType string, op
 	scope := speechstorage.ScopeFromContext(ctx)
 	scope.UserID, scope.TenantID = owner.UserID, owner.OrgID
 	ctx = speechstorage.WithScope(ctx, scope)
+	ctx = internalcustomize.WithVocabularyRef(ctx, middleware.VoicePrefsFromContext(r.Context()).Vocabulary)
 	opts, replacements := h.applyCustomizationHints(ctx, opts)
 	result, err := h.router.Route(ctx, decoded.PCM, durationSecs, opts)
 	latency := time.Since(started)

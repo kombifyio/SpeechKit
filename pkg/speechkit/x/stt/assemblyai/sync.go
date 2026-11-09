@@ -115,7 +115,7 @@ func (p *Provider) syncModelHeader() string {
 
 // transcribeSync performs the single-request sync transcription.
 func (p *Provider) transcribeSync(ctx context.Context, wav []byte, start time.Time, opts stt.TranscribeOpts, resolved stt.ResolvedTranscribeOptions) (*stt.Result, error) {
-	endpoint, err := netsec.BuildEndpoint(stt.FirstNonEmptyTrimmed(p.SyncBaseURL, assemblyAISyncBaseURL), "transcribe", p.Validation)
+	endpoint, err := netsec.BuildEndpoint(stt.FirstNonEmptyTrimmed(p.SyncBaseURL, assemblyAISyncBaseURL), "v1/transcribe", p.Validation)
 	if err != nil {
 		return nil, fmt.Errorf("assemblyai sync endpoint: %w", err)
 	}
@@ -178,7 +178,7 @@ func (p *Provider) transcribeSync(ctx context.Context, wav []byte, start time.Ti
 
 	result := &stt.Result{
 		Text:       strings.TrimSpace(response.Text),
-		Language:   stt.FirstNonEmptyTrimmed(cfg.LanguageCode, resolved.Language, "de"),
+		Language:   stt.FirstNonEmptyTrimmed(cfg.LanguageCode, resolved.Language, stt.LanguageMulti),
 		Duration:   time.Since(start),
 		Provider:   p.Name(),
 		Model:      p.syncModelHeader(),
@@ -204,10 +204,14 @@ func (p *Provider) transcribeSync(ctx context.Context, wav []byte, start time.Ti
 // call repeatedly, and idle connections are evicted after seconds to minutes,
 // so warm close to the transcription rather than at startup.
 func (p *Provider) Warm(ctx context.Context) error {
+	p, err := p.forRequest(ctx)
+	if err != nil {
+		return err
+	}
 	if p.DisableSync {
 		return nil
 	}
-	endpoint, err := netsec.BuildEndpoint(stt.FirstNonEmptyTrimmed(p.SyncBaseURL, assemblyAISyncBaseURL), "warm", p.Validation)
+	endpoint, err := netsec.BuildEndpoint(stt.FirstNonEmptyTrimmed(p.SyncBaseURL, assemblyAISyncBaseURL), "v1/warm", p.Validation)
 	if err != nil {
 		return fmt.Errorf("assemblyai warm endpoint: %w", err)
 	}

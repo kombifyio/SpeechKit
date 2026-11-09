@@ -23,7 +23,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
@@ -34,12 +33,9 @@ import (
 const (
 	deepgramBaseURL          = "https://api.deepgram.com"
 	deepgramMaxResponseBytes = 16 << 20
-	deepgramMaxKeyterms      = 100
-	// deepgramKeytermTokenBudget stays below Listen's limit of 500 tokens
-	// across all keyterms. Past it Deepgram rejects the whole request with
-	// 400 "Keyterm limit exceeded", so a long vocabulary would silently turn
-	// every dictation into a failure.
-	deepgramKeytermTokenBudget = 450
+	// deepgramMaxKeyterms mirrors provideropts.DeepgramKeytermLimits, whose
+	// token budget keeps every request below Listen's 500-token keyterm limit.
+	deepgramMaxKeyterms = 100
 )
 
 // Tuning holds provider-specific Deepgram STT controls. These map to
@@ -89,6 +85,29 @@ type Provider struct {
 
 // log returns the provider's logger, or the default logger when none is set.
 func (p *Provider) log() *slog.Logger { return logutil.Resolve(p.Logger) }
+
+func (p *Provider) forRequest(ctx context.Context) (*Provider, error) {
+	if err := netsec.EUVoiceProfileError(ctx); err != nil {
+		return nil, err
+	}
+	if !netsec.DataProfileEU(ctx) {
+		return p, nil
+	}
+	regional := *p
+	regional.BaseURL = "https://api.eu.deepgram.com"
+	regional.client = netsec.EUVoiceClient(p.client)
+	if p.uploadClient != nil {
+		regional.uploadClient = netsec.EUVoiceClient(p.uploadClient)
+	}
+	return &regional, nil
+}
+
+func (p *Provider) validateEUModel(ctx context.Context, model string) error {
+	if netsec.DataProfileEU(ctx) && strings.Contains(strings.ToLower(model), "whisper") {
+		return fmt.Errorf("data_profile_processor_ineligible: deepgram Whisper is not qualified for EU")
+	}
+	return nil
+}
 
 // Options configures [New].
 type Options struct {
@@ -149,7 +168,14 @@ func (p *Provider) ApplyTuning(opts Tuning) {
 // per-word confidences, the detected language when reported, and speaker
 // segments when diarization was requested.
 func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.TranscribeOpts) (*stt.Result, error) {
+	p, err := p.forRequest(ctx)
+	if err != nil {
+		return nil, err
+	}
 	model := stt.FirstNonEmptyTrimmed(opts.Model, p.Model, "nova-3")
+	if err := p.validateEUModel(ctx, model); err != nil {
+		return nil, err
+	}
 	resolved := p.resolveOptions(model, opts)
 	apiLanguage := deepgramResolvedLanguage(resolved)
 	languageSource := deepgramLanguageSource(resolved)
@@ -247,6 +273,10 @@ func (p *Provider) Name() string {
 // Health issues an authenticated GET /v1/projects; a transport failure or
 // non-200 status is returned as the error.
 func (p *Provider) Health(ctx context.Context) error {
+	p, err := p.forRequest(ctx)
+	if err != nil {
+		return err
+	}
 	endpoint, err := netsec.BuildEndpoint(stt.FirstNonEmptyTrimmed(p.BaseURL, deepgramBaseURL), "v1/projects", p.Validation)
 	if err != nil {
 		return fmt.Errorf("deepgram endpoint: %w", err)
@@ -447,42 +477,17 @@ func normalizedDeepgramLanguage(language string) string {
 	return strings.ReplaceAll(language, "_", "-")
 }
 
+// normalizedDeepgramTerms keeps the terms Deepgram accepts (see
+// [provideropts.DeepgramKeytermLimits]), at most limit of them.
 func normalizedDeepgramTerms(terms []string, limit int) []string {
-	if len(terms) == 0 || limit == 0 {
+	if limit == 0 {
 		return nil
 	}
-	out := make([]string, 0, min(len(terms), limit))
-	seen := make(map[string]struct{}, len(terms))
-	budget := deepgramKeytermTokenBudget
-	for _, term := range terms {
-		term = strings.TrimSpace(term)
-		if term == "" {
-			continue
-		}
-		key := strings.ToLower(term)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		cost := deepgramKeytermTokenEstimate(term)
-		if cost > budget {
-			continue
-		}
-		budget -= cost
-		out = append(out, term)
-		if limit > 0 && len(out) >= limit {
-			break
-		}
+	limits := provideropts.DeepgramKeytermLimits
+	if limit > 0 && limit < limits.MaxTerms {
+		limits.MaxTerms = limit
 	}
-	return out
-}
-
-// deepgramKeytermTokenEstimate over-estimates the tokens Deepgram counts for
-// one keyterm. Measured against the live API (2026-11-02): short terms cost
-// about 7 tokens each and longer ones about 4 plus 0.4 per character, so the
-// estimate takes at least 8 and 4 plus half a token per character.
-func deepgramKeytermTokenEstimate(term string) int {
-	return max(8, 4+(utf8.RuneCountInString(term)+1)/2)
+	return provideropts.CapKeyterms(terms, limits)
 }
 
 // ParseKeyterms splits a free-text vocabulary list on newlines, commas and

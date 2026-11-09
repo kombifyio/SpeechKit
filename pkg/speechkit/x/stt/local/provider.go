@@ -97,6 +97,40 @@ type Provider struct {
 	identity *serverIdentity
 	// proxy is the keyed loopback door to the current child (nil when none).
 	proxy *authProxy
+	// startupWait hears when a request starts and stops waiting on a
+	// StartServer in progress (see SetStartupWaitObserver).
+	startupWait atomic.Pointer[func(waiting bool)]
+}
+
+// SetStartupWaitObserver registers fn to hear when a request begins (true)
+// and ends (false) waiting on a [Provider.StartServer] in progress, that is
+// while the model loads and warms up. Hosts use it to show a model-loading
+// state instead of a silent wait. Requests may overlap, so fn sees one true
+// and one false per waiting request. Nil removes the observer.
+func (p *Provider) SetStartupWaitObserver(fn func(waiting bool)) {
+	if fn == nil {
+		p.startupWait.Store(nil)
+		return
+	}
+	p.startupWait.Store(&fn)
+}
+
+func (p *Provider) notifyStartupWait(waiting bool) {
+	if fn := p.startupWait.Load(); fn != nil {
+		(*fn)(waiting)
+	}
+}
+
+// Starting reports whether a [Provider.StartServer] call is in progress: the
+// server is starting, its model is loading or the inference warmup runs. A
+// request made now waits for it instead of failing.
+func (p *Provider) Starting() bool {
+	if p == nil {
+		return false
+	}
+	p.processMu.Lock()
+	defer p.processMu.Unlock()
+	return p.starting
 }
 
 // Options configures [New].

@@ -96,8 +96,8 @@ func ttsProviderProfiles() []speechkit.ProviderProfile {
 			AllowInference: false,
 			Experimental:   true,
 		},
-		// The voices a fresh install speaks with: Piper VITS German (Thorsten)
-		// and English (Lessac) run by sherpa-onnx inside the
+		// The voices a fresh install speaks with: Piper VITS German (Ramona)
+		// and English (LJSpeech) run by sherpa-onnx inside the
 		// speechkit-tts-sherpa sidecar. Both ship in the installer, so the
 		// default needs no cloud key and no first-run download. Kokoro stays
 		// in the catalog as an experimental English-only stub; it is not the
@@ -111,13 +111,13 @@ func ttsProviderProfiles() []speechkit.ProviderProfile {
 			Provider:      "sherpa_piper",
 			ModelID:       "sherpa-onnx-piper",
 			Source:        "Local Built-in",
-			Description:   "On-device Piper VITS voices run by sherpa-onnx: Thorsten (German) and Lessac (English), both medium quality, bundled with the Windows installer. No cloud key and no network. The speechkit-tts-sherpa sidecar shares the sherpa-onnx runtime already shipped for speech-to-text.",
+			Description:   "On-device Piper VITS voices run by sherpa-onnx: Ramona (German, low quality) and LJSpeech (English, medium quality), both trained from scratch on redistributable data and bundled with the Windows installer. No cloud key and no network. The speechkit-tts-sherpa sidecar shares the sherpa-onnx runtime already shipped for speech-to-text.",
 			License:       "apache-2.0",
 			Capabilities:  []speechkit.Capability{speechkit.CapabilityTTS},
 			AdapterKind:   "sherpa_piper",
 			Variants: []speechkit.ModelVariant{
-				{ID: "sherpa.de.thorsten-medium", Name: "Thorsten (DE, male)", ModelID: "vits-piper-de_DE-thorsten-medium", Recommended: true},
-				{ID: "sherpa.en.lessac-medium", Name: "Lessac (EN, female)", ModelID: "vits-piper-en_US-lessac-medium"},
+				{ID: "sherpa.de.ramona-low", Name: "Ramona (DE, female)", ModelID: "vits-piper-de_DE-ramona-low", Recommended: true},
+				{ID: "sherpa.en.ljspeech-medium", Name: "LJSpeech (EN, female)", ModelID: "vits-piper-en_US-ljspeech-medium"},
 			},
 			AllowInference: true,
 			Default:        true,

@@ -71,6 +71,9 @@ internal class AndroidSpeechRecognizerHandle private constructor(
     }
 
     companion object {
+        // A bias list is a hint, not a dictionary: keep the intent extra small.
+        private const val MAX_BIASING_STRINGS = 100
+
         /** Deferred creation: the recognizer is built on first use, on main. */
         fun factory(context: Context): SpeechRecognizerHandle.Factory {
             val appContext = context.applicationContext
@@ -103,6 +106,14 @@ internal class AndroidSpeechRecognizerHandle private constructor(
                 if (request.preferOffline) {
                     // Redundant on the API 31+ on-device recognizer, harmless.
                     putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    request.biasingStrings.isNotEmpty()
+                ) {
+                    putStringArrayListExtra(
+                        RecognizerIntent.EXTRA_BIASING_STRINGS,
+                        ArrayList(request.biasingStrings.take(MAX_BIASING_STRINGS)),
+                    )
                 }
             }
     }

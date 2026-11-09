@@ -57,5 +57,6 @@
   "sk.voice.dialog.label": "محادثة صوتية",
   "sk.voice.dialog.end": "إنهاء المحادثة",
   "sk.voice.dialog.hide": "إخفاء المحادثة",
-  "sk.voice.transcript.label": "النص المباشر"
+  "sk.voice.transcript.label": "النص المباشر",
+  "sk.voice.pill.elapsed": "مدة التسجيل"
 }

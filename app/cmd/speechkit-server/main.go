@@ -12,7 +12,14 @@
 // Usage:
 //
 //	speechkit-server --config /etc/speechkit/config.toml [--modes dictation,assist,voiceagent]
+//	speechkit-server --discovery-only --config /etc/speechkit/config.toml
+//	speechkit-server cloud-link start|status|unlink [--config path] [--json]
 //	speechkit-server migrate [-runtime-role speechkit_app]
+//
+// `--discovery-only` binds nothing but mDNS and announces the server that
+// listens elsewhere (a host network sidecar of a bridge network container).
+// `cloud-link` links this server to an account through the device
+// authorization grant ([server.cloud_link]).
 //
 // `migrate` is the Postgres migration step. It reads the migration
 // role's DSN from SPEECHKIT_MIGRATION_POSTGRES_DSN only, never from the
@@ -57,7 +64,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "speechkit-server:", err)
 		os.Exit(1)
 	}
-	cli.Run(cli.Options{
+	opts := cli.Options{
 		Banner:         "speechkit-server",
 		Version:        version,
 		SourceRevision: sourceSHA,
@@ -65,7 +72,11 @@ func main() {
 		// from config.toml, which itself defaults to nil = all three
 		// modes enabled. This is the "kitchen sink" deploy.
 		DefaultModes: nil,
-	})
+	}
+	if len(os.Args) > 1 && os.Args[1] == "cloud-link" {
+		os.Exit(cli.RunCloudLink(os.Args[2:], opts))
+	}
+	cli.Run(opts)
 }
 
 func migrate(args []string) error {

@@ -154,6 +154,16 @@ type Config struct {
 	// none). It is never serialized; it travels with copies so every
 	// enforcement point and Save honour it. See policy.go.
 	policy *policyBinding
+
+	// definedKeys are the operator choices the loaded TOML file set
+	// explicitly (see operatorKeys in loader.go), so a runtime default never
+	// overrides them. Nil for a config that was not loaded from a file.
+	definedKeys map[string]bool
+}
+
+// keyDefined reports whether the loaded config file set key ("routing.strategy").
+func (c *Config) keyDefined(key string) bool {
+	return c != nil && c.definedKeys[key]
 }
 
 // MeetingConfig configures meeting capture.

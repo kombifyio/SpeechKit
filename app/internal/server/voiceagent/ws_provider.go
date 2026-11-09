@@ -91,11 +91,14 @@ type LiveConfigFrame struct {
 
 	Model             string
 	TranscriptionMode string
-	StoredAgentID     string             `json:"-"`
-	NativeLLMBaseURL  string             `json:"-"`
-	NativeLLMToken    string             `json:"-"`
-	NativeLLMModel    string             `json:"-"`
-	NativeConsent     NativeVoiceConsent `json:"-"`
+	StoredAgentID     string `json:"-"`
+	NativeLLMBaseURL  string `json:"-"`
+	NativeLLMToken    string `json:"-"`
+	// NativeLLMHeaders are extra headers the vendor sends on its callback to
+	// NativeLLMBaseURL (the deployment's routing hint, never a credential).
+	NativeLLMHeaders map[string]string
+	NativeLLMModel   string             `json:"-"`
+	NativeConsent    NativeVoiceConsent `json:"-"`
 
 	// NativeClientDelegation asks a GPT-Live bridge for client delegation:
 	// the vendor hands every turn to the host, which answers it with the
@@ -121,8 +124,12 @@ type LiveConfigFrame struct {
 	ActivityHandling  string
 	TurnCoverage      string
 	Speaker           speaker.Options
-	// Tools are server-executed tool definitions merged in by the adapter
-	// from the SessionToolRouter (tool bridge). Provider bridges that support
+	// Keyterms bias the provider's input transcription towards the
+	// session's vocabulary (see VocabularyResolver); providers without a
+	// keyterm field ignore them.
+	Keyterms []string
+	// Tools are server-executed control tool definitions merged in by the
+	// adapter (server_tools.go). Provider bridges that support
 	// session tools map these onto the kernel's LiveConfig.Tools; providers
 	// without tool support ignore them.
 	Tools []ToolDefinitionFrame
@@ -179,6 +186,13 @@ type ToolCall struct {
 	Name string
 	Args map[string]any
 }
+
+// VocabularyResolver returns the recognition keyterms for one session: the
+// deployment's customization (builtin templates, operator vocabulary and the
+// owner's own words) for the session owner, narrowed by the signed vocabulary
+// preference captured at session mint. Providers with a keyterm field on
+// their listen leg (Deepgram, AssemblyAI) bias input transcription with them.
+type VocabularyResolver func(ctx context.Context, userID, orgID string, prefs VoicePrefs, locale string) []string
 
 // PersonaResolver derives a LiveConfigFrame from a StartFrame. The server's
 // persona registry implements this in M5; for M4 a stub resolver is used

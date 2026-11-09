@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 	"io"
 	"net/http"
@@ -493,7 +494,7 @@ func assemblyAISessionUpdate(cfg live.LiveConfig) map[string]any {
 	if prompt := live.AppendContextPrompt(composeAssemblyAIPrompt(cfg), resolved.ContextPrompt); prompt != "" {
 		session["system_prompt"] = prompt
 	}
-	if keyterms := resolved.Keyterms; len(keyterms) > 0 {
+	if keyterms := provideropts.CapKeyterms(resolved.Keyterms, provideropts.AssemblyAIKeytermLimits); len(keyterms) > 0 {
 		input["keyterms"] = keyterms
 	}
 	if turnDetection := assemblyAITurnDetection(cfg.Policies.ActivityDetection); len(turnDetection) > 0 {

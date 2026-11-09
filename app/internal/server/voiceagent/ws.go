@@ -50,6 +50,9 @@ type HandlerOptions struct {
 	// disables the server-side idle watchdog. Defaults to 15 minutes
 	// when zero is passed; pass a negative value to disable explicitly.
 	IdleTimeout time.Duration
+	// Heartbeat is the WebSocket ping period of a running conversation
+	// (Adapter.Heartbeat): zero uses the default, a negative value disables it.
+	Heartbeat time.Duration
 	// MaxSessionDuration terminates a session after this wall-clock duration
 	// even if it remains active. Zero disables the hard cap.
 	MaxSessionDuration time.Duration
@@ -59,12 +62,7 @@ type HandlerOptions struct {
 	MediaBridge        MediaBridgeFactory
 	// ReadLimit caps per-frame bytes the upgraded WebSocket will read.
 	// Zero or negative falls back to defaultWSReadLimitBytes (64 KiB).
-	ReadLimit int64
-	// ToolRouter, when non-nil, supplies server-executed tools for each
-	// session (voice-agent tool bridge). Nil disables server-side tool
-	// execution; all provider tool calls pass through to the client as
-	// before.
-	ToolRouter    SessionToolRouter
+	ReadLimit     int64
 	Usage         UsageReporter
 	AssemblyAIKey string
 	// RegisteredAgentSigningSecret supplies the operator's existing delegation
@@ -72,9 +70,18 @@ type HandlerOptions struct {
 	RegisteredAgentSigningSecret func() string
 	// NativeConsentReader checks current owner consent through trusted authority.
 	NativeConsentReader NativeConsentReader
+	// PlainAgent is the plain voice model: it answers a Companion turn the
+	// Companion cannot serve (unreachable or failed), after a spoken notice.
+	// Nil keeps the typed error.
+	PlainAgent CascadedAgent
+	// NativeCallbackHeaders ride on every native vendor's callback to this
+	// server (for example the release channel the fronting proxy routes by).
+	NativeCallbackHeaders map[string]string
 	// WakeVerifier enables the two-stage wake word check for start frames
 	// that carry a wake candidate. Nil leaves such sessions unverified.
 	WakeVerifier WakeVerifier
+	// Vocabulary resolves each session's recognition keyterms. Nil sends none.
+	Vocabulary VocabularyResolver
 }
 
 // Handler exposes both the HTTP session-creation endpoint and the WS
@@ -88,17 +95,18 @@ type Handler struct {
 	allowedOrigins     []string
 	idleTimeout        time.Duration
 	maxSessionDuration time.Duration
+	heartbeat          time.Duration
 	requireVoiceBudget bool
 	store              store.Store
 	liveKit            *LiveKitTokenIssuer
 	mediaBridge        MediaBridgeFactory
 	readLimit          int64
 	trustedProxies     httpx.TrustedProxies
-	toolRouter         SessionToolRouter
 	usage              UsageReporter
 	settlement         *usageSettlement
 	native             *nativeVoiceSessions
 	wakeVerifier       WakeVerifier
+	vocabulary         VocabularyResolver
 	anonymous          bool
 }
 
@@ -163,17 +171,18 @@ func New(opts HandlerOptions) (*Handler, error) {
 		allowedOrigins:     normalizeAllowedOrigins(opts.AllowedOrigins),
 		idleTimeout:        idle,
 		maxSessionDuration: maxSessionDuration,
+		heartbeat:          opts.Heartbeat,
 		requireVoiceBudget: opts.RequireVoiceBudget,
 		store:              opts.Store,
 		liveKit:            opts.LiveKit,
 		mediaBridge:        mediaBridge,
 		readLimit:          readLimit,
 		trustedProxies:     trustedProxies,
-		toolRouter:         opts.ToolRouter,
 		usage:              opts.Usage,
 		settlement:         newUsageSettlement(),
-		native:             newNativeVoiceSessions(opts.PublicURL, opts.Store, opts.AssemblyAIKey, opts.RegisteredAgentSigningSecret, opts.NativeConsentReader),
+		native:             newNativeVoiceSessions(opts.PublicURL, opts.Store, opts.AssemblyAIKey, opts.RegisteredAgentSigningSecret, opts.NativeConsentReader, opts.PlainAgent, opts.NativeCallbackHeaders),
 		wakeVerifier:       opts.WakeVerifier,
+		vocabulary:         opts.Vocabulary,
 	}, nil
 }
 
@@ -196,7 +205,7 @@ func (h *Handler) MountAnonymous(mux *http.ServeMux) {
 	public.defaultProvider = "anonymous-guide"
 	public.providers = map[string]ProviderFactory{"anonymous-guide": h.providers["anonymous-guide"]}
 	public.persona = anonymousPersona{}
-	public.store, public.toolRouter, public.usage = nil, nil, nil
+	public.store, public.usage = nil, nil
 	public.liveKit, public.mediaBridge, public.native, public.wakeVerifier = nil, nil, nil, nil
 	public.maxSessionDuration = 60 * time.Second
 	mux.HandleFunc("/v1/anonymous/voiceagent/sessions", public.collectionHandler)

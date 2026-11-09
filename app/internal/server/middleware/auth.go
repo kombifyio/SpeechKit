@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/app/internal/server/httpx"
+	dataprofile "github.com/kombifyio/SpeechKit/internal/dataprofilev1"
 )
 
 // Auth validates credentials according to the configured mode and attaches the
@@ -31,6 +32,8 @@ type authRuntime struct {
 	edgeSecretProvider        func() string
 	edgeKeysProvider          func() []EdgeKey
 	edgeReplay                *edgeReplayGuard
+	profileMode               string
+	profileKeysProvider       func() []EdgeKey
 	bearerRoleProvider        func() string
 	adminUsernameProvider     func() string
 	adminPasswordHashProvider func() string
@@ -83,6 +86,14 @@ func newAuthRuntime(opts AuthOptions) authRuntime {
 		smokeTokenProvider = func() string { return "" }
 	}
 	trustedProxies, _ := httpx.NewTrustedProxies(opts.TrustedProxyCIDRs)
+	profileMode := strings.TrimSpace(opts.DataProfileMode)
+	if profileMode == "" {
+		profileMode = strings.TrimSpace(os.Getenv(profileModeEnv))
+	}
+	profileKeysProvider := opts.ProfileKeysProvider
+	if profileKeysProvider == nil {
+		profileKeysProvider = profileKeysFromEnv
+	}
 	publicSet := make(map[string]struct{}, len(opts.AllowPublicPaths))
 	for _, p := range opts.AllowPublicPaths {
 		if trimmed := strings.TrimSpace(p); trimmed != "" {
@@ -108,6 +119,8 @@ func newAuthRuntime(opts AuthOptions) authRuntime {
 		bearerTokenProvider:       bearerTokenProvider,
 		edgeSecretProvider:        edgeSecretProvider,
 		edgeKeysProvider:          edgeKeysProvider,
+		profileMode:               profileMode,
+		profileKeysProvider:       profileKeysProvider,
 		edgeReplay:                newEdgeReplayGuard(edgeReplayGuardCapacity),
 		bearerRoleProvider:        bearerRoleProvider,
 		adminUsernameProvider:     adminUsernameProvider,
@@ -126,8 +139,14 @@ func newAuthRuntime(opts AuthOptions) authRuntime {
 
 func (a authRuntime) serveHTTP(w http.ResponseWriter, r *http.Request, next http.Handler) {
 	if a.publicAllowed(r) || a.bootstrapAllowed(r) {
-		next.ServeHTTP(w, r)
-		return
+		if profileContentPath(r) == "" || (!hasProfileHeaders(r) && (a.profileMode == "" || a.profileMode == "off")) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if !hasEdgeEnvelope(r) {
+			writeProfileDenial(w, r, dataprofile.Profile{}, true)
+			return
+		}
 	}
 
 	adminUsername, adminPasswordHash := a.adminCredentials()
@@ -229,7 +248,11 @@ func (a authRuntime) serveAuthenticated(next http.Handler, w http.ResponseWriter
 		username, passwordHash := a.adminCredentials()
 		a.setAdminSessionCookie(w, r, username, passwordHash)
 	}
-	ctx := context.WithValue(r.Context(), identityCtxKey{}, id)
+	profileContext, ok := a.withDataProfile(w, r, id)
+	if !ok {
+		return
+	}
+	ctx := context.WithValue(profileContext, identityCtxKey{}, id)
 	// Attach the edge-forwarded OBO subject token ONLY when this request's
 	// identity was proven via edge-HMAC. Any other source (bearer, admin,
 	// smoke, none, oidc) cannot inject a credential through this header.

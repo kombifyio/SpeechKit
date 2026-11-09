@@ -22,6 +22,13 @@ func ServerSettingsPath(cfg *Config) string {
 	return defaultServerSettingsPath
 }
 
+// ServerStateDir is the directory of the server's own state files: the
+// settings file, the stable instance id and the account-link credential. It
+// follows ServerSettingsPath (default /var/lib/speechkit/data).
+func ServerStateDir(cfg *Config) string {
+	return filepath.Dir(ServerSettingsPath(cfg))
+}
+
 func LoadServerModelSettings(path string) (ServerModelSettings, bool, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {

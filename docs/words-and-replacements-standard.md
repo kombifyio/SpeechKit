@@ -207,6 +207,18 @@ recognition. The pack is served like any template at
 `/customization/templates/operator-terms/pack`, which lets a client install the
 same vocabulary for its local providers.
 
+A request can choose its vocabulary set. A fronting edge proxy forwards the
+caller's choice as a signed voice preference (`x-speechkit-pref-vocabulary`,
+contract `speechkit.voice_prefs.v2`); Dictation (batch and stream), Assist and
+the Voice Agent listen leg honour it. `customization.vocabulary_ref` gives the
+operator vocabulary a second name next to `operator-terms`. A ref that names
+it keeps it active, a ref that names another template activates that template
+instead, and the ref `none` turns the operator vocabulary off for the
+request. Without a verified ref, or with an unknown one, the deployment
+default stays in place. The Voice Agent receives canonical terms only: it has
+no post-recognition replacement, so a boosted mishearing would stay in the
+conversation. Every provider caps keyterms to its documented limits.
+
 The native Template Catalog API is:
 
 | Operation | Meaning |

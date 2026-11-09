@@ -41,6 +41,7 @@ type Provider struct {
 	systemPrompt  string
 	refinement    string
 	speaker       speaker.Options
+	keyterms      []string
 	sessionCtx    context.Context
 	sessionCancel context.CancelFunc
 

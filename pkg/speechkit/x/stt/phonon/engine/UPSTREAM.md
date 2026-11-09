@@ -33,6 +33,18 @@ Fermion Research's five-value Parakeet TDT models.
   defines `P2_I8_AVX2` and `P2_INT8` after `P2_DOTPROD`, includes the file
   in place of the SDOT block, and tests `P2_INT8` where it tested
   `P2_DOTPROD` for the mode default and the two GEMM entry points.
+- `bias.c` (new) adds word boosting for dictionary terms: the terms become a
+  trie of SentencePiece token ids (each spelling in every segmentation up to
+  two pieces over the shortest), and `p2_greedy_decode_bias` adds a boost to
+  the log-probability of a token that starts a term (small boost, strict
+  floor) or continues one the last tokens began (full boost) before the
+  argmax. `decoder.c` exports `p2_tdt_duration` for it. `engine.c` threads a
+  `const P2Bias *` through `decode_features` and `transcribe_window` and adds
+  `p2_transcribe_bias` and `p2_stream_open_bias` (the stream keeps the bias
+  for its windows and drafts); `p2_transcribe` and `p2_stream_open` call them
+  with NULL and decode as before. `P2_BIAS_BOOST`, `P2_BIAS_FLOOR`,
+  `P2_BIAS_START_BOOST` and `P2_BIAS_START_FLOOR` override the boost values
+  for tuning.
 
 SpeechKit loads the weights with `p2_engine_open_mem` from the image
 `pkg/speechkit/x/stt/phonon` builds from Fermion's `model.fermion` in Go, so

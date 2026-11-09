@@ -69,6 +69,8 @@ internal data class ParsedApiError(
     val code: String,
     val message: String?,
     val denial: PlanDenial?,
+    /** The class SpeechKit served on its own error body; null for the Gateway's envelope. */
+    val errorClass: VoiceErrorClass? = null,
 )
 
 private val PLAN_ERROR_CODES = KombifyCloudAuth.PLAN_ERROR_CODES
@@ -122,5 +124,10 @@ internal fun parseApiError(raw: String, status: Int): ParsedApiError {
     } else {
         null
     }
-    return ParsedApiError(code = code, message = message, denial = denial)
+    return ParsedApiError(
+        code = code,
+        message = message,
+        denial = denial,
+        errorClass = VoiceErrorClass.fromWire(nested?.get("class") as? String),
+    )
 }

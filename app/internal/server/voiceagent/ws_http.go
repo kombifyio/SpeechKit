@@ -27,13 +27,14 @@ import (
 // ── HTTP endpoints ──────────────────────────────────────────────────────────
 
 type createSessionResponse struct {
-	SessionID     string           `json:"session_id"`
-	AISessionID   string           `json:"ai_session_id,omitempty"`
-	WSURL         string           `json:"ws_url"`
-	WSSubprotocol string           `json:"ws_subprotocol,omitempty"`
-	Ticket        string           `json:"ticket"`
-	ExpiresAt     string           `json:"expires_at"`
-	LiveKit       *LiveKitJoinInfo `json:"livekit,omitempty"`
+	SessionID       string           `json:"session_id"`
+	AISessionID     string           `json:"ai_session_id,omitempty"`
+	WSURL           string           `json:"ws_url"`
+	WSSubprotocol   string           `json:"ws_subprotocol,omitempty"`
+	Ticket          string           `json:"ticket"`
+	ExpiresAt       string           `json:"expires_at"`
+	BudgetExpiresAt string           `json:"budget_expires_at,omitempty"`
+	LiveKit         *LiveKitJoinInfo `json:"livekit,omitempty"`
 }
 
 type createSessionRequest struct {
@@ -231,12 +232,13 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		if h.anonymous {
 			session.AnonymousGrant = r.Header.Get(anonymousGrantHeader)
 		}
-		// Capture the optional per-session tool-bridge credential the edge
-		// forwarded with this request. The middleware only attaches it when
+		// Capture the optional per-session delegated credential the edge
+		// forwarded with this request (a registered agent's A2A turns and the
+		// usage report carry it). The middleware only attaches it when
 		// edge-HMAC auth succeeded, so a plain bearer/browser caller cannot
 		// inject one. Memory-only secret: it is stored on the session record
 		// exclusively — never in the ticket, the JSON response, or logs.
-		session.BridgeCredential = middleware.EdgeOboSubjectTokenFromContext(r.Context())
+		session.DelegatedCredential = middleware.EdgeOboSubjectTokenFromContext(r.Context())
 		// Same trust boundary, non-secret payload: the edge-resolved voice
 		// preferences (provider/persona names) captured at mint time. The WS
 		// upgrade authenticates via ticket and never sees the edge headers,
@@ -245,14 +247,9 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		session.VoicePrefs = wssession.VoicePrefs(middleware.VoicePrefsFromContext(r.Context()))
 		session.VoiceAgentBinding = wssession.VoiceAgentBinding(binding)
 		if h.anonymous {
-			session.BridgeCredential = ""
+			session.DelegatedCredential = ""
 			session.VoicePrefs = wssession.VoicePrefs{}
 			session.VoiceAgentBinding = wssession.VoiceAgentBinding{}
-		}
-		// Server-tool sessions (no direct endpoint, no registered agent with
-		// its own tools) load their tool manifest now, while the client dials.
-		if prefetcher, ok := h.toolRouter.(SessionToolPrefetcher); ok && binding.DirectEndpoint == nil && binding.TargetAgentID == "" {
-			prefetcher.PrefetchTools(session)
 		}
 	}
 	if err != nil {
@@ -289,16 +286,21 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		liveKit = &info
 	}
 
+	budgetExpiresAt := ""
+	if budget.ReservationID != "" {
+		budgetExpiresAt = time.Unix(budget.ExpiresAt, 0).UTC().Format(time.RFC3339)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(createSessionResponse{
-		SessionID:     session.ID,
-		AISessionID:   session.AISessionID,
-		WSURL:         wsURL,
-		WSSubprotocol: wsSubprotocol,
-		Ticket:        ticket,
-		ExpiresAt:     expires,
-		LiveKit:       liveKit,
+		SessionID:       session.ID,
+		AISessionID:     session.AISessionID,
+		WSURL:           wsURL,
+		WSSubprotocol:   wsSubprotocol,
+		Ticket:          ticket,
+		ExpiresAt:       expires,
+		BudgetExpiresAt: budgetExpiresAt,
+		LiveKit:         liveKit,
 	})
 }
 

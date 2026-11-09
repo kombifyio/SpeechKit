@@ -26,6 +26,7 @@ import io.kombify.speechkit.net.KombifyLinks
 import io.kombify.speechkit.net.R as NetR
 import io.kombify.speechkit.net.VoiceAgentErrorCodes
 import io.kombify.speechkit.net.VoiceAgentUiState
+import io.kombify.speechkit.net.VoiceErrorClass
 import io.kombify.speechkit.voiceui.VoiceAuraOrb
 
 /**
@@ -109,7 +110,7 @@ fun VoiceAgentPanelUi(
                     (state.error != null || state.errorCode != null)
                 ) {
                     Text(
-                        text = agentErrorLabel(state.errorCode, state.error),
+                        text = agentErrorLabel(state.errorCode, state.error, state.errorClass),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -173,34 +174,42 @@ private fun VoiceAgentUiState.Phase.label(): Int = when (this) {
 }
 
 /**
- * Stable failure codes become localized explanations; anything else falls back
- * to the server's own prose, which is still better than nothing. A refused
- * provider is called out by name because no endpoint tells a client which
- * backends a deployment registered — being turned down is how you find out.
+ * A served error class takes precedence and gets localized text. For unclassed
+ * errors, known codes get specific labels and unknown codes use server prose.
  */
 @Composable
-private fun agentErrorLabel(code: String?, message: String?): String = when (code) {
-    VoiceAgentErrorCodes.PROVIDER_UNAVAILABLE ->
-        stringResource(R.string.speechkit_ime_agent_error_provider_unavailable)
+private fun agentErrorLabel(code: String?, message: String?, errorClass: VoiceErrorClass?): String {
+    when (errorClass) {
+        VoiceErrorClass.LIMIT -> return stringResource(R.string.speechkit_ime_agent_class_limit)
+        VoiceErrorClass.OUTAGE -> return stringResource(R.string.speechkit_ime_agent_class_outage)
+        VoiceErrorClass.RIGHT -> return stringResource(R.string.speechkit_ime_agent_class_right)
+        VoiceErrorClass.CONSENT -> return stringResource(R.string.speechkit_ime_agent_class_consent)
+        VoiceErrorClass.EXPIRED -> return stringResource(R.string.speechkit_ime_agent_class_expired)
+        null -> Unit
+    }
+    return when (code) {
+        VoiceAgentErrorCodes.PROVIDER_UNAVAILABLE ->
+            stringResource(R.string.speechkit_ime_agent_error_provider_unavailable)
 
-    ImeVoiceAgentController.ERROR_NO_SERVER ->
-        stringResource(R.string.speechkit_ime_agent_error_no_server)
+        ImeVoiceAgentController.ERROR_NO_SERVER ->
+            stringResource(R.string.speechkit_ime_agent_error_no_server)
 
-    ImeVoiceAgentController.ERROR_MIC_DENIED ->
-        stringResource(R.string.speechkit_ime_error_mic_denied)
+        ImeVoiceAgentController.ERROR_MIC_DENIED ->
+            stringResource(R.string.speechkit_ime_error_mic_denied)
 
-    ImeVoiceAgentController.ERROR_PLAN_DENIED ->
-        stringResource(NetR.string.plan_denial_body)
+        ImeVoiceAgentController.ERROR_PLAN_DENIED ->
+            stringResource(NetR.string.plan_denial_body)
 
-    ImeVoiceAgentController.ERROR_PLAN_BUDGET ->
-        stringResource(NetR.string.plan_denial_budget_body)
+        ImeVoiceAgentController.ERROR_PLAN_BUDGET ->
+            stringResource(NetR.string.plan_denial_budget_body)
 
-    "playback_failed", "playback_frame_invalid", "playback_device_failed", "playback_write_failed",
-    "playback_stalled", "capture_failed", "voice_buffer_overflow" ->
-        stringResource(R.string.speechkit_ime_agent_error_audio)
+        "playback_failed", "playback_frame_invalid", "playback_device_failed", "playback_write_failed",
+        "playback_stalled", "capture_failed", "voice_buffer_overflow" ->
+            stringResource(R.string.speechkit_ime_agent_error_audio)
 
-    "voice_session_failed", "ws_setup_timeout", "ws_setup_failed", "ws_failure", "ws_send_failed", "ws_not_ready" ->
-        stringResource(R.string.speechkit_ime_agent_error_generic)
+        "voice_session_failed", "ws_setup_timeout", "ws_setup_failed", "ws_failure", "ws_send_failed", "ws_not_ready" ->
+            stringResource(R.string.speechkit_ime_agent_error_generic)
 
-    else -> message.orEmpty()
+        else -> message.orEmpty()
+    }
 }

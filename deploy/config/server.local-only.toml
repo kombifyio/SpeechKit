@@ -52,6 +52,13 @@ sqlite_path = "/var/lib/speechkit/data/speechkit.db"
 # The Server-Target reaches whisper.cpp over HTTP through the self-hosted
 # (VPS-shaped) OpenAI-compatible client; "cloud-only" is the routing strategy
 # that selects that network client. It does not enable any cloud provider.
+# This stack keeps whisper.cpp because it runs on every x86-64 processor. On a
+# processor with AVX2 (x86-64-v3) or ARM dot product, the server image's
+# bundled Phonon-2.5 can replace the speechkit-whisper container: set
+# [vps] enabled = false, [routing] strategy = "local-only" and
+# [local] enabled = true, model_path = "/usr/local/share/speechkit/models/phonon-2.5",
+# then drop the speechkit-whisper service and its depends_on entry. On an older
+# processor the sidecar refuses the model and dictation fails.
 [vps]
 enabled     = true
 url         = "http://speechkit-whisper:8080"

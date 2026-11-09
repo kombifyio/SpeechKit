@@ -9,50 +9,34 @@ import (
 	"strings"
 )
 
-// mergeBridgeTools asks the session tool router for definitions (bounded by
-// bridgeDefinitionsTimeout) and merges them into cfg.Tools. Failure or an
-// empty manifest degrades to tool-less and surfaces an informational event
-// frame; the session always proceeds. Providers that run their own tools
-// (LiveSelfToolProvider) skip the bridge entirely.
-func (a *Adapter) mergeBridgeTools(ctx context.Context, cfg *LiveConfigFrame) {
-	if a.ToolRouter == nil {
-		return
-	}
+// mergeServerTools merges the front door's own control tools into cfg.Tools.
+// Providers that run their own tools (LiveSelfToolProvider) get none.
+func (a *Adapter) mergeServerTools(cfg *LiveConfigFrame) {
 	if self, ok := a.Provider.(LiveSelfToolProvider); ok && self.HandlesOwnTools() {
 		return
 	}
-	defsCtx, cancel := context.WithTimeout(ctx, bridgeDefinitionsTimeout)
-	defer cancel()
-	defs := a.ToolRouter.Definitions(defsCtx, a.Session, *cfg)
-	if len(defs) == 0 {
-		// Decided from the bridge definitions alone: the front door's own
-		// handoff tool must not hide that the session has no bridge tools.
-		fields := a.eventFrameFields(nil, EventToolBridgeUnavailable)
-		fields.ProviderMetadata = map[string]any{"reason": "no_tool_definitions"}
-		a.sendJSON(ctx, EventFrame{Type: MsgEvent, EventFrameFields: fields})
-	}
-	defs = a.withFrontDoorTools(defs)
+	defs := a.withFrontDoorTools(nil)
 	if len(defs) == 0 {
 		return
 	}
-	a.bridgeTools = make(map[string]ToolDefinitionFrame, len(defs))
+	a.serverTools = make(map[string]ToolDefinitionFrame, len(defs))
 	for _, def := range defs {
 		name := strings.TrimSpace(def.Name)
 		if name == "" {
 			continue
 		}
 		def.Name = name
-		a.bridgeTools[name] = def
+		a.serverTools[name] = def
 		cfg.Tools = append(cfg.Tools, def)
 	}
 }
 
-// dispatchBridgeToolCall handles one provider tool call claimed by the tool
+// dispatchServerToolCall handles one provider tool call claimed by the tool
 // router: emit the transparency tool_call frame, execute asynchronously under
 // the per-session concurrency bound, feed the result back to the provider via
 // SendToolResponse, and acknowledge to the client with a tool_result_ack
 // event frame.
-func (a *Adapter) dispatchBridgeToolCall(ctx context.Context, msg *LiveMessage, call ToolCall) {
+func (a *Adapter) dispatchServerToolCall(ctx context.Context, msg *LiveMessage, call ToolCall) {
 	fields := a.eventFrameFields(msg, EventToolCall)
 	metadata := make(map[string]any, len(fields.ProviderMetadata)+1)
 	for key, value := range fields.ProviderMetadata {
@@ -73,7 +57,7 @@ func (a *Adapter) dispatchBridgeToolCall(ctx context.Context, msg *LiveMessage, 
 	default:
 		// Concurrency bound reached: answer immediately with a structured
 		// error so the model recovers verbally instead of stalling the turn.
-		a.sendBridgeToolResponse(ctx, call, map[string]any{
+		a.sendServerToolResponse(ctx, call, map[string]any{
 			"error": map[string]any{
 				"code":    "tool_concurrency_exceeded",
 				"message": "too many concurrent server-side tool calls in this session; try again",
@@ -95,29 +79,29 @@ func (a *Adapter) dispatchBridgeToolCall(ctx context.Context, msg *LiveMessage, 
 				)
 			}
 		}()
-		response, handled := a.executeBridgeTool(ctx, call)
+		response, handled := a.executeServerTool(ctx, call)
 		status := "ok"
 		if !handled || response == nil {
 			status = "error"
 			response = map[string]any{
 				"error": map[string]any{
-					"code":    "tool_bridge_unavailable",
+					"code":    "server_tool_failed",
 					"message": "server-side tool execution failed",
 				},
 			}
 		} else if _, hasError := response["error"]; hasError {
 			status = "error"
 		}
-		a.sendBridgeToolResponse(ctx, call, response, status)
+		a.sendServerToolResponse(ctx, call, response, status)
 	}()
 }
 
-// sendBridgeToolResponse feeds a server-side tool result back to the provider
+// sendServerToolResponse feeds a server-side tool result back to the provider
 // and emits the client-facing tool_result_ack event frame carrying id/status.
-func (a *Adapter) sendBridgeToolResponse(ctx context.Context, call ToolCall, response map[string]any, status string) {
+func (a *Adapter) sendServerToolResponse(ctx context.Context, call ToolCall, response map[string]any, status string) {
 	responder, ok := a.Provider.(LiveToolResponder)
 	if !ok {
-		slog.Warn("voiceagent: provider does not accept tool responses; dropping bridge result",
+		slog.Warn("voiceagent: provider does not accept tool responses; dropping server tool result",
 			"session_id", a.Session.ID, "tool", call.Name)
 		status = "error"
 	} else if err := responder.SendToolResponse(ToolResponseFrame{

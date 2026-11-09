@@ -276,8 +276,10 @@ func LocalParakeetSTTManifest() ProviderOptionManifest {
 		languageOption("language", evidence,
 			"Multilanguage: send the literal auto. Parakeet detects which of its 25 European languages is spoken and cannot be pinned; a pinned language outside them is refused by speechkit-stt-sherpa instead of transcribed wrongly. The English-only Bark 3.0 and Phonon-2.5 English variants refuse every pinned language other than English."),
 		derived(OptionDetectLanguage, TypeBool, "Detect language", "The model always detects the spoken language.", evidence),
-		unsupported(OptionKeyterms, TypeStringList, "Keyterms", "speechkit-stt-sherpa decodes greedily; sherpa-onnx reads hotwords only in its beam search, which drops speech on Parakeet TDT."),
-		unsupported(OptionVocabularyBias, TypeBool, "Use vocabulary bias", "Parakeet takes neither hotwords nor a prompt here; Replacements still apply to its transcript."),
+		support(OptionKeyterms, TypeStringList, "Keyterms", SupportNative, "keyterm", evidence,
+			"One keyterm field per term. The Phonon-2.5 engine boosts them in its greedy decoder; the sherpa-onnx Parakeet models ignore them (sherpa-onnx reads hotwords only in its beam search, which drops speech on Parakeet TDT)."),
+		support(OptionVocabularyBias, TypeBool, "Use vocabulary bias", SupportNative, "keyterm", evidence,
+			"Dictionary terms are sent as keyterm fields and boosted by Phonon-2.5; Replacements still apply to every Parakeet transcript."),
 		unsupported(OptionPromptHint, TypeString, "Prompt hint", "Parakeet does not condition on a text prompt."),
 		unsupported(OptionEndpointingMs, TypeInt, "Endpointing", "Local batch transcription uses SpeechKit VAD/recording controls."),
 	})
@@ -370,7 +372,7 @@ func huggingFaceTTSManifest() ProviderOptionManifest {
 
 func sherpaPiperTTSManifest() ProviderOptionManifest {
 	return manifest("sherpa_piper", "Local voices (sherpa-onnx Piper)", ModalityTTS, []string{"tts.local.sherpa-piper"}, []OptionSupport{
-		derived(OptionLanguage, TypeString, "Language", "A German locale selects the bundled Thorsten voice; every other locale selects Lessac.", "https://github.com/k2-fsa/sherpa-onnx"),
+		derived(OptionLanguage, TypeString, "Language", "A German locale selects the bundled Ramona voice; every other locale selects LJSpeech.", "https://github.com/k2-fsa/sherpa-onnx"),
 		derived(OptionVoice, TypeString, "Voice", "An explicit voice id overrides the locale when it names one of the bundled voices.", "https://github.com/k2-fsa/sherpa-onnx"),
 		derived(OptionSpeed, TypeFloat, "Speed", "Passed to sherpa-onnx as the speech-speed multiplier (1 keeps the trained pace).", "https://github.com/k2-fsa/sherpa-onnx"),
 		unsupported(OptionAudioFormat, TypeString, "Audio format", "The sidecar always returns 16-bit PCM WAV."),

@@ -1,11 +1,15 @@
 import { SpeechKitElement } from "../core/element.js";
 import { isVoiceSessionActive, type VoiceUiController } from "../core/controller.js";
-import { INDICATOR_CSS, RecordingIndicator, sessionStatusToIndicatorState } from "../core/indicator.js";
+import {
+  INDICATOR_CSS,
+  RecordingIndicator,
+  sessionStatusToIndicatorState,
+} from "../core/indicator.js";
 import { reduceVoiceAgentTurns, type VoiceAgentTurn } from "../core/turns.js";
 import type {
   SpeechKitVoiceDenial,
   SpeechKitVoiceSessionState,
-  SpeechKitVoiceSessionStatus
+  SpeechKitVoiceSessionStatus,
 } from "../core/voice-surface.js";
 import type { VoiceUiMessageCatalog } from "../i18n/index.js";
 import { SpeechKitVoiceNoticeElement } from "./voice-notice.js";
@@ -207,7 +211,7 @@ export class SpeechKitVoiceDialogElement extends SpeechKitElement {
     this.#noticeSlot = document.createElement("div");
     this.#noticeSlot.className = "notice-slot";
     this.#notice = document.createElement(
-      SpeechKitVoiceNoticeElement.tagName
+      SpeechKitVoiceNoticeElement.tagName,
     ) as SpeechKitVoiceNoticeElement;
     this.#notice.setAttribute("part", "notice");
     this.#notice.setAttribute("flat", "");
@@ -225,7 +229,15 @@ export class SpeechKitVoiceDialogElement extends SpeechKitElement {
     actions.name = "actions";
     this.#end = this.#icon("end", "end-session", STOP_ICON, () => this.end());
     this.#close = this.#icon("close", "dismiss", CLOSE_ICON, () => this.dismiss());
-    this.#bar.append(leading, this.#indicator.element, this.#status, this.#noticeSlot, actions, this.#end, this.#close);
+    this.#bar.append(
+      leading,
+      this.#indicator.element,
+      this.#status,
+      this.#noticeSlot,
+      actions,
+      this.#end,
+      this.#close,
+    );
 
     this.#live = document.createElement("span");
     this.#live.className = "sr-only";
@@ -292,7 +304,7 @@ export class SpeechKitVoiceDialogElement extends SpeechKitElement {
   /** Ends the session (cancelable `speechkit-end-session`; default stops the controller). */
   end(): void {
     const proceed = this.dispatchEvent(
-      new CustomEvent("speechkit-end-session", { bubbles: true, composed: true, cancelable: true })
+      new CustomEvent("speechkit-end-session", { bubbles: true, composed: true, cancelable: true }),
     );
     if (proceed) void this.controller?.stop();
   }
@@ -324,7 +336,7 @@ export class SpeechKitVoiceDialogElement extends SpeechKitElement {
     this.#indicator.setLevelFeed(Boolean(controller?.subscribeLevel));
     if (controller?.subscribeLevel) {
       this.#unsubscribeLevel = controller.subscribeLevel((level, source) =>
-        this.#indicator.setLevel(level, source)
+        this.#indicator.setLevel(level, source),
       );
     }
   }
@@ -367,7 +379,11 @@ export class SpeechKitVoiceDialogElement extends SpeechKitElement {
     return this.#statusOverride ?? this.state?.status ?? "idle";
   }
 
-  #statusLabel(status: SpeechKitVoiceSessionStatus, connecting: boolean, messages: VoiceUiMessageCatalog): string {
+  #statusLabel(
+    status: SpeechKitVoiceSessionStatus,
+    connecting: boolean,
+    messages: VoiceUiMessageCatalog,
+  ): string {
     if (connecting) return messages["sk.voice.agent.connecting"];
     switch (status) {
       case "capturing":
@@ -443,7 +459,10 @@ export class SpeechKitVoiceDialogElement extends SpeechKitElement {
     for (let i = this.#announced; i < turns.length; i += 1) {
       const turn = turns[i];
       if (!turn?.final) break;
-      const who = turn.role === "user" ? messages["sk.voice.agent.you"] : messages["sk.voice.agent.assistant"];
+      const who =
+        turn.role === "user"
+          ? messages["sk.voice.agent.you"]
+          : messages["sk.voice.agent.assistant"];
       this.#live.textContent = `${who}: ${turn.text}`;
       this.#announced = i + 1;
     }

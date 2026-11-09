@@ -205,7 +205,10 @@ export class DesktopClient {
     stop(mode: DesktopMode, options?: DesktopRequestOptions): Promise<DesktopCommandAccepted>;
   };
   readonly recordings: {
-    list(query?: RecordingSessionListQuery, options?: DesktopRequestOptions): Promise<RecordingSession[]>;
+    list(
+      query?: RecordingSessionListQuery,
+      options?: DesktopRequestOptions,
+    ): Promise<RecordingSession[]>;
     get(id: number, options?: DesktopRequestOptions): Promise<RecordingSession>;
     create(
       request: RecordingSessionCreateRequest,
@@ -288,7 +291,11 @@ export class DesktopClient {
     list(options?: DesktopRequestOptions): Promise<Notebook[]>;
     get(id: number, options?: DesktopRequestOptions): Promise<Notebook>;
     create(request: NotebookRequest, options?: DesktopRequestOptions): Promise<Notebook>;
-    update(id: number, request: NotebookRequest, options?: DesktopRequestOptions): Promise<Notebook>;
+    update(
+      id: number,
+      request: NotebookRequest,
+      options?: DesktopRequestOptions,
+    ): Promise<Notebook>;
     delete(id: number, options?: DesktopRequestOptions): Promise<{ id: number; deleted: boolean }>;
     /** GET /api/v1/notebooks/destinations: 503 (HTTPError) until the OneNote connector is wired. */
     destinations(options?: DesktopRequestOptions): Promise<NotebookDestinationOption[]>;
@@ -358,9 +365,15 @@ export class DesktopClient {
       opts.timeoutMs ?? 30_000,
     );
     const rec = (id: number) => `/api/v1/recording-sessions/${seg(id)}`;
-    const capture = (verb: "start" | "pause" | "resume" | "stop") =>
+    const capture =
+      (verb: "start" | "pause" | "resume" | "stop") =>
       (id: number, options?: DesktopRequestOptions) =>
-        http.json<RecordingSessionCaptureResponse>("POST", `${rec(id)}/${verb}`, undefined, options);
+        http.json<RecordingSessionCaptureResponse>(
+          "POST",
+          `${rec(id)}/${verb}`,
+          undefined,
+          options,
+        );
 
     this.settings = {
       state: (options) => http.json("GET", "/settings/state", undefined, options),
@@ -368,27 +381,37 @@ export class DesktopClient {
         (await http.json<DesktopSettingsState>("GET", "/settings/state", undefined, options))
           .policyLockedFields ?? [],
       meeting: (options) => http.json("GET", "/api/v1/settings/meeting", undefined, options),
-      updateMeeting: (patch, options) => http.json("PATCH", "/api/v1/settings/meeting", patch, options),
+      updateMeeting: (patch, options) =>
+        http.json("PATCH", "/api/v1/settings/meeting", patch, options),
     };
     this.overlay = {
       state: (options) => http.json("GET", "/overlay/state", undefined, options),
     };
     this.modes = {
       list: (options) => http.json("GET", "/api/v1/modes", undefined, options),
-      start: (mode, options) => http.json("POST", `/api/v1/modes/${seg(mode)}/start`, undefined, options),
-      stop: (mode, options) => http.json("POST", `/api/v1/modes/${seg(mode)}/stop`, undefined, options),
+      start: (mode, options) =>
+        http.json("POST", `/api/v1/modes/${seg(mode)}/start`, undefined, options),
+      stop: (mode, options) =>
+        http.json("POST", `/api/v1/modes/${seg(mode)}/stop`, undefined, options),
     };
     this.recordings = {
       list: (query, options) => {
         const params = new URLSearchParams();
         if (query?.kind) params.set("kind", query.kind);
         if (query?.limit !== undefined) params.set("limit", String(query.limit));
-        if (query?.includeSegments !== undefined) params.set("include_segments", String(query.includeSegments));
+        if (query?.includeSegments !== undefined)
+          params.set("include_segments", String(query.includeSegments));
         const qs = params.toString();
-        return http.json("GET", `/api/v1/recording-sessions${qs ? `?${qs}` : ""}`, undefined, options);
+        return http.json(
+          "GET",
+          `/api/v1/recording-sessions${qs ? `?${qs}` : ""}`,
+          undefined,
+          options,
+        );
       },
       get: (id, options) => http.json("GET", rec(id), undefined, options),
-      create: (request, options) => http.json("POST", "/api/v1/recording-sessions", request, options),
+      create: (request, options) =>
+        http.json("POST", "/api/v1/recording-sessions", request, options),
       start: capture("start"),
       pause: capture("pause"),
       resume: capture("resume"),
@@ -403,18 +426,29 @@ export class DesktopClient {
       open: (id, options) => http.json("POST", `${rec(id)}/open`, undefined, options),
       close: (id, options) => http.json("POST", `${rec(id)}/close`, undefined, options),
       summary: (id, options) => http.json("GET", `${rec(id)}/summary`, undefined, options),
-      summaryBatches: (id, options) => http.json("GET", `${rec(id)}/summary-batches`, undefined, options),
+      summaryBatches: (id, options) =>
+        http.json("GET", `${rec(id)}/summary-batches`, undefined, options),
       search: (query, filter, options) => {
         const params = new URLSearchParams({ q: query });
         if (filter?.kind) params.set("kind", filter.kind);
         if (filter?.limit !== undefined) params.set("limit", String(filter.limit));
-        return http.json("GET", `/api/v1/recording-sessions/search?${params.toString()}`, undefined, options);
+        return http.json(
+          "GET",
+          `/api/v1/recording-sessions/search?${params.toString()}`,
+          undefined,
+          options,
+        );
       },
       imports: (id, options) => http.json("GET", `${rec(id)}/imports`, undefined, options),
       runPreflight: (id, options) => http.json("POST", `${rec(id)}/preflight`, undefined, options),
       preflight: (id, options) => http.json("GET", `${rec(id)}/preflight`, undefined, options),
       pasteTranscript: (id, text, replace, options) =>
-        http.json("POST", `${rec(id)}/transcript-paste`, replace === undefined ? { text } : { text, replace }, options),
+        http.json(
+          "POST",
+          `${rec(id)}/transcript-paste`,
+          replace === undefined ? { text } : { text, replace },
+          options,
+        ),
       snapshots: (id, options) => http.json("GET", `${rec(id)}/snapshots`, undefined, options),
       snapshot: (id, snapshotId, options) =>
         http.json("GET", `${rec(id)}/snapshots/${seg(snapshotId)}`, undefined, options),
@@ -424,7 +458,11 @@ export class DesktopClient {
         await http.json("DELETE", `${rec(id)}/snapshots/${seg(snapshotId)}`, undefined, options);
       },
       snapshotImage: async (id, snapshotId, options) => {
-        const blob = await http.blob(`${rec(id)}/snapshots/${seg(snapshotId)}/image`, "image/*", options);
+        const blob = await http.blob(
+          `${rec(id)}/snapshots/${seg(snapshotId)}/image`,
+          "image/*",
+          options,
+        );
         const url = URL.createObjectURL(blob);
         return { url, revoke: () => URL.revokeObjectURL(url) };
       },
@@ -433,9 +471,12 @@ export class DesktopClient {
       list: (options) => http.json("GET", "/api/v1/notebooks", undefined, options),
       get: (id, options) => http.json("GET", `/api/v1/notebooks/${seg(id)}`, undefined, options),
       create: (request, options) => http.json("POST", "/api/v1/notebooks", request, options),
-      update: (id, request, options) => http.json("PATCH", `/api/v1/notebooks/${seg(id)}`, request, options),
-      delete: (id, options) => http.json("DELETE", `/api/v1/notebooks/${seg(id)}`, undefined, options),
-      destinations: (options) => http.json("GET", "/api/v1/notebooks/destinations", undefined, options),
+      update: (id, request, options) =>
+        http.json("PATCH", `/api/v1/notebooks/${seg(id)}`, request, options),
+      delete: (id, options) =>
+        http.json("DELETE", `/api/v1/notebooks/${seg(id)}`, undefined, options),
+      destinations: (options) =>
+        http.json("GET", "/api/v1/notebooks/destinations", undefined, options),
     };
     this.foundry = {
       status: (options) => http.json("GET", "/auth/foundry/status", undefined, options),
@@ -445,10 +486,17 @@ export class DesktopClient {
       logout: (options) => http.json("POST", "/auth/foundry/logout", undefined, options),
     };
     this.microsoft365 = {
-      status: (options) => http.json("GET", "/api/v1/integrations/microsoft365", undefined, options),
-      update: (patch, options) => http.json("PATCH", "/api/v1/integrations/microsoft365", patch, options),
+      status: (options) =>
+        http.json("GET", "/api/v1/integrations/microsoft365", undefined, options),
+      update: (patch, options) =>
+        http.json("PATCH", "/api/v1/integrations/microsoft365", patch, options),
       connect: (level, options) =>
-        http.json("POST", "/api/v1/integrations/microsoft365/connect", level ? { level } : {}, options),
+        http.json(
+          "POST",
+          "/api/v1/integrations/microsoft365/connect",
+          level ? { level } : {},
+          options,
+        ),
       disconnect: (options) =>
         http.json("POST", "/api/v1/integrations/microsoft365/disconnect", undefined, options),
     };
@@ -465,7 +513,12 @@ export class DesktopClient {
         return response.blob();
       },
       delete: (request, options) =>
-        http.json("POST", "/api/v1/privacy/delete", { scope: "install", ...request, confirm: true }, options),
+        http.json(
+          "POST",
+          "/api/v1/privacy/delete",
+          { scope: "install", ...request, confirm: true },
+          options,
+        ),
     };
     this.features = (options) => http.json("GET", "/features", undefined, options);
     this.app = {

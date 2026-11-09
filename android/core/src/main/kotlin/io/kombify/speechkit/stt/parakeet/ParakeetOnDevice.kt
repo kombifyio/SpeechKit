@@ -118,9 +118,19 @@ object ParakeetOnDevice {
         val selected = selectedModel(context)
         val candidates = listOfNotNull(selected.takeIf { it in installed }) + installed.filter { it != selected }
         for (model in candidates) {
-            if (support(context, model) != Support.Supported) continue
-            val files = runCatching { OnDeviceModelFiles.resolve(store.directory(model)) }.getOrNull() ?: continue
-            if (!recognizers.loadFailed(files.dir)) return files
+            val support = support(context, model)
+            if (support != Support.Supported) {
+                VoiceLog.w(VoiceLog.DICTATION, "offline model ${model.id} skipped: ${(support as? Support.Unsupported)?.reason}")
+                continue
+            }
+            val files = runCatching { OnDeviceModelFiles.resolve(store.directory(model)) }
+                .onFailure { VoiceLog.w(VoiceLog.DICTATION, "offline model ${model.id} files unusable", it) }
+                .getOrNull() ?: continue
+            if (recognizers.loadFailed(files.dir)) {
+                VoiceLog.w(VoiceLog.DICTATION, "offline model ${model.id} skipped: earlier load failed")
+                continue
+            }
+            return files
         }
         return null
     }

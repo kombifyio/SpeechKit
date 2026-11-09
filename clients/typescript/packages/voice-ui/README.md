@@ -19,6 +19,7 @@ Native surfaces (Compose) implement spec parity from the shipped
 | `<speechkit-voice-provider>` | Context provider distributing one controller to a subtree. |
 | `<speechkit-voice-dialog>` | Frameless, slightly translucent card that streams the voice-agent dialogue (newest turn at the bottom, top fade). `anchor="above\|below\|start\|end"` places it next to a launcher, `auto-open` shows it when a session starts; a slim bar holds the recording indicator, an end-session icon and a hide icon. |
 | `<speechkit-live-transcript>` | Bounded 1–2 line streaming transcript (`lines`, `source`, `placeholder`); only final segments reach the polite live region. |
+| `<speechkit-voice-pill>` | In-Composer voice pill: recording dot, level bars and the elapsed time while dictating (`mode="dictation"`), or the Voice Agent phase (`mode="voice_agent"`). Controller-driven or host-driven (`phase`, `level`, `started-at`); hides while idle; `static` or reduced motion rests the bars. |
 | `<speechkit-voice-notice>` | One-line error/status chip localized by reason code, with Retry, ✕ and an on-demand details disclosure. Never shows raw codes or URLs in the default view. |
 
 The split button carries the recording indicator: idle, requesting (microphone

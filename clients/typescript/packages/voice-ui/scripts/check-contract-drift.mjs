@@ -22,13 +22,13 @@ const canonical = join(
   "docs",
   "server",
   "contracts",
-  "speechkit-voice-surface.v1.json"
+  "speechkit-voice-surface.v1.json",
 );
 
 if (!existsSync(canonical)) {
   console.error(
     `canonical contract missing at ${canonical}. It is exported to the public ` +
-      "mirror, so its absence is a broken export, not a reason to skip."
+      "mirror, so its absence is a broken export, not a reason to skip.",
   );
   process.exit(1);
 }
@@ -40,7 +40,7 @@ const canonicalBytes = readFileSync(canonical, "utf8").replaceAll("\r\n", "\n");
 if (vendoredBytes !== canonicalBytes) {
   console.error(
     "speechkit-voice-surface.v1.json drifted from docs/server/contracts/. " +
-      "Re-copy the canonical fixture into spec/fixtures/ (additive contract changes only)."
+      "Re-copy the canonical fixture into spec/fixtures/ (additive contract changes only).",
   );
   process.exit(1);
 }

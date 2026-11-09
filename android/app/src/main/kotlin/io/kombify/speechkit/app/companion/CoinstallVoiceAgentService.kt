@@ -323,7 +323,7 @@ class CoinstallVoiceAgentService : Service() {
                         is VoiceAgentEvent.Failure -> {
                             val code = safeVoiceAgentCode(event.code, VoiceAgentContract.ERROR_SERVER)
                             val terminal = event.fatal || code in TRANSPORT_FAILURES
-                            notify(run) { it.onError(run.id, code, "", terminal) }
+                            notify(run) { it.onError(run.id, code, event.errorClass?.wire.orEmpty(), terminal) }
                             if (terminal) finish(run, if (event.fatal) voiceAgentFatalEndReason(code) else "transport_failed")
                         }
                         is VoiceAgentEvent.Closed -> finish(run, event.reason)
@@ -333,7 +333,7 @@ class CoinstallVoiceAgentService : Service() {
                 finish(run, "closed")
             } catch (cancelled: CancellationException) { throw cancelled
             } catch (failure: VoiceAgentSetupException) {
-                notify(run) { it.onError(run.id, failure.code, "", true) }
+                notify(run) { it.onError(run.id, failure.code, failure.errorClass?.wire.orEmpty(), true) }
                 finish(run, voiceAgentFatalEndReason(failure.code))
             } catch (_: Throwable) {
                 notify(run) { it.onError(run.id, VoiceAgentContract.ERROR_TRANSPORT, "", true) }

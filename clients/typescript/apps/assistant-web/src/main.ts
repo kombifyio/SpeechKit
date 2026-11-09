@@ -14,16 +14,16 @@ import {
   semanticMarkRatio,
   type SemanticVoiceMark,
   type SpeechKitVoiceAssistantElement,
-  type VoiceAssistantVariant
+  type VoiceAssistantVariant,
 } from "@kombifyio/speechkit-voice-ui";
 import {
   createVoiceAgentUiController,
-  type VoiceAgentUiController
+  type VoiceAgentUiController,
 } from "@kombifyio/speechkit-voice-ui/voiceagent-adapter";
 
 const MARK_ASSETS = {
   rosette: "/assistant/marks/rosette.png",
-  k: "/assistant/marks/k.png"
+  k: "/assistant/marks/k.png",
 } as const;
 
 const APPEARANCE_STORAGE_KEY = "speechkit.assistant.appearance";
@@ -50,8 +50,7 @@ function parseAppearance(value: unknown, base: Appearance): Appearance {
       typeof record["mark"] === "string" && isSemanticVoiceMark(record["mark"])
         ? (record["mark"] as SemanticVoiceMark)
         : base.mark,
-    transcript:
-      typeof record["transcript"] === "boolean" ? record["transcript"] : base.transcript
+    transcript: typeof record["transcript"] === "boolean" ? record["transcript"] : base.transcript,
   };
 }
 
@@ -135,7 +134,7 @@ function ensureController(): VoiceAgentUiController {
   const options: Parameters<typeof createVoiceAgentUiController>[0] = {
     serverUrl: window.location.origin,
     surface: "floating_panel",
-    onDiagnostic: (message) => setNote(message)
+    onDiagnostic: (message) => setNote(message),
   };
   const token = activeToken();
   if (token) options.token = token;
@@ -143,7 +142,8 @@ function ensureController(): VoiceAgentUiController {
   controller = next;
   assistant.controller = next;
   next.subscribe((state) => {
-    sessionActive = state.status !== "idle" && state.status !== "cancelled" && state.status !== "denied";
+    sessionActive =
+      state.status !== "idle" && state.status !== "cancelled" && state.status !== "denied";
     sessionToggle.textContent = sessionActive ? "Stop" : "Start";
   });
   return next;
@@ -212,8 +212,8 @@ async function bootstrap(): Promise<void> {
       (payload["assistant_ui"] as Record<string, unknown> | undefined) ?? {},
       {
         ...FALLBACK_APPEARANCE,
-        transcript: parseTranscriptDefault(payload["assistant_ui"])
-      }
+        transcript: parseTranscriptDefault(payload["assistant_ui"]),
+      },
     );
     const auth = payload["auth"] as Record<string, unknown> | undefined;
     const authMode = typeof auth?.["mode"] === "string" ? (auth["mode"] as string) : "";

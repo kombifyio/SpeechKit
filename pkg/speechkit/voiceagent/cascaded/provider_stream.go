@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -36,6 +38,13 @@ const (
 	minFirstSegmentRunes = 5
 	// maxSegmentRunes forces a split of a sentence that never ends.
 	maxSegmentRunes = 220
+	// sentenceIdleFlush is how long a sentence whose full stop ends the buffer waits for the next delta. A
+	// streaming model sends its next token well within it, so "am 3." still waits for "Mai"; an agent that has
+	// finished speaking but not yet closed its stream (guards, memory, timings) no longer holds the sentence
+	// until the stream ends, which cost a one-sentence answer 0.6 to 1.8 s before its first audio.
+	sentenceIdleFlush = 300 * time.Millisecond
+	// segmentAudioChunks bounds the streamed audio buffered per sentence that is synthesized ahead of playback.
+	segmentAudioChunks = 256
 )
 
 // spokenSegment is one sentence on its way to the speaker: its text is already
@@ -64,7 +73,34 @@ func (p *Provider) runStreamedTurn(ctx context.Context, agent StreamingAgent, us
 
 	var spoken strings.Builder
 	splitter := &sentenceSplitter{}
-	submit := func(text string) error {
+	// mu serialises the splitter and submit between the agent's deltas and the idle flush.
+	var (
+		mu         sync.Mutex
+		idle       *time.Timer
+		generation uint64
+		flushErr   error
+	)
+	var submit func(text string) error
+	armIdleFlush := func() {
+		if idle != nil {
+			idle.Stop()
+		}
+		if !splitter.EndsWithSentence() {
+			return
+		}
+		armed := generation
+		idle = time.AfterFunc(sentenceIdleFlush, func() {
+			mu.Lock()
+			defer mu.Unlock()
+			if armed != generation || flushErr != nil {
+				return
+			}
+			if piece := splitter.TakeEnded(); piece != "" {
+				flushErr = submit(piece)
+			}
+		})
+	}
+	submit = func(text string) error {
 		text = strings.TrimSpace(text)
 		if text == "" {
 			return nil
@@ -75,7 +111,7 @@ func (p *Provider) runStreamedTurn(ctx context.Context, agent StreamingAgent, us
 			return turnCtx.Err()
 		}
 		timing.mark("agent_first_delta_ms")
-		seg := &spokenSegment{text: text, audio: make(chan segmentAudio, 1)}
+		seg := &spokenSegment{text: text, audio: make(chan segmentAudio, segmentAudioChunks)}
 		go p.synthesizeSegment(turnCtx, seg, locale, voice)
 		select {
 		case segments <- seg:
@@ -98,16 +134,32 @@ func (p *Provider) runStreamedTurn(ctx context.Context, agent StreamingAgent, us
 	}
 
 	out, agentErr := agent.Stream(turnCtx, input, func(delta string) error {
+		mu.Lock()
+		defer mu.Unlock()
+		generation++
+		if flushErr != nil {
+			return flushErr
+		}
 		for _, sentence := range splitter.Push(delta) {
 			if err := submit(sentence); err != nil {
 				return err
 			}
 		}
+		armIdleFlush()
 		return nil
 	})
+	mu.Lock()
+	generation++
+	if idle != nil {
+		idle.Stop()
+	}
+	if agentErr == nil {
+		agentErr = flushErr
+	}
 	if agentErr == nil {
 		agentErr = submit(splitter.Flush())
 	}
+	mu.Unlock()
 	timing.mark("agent_ms")
 	close(segments)
 	if agentErr != nil {
@@ -130,25 +182,48 @@ func (p *Provider) runStreamedTurn(ctx context.Context, agent StreamingAgent, us
 }
 
 func (p *Provider) synthesizeSegment(ctx context.Context, seg *spokenSegment, locale, voice string) {
-	result, err := p.tts.Synthesize(ctx, seg.text, tts.SynthesizeOpts{
+	defer close(seg.audio)
+	opts := tts.SynthesizeOpts{
 		Locale: locale,
 		Voice:  voice,
 		Speed:  p.cfg.TTSSpeed,
 		Format: p.cfg.TTSFormat,
-	})
+	}
+	if streamer, ok := p.tts.(pcmStreamTTS); ok {
+		// The sentence plays while the provider is still synthesizing it: about 0.6 s to the first audio instead of
+		// the 1.3 s a whole Aura sentence takes to arrive.
+		streamed, err := streamer.streamPCM(ctx, seg.text, opts, func(pcm []byte) error {
+			select {
+			case seg.audio <- segmentAudio{pcm: pcm}:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		})
+		if err != nil {
+			select {
+			case seg.audio <- segmentAudio{err: err}:
+			case <-ctx.Done():
+			}
+		}
+		if streamed || err != nil {
+			return
+		}
+	}
+	result, err := p.tts.Synthesize(ctx, seg.text, opts)
 	if err != nil {
 		seg.audio <- segmentAudio{err: err}
 		return
 	}
 	if result == nil {
-		seg.audio <- segmentAudio{}
 		return
 	}
 	seg.audio <- segmentAudio{pcm: result.Audio}
 }
 
-// playSegments emits the audio of each segment in order. It drains the queue
-// after a failure so no submit is left blocked.
+// playSegments emits the audio of each segment in order, a streamed segment
+// chunk by chunk as it arrives. It drains the queue after a failure so no
+// submit is left blocked.
 func (p *Provider) playSegments(ctx context.Context, segments <-chan *spokenSegment, slots <-chan struct{}, timing *turnTiming) error {
 	var failure error
 	for seg := range segments {
@@ -156,36 +231,48 @@ func (p *Provider) playSegments(ctx context.Context, segments <-chan *spokenSegm
 			<-slots
 			continue
 		}
-		var audio segmentAudio
-		select {
-		case audio = <-seg.audio:
-		case <-ctx.Done():
-			failure = ctx.Err()
-		}
-		<-slots
-		if failure != nil {
-			continue
-		}
-		if audio.err != nil {
-			failure = fmt.Errorf("tts: %w", audio.err)
-			continue
-		}
-		for _, frag := range ChunkAudio(audio.pcm, 8192) {
-			if len(frag) == 0 {
-				continue
+		released := false
+		release := func() {
+			if !released {
+				released = true
+				<-slots
 			}
-			timing.mark("first_audio_ms")
+		}
+		for failure == nil {
+			var audio segmentAudio
+			var open bool
 			select {
-			case p.messages <- &Message{Audio: frag}:
-			case <-p.closedCh:
-				return nil
+			case audio, open = <-seg.audio:
 			case <-ctx.Done():
 				failure = ctx.Err()
 			}
-			if failure != nil {
+			// The sentence left the lookahead once its audio started (or ended): the next one may synthesize.
+			release()
+			if failure != nil || !open {
 				break
 			}
+			if audio.err != nil {
+				failure = fmt.Errorf("tts: %w", audio.err)
+				break
+			}
+			for _, frag := range ChunkAudio(audio.pcm, 8192) {
+				if len(frag) == 0 {
+					continue
+				}
+				timing.mark("first_audio_ms")
+				select {
+				case p.messages <- &Message{Audio: frag}:
+				case <-p.closedCh:
+					return nil
+				case <-ctx.Done():
+					failure = ctx.Err()
+				}
+				if failure != nil {
+					break
+				}
+			}
 		}
+		release()
 	}
 	return failure
 }
@@ -217,6 +304,22 @@ func (s *sentenceSplitter) Push(delta string) []string {
 		out = append(out, piece)
 		s.emitted = true
 	}
+}
+
+// EndsWithSentence reports whether the buffer holds one speakable piece that a full stop ends, which
+// [sentenceSplitter.Push] keeps back because the next delta could still continue it ("3." before "Mai").
+func (s *sentenceSplitter) EndsWithSentence() bool {
+	last := len(s.buf) - 1
+	return last >= 0 && s.buf[last] == '.' && !s.abbreviation(last) && s.speakable(last)
+}
+
+// TakeEnded returns the piece [sentenceSplitter.EndsWithSentence] reported, once no delta continued it.
+func (s *sentenceSplitter) TakeEnded() string {
+	if !s.EndsWithSentence() {
+		return ""
+	}
+	s.emitted = true
+	return s.Flush()
 }
 
 // Flush returns what is left at the end of the answer.

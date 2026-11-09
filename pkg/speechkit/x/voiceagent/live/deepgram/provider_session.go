@@ -44,6 +44,20 @@ func (p *Provider) Connect(ctx context.Context, cfg live.LiveConfig) error {
 	p.closed = false
 	p.closeErr = nil
 	p.closeMu.Unlock()
+	p.turnMu.Lock()
+	p.ready = false
+	p.pendingUtterance = ""
+	p.turnAttempts = 0
+	p.thinkIndex = 0
+	p.turnEffectful = false
+	p.reasking = false
+	p.reaskEcho = ""
+	p.thinkUpdatePending = false
+	p.fallbackReask = false
+	p.fallbackAccepted = false
+	p.fallbackEchoSeen = false
+	p.fallbackAmbiguous = false
+	p.turnMu.Unlock()
 
 	if err := p.sendSettings(ctx, cfgCopy); err != nil {
 		_ = conn.Close(websocket.StatusInternalError, "settings failed")

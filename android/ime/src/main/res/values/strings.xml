@@ -18,10 +18,16 @@
     <string name="speechkit_ime_action_retry">Retry</string>
     <string name="speechkit_ime_switch_keyboard">Switch back to keyboard</string>
     <string name="speechkit_ime_language_chip">Dictation language</string>
+    <string name="speechkit_ime_language_multi">Multi</string>
 
     <string name="speechkit_ime_error_generic">Dictation failed</string>
     <string name="speechkit_ime_error_not_configured">No server configured — open the SpeechKit app</string>
     <string name="speechkit_ime_error_mic_denied">Microphone permission denied</string>
+    <string name="speechkit_ime_error_limit">Dictation limit reached for now</string>
+    <string name="speechkit_ime_error_outage">Dictation service unavailable. Try again shortly</string>
+    <string name="speechkit_ime_error_right">Dictation is not included for this account</string>
+    <string name="speechkit_ime_error_consent">Allow cloud voice in the SpeechKit app</string>
+    <string name="speechkit_ime_error_expired">Dictation session expired</string>
     <string name="speechkit_ime_action_voice_agent">Voice assistant</string>
 
     <!-- Voice Agent panel. -->
@@ -41,4 +47,9 @@
     <string name="speechkit_ime_agent_error_no_server">The voice assistant needs a paired SpeechKit server</string>
     <string name="speechkit_ime_agent_error_audio">Voice audio could not continue</string>
     <string name="speechkit_ime_agent_error_generic">The voice connection failed</string>
+    <string name="speechkit_ime_agent_class_limit">Voice limit reached for now</string>
+    <string name="speechkit_ime_agent_class_outage">Voice service unavailable. Try again shortly</string>
+    <string name="speechkit_ime_agent_class_right">This account cannot use voice conversation</string>
+    <string name="speechkit_ime_agent_class_consent">Allow cloud voice in the SpeechKit app</string>
+    <string name="speechkit_ime_agent_class_expired">Voice session expired. Start a new conversation</string>
 </resources>

@@ -25,6 +25,31 @@ type OperatorTerm struct {
 var operatorTerms struct {
 	sync.RWMutex
 	terms []OperatorTerm
+	ref   string
+}
+
+// SetOperatorVocabularyRef gives the operator vocabulary a second name under
+// which a vocabulary preference selects it, for example the set reference a
+// fronting edge proxy forwards. OperatorTermsID always names it as well; an
+// empty ref leaves OperatorTermsID as its only name.
+func SetOperatorVocabularyRef(ref string) {
+	operatorTerms.Lock()
+	operatorTerms.ref = strings.TrimSpace(strings.ToLower(ref))
+	operatorTerms.Unlock()
+}
+
+// IsOperatorVocabularyRef reports whether ref names the operator vocabulary.
+func IsOperatorVocabularyRef(ref string) bool {
+	ref = strings.TrimSpace(strings.ToLower(ref))
+	if ref == "" {
+		return false
+	}
+	if ref == OperatorTermsID {
+		return true
+	}
+	operatorTerms.RLock()
+	defer operatorTerms.RUnlock()
+	return operatorTerms.ref != "" && ref == operatorTerms.ref
 }
 
 // SetOperatorTerms replaces the operator vocabulary. An empty list removes the

@@ -134,7 +134,7 @@ func (s *SherpaPiper) Health(ctx context.Context) error {
 }
 
 // Synthesize returns a WAV of text spoken by the voice locale selects. German
-// locales use Thorsten; everything else uses Lessac.
+// locales use Ramona; everything else uses LJSpeech.
 func (s *SherpaPiper) Synthesize(ctx context.Context, text string, opts SynthesizeOpts) (*Result, error) {
 	if s == nil {
 		return nil, errors.New("sherpa tts: nil provider")
@@ -355,8 +355,8 @@ func findSherpaTTSVoices(binaryPath string) (string, error) {
 
 func sherpaVoicesPresent(dir string) error {
 	for _, name := range []string{
-		filepath.Join("vits-piper-de_DE-thorsten-medium", "de_DE-thorsten-medium.onnx"),
-		filepath.Join("vits-piper-en_US-lessac-medium", "en_US-lessac-medium.onnx"),
+		filepath.Join("vits-piper-de_DE-ramona-low", "de_DE-ramona-low.onnx"),
+		filepath.Join("vits-piper-en_US-ljspeech-medium", "en_US-ljspeech-medium.onnx"),
 		"espeak-ng-data",
 	} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {

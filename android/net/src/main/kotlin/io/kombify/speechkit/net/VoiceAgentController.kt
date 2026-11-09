@@ -3,11 +3,22 @@ package io.kombify.speechkit.net
 import io.kombify.speechkit.domain.ConnectionProfile
 import io.kombify.speechkit.domain.describe
 import io.kombify.speechkit.log.VoiceLog
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
+import java.time.OffsetDateTime
 
 /**
  * What a Voice Agent conversation looks like to a UI, independent of the
@@ -29,6 +40,8 @@ data class VoiceAgentUiState(
      * look like an outage.
      */
     val errorCode: String? = null,
+    /** Server-supplied reason class for localized presentation. */
+    val errorClass: VoiceErrorClass? = null,
 ) {
     /**
      * The conversation phases a surface has to render. Deliberately the
@@ -53,6 +66,13 @@ data class VoiceAgentUiState(
  * session, the IME, or an activity — and a controller that grabbed the mic
  * itself would fight whichever one already had it. Callers push captured PCM
  * in with [sendAudio] and take agent audio out of [audio].
+ *
+ * A hosted session is minted with a Voice budget that has its own deadline
+ * (`budget_expires_at`). While the conversation is live the controller asks the
+ * server to extend that budget shortly before it runs out. The server owns the
+ * deadline: a renewal that fails or whose outcome is unknown is never retried
+ * and never ends the conversation; the session then simply ends at the
+ * deadline the server holds.
  */
 /**
  * The IME and in-app surfaces drive a conversation through this, so tests
@@ -71,12 +91,28 @@ class VoiceAgentController(
     private val profile: ConnectionProfile,
     private val okHttp: OkHttpClient = SpeechKitServerApi.defaultOkHttpClient(),
     private val client: VoiceAgentWsClient = VoiceAgentWsClient(okHttp),
+    /**
+     * Resolves the profile to renew the budget with, called off the main
+     * thread for each renewal. A bearer that the host provisions (rather than
+     * one this device signs in to and refreshes itself) is only current in the
+     * host's own profile source. Renewal stops if that source no longer
+     * provides the same server as [profile].
+     */
+    private val renewalProfile: (suspend () -> ConnectionProfile)? = null,
+    /**
+     * Claim namespace of the renewal bearers, see [sameVoiceRenewalAccount].
+     * Required, so each caller chooses the issuer's claims explicitly.
+     */
+    private val renewalClaimNamespace: String,
 ) : VoiceAgentSessionDriver {
 
     private val _state = MutableStateFlow(VoiceAgentUiState())
     override val state: StateFlow<VoiceAgentUiState> = _state.asStateFlow()
 
     private var session: VoiceAgentSession? = null
+
+    private val renewalScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile private var renewal: Job? = null
 
     /**
      * Opens a conversation and returns the event flow the caller collects.
@@ -98,13 +134,97 @@ class VoiceAgentController(
             }
 
         VoiceLog.i(VoiceLog.AGENT, "start ${profile.describe()}")
+        cancelRenewal()
         _state.value = VoiceAgentUiState(phase = VoiceAgentUiState.Phase.Connecting)
         val mint = SpeechKitServerApi(server, okHttp).createVoiceAgentSession()
         val live = client.connect(mint)
         session = live
         live.start(options)
-        return live.events
+        return flow {
+            val renewing = if (session === live) scheduleRenewal(server, mint) else null
+            try {
+                live.events.collect { event ->
+                    if (event is VoiceAgentEvent.Closed) cancelRenewal(renewing)
+                    emit(event)
+                }
+            } finally {
+                cancelRenewal(renewing)
+            }
+        }
     }
+
+    /**
+     * Keeps the session's Voice budget ahead of its deadline. Only a session
+     * the server gave a budget deadline for is renewed; one without (a
+     * self-hosted server reserves none) runs on its ticket alone.
+     *
+     * The renewal request is not idempotent, so any failure ends the renewal
+     * for this session instead of repeating it: the server may already have
+     * adopted a reservation whose answer never arrived, and it keeps enforcing
+     * its own deadline either way. The conversation itself is never touched.
+     */
+    private fun scheduleRenewal(server: ConnectionProfile.Server, mint: CreateVoiceAgentSessionResponse): Job? {
+        val sessionId = mint.sessionId
+        if (!SpeechKitServerApi.isVoiceSessionId(sessionId)) return null
+        var deadlineMs = parseDeadlineMs(mint.budgetExpiresAt) ?: return null
+        val job = renewalScope.launch {
+            while (true) {
+                val remaining = deadlineMs - System.currentTimeMillis()
+                if (remaining <= 0) return@launch
+                delay(remaining - minOf(RENEW_LEAD_MS, remaining / 2))
+
+                val currentServer = renewalServer(server) ?: return@launch
+                val api = SpeechKitServerApi(currentServer, okHttp)
+                val renewed = try {
+                    // The deadline bounds the attempt: past it there is nothing left to extend.
+                    withTimeoutOrNull((deadlineMs - System.currentTimeMillis()).coerceAtLeast(1L)) {
+                        api.renewVoiceAgentSession(sessionId)
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    val http = (failure as? SpeechKitApiException)?.httpStatus
+                    VoiceLog.w(VoiceLog.AGENT, "budget renewal failed http=${http ?: "-"}")
+                    return@launch
+                }
+                val next = renewed?.takeIf { it.sessionId == sessionId }
+                    ?.let { parseDeadlineMs(it.budgetExpiresAt) }
+                if (next == null || next <= deadlineMs) {
+                    VoiceLog.w(VoiceLog.AGENT, "budget renewal not confirmed")
+                    return@launch
+                }
+                deadlineMs = next
+            }
+        }
+        renewal = job
+        return job
+    }
+
+    private suspend fun renewalServer(fallback: ConnectionProfile.Server): ConnectionProfile.Server? {
+        val source = renewalProfile ?: return fallback
+        val resolved = try {
+            source()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+        return (resolved as? ConnectionProfile.Server)
+            ?.takeIf {
+                it.normalizedBaseUrl == fallback.normalizedBaseUrl &&
+                    it.cloudSessionGeneration == fallback.cloudSessionGeneration &&
+                    sameVoiceRenewalAccount(fallback.bearerToken, it.bearerToken, renewalClaimNamespace)
+            }
+    }
+
+    private fun cancelRenewal(job: Job? = renewal) {
+        job?.cancel()
+        if (renewal === job) renewal = null
+    }
+
+    private fun parseDeadlineMs(value: String): Long? =
+        value.takeIf { it.isNotBlank() }
+            ?.let { runCatching { OffsetDateTime.parse(it).toInstant().toEpochMilli() }.getOrNull() }
 
     /**
      * Folds one event into [state]. Call this for every event the collector
@@ -129,12 +249,11 @@ class VoiceAgentController(
                 _state.value.copy(
                     error = event.message,
                     errorCode = event.code,
+                    errorClass = event.errorClass,
                 )
             }
 
-            is VoiceAgentEvent.Closed -> _state.value.copy(
-                phase = VoiceAgentUiState.Phase.Ended,
-            )
+            is VoiceAgentEvent.Closed -> _state.value.copy(phase = VoiceAgentUiState.Phase.Ended)
 
             // Tool calls are host business, and audio is played by the caller.
             is VoiceAgentEvent.ToolCall, is VoiceAgentEvent.Audio -> _state.value
@@ -180,6 +299,7 @@ class VoiceAgentController(
 
     /** Ends the conversation and releases the socket. */
     override suspend fun stop() {
+        cancelRenewal()
         val live = session ?: return
         session = null
         runCatching { live.close() }
@@ -198,5 +318,10 @@ class VoiceAgentController(
             VoiceAgentUiState.Phase.Ended
 
         else -> _state.value.phase // forward-compatible: unknown states hold
+    }
+
+    private companion object {
+        /** How long before the budget deadline a renewal is requested, at most. */
+        const val RENEW_LEAD_MS = 60_000L
     }
 }

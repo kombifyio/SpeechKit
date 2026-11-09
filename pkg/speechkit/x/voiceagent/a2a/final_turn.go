@@ -52,6 +52,17 @@ func (b *FinalTurnBinding) Observe(text, eventID string) {
 	b.changed = make(chan struct{})
 }
 
+// Current returns the identity of the latest observed final, the one Resolve
+// binds a callback for it to, or "" before the first final.
+func (b *FinalTurnBinding) Current() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.sequence == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s:%d", b.prefix, b.sequence)
+}
+
 // Resolve waits briefly for native transcript delivery when callback and
 // WebSocket event arrive on different transports. It never manufactures a turn.
 func (b *FinalTurnBinding) Resolve(ctx context.Context, text string) (string, error) {

@@ -43,7 +43,9 @@
         Playground with a scripted fake controller: the split button starts a
         fake dictation; the chevron (or a long press) opens the voice-agent
         overlay and plays a scripted dialogue with drafts, barge-in, and
-        session end. The second launcher anchors the frameless
+        session end. The <code>speechkit-voice-pill</code> next to it follows the
+        same controller; the row below shows every host-driven pill phase. The
+        second launcher anchors the frameless
         <code>speechkit-voice-dialog</code> above itself; "Simulate blocked
         microphone" shows the compact <code>speechkit-voice-notice</code>.
       </p>
@@ -52,6 +54,15 @@
           <speechkit-voice-button id="btn" agent for="overlay">Dictate</speechkit-voice-button>
           <speechkit-voice-button id="btn-locked" agent>Locked demo</speechkit-voice-button>
           <speechkit-voice-visualizer id="viz" state="idle"></speechkit-voice-visualizer>
+          <speechkit-voice-pill id="pill"></speechkit-voice-pill>
+        </div>
+        <div class="row" id="pill-phases">
+          <speechkit-voice-pill mode="voice_agent" phase="requesting"></speechkit-voice-pill>
+          <speechkit-voice-pill mode="voice_agent" phase="listening" level="0.6"></speechkit-voice-pill>
+          <speechkit-voice-pill mode="voice_agent" phase="processing"></speechkit-voice-pill>
+          <speechkit-voice-pill mode="voice_agent" phase="speaking" level="0.4"></speechkit-voice-pill>
+          <speechkit-voice-pill phase="listening" static></speechkit-voice-pill>
+          <speechkit-voice-pill phase="error"></speechkit-voice-pill>
         </div>
         <speechkit-voice-overlay id="overlay"></speechkit-voice-overlay>
       </speechkit-voice-provider>

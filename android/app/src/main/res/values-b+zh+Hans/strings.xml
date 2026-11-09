@@ -100,6 +100,8 @@
     <string name="settings_connection_account_not_provisioned">你的 kombify 账号尚未设置完成。请先完成设置，然后刷新。</string>
     <string name="settings_connection_account_open_dashboard">打开 kombify</string>
     <string name="settings_connection_account_unavailable">无法加载你的套餐。请检查网络连接后刷新。</string>
+    <string name="settings_connection_account_support_code">支持代码：%1$s</string>
+    <string name="settings_connection_account_plan_unknown">暂时无法获取你的套餐详情。刷新后重试。</string>
     <string name="settings_connection_self_host_show">你自己的 SpeechKit 服务器</string>
     <string name="settings_connection_self_host_hide">隐藏你自己的服务器</string>
     <string name="onboarding_welcome">欢迎使用 SpeechKit</string>
@@ -189,10 +191,26 @@
     <string name="settings_on_device_pause">暂停下载</string>
     <string name="settings_on_device_ready_active">%1$s 已下载，正在此设备上听写。</string>
     <string name="settings_on_device_ready_inactive">%1$s 已下载。在上方选择离线模型即可用它听写。</string>
+    <string name="settings_on_device_cloud_active">kombify Cloud 已启用，因此听写使用云端。无法连接云端时由 %1$s 接替。</string>
+    <string name="settings_on_device_use_device">改为在本设备上听写</string>
     <string name="settings_on_device_delete">删除 %1$s（%2$d MB）</string>
     <string name="settings_on_device_failed">下载失败：%1$s</string>
     <string name="settings_on_device_needs_download">在 %1$s 下载完成之前，仍由系统识别器听写。</string>
     <string name="settings_on_device_metered">你正在使用按流量计费的网络；下载大小为 %1$d MB。</string>
     <string name="settings_on_device_download">下载 %1$s（%2$d MB）</string>
     <string name="settings_on_device_discard_partial">移除未完成的下载（%1$d MB）</string>
+    <string name="settings_voice_title">离线语音</string>
+    <string name="settings_voice_subtitle">助手的回复由系统语音朗读。下载一个自然语音后，回复将改由本手机离线朗读，无需网络。适用于德语和英语回复；其他语言仍使用系统语音。</string>
+    <string name="settings_voice_unsupported">自然语音需要 64 位手机。</string>
+    <string name="settings_voice_ready">%1$s 已下载，将在本设备上朗读回复。</string>
+    <string name="settings_voice_play_sample">播放示例</string>
+    <string name="settings_voice_stop_sample">停止</string>
+    <string name="settings_voice_sample_failed">无法播放示例；将使用系统语音。</string>
+    <string name="settings_vocabulary_title">词汇表</string>
+    <string name="settings_vocabulary_subtitle">已登录账户的术语。每次听写都会将其发送给识别器，设备端结果会把误听变体替换为正确术语。</string>
+    <string name="settings_vocabulary_empty">暂无词汇表。登录以获取你的术语。</string>
+    <string name="settings_vocabulary_count">此账户包含 %1$d 个术语</string>
+    <string name="settings_vocabulary_sample_heard">误听变体</string>
+    <string name="settings_vocabulary_sample_result">识别为</string>
+    <string name="settings_vocabulary_no_aliases">此账户还没有误听变体。</string>
 </resources>

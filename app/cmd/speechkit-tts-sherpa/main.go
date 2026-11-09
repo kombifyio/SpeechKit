@@ -1,7 +1,7 @@
 //go:build cgo
 
 // speechkit-tts-sherpa serves on-device text-to-speech with the Piper VITS
-// voices bundled in the installer (German Thorsten, English Lessac) through
+// voices bundled in the installer (German Ramona, English LJSpeech) through
 // sherpa-onnx. The desktop's local TTS provider spawns it from
 // sherpa-runtime/ next to the app and speaks HTTP to it, so the desktop
 // process does not link a second ONNX runtime.

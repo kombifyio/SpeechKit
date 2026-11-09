@@ -1,0 +1,15 @@
+LJSpeech (en_US-ljspeech-medium), Piper VITS voice
+
+Model: trained from scratch by Bryce Beattie (https://brycebeattie.com/files/tts/)
+for Piper (https://github.com/rhasspy/piper) on the LJ Speech Dataset, as the
+voice's MODEL_CARD states; exported for sherpa-onnx by k2-fsa
+(https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models).
+Piper's code is MIT-licensed and the sherpa-onnx export tooling is Apache-2.0;
+neither licence covers these weights, which follow the dataset licence below.
+
+Dataset: The LJ Speech Dataset (https://keithito.com/LJ-Speech-Dataset/),
+recordings by Linda Johnson of public-domain LibriVox texts. Its authors
+release it in the public domain; there are no restrictions on its use.
+
+Phoneme data: espeak-ng-data, GPL-3.0-or-later
+(https://github.com/espeak-ng/espeak-ng), read as data, not linked.

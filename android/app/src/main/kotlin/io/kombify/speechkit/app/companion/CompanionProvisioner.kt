@@ -11,6 +11,8 @@ import io.kombify.speechkit.coinstall.v1.CoinstallContract
 import io.kombify.speechkit.coinstall.v1.ICoinstallService
 import io.kombify.speechkit.coinstall.v1.ProvisionRequest
 import io.kombify.speechkit.domain.ConnectionProfile
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runInterruptible
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
@@ -66,6 +68,10 @@ class CompanionProvisioner internal constructor(
         return outcome
     }
 
+    /** Fetch a renewal credential without changing the shared Companion cache. */
+    suspend fun provisionForVoiceRenewal(): CompanionProvision =
+        runInterruptible(Dispatchers.IO) { if (installed()) binder() else CompanionProvision.Unavailable }
+
     /**
      * A 401 on the provisioned Cloud session. Re-invokes Companion
      * `provision()` and never keeps the dead bearer: Empty, Rejected, and
@@ -119,6 +125,10 @@ private val companionProvisionExecutor: Executor = Executors.newSingleThreadExec
     Thread(task, "speechkit-companion-provision").apply { isDaemon = true }
 }
 
+private val companionBinderExecutor: Executor = Executors.newCachedThreadPool { task ->
+    Thread(task, "speechkit-companion-binder").apply { isDaemon = true }
+}
+
 private fun companionInstalled(context: Context): Boolean =
     CompanionPackage.resolve(context.packageManager, ownPackage = context.packageName) != null
 
@@ -130,38 +140,42 @@ private fun bindCompanion(context: Context): CompanionProvision {
     val outcome = AtomicReference<CompanionProvision>(CompanionProvision.Unavailable)
     val conn = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            try {
-                val api = ICoinstallService.Stub.asInterface(service)
-                if (api.getContractVersion() < CoinstallContract.VERSION) {
+            companionBinderExecutor.execute {
+                try {
+                    val api = ICoinstallService.Stub.asInterface(service)
+                    if (api.getContractVersion() < CoinstallContract.VERSION) {
+                        outcome.set(CompanionProvision.Unavailable)
+                        return@execute
+                    }
+                    val provisioned = api.provision(
+                        ProvisionRequest().apply {
+                            deviceId = Settings.Secure.getString(
+                                context.contentResolver,
+                                Settings.Secure.ANDROID_ID,
+                            ).orEmpty()
+                        },
+                    )
+                    val url = provisioned?.serverUrl?.trim().orEmpty()
+                    val token = provisioned?.bearerToken?.trim().orEmpty()
+                    outcome.set(
+                        if (url.isNotEmpty() && token.isNotEmpty()) {
+                            CompanionProvision.Session(
+                                ConnectionProfile.Server(url, token),
+                                expiresAtEpochMs = provisioned.expiresAtEpochMs,
+                            )
+                        } else {
+                            CompanionProvision.Empty
+                        },
+                    )
+                } catch (_: SecurityException) {
+                    // Companion still pins some builds. SpeechKit must not treat
+                    // that as a connect failure: independent kombify login runs.
+                    outcome.set(CompanionProvision.Rejected)
+                } catch (_: android.os.RemoteException) {
                     outcome.set(CompanionProvision.Unavailable)
-                    return
+                } finally {
+                    ready.countDown()
                 }
-                val provisioned = api.provision(
-                    ProvisionRequest().apply {
-                        deviceId = Settings.Secure.getString(
-                            context.contentResolver,
-                            Settings.Secure.ANDROID_ID,
-                        ).orEmpty()
-                    },
-                )
-                val url = provisioned?.serverUrl?.trim().orEmpty()
-                val token = provisioned?.bearerToken?.trim().orEmpty()
-                outcome.set(
-                    if (url.isNotEmpty() && token.isNotEmpty()) {
-                        CompanionProvision.Session(
-                            ConnectionProfile.Server(url, token),
-                            expiresAtEpochMs = provisioned.expiresAtEpochMs,
-                        )
-                    } else {
-                        CompanionProvision.Empty
-                    },
-                )
-            } catch (_: SecurityException) {
-                // Companion still pins some builds. SpeechKit must not treat
-                // that as a connect failure: independent kombify login runs.
-                outcome.set(CompanionProvision.Rejected)
-            } finally {
-                ready.countDown()
             }
         }
 

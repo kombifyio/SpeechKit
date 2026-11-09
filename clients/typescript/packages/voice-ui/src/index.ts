@@ -32,7 +32,7 @@ export {
   type SpeechKitVoiceDenial,
   type SpeechKitVoiceEvent,
   type SpeechKitVoiceSessionStatus,
-  type SpeechKitVoiceSessionState
+  type SpeechKitVoiceSessionState,
 } from "./core/voice-surface.js";
 
 export { reduceVoiceAgentTurns, type VoiceAgentTurn } from "./core/turns.js";
@@ -40,7 +40,7 @@ export { reduceVoiceAgentTurns, type VoiceAgentTurn } from "./core/turns.js";
 export {
   VOICE_ACTIVE_STATUSES,
   isVoiceSessionActive,
-  type VoiceUiController
+  type VoiceUiController,
 } from "./core/controller.js";
 
 export {
@@ -48,7 +48,7 @@ export {
   ContextRequestEvent,
   requestVoiceController,
   SpeechKitVoiceProviderElement,
-  type ContextCallback
+  type ContextCallback,
 } from "./core/context.js";
 
 export { SpeechKitElement } from "./core/element.js";
@@ -59,8 +59,18 @@ export {
   RecordingIndicator,
   indicatorBarHeights,
   sessionStatusToIndicatorState,
-  type RecordingIndicatorState
+  type RecordingIndicatorState,
 } from "./core/indicator.js";
+
+export {
+  VOICE_PILL_PHASES,
+  isVoicePillPhase,
+  voicePillView,
+  formatVoicePillElapsed,
+  type VoicePillMode,
+  type VoicePillPhase,
+  type VoicePillView,
+} from "./core/pill.js";
 
 export {
   checkMicrophonePermission,
@@ -70,7 +80,7 @@ export {
   type CheckMicrophonePermissionOptions,
   type MicrophonePermissionState,
   type MicrophoneReasonCode,
-  type MicrophoneRequestResult
+  type MicrophoneRequestResult,
 } from "./core/permission.js";
 
 export {
@@ -78,7 +88,7 @@ export {
   VOICE_CONSENT_DEFAULT_VERSION,
   type VoiceConsentRecord,
   type VoiceConsentStore,
-  type VoiceConsentStoreOptions
+  type VoiceConsentStoreOptions,
 } from "./core/consent.js";
 
 export {
@@ -87,7 +97,7 @@ export {
   voiceNoticeMessage,
   voiceNoticeHint,
   isRetryableNoticeKind,
-  type VoiceNoticeKind
+  type VoiceNoticeKind,
 } from "./core/notice.js";
 
 export {
@@ -98,34 +108,27 @@ export {
   isRtlLocale,
   type VoiceUiLocale,
   type VoiceUiMessageCatalog,
-  type VoiceUiMessageId
+  type VoiceUiMessageId,
 } from "./i18n/index.js";
 
-export {
-  SpeechKitVoiceButtonElement
-} from "./elements/voice-button.js";
+export { SpeechKitVoiceButtonElement } from "./elements/voice-button.js";
 export {
   SpeechKitVoiceConsentElement,
   createLocalStorageConsentAdapter,
   VOICE_CONSENT_STORAGE_KEY,
   type VoiceConsentAdapter,
   type VoiceConsentDecision,
-  type VoiceConsentScope
+  type VoiceConsentScope,
 } from "./elements/voice-consent.js";
 export { SpeechKitVoiceOverlayElement } from "./elements/voice-overlay.js";
-export {
-  SpeechKitVoiceNoticeElement,
-  type VoiceNoticeTone
-} from "./elements/voice-notice.js";
+export { SpeechKitVoiceNoticeElement, type VoiceNoticeTone } from "./elements/voice-notice.js";
 export { SpeechKitLiveTranscriptElement } from "./elements/live-transcript.js";
-export {
-  SpeechKitVoiceDialogElement,
-  type VoiceDialogAnchor
-} from "./elements/voice-dialog.js";
+export { SpeechKitVoicePillElement } from "./elements/voice-pill.js";
+export { SpeechKitVoiceDialogElement, type VoiceDialogAnchor } from "./elements/voice-dialog.js";
 export {
   SpeechKitVoiceVisualizerElement,
   sessionStatusToVisualizerState,
-  type VoiceVisualizerState
+  type VoiceVisualizerState,
 } from "./elements/voice-visualizer.js";
 export {
   SpeechKitVoiceAssistantElement,
@@ -134,7 +137,7 @@ export {
   type VoiceAssistantFrame,
   type VoiceAssistantVariant,
   type VoiceAssistantStatus,
-  type VoiceAuraState
+  type VoiceAuraState,
 } from "./elements/voice-assistant.js";
 
 export {
@@ -143,7 +146,7 @@ export {
   resolveMarkSrc,
   semanticMarkRatio,
   type SemanticVoiceMark,
-  type SemanticMarkAssets
+  type SemanticMarkAssets,
 } from "./marks.js";
 
 import { SpeechKitVoiceProviderElement } from "./core/context.js";
@@ -154,6 +157,7 @@ import { SpeechKitVoiceVisualizerElement } from "./elements/voice-visualizer.js"
 import { SpeechKitVoiceAssistantElement } from "./elements/voice-assistant.js";
 import { SpeechKitVoiceNoticeElement } from "./elements/voice-notice.js";
 import { SpeechKitLiveTranscriptElement } from "./elements/live-transcript.js";
+import { SpeechKitVoicePillElement } from "./elements/voice-pill.js";
 import { SpeechKitVoiceDialogElement } from "./elements/voice-dialog.js";
 
 /** Registers all kit elements (idempotent). */
@@ -163,11 +167,12 @@ export function registerSpeechKitElements(): void {
     [SpeechKitVoiceNoticeElement.tagName, SpeechKitVoiceNoticeElement],
     [SpeechKitLiveTranscriptElement.tagName, SpeechKitLiveTranscriptElement],
     [SpeechKitVoiceVisualizerElement.tagName, SpeechKitVoiceVisualizerElement],
+    [SpeechKitVoicePillElement.tagName, SpeechKitVoicePillElement],
     [SpeechKitVoiceConsentElement.tagName, SpeechKitVoiceConsentElement],
     [SpeechKitVoiceButtonElement.tagName, SpeechKitVoiceButtonElement],
     [SpeechKitVoiceOverlayElement.tagName, SpeechKitVoiceOverlayElement],
     [SpeechKitVoiceDialogElement.tagName, SpeechKitVoiceDialogElement],
-    [SpeechKitVoiceAssistantElement.tagName, SpeechKitVoiceAssistantElement]
+    [SpeechKitVoiceAssistantElement.tagName, SpeechKitVoiceAssistantElement],
   ];
   for (const [tag, ctor] of definitions) {
     if (!customElements.get(tag)) customElements.define(tag, ctor);

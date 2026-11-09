@@ -61,9 +61,9 @@ func (a *Adapter) writeJSONLocked(ctx context.Context, v any) {
 		slog.Warn("voiceagent: marshal frame", "err", err)
 		return
 	}
-	writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	writeCtx, cancel := context.WithTimeout(ctx, transportWriteTimeout)
 	defer cancel()
-	if err := a.Conn.Write(writeCtx, websocket.MessageText, data); err != nil {
+	if err := a.connWrite(writeCtx, websocket.MessageText, data); err != nil {
 		slog.Debug("voiceagent: write text failed", "err", err)
 	}
 }
@@ -111,6 +111,7 @@ func (a *Adapter) sendErrorWithFatal(ctx context.Context, code, message string, 
 	a.sendJSON(ctx, ErrorFrame{
 		Type:        MsgError,
 		Code:        code,
+		Class:       string(cascaded.FailureClass(code)),
 		Message:     message,
 		Fatal:       fatal,
 		Remediation: ErrorRemediation(code),

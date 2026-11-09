@@ -85,7 +85,11 @@ func (s *Service) Resolve(ctx context.Context, request speechcustomize.Context) 
 	if len(request.ScopeOrder) == 0 {
 		request.ScopeOrder = append([]speechcustomize.ScopeRef(nil), s.scopeOrder...)
 	}
-	key := serviceCacheKey(ctx, request)
+	includeOperator := !s.disableBuiltinTemplates
+	if includeOperator {
+		request.ActiveTemplateIDs, includeOperator = applyVocabularyRef(request.ActiveTemplateIDs, vocabularyRefFromContext(ctx))
+	}
+	key := serviceCacheKey(ctx, request, includeOperator)
 	s.mu.RLock()
 	if cached, ok := s.cache[key]; ok {
 		s.mu.RUnlock()
@@ -93,7 +97,7 @@ func (s *Service) Resolve(ctx context.Context, request speechcustomize.Context) 
 	}
 	s.mu.RUnlock()
 
-	resolved, err := s.resolveUncached(ctx, request)
+	resolved, err := s.resolveUncached(ctx, request, includeOperator)
 	if err != nil {
 		return ResolvedSet{Context: request}, err
 	}
@@ -114,14 +118,14 @@ func (s *Service) Apply(ctx context.Context, request speechcustomize.Context, te
 	return resolved.Applier.Apply(text), nil
 }
 
-func (s *Service) resolveUncached(ctx context.Context, request speechcustomize.Context) (ResolvedSet, error) {
+func (s *Service) resolveUncached(ctx context.Context, request speechcustomize.Context, includeOperator bool) (ResolvedSet, error) {
 	baseScope := speechstorage.ScopeFromContext(ctx)
 	wordStore, hasWords := s.store.(WordStore)
 	replacementStore, hasReplacements := s.store.(ReplacementStore)
 	wordsByKey := map[string]speechcustomize.Word{}
 	replacementsByKey := map[string]speechcustomize.Replacement{}
 
-	addActiveTemplatePacks(request, wordsByKey, replacementsByKey)
+	addActiveTemplatePacks(request, includeOperator, wordsByKey, replacementsByKey)
 
 	for _, ref := range request.ScopeOrder {
 		ref = speechcustomize.NormalizeScopeRef(ref)
@@ -257,11 +261,11 @@ func normalizeContext(context speechcustomize.Context) speechcustomize.Context {
 	return context
 }
 
-func addActiveTemplatePacks(request speechcustomize.Context, wordsByKey map[string]speechcustomize.Word, replacementsByKey map[string]speechcustomize.Replacement) {
+func addActiveTemplatePacks(request speechcustomize.Context, includeOperator bool, wordsByKey map[string]speechcustomize.Word, replacementsByKey map[string]speechcustomize.Replacement) {
 	if len(request.ActiveTemplateIDs) == 0 {
 		return
 	}
-	for _, pack := range customtemplates.ActiveBuiltinPacks(request.ActiveTemplateIDs) {
+	for _, pack := range customtemplates.ActiveBuiltinPacksWithOperator(request.ActiveTemplateIDs, includeOperator) {
 		for _, word := range pack.Words {
 			word = speechcustomize.WithDefaultsWord(word)
 			if !templateWordMatchesContext(word, request) {
@@ -321,13 +325,15 @@ func normalizeScopeOrder(order []speechcustomize.ScopeRef) []speechcustomize.Sco
 	return out
 }
 
-func serviceCacheKey(ctx context.Context, request speechcustomize.Context) string {
+func serviceCacheKey(ctx context.Context, request speechcustomize.Context, includeOperator bool) string {
 	payload := struct {
-		Scope   string                  `json:"scope"`
-		Request speechcustomize.Context `json:"request"`
+		Scope    string                  `json:"scope"`
+		Request  speechcustomize.Context `json:"request"`
+		Operator bool                    `json:"operator"`
 	}{
-		Scope:   speechstorage.ScopeFromContext(ctx).Key(),
-		Request: request,
+		Scope:    speechstorage.ScopeFromContext(ctx).Key(),
+		Request:  request,
+		Operator: includeOperator,
 	}
 	raw, _ := json.Marshal(payload)
 	return string(raw)

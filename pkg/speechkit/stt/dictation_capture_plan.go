@@ -1,6 +1,7 @@
 package stt
 
 import (
+	"context"
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
@@ -13,9 +14,10 @@ import (
 // finals-only host can transcribe that same provider's complete recording
 // without an unnecessary live handshake. Unknown or complete-capture profiles
 // retain normal startup; this is never a fallback after a provider failure.
-func (r *Router) DictationBatchProvider(opts speechkit.DictationStreamOptions) (STTProvider, bool) {
+func (r *Router) DictationBatchProvider(ctx context.Context, opts speechkit.DictationStreamOptions) (STTProvider, bool) {
 	candidates := PrioritizeProviderProfile(r.dictationStreamingCandidates(opts.ProviderProfileID), opts.ProviderProfileID)
-	if len(candidates) == 0 {
+	candidates, err := euDictationCandidates(ctx, candidates, opts.ProviderProfileID, opts.Model)
+	if err != nil || len(candidates) == 0 {
 		return nil, false
 	}
 	provider := candidates[0]

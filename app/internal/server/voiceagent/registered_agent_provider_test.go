@@ -42,7 +42,7 @@ func TestVoiceAgentNativeSignerRequiredBeforeProviderConnect(t *testing.T) {
 			media := newFakeProvider()
 			provider := &registeredNativeProvider{LiveProviderAdapter: media, sessions: newNativeVoiceSessions("https://voice.example/v1", nil, "", signer, func(_ context.Context, cfg LiveConfigFrame) (NativeVoiceConsent, error) {
 				return cfg.NativeConsent, nil
-			}), provider: "deepgram"}
+			}, nil, nil), provider: "deepgram"}
 			defer func() { _ = provider.Close() }()
 			expiry := time.Now().Add(time.Minute).Unix()
 			cfg := LiveConfigFrame{AgentTargetID: "registered-agent", AgentEndpoint: upstream.URL, CapabilityLease: boundTestToken(expiry), OboSubjectToken: boundTestToken(expiry), CredentialExpiresAt: expiry, VoiceSessionID: "native-session", AISessionID: "durable-thread", OwnerUserID: "owner", Locale: "en"}

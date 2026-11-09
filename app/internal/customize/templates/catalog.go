@@ -103,9 +103,19 @@ func ResolveTemplatePack(id, version string) (speechcustomize.Pack, Template, bo
 }
 
 func ActiveBuiltinPacks(ids []string) []speechcustomize.Pack {
+	return ActiveBuiltinPacksWithOperator(ids, true)
+}
+
+// ActiveBuiltinPacksWithOperator is [ActiveBuiltinPacks] with the operator
+// vocabulary switched on or off. Off drops it even when ids list it; that is
+// how a caller's "no product vocabulary" preference is honoured.
+func ActiveBuiltinPacksWithOperator(ids []string, includeOperator bool) []speechcustomize.Pack {
 	ids = NormalizeActiveTemplateIDs(ids)
 	packs := make([]speechcustomize.Pack, 0, len(ids))
 	for _, id := range ids {
+		if id == OperatorTermsID && !includeOperator {
+			continue
+		}
 		pack, _, ok := ResolveTemplatePack(id, "")
 		if ok {
 			packs = append(packs, pack)
@@ -113,7 +123,7 @@ func ActiveBuiltinPacks(ids []string) []speechcustomize.Pack {
 	}
 	// The operator vocabulary is the deployment's own: active whenever it is
 	// set, without being listed among the selectable templates.
-	if operator, ok := operatorDefinition(); ok && !slices.Contains(ids, OperatorTermsID) {
+	if operator, ok := operatorDefinition(); ok && includeOperator && !slices.Contains(ids, OperatorTermsID) {
 		packs = append(packs, operator.factory())
 	}
 	return packs

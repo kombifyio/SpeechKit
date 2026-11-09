@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	dataprofile "github.com/kombifyio/SpeechKit/internal/dataprofilev1"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/responses"
 )
 
@@ -82,14 +83,22 @@ func (id Identity) admissionKey() string {
 // convert directly) without importing the linux-only middleware package —
 // this package stays build-tag-free and natively testable, the same reason
 // Identity above duplicates the middleware's Identity fields. The values are
-// non-secret provider/persona names the fronting edge resolved for the user;
-// they are captured at session-mint time because the WebSocket upgrade
-// authenticates via ticket and never sees the edge headers.
+// non-secret provider/model/persona/locale names the fronting edge resolved
+// for the user; they are captured at session-mint time because the WebSocket
+// upgrade authenticates via ticket and never sees the edge headers. The v2
+// fields (STTModel onward) take precedence over the matching v1 field.
 type VoicePrefs struct {
 	STTPrimary   string
 	STTSecondary string
 	VAProvider   string
 	VAPersona    string
+	STTModel     string
+	TTSModel     string
+	TTSVoice     string
+	VAModel      string
+	Vocabulary   string
+	Scope        string
+	VALocale     string
 }
 
 // VoiceAgentBinding carries a Gateway-authorized registered-agent target from
@@ -197,15 +206,15 @@ type ManagedSession struct {
 	stopConversation    func() // manager-lock protected; cancel adapter on DELETE
 	closing             bool   // capacity remains held until adapter teardown
 
-	// BridgeCredential is the opaque, short-lived delegated credential the
+	// DelegatedCredential is the opaque, short-lived delegated credential the
 	// fronting proxy minted and forwarded at session creation (see middleware
 	// EdgeOboSubjectTokenFromContext). The Voice Agent surface sets it at
-	// upgrade time to authorize that session's calls to the external tool
-	// bridge; the streaming-Dictation surface leaves it empty. MEMORY-ONLY
+	// upgrade time: a registered agent's A2A turns and the session's usage
+	// report carry it; the streaming-Dictation surface leaves it empty. MEMORY-ONLY
 	// SECRET: it is never minted into tickets, never serialized to the wire
 	// (listedSession and createSessionResponse deliberately exclude it),
 	// never persisted, and MUST never appear in slog attributes.
-	BridgeCredential string
+	DelegatedCredential string
 
 	// VoicePrefs carries the edge-resolved user voice preferences captured at
 	// session-mint time (see middleware.VoicePrefsFromContext). Mode adapters
@@ -213,6 +222,10 @@ type ManagedSession struct {
 	// provider or persona; explicit start-frame values always win. Non-secret
 	// names only — safe to log, never keys.
 	VoicePrefs VoicePrefs
+	// DataProfile is the server-owned policy captured at admission. It never
+	// comes from a WebSocket frame or ticket. Resume also requires a current
+	// authenticated profile and applies the stricter of both values.
+	DataProfile *dataprofile.Profile
 
 	VoiceAgentBinding VoiceAgentBinding
 	VoiceBudget       VoiceBudget

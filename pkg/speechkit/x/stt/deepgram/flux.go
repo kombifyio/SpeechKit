@@ -129,8 +129,15 @@ type FluxTurnStream struct {
 // StartFluxTurnStream opens a Deepgram Flux /v2/listen stream. The format must
 // be raw PCM; Deepgram recommends 16 kHz mono and FluxAudioChunk-sized writes.
 func (p *Provider) StartFluxTurnStream(ctx context.Context, opts FluxStreamOptions, format speaker.AudioFormat) (*FluxTurnStream, error) {
+	p, err := p.forRequest(ctx)
+	if err != nil {
+		return nil, err
+	}
 	format = format.Normalized()
 	model := stt.FirstNonEmptyTrimmed(opts.Model, DeepgramFluxModelMulti)
+	if err := p.validateEUModel(ctx, model); err != nil {
+		return nil, err
+	}
 	endpoint, err := p.deepgramFluxEndpoint(model, opts, format)
 	if err != nil {
 		return nil, err

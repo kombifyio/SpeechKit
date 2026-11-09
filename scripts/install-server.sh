@@ -45,7 +45,10 @@ Setup modes:
 
 Defaults:
   Server: ghcr.io/kombifyio/speechkit-server:latest
-  STT:    Whisper Large v3 Turbo via whisper.cpp
+  STT:    Phonon-2.5, bundled in the server image, on a processor with AVX2
+          (x86-64-v3) or ARM dot product; otherwise the whisper.cpp sidecar
+          (profile whisper). SPEECHKIT_INSTALL_STT=phonon|whisper overrides
+          the detection.
   LLM:    Gemma 4 E4B IT Q4_K_M via llama.cpp
 EOF
 }
@@ -176,6 +179,36 @@ upsert_env() {
   mv "$tmp" "$ENV_DST"
 }
 
+# Phonon-2.5, the speech-to-text model baked into the server image, needs an
+# x86-64-v3 processor (AVX2, FMA, BMI1, BMI2, F16C, MOVBE, LZCNT) or ARM with
+# the dot-product extension; the same rule as phonon.CPUSupported in the server.
+# SPEECHKIT_INSTALL_STT=phonon or =whisper overrides the detection (an install
+# prepared on one host for another).
+bundled_stt_supported() {
+  case "${SPEECHKIT_INSTALL_STT:-auto}" in
+    phonon) return 0 ;;
+    whisper) return 1 ;;
+  esac
+  flags=$(grep -m1 -E '^(flags|Features)[[:space:]]*:' /proc/cpuinfo 2>/dev/null || true)
+  case "$(uname -m)" in
+    x86_64|amd64)
+      for flag in avx2 fma bmi1 bmi2 f16c movbe abm; do
+        case " $flags " in
+          *" $flag "*) ;;
+          *) return 1 ;;
+        esac
+      done
+      return 0
+      ;;
+    aarch64|arm64)
+      case " $flags " in
+        *" asimddp "*) return 0 ;;
+      esac
+      ;;
+  esac
+  return 1
+}
+
 ensure_blank_env() {
   key=$1
   if ! grep -q "^$key=" "$ENV_DST"; then
@@ -188,11 +221,20 @@ upsert_env "SPEECHKIT_SERVER_IMAGE" "$SERVER_IMAGE"
 upsert_env "SPEECHKIT_PUBLIC_URL" "$PUBLIC_URL"
 upsert_env "SPEECHKIT_PUBLIC_HOST" "$PUBLIC_HOST"
 upsert_env "SPEECHKIT_SELFHOSTED_DEFAULTS" "true"
-# Activate the whisper + llama sidecars declared in docker-compose.yml
-# so the self-hosted defaults the server falls back to actually have
-# something at the other end of the SPEECHKIT_SELFHOSTED_STT_URL and
-# SPEECHKIT_SELFHOSTED_LLM_BASE_URL endpoints.
-upsert_env "COMPOSE_PROFILES" "local"
+# Activate the llama sidecar declared in docker-compose.yml so the
+# self-hosted LLM default has something at the other end of
+# SPEECHKIT_SELFHOSTED_LLM_BASE_URL. Speech-to-text needs no sidecar when the
+# processor runs the Phonon-2.5 model baked into the server image; otherwise
+# the whisper.cpp sidecar (profile whisper) serves it.
+if bundled_stt_supported; then
+  LOCAL_STT="phonon"
+  upsert_env "COMPOSE_PROFILES" "local"
+  ensure_blank_env "SPEECHKIT_SELFHOSTED_STT_URL"
+else
+  LOCAL_STT="whisper"
+  upsert_env "COMPOSE_PROFILES" "local,whisper"
+  upsert_env "SPEECHKIT_SELFHOSTED_STT_URL" "http://speechkit-whisper:8080"
+fi
 upsert_env "SPEECHKIT_SELFHOSTED_WHISPER_MODEL" "large-v3-turbo"
 upsert_env "SPEECHKIT_SELFHOSTED_STT_MODEL" "whisper-1"
 upsert_env "SPEECHKIT_SELFHOSTED_LLM_REPO" "bartowski/google_gemma-4-E4B-it-GGUF:Q4_K_M"
@@ -209,6 +251,7 @@ done
 echo "Wrote $COMPOSE_DST"
 echo "Wrote $ENV_DST"
 echo "Public URL: $PUBLIC_URL"
+echo "Local speech-to-text: $LOCAL_STT"
 echo "Setup mode: $(if [ "$ONBOARDING_UI" = "true" ]; then echo onboarding; else echo ready; fi)"
 
 if [ "$START_STACK" = "true" ]; then
@@ -216,7 +259,11 @@ if [ "$START_STACK" = "true" ]; then
   docker compose pull
   docker compose up -d
   echo "SpeechKit server stack is starting at $PUBLIC_URL"
-  echo "First boot downloads Whisper Large v3 Turbo and Gemma 4; readiness can take several minutes."
+  if [ "$LOCAL_STT" = "phonon" ]; then
+    echo "First boot downloads Gemma 4 for the LLM; speech-to-text uses the bundled Phonon-2.5. Readiness can take several minutes."
+  else
+    echo "This processor cannot run the bundled Phonon-2.5 (no AVX2); speech-to-text uses the whisper.cpp sidecar. First boot downloads Whisper Large v3 Turbo and Gemma 4; readiness can take several minutes."
+  fi
 else
   echo "Skipped docker compose up. Run: cd $INSTALL_DIR && docker compose up -d"
 fi

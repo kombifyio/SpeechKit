@@ -81,5 +81,5 @@ fun testSurfaceConnectProfile(
     ) {
         return resolved
     }
-    return ConnectionProfile.Server(url, typed ?: resolved?.bearerToken)
+    return ConnectionProfile.Server(url, typed)
 }

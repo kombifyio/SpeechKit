@@ -149,6 +149,12 @@ func Load(path string) (*Config, error) {
 	if err := rejectRemovedConfigAliases(meta); err != nil {
 		return nil, err
 	}
+	cfg.definedKeys = map[string]bool{}
+	for _, key := range operatorKeys {
+		if meta.IsDefined(strings.Split(key, ".")...) {
+			cfg.definedKeys[key] = true
+		}
+	}
 	if err := NormalizePrivacyConfig(cfg); err != nil {
 		return nil, err
 	}
@@ -184,6 +190,7 @@ func Load(path string) (*Config, error) {
 	backfillStartupBehavior(meta, cfg)
 	backfillVoiceAgentPromptLayers(cfg)
 	normalizeSpeechDefaults(cfg, meta.IsDefined("speech"), meta.IsDefined("speech", "language"), meta.IsDefined("general", "language"))
+	migrateSeededSpeechLanguage(cfg)
 	NormalizeCustomizationDefaults(cfg)
 	NormalizeHandsFreeConfig(cfg, meta.IsDefined("hands_free"))
 	NormalizeOutputConfig(cfg)
@@ -227,6 +234,12 @@ func Load(path string) (*Config, error) {
 // machine policy is applied as on every other path, and the recovered config
 // is written back so a restart (which would otherwise re-seed an open-scope
 // template) stays closed. The user widens the scope again in Settings.
+// operatorKeys are the keys whose explicit presence in config.toml a runtime
+// default must respect (Config.keyDefined): the server's self-hosted STT
+// default leaves the routing strategy and [local] alone when the operator set
+// them.
+var operatorKeys = []string{"routing.strategy", "local.enabled", "local.model_path"}
+
 func recoverUnreadableConfig(path string, data []byte, decodeErr error) *Config {
 	slog.Warn("malformed config.toml: setting it aside and starting from defaults in the device_only network scope", "err", decodeErr)
 	aside := fmt.Sprintf("%s.corrupt-%s", path, time.Now().UTC().Format("20060102T150405Z"))
@@ -414,6 +427,8 @@ func NormalizeCustomizationDefaults(cfg *Config) {
 	if len(terms) > 0 {
 		customtemplates.SetOperatorTerms(terms)
 	}
+	// Always set, so a reload without vocabulary_ref drops the previous name.
+	customtemplates.SetOperatorVocabularyRef(cfg.Customization.VocabularyRef)
 }
 
 // normalizeWakewordConfig pins the wake-word backend to a canonical,
@@ -461,6 +476,53 @@ func normalizeSpeechDefaults(cfg *Config, speechDefined, speechLanguageDefined, 
 	if cfg.Speech.AudioFormat == "" {
 		cfg.Speech.AudioFormat = "mp3"
 	}
+}
+
+// Who set the speech language (SpeechDefaultsConfig.LanguageSource).
+const (
+	LanguageSourceUser    = "user"
+	LanguageSourceDefault = "default"
+)
+
+// legacySeededSpeechLanguage is the language the shipped config template
+// wrote into [general] and [speech] before fresh installs became
+// multilingual (#1013). It is an implicit default, not a user choice.
+const legacySeededSpeechLanguage = "de"
+
+// migrateSeededSpeechLanguage moves a config that still carries the
+// installer-seeded German pin onto multilingual dictation (ADR 0006,
+// decision of 2026-10-21): a pinned language drops every word spoken in
+// another one. A language the user chose (LanguageSourceUser) is never
+// rewritten. A config written before the marker existed cannot tell a
+// deliberate German pin from the seeded one; it moves to multilingual, which
+// still transcribes German completely, and German can be chosen again.
+func migrateSeededSpeechLanguage(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	source := strings.ToLower(strings.TrimSpace(cfg.Speech.LanguageSource))
+	switch source {
+	case LanguageSourceUser, LanguageSourceDefault:
+		cfg.Speech.LanguageSource = source
+		return
+	}
+	if strings.EqualFold(cfg.Speech.Language, legacySeededSpeechLanguage) &&
+		strings.EqualFold(cfg.General.Language, legacySeededSpeechLanguage) {
+		cfg.Speech.Language = stt.LanguageMulti
+		cfg.General.Language = stt.LanguageMulti
+		cfg.Speech.DetectLanguage = true
+		if strings.EqualFold(strings.TrimSpace(cfg.Providers.Deepgram.STTLanguage), legacySeededSpeechLanguage) {
+			cfg.Providers.Deepgram.STTLanguage = stt.LanguageMulti
+		}
+		cfg.Speech.LanguageSource = LanguageSourceDefault
+		slog.Info("speech language migrated from the seeded German pin to multilingual")
+		return
+	}
+	if stt.IsMultilanguage(cfg.Speech.Language) {
+		cfg.Speech.LanguageSource = LanguageSourceDefault
+		return
+	}
+	cfg.Speech.LanguageSource = LanguageSourceUser
 }
 
 func firstNonEmptyConfig(values ...string) string {

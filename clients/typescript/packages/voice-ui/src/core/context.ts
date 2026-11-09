@@ -31,7 +31,7 @@ export class ContextRequestEvent<T> extends Event {
  */
 export function requestVoiceController(
   host: HTMLElement,
-  onController: (controller: VoiceUiController | null) => void
+  onController: (controller: VoiceUiController | null) => void,
 ): () => void {
   let unsubscribe: (() => void) | undefined;
   host.dispatchEvent(
@@ -41,8 +41,8 @@ export function requestVoiceController(
         unsubscribe = unsub;
         onController(value);
       },
-      true
-    )
+      true,
+    ),
   );
   return () => unsubscribe?.();
 }

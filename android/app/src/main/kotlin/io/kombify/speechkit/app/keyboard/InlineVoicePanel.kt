@@ -12,6 +12,7 @@ import android.view.inputmethod.ExtractedTextRequest
 import android.view.View
 import android.view.inputmethod.InputConnection
 import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -46,6 +47,7 @@ import io.kombify.speechkit.net.OnDeviceEngine
 import io.kombify.speechkit.net.SpeechKitApiException
 import io.kombify.speechkit.net.VoiceAgentAudio
 import io.kombify.speechkit.net.VoiceAgentController
+import io.kombify.speechkit.net.VoiceRenewalProfileSource
 import io.kombify.speechkit.stt.streaming.StreamingSttSession
 import io.kombify.speechkit.ui.ServiceWindowOwner
 import kotlinx.coroutines.CoroutineScope
@@ -129,6 +131,7 @@ class InlineVoicePanel(
     private val profileSource: ConnectionProfileSource,
     private val companion: CompanionProvisioner,
     private val companionTurns: CoinstallTurnClient,
+    private val voiceRenewalProfiles: VoiceRenewalProfileSource,
 ) : SpeechKitVoiceBridge.Host {
 
     // Outlives every panel activation on purpose: the microphone answer comes
@@ -491,7 +494,13 @@ class InlineVoicePanel(
         )
         val panelAgent = ImeVoiceAgentController(
             scope = panelScope,
-            controllerFactory = { VoiceAgentController(profile) },
+            controllerFactory = {
+                VoiceAgentController(
+                    profile,
+                    renewalProfile = { voiceRenewalProfiles.profileForRenewal(profile) },
+                    renewalClaimNamespace = voiceRenewalProfiles.claimNamespace,
+                )
+            },
             audioCapture = MicAudioCapture(),
             micPermission = gate,
         )
@@ -568,9 +577,7 @@ class InlineVoicePanel(
                             language = language,
                             onMicToggle = panelController::toggleMic,
                             onRetry = panelController::retry,
-                            onLanguageToggle = {
-                                panelController.setLanguage(if (language == "de") "en" else "de")
-                            },
+                            onLanguageToggle = panelController::cycleLanguage,
                             // Back to keys, not to another IME: the whole point
                             // of answering the voice key here is that the user
                             // never leaves this keyboard.
@@ -663,18 +670,21 @@ class InlineVoicePanel(
         val text = selected?.trim()?.ifEmpty { null }
             ?: extracted?.trim()?.ifEmpty { null }
             ?: return
+        val service = this
         hostScope.launch {
-            when (val outcome = companionTurns.startTurnResult(text)) {
-                is CoinstallTurnResult.Complete -> {
-                    if (outcome.text.isNotBlank()) {
-                        connection.commitText(outcome.text, 1)
-                    }
-                }
-                is CoinstallTurnResult.Failed,
-                CoinstallTurnResult.NoSession,
-                CoinstallTurnResult.Unavailable,
-                -> Unit
+            // The turn binds and waits off the main thread (startTurnResult); only the result lands here.
+            val outcome = companionTurns.startTurnResult(text)
+            if (outcome is CoinstallTurnResult.Complete && outcome.text.isNotBlank()) {
+                connection.commitText(outcome.text, 1)
+                return@launch
             }
+            // Never a silent no-op (no session, failed, unavailable, ceiling, empty answer): the action says why
+            // it did not answer, with the same reason a refused Companion key shows.
+            Toast.makeText(
+                service,
+                service.getString(KeyboardActionBlocker.NoCompanion.reasonResource()),
+                Toast.LENGTH_SHORT,
+            ).show()
         }
     }
 

@@ -100,6 +100,8 @@
     <string name="settings_connection_account_not_provisioned">आपका kombify खाता अभी सेट अप नहीं हुआ है। सेटअप पूरा करें, फिर रिफ़्रेश करें।</string>
     <string name="settings_connection_account_open_dashboard">kombify खोलें</string>
     <string name="settings_connection_account_unavailable">आपका प्लान लोड नहीं हो सका। अपना कनेक्शन जाँचें और रिफ़्रेश करें।</string>
+    <string name="settings_connection_account_support_code">सहायता कोड: %1$s</string>
+    <string name="settings_connection_account_plan_unknown">आपके प्लान का विवरण अभी उपलब्ध नहीं है। दोबारा कोशिश करने के लिए रिफ़्रेश करें।</string>
     <string name="settings_connection_self_host_show">आपका अपना SpeechKit सर्वर</string>
     <string name="settings_connection_self_host_hide">अपना सर्वर छिपाएँ</string>
     <string name="onboarding_welcome">SpeechKit में आपका स्वागत है</string>
@@ -189,10 +191,26 @@
     <string name="settings_on_device_pause">डाउनलोड रोकें</string>
     <string name="settings_on_device_ready_active">%1$s डाउनलोड हो चुका है और इस डिवाइस पर डिक्टेट करता है।</string>
     <string name="settings_on_device_ready_inactive">%1$s डाउनलोड हो चुका है। इससे डिक्टेट करने के लिए ऊपर ऑफ़लाइन मॉडल चुनें।</string>
+    <string name="settings_on_device_cloud_active">kombify Cloud चालू है, इसलिए डिक्टेशन क्लाउड से होता है। क्लाउड न मिलने पर %1$s काम संभालता है।</string>
+    <string name="settings_on_device_use_device">इसके बजाय इसी डिवाइस पर डिक्टेट करें</string>
     <string name="settings_on_device_delete">%1$s हटाएँ (%2$d MB)</string>
     <string name="settings_on_device_failed">डाउनलोड विफल: %1$s</string>
     <string name="settings_on_device_needs_download">%1$s डाउनलोड होने तक सिस्टम पहचानकर्ता ही डिक्टेट करता रहेगा।</string>
     <string name="settings_on_device_metered">आप मीटर्ड कनेक्शन पर हैं; डाउनलोड %1$d MB का है।</string>
     <string name="settings_on_device_download">%1$s डाउनलोड करें (%2$d MB)</string>
     <string name="settings_on_device_discard_partial">अधूरा डाउनलोड हटाएँ (%1$d MB)</string>
+    <string name="settings_voice_title">ऑफ़लाइन आवाज़</string>
+    <string name="settings_voice_subtitle">असिस्टेंट के जवाब सिस्टम आवाज़ पढ़ती है। एक प्राकृतिक आवाज़ डाउनलोड करें, तो जवाब इसी फ़ोन पर, बिना नेटवर्क के, उसी से पढ़े जाएँगे। जर्मन और अंग्रेज़ी जवाबों के लिए; अन्य भाषाओं में सिस्टम आवाज़ ही रहती है।</string>
+    <string name="settings_voice_unsupported">प्राकृतिक आवाज़ों के लिए 64-बिट फ़ोन चाहिए।</string>
+    <string name="settings_voice_ready">%1$s डाउनलोड हो गई है और इस डिवाइस पर जवाब पढ़ती है।</string>
+    <string name="settings_voice_play_sample">नमूना चलाएँ</string>
+    <string name="settings_voice_stop_sample">रोकें</string>
+    <string name="settings_voice_sample_failed">नमूना नहीं चल सका; सिस्टम आवाज़ का उपयोग हो रहा है।</string>
+    <string name="settings_vocabulary_title">शब्दावली</string>
+    <string name="settings_vocabulary_subtitle">आपके साइन-इन किए गए खाते के शब्द। हर डिक्टेशन उन्हें पहचानकर्ता को भेजता है, और ऑन-डिवाइस परिणाम गलत सुने गए रूपों को सही शब्द से बदल देता है।</string>
+    <string name="settings_vocabulary_empty">अभी कोई शब्दावली नहीं। अपने शब्द लाने के लिए साइन इन करें।</string>
+    <string name="settings_vocabulary_count">इस खाते में %1$d शब्द</string>
+    <string name="settings_vocabulary_sample_heard">गलत सुना गया रूप</string>
+    <string name="settings_vocabulary_sample_result">पहचाना\\ गया</string>
+    <string name="settings_vocabulary_no_aliases">इस खाते में अभी कोई गलत सुना गया रूप नहीं है।</string>
 </resources>

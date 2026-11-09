@@ -61,6 +61,13 @@ git submodule update --init android/heliboard
 ./gradlew -p android :app:assembleOssDebug
 ```
 
+The reference APK also fetches the sherpa-onnx runtime for its optional on-device
+neural voices (assistant replies spoken offline once a voice is downloaded in
+Settings): `:app:assembleOssDebug` downloads the pinned
+`sherpa-onnx-static-link-onnxruntime` AAR from the sherpa-onnx GitHub release into
+`app/build/`, checks its SHA-256 and keeps only the arm64-v8a and x86_64 libraries.
+Nothing of it is committed, and the framework modules do not depend on it.
+
 `settings.gradle.kts` includes `:heliboard` and `:app` only when the submodule
 is present, so a clone without it still configures and builds every
 Apache-2.0 module. `jitpack.yml` at the repository root builds exactly the

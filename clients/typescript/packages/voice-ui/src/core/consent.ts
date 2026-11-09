@@ -89,7 +89,7 @@ function normalizeRecord(raw: unknown): VoiceConsentRecord | null {
     decision,
     scopes: decision === "declined" ? [] : scopes,
     consent_version: typeof version === "string" ? version : VOICE_CONSENT_DEFAULT_VERSION,
-    decided_at: typeof decidedAt === "string" ? decidedAt : ""
+    decided_at: typeof decidedAt === "string" ? decidedAt : "",
   };
 }
 
@@ -164,14 +164,14 @@ export function createVoiceConsentStore(options: VoiceConsentStoreOptions = {}):
               ...new Set<VoiceConsentScope>([
                 ...(previous?.decision === "granted" ? previous.scopes : []),
                 "one_shot",
-                ...(scope === "continuous" ? (["continuous"] as const) : [])
-              ])
+                ...(scope === "continuous" ? (["continuous"] as const) : []),
+              ]),
             ];
       const record: VoiceConsentRecord = {
         decision,
         scopes,
         consent_version: consentVersion,
-        decided_at: new Date().toISOString()
+        decided_at: new Date().toISOString(),
       };
       persist(record);
       options.onConsentChange?.(record);
@@ -187,6 +187,6 @@ export function createVoiceConsentStore(options: VoiceConsentStoreOptions = {}):
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
-    }
+    },
   };
 }

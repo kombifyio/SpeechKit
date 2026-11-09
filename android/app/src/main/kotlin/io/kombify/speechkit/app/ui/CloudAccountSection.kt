@@ -46,7 +46,7 @@ private sealed interface AccountState {
     data class Loaded(val account: CloudAccount) : AccountState
     data object NotProvisioned : AccountState
     data object SignedOut : AccountState
-    data object Unavailable : AccountState
+    data class Unavailable(val supportCode: String?) : AccountState
 }
 
 /**
@@ -81,10 +81,11 @@ internal fun CloudAccountSection(
                     recoverCloudSession(
                         context,
                         provisioner,
-                        ConnectionProfile.Server(session.baseUrl, rejected),
+                        session.copy(bearerToken = rejected),
                     )
                 }?.bearerToken
             },
+            cloudSessionGeneration = session.cloudSessionGeneration,
             // Signed out means no session is left, not that one renewal failed.
             sessionGone = {
                 StoredServerProfile.loadCloud(context)?.bearerToken.isNullOrBlank()
@@ -94,7 +95,7 @@ internal fun CloudAccountSection(
             is CloudAccountResult.Loaded -> AccountState.Loaded(result.account)
             CloudAccountResult.NotProvisioned -> AccountState.NotProvisioned
             CloudAccountResult.SignedOut -> AccountState.SignedOut
-            is CloudAccountResult.Unavailable -> AccountState.Unavailable
+            is CloudAccountResult.Unavailable -> AccountState.Unavailable(result.supportCode)
         }
         // A sign-in that could not be renewed may have been cleared underneath
         // this screen: let Settings re-read it.
@@ -153,11 +154,20 @@ internal fun CloudAccountSection(
                 color = MaterialTheme.colorScheme.error,
             )
 
-            AccountState.Unavailable -> Text(
-                stringResource(R.string.settings_connection_account_unavailable),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
+            is AccountState.Unavailable -> {
+                Text(
+                    stringResource(R.string.settings_connection_account_unavailable),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                shown.supportCode?.let { code ->
+                    Text(
+                        stringResource(R.string.settings_connection_account_support_code, code),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
         TextButton(
             onClick = { reload += 1 },
@@ -179,12 +189,21 @@ private fun AccountDetails(
             style = MaterialTheme.typography.bodySmall,
         )
     }
-    val planLabel = account.plan?.let(::planDisplayName)
-        ?: stringResource(R.string.settings_connection_account_plan_free)
-    Text(
-        stringResource(R.string.settings_connection_account_plan, planLabel),
-        style = MaterialTheme.typography.bodySmall,
-    )
+    // Without the budgets answer the plan name is unknown, not "Free": show the features only.
+    if (account.planKnown) {
+        val planLabel = account.plan?.let(::planDisplayName)
+            ?: stringResource(R.string.settings_connection_account_plan_free)
+        Text(
+            stringResource(R.string.settings_connection_account_plan, planLabel),
+            style = MaterialTheme.typography.bodySmall,
+        )
+    } else {
+        Text(
+            stringResource(R.string.settings_connection_account_plan_unknown),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
     account.voiceMinutes?.let { minutes ->
         Text(minutesLabel(minutes), style = MaterialTheme.typography.bodySmall)
     }
@@ -196,7 +215,7 @@ private fun AccountDetails(
             Text(stringResource(R.string.settings_connection_account_see_plans))
         }
     }
-    if (account.plan != null) {
+    if (account.plan != null || !account.planKnown) {
         TextButton(onClick = onBilling) {
             Text(stringResource(R.string.settings_connection_account_billing))
         }

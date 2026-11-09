@@ -2,7 +2,7 @@ import type {
   SpeechKitVoiceMode,
   SpeechKitVoiceSessionState,
   SpeechKitVoiceSessionStatus,
-  SpeechKitVoiceSurfaceContract
+  SpeechKitVoiceSurfaceContract,
 } from "./voice-surface.js";
 
 /**
@@ -36,7 +36,7 @@ export interface VoiceUiController {
 export const VOICE_ACTIVE_STATUSES: ReadonlySet<SpeechKitVoiceSessionStatus> = new Set([
   "capturing",
   "processing",
-  "speaking"
+  "speaking",
 ]);
 
 export function isVoiceSessionActive(status: SpeechKitVoiceSessionStatus): boolean {

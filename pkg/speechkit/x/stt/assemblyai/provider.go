@@ -78,6 +78,21 @@ type Provider struct {
 // log returns the provider's logger, or the default logger when none is set.
 func (p *Provider) log() *slog.Logger { return logutil.Resolve(p.Logger) }
 
+func (p *Provider) forRequest(ctx context.Context) (*Provider, error) {
+	if err := netsec.EUVoiceProfileError(ctx); err != nil {
+		return nil, err
+	}
+	if !netsec.DataProfileEU(ctx) {
+		return p, nil
+	}
+	regional := *p
+	regional.BaseURL = "https://api.eu.assemblyai.com"
+	regional.SyncBaseURL = "https://sync.eu.assemblyai.com"
+	regional.StreamingBaseURL = "wss://streaming.eu.assemblyai.com"
+	regional.client = netsec.EUVoiceClient(p.client)
+	return &regional, nil
+}
+
 // StreamingLLM is the LLM Gateway payload attached to a realtime
 // dictation WebSocket. Model IDs are LLM Gateway catalog names, not STT names.
 type StreamingLLM struct {
@@ -140,16 +155,23 @@ func New(opts Options) *Provider {
 // (diarization, speaker identification, PII redaction, the medical domain)
 // or exceed the sync limits take the upload, create and poll flow, as does
 // any clip whose sync attempt failed (that error stays in the returned error
-// chain). The language defaults to German unless resolved otherwise, and the
+// chain). The language is multilingual unless the user pinned one, and the
 // result Model lists the model fallback chain sent to AssemblyAI.
 func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.TranscribeOpts) (*stt.Result, error) {
+	p, err := p.forRequest(ctx)
+	if err != nil {
+		return nil, err
+	}
 	start := time.Now()
 	wav := stt.EnsureTranscriptionWAV(audio)
 	resolved := stt.ResolveTranscribeOptions("assemblyai", assemblyAIProfileID(opts.Model), opts, provideropts.Values{
-		provideropts.OptionLanguage:       "de",
+		provideropts.OptionLanguage:       stt.LanguageMulti,
 		provideropts.OptionVocabularyBias: true,
 	}, nil)
 	speakerOpts := resolved.Speaker
+	if netsec.DataProfileEU(ctx) && speakerOpts.WantsIdentification() {
+		return nil, fmt.Errorf("data_profile_processor_ineligible: AssemblyAI speaker identification is not qualified for EU")
+	}
 
 	// Sync-first: short plain dictation clips go through the synchronous
 	// Universal-3.5 Pro endpoint (single request, no upload+poll round
@@ -179,7 +201,7 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 		return nil, joinSyncErr(err, syncErr)
 	}
 
-	lang := stt.FirstNonEmptyTrimmed(transcript.LanguageCode, resolved.Language, "de")
+	lang := stt.FirstNonEmptyTrimmed(transcript.LanguageCode, resolved.Language, stt.LanguageMulti)
 	model := strings.Join(p.modelsForRequest(opts.Model), ",")
 	result := &stt.Result{
 		Text:       strings.TrimSpace(transcript.Text),
@@ -212,6 +234,10 @@ func (p *Provider) Name() string {
 // Health issues an authenticated GET on the transcript collection; a
 // transport failure or non-200 status is returned as the error.
 func (p *Provider) Health(ctx context.Context) error {
+	p, err := p.forRequest(ctx)
+	if err != nil {
+		return err
+	}
 	endpoint, err := netsec.BuildEndpoint(stt.FirstNonEmptyTrimmed(p.BaseURL, assemblyAIBaseURL), "v2/transcript", p.Validation)
 	if err != nil {
 		return fmt.Errorf("assemblyai endpoint: %w", err)

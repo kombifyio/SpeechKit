@@ -57,5 +57,6 @@
   "sk.voice.dialog.label": "语音对话",
   "sk.voice.dialog.end": "结束对话",
   "sk.voice.dialog.hide": "隐藏对话",
-  "sk.voice.transcript.label": "实时转写"
+  "sk.voice.transcript.label": "实时转写",
+  "sk.voice.pill.elapsed": "录音时长"
 }

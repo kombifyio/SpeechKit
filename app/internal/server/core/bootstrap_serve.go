@@ -113,6 +113,14 @@ func serveServer(ctx context.Context, cfg *config.Config, app *App) (returnErr e
 	}
 	defer announcer.Shutdown()
 
+	// Account link ([server.cloud_link], default off): checks in only while
+	// a link the operator started exists; otherwise it reads a local file.
+	if app.CloudLink != nil {
+		linkCtx, stopLink := context.WithCancel(ctx)
+		defer stopLink()
+		go app.CloudLink.Run(linkCtx)
+	}
+
 	serveErr := make(chan error, 1)
 	go func() {
 		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -285,9 +293,6 @@ func serverMiddlewareChain(ctx context.Context, cfg *config.Config, app *App) (f
 			RequireAuthenticatedMode: !security.IsLoopbackListenAddr(cfg.Server.ListenAddr),
 			TrustedProxyCIDRs:        cfg.Server.TrustedProxyCIDRs,
 			OIDCVerifier:             oidcVerifier,
-			// Voice-agent tool bridge: the header carrying the per-session
-			// bridge credential (accepted only on edge-HMAC identities).
-			OboSubjectTokenHeader: cfg.Server.VoiceAgent.ToolBridge.CredentialHeader,
 		}),
 		middleware.RateLimit(middleware.RateLimitOptions{ //nolint:contextcheck // RateLimit receives the server lifetime context via options.Context; contextcheck does not model contained context fields.
 			RequestsPerSecond: cfg.Server.RateLimitRPS,

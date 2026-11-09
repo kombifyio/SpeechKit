@@ -1,5 +1,6 @@
 package io.kombify.speechkit.stt.parakeet
 
+import io.kombify.speechkit.log.VoiceLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -100,7 +101,10 @@ class ParakeetRecognizerPool(
         val recognizer = scope.async {
             runCatching { load(files) }
                 .onSuccess { synchronized(failed) { failed.remove(files.dir) } }
-                .onFailure { synchronized(failed) { failed.add(files.dir) } }
+                .onFailure {
+                    synchronized(failed) { failed.add(files.dir) }
+                    VoiceLog.w(VoiceLog.DICTATION, "offline model load failed dir=${files.dir.name}", it)
+                }
                 .getOrThrow()
         }
         return Entry(files.dir, recognizer).also { current = it }

@@ -83,7 +83,7 @@ export function microphoneReasonFromError(error: unknown): MicrophoneReasonCode 
  * round-trip whose stream is released immediately.
  */
 export async function checkMicrophonePermission(
-  options: CheckMicrophonePermissionOptions = {}
+  options: CheckMicrophonePermissionOptions = {},
 ): Promise<MicrophonePermissionState> {
   if (!captureSupported()) return "unsupported";
 
@@ -138,11 +138,17 @@ export type MicrophoneRequestResult =
  * stream and releases it with {@link releaseMediaStream}.
  */
 export async function requestMicrophone(
-  constraints: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true, channelCount: 1 }
+  constraints: MediaTrackConstraints = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    channelCount: 1,
+  },
 ): Promise<MicrophoneRequestResult> {
   if (!captureSupported()) return { ok: false, reason: "microphone_unsupported" };
   try {
-    const stream = await (mediaDevices() as Required<MediaDevicesLike>).getUserMedia({ audio: constraints });
+    const stream = await (mediaDevices() as Required<MediaDevicesLike>).getUserMedia({
+      audio: constraints,
+    });
     return { ok: true, stream };
   } catch (error) {
     return { ok: false, reason: microphoneReasonFromError(error), error };

@@ -141,6 +141,33 @@ Behavior:
 - Motion lives inside the control only; reduced motion keeps static bars,
   the solid dot and the visible label.
 
+## Voice pill (`speechkit-voice-pill`)
+
+The in-Composer pill shown while a voice session runs (AI Composer: the pill
+sits inside the Composer face; nothing opens above it). Hosts place it, wire
+its state and pass message overrides; they never rebuild the dot, bars,
+elapsed time or phase label. Normative block: `tokens.json` → `pill`; replay:
+`spec/fixtures/voice-ui-pill.v1.json`.
+
+- Content: the recording indicator (§Recording indicator) plus one text slot.
+  `mode="dictation"` (default) shows the elapsed recording time `m:ss` while
+  listening; `mode="voice_agent"` shows the phase label instead.
+- Phases: `requesting | listening | processing | speaking | error`. Without a
+  host `phase` the pill derives it from the session status through the
+  indicator status mapping; `idle`/`cancelled` hide the pill. Labels:
+  `sk.voice.state.requesting` (Voice Agent: `sk.voice.agent.connecting`),
+  `sk.voice.state.capturing`, `sk.voice.state.processing`,
+  `sk.voice.state.speaking`, `sk.voice.state.denied`.
+- Elapsed time counts from `started-at` (epoch ms) or the first listening
+  render of the activation, once per second, and resets when the pill hides.
+- Levels: controller `subscribeLevel`, the `level` attribute or `setLevel()`.
+- Accessibility: a polite status region announces only the phase label, once
+  per change; the time is a `timer` labelled `sk.voice.pill.elapsed` and is
+  never announced on its own; `aria-busy` while requesting or processing.
+- Reduced motion (`prefers-reduced-motion` or the `static` attribute): the
+  indicator's reduced-motion rules and no colour transition; the time keeps
+  counting because it is text, not motion.
+
 ## Notices
 
 - Errors render as one localized line chosen by reason code
@@ -176,6 +203,8 @@ Behavior:
 
 - Tokens: `src/tokens/tokens.json` (SSOT; version `speechkit.voice_ui.v1`).
 - Strings: `locales/*.json` (byte-equal to the TS catalogs).
-- Fixtures: `spec/fixtures/voice-ui-turns.v1.json` (turn + status replay) and
+- Fixtures: `spec/fixtures/voice-ui-turns.v1.json` (turn + status replay),
+  `spec/fixtures/voice-ui-pill.v1.json` (pill phases, elapsed time, reduced
+  motion) and
   `spec/fixtures/speechkit-voice-surface.v1.json` (canonical contract
   fixture, drift-gated against the private canonical copy).

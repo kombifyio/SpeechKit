@@ -142,7 +142,9 @@ fun VoiceAgentTestScreen(
                     return@launch
                 }
                 status = resources.getString(R.string.dev_status_connecting)
-                val session = VoiceAgentController(profile)
+                // No renewal source: the session keeps its first bearer, so no
+                // renewal bearer is ever compared and the namespace is unused.
+                val session = VoiceAgentController(profile, renewalClaimNamespace = "")
                 live = session
                 controller = session
                 val events = session.start(VoiceAgentStartFrame())

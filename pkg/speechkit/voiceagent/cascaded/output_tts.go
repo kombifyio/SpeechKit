@@ -39,3 +39,19 @@ func (t pcmOutputTTS) Synthesize(ctx context.Context, text string, opts tts.Synt
 	converted.SampleRate = OutputSampleRate
 	return &converted, nil
 }
+
+// pcmStreamTTS is implemented by the live output adapter: it streams speech in
+// the output format itself, so the provider can play a sentence while it is
+// still being synthesized. streamed=false means the request is not streamable
+// and nothing was emitted; the caller synthesizes it whole.
+type pcmStreamTTS interface {
+	streamPCM(ctx context.Context, text string, opts tts.SynthesizeOpts, emit func(pcm []byte) error) (streamed bool, err error)
+}
+
+func (t pcmOutputTTS) streamPCM(ctx context.Context, text string, opts tts.SynthesizeOpts, emit func(pcm []byte) error) (bool, error) {
+	streamer, ok := t.inner.(tts.PCMStreamer)
+	if !ok {
+		return false, nil
+	}
+	return streamer.SynthesizePCMStream(ctx, text, opts, OutputSampleRate, emit)
+}

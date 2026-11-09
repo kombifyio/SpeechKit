@@ -29,6 +29,7 @@ type (
 	SessionManager = wssession.SessionManager
 	SessionStats   = wssession.SessionStats
 	ManagedSession = wssession.ManagedSession
+	VoicePrefs     = wssession.VoicePrefs
 	State          = wssession.State
 )
 

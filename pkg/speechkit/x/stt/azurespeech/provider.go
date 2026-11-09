@@ -187,7 +187,7 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 		return nil, err
 	}
 	resolved := stt.ResolveTranscribeOptions(providerName, "", opts, provideropts.Values{
-		provideropts.OptionLanguage: "de",
+		provideropts.OptionLanguage: stt.LanguageMulti,
 	}, nil)
 
 	model := stt.FirstNonEmptyTrimmed(resolved.Model, p.Model, DefaultModel)

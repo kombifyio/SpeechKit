@@ -21,6 +21,36 @@ type Transcriber interface {
 	Transcribe(samples []float32) (Result, error)
 }
 
+// TermTranscriber is a Transcriber that boosts dictionary terms while it
+// decodes (the Phonon engine). The server hands it the request's "keyterm"
+// values; an engine without it ignores them.
+type TermTranscriber interface {
+	TranscribeTerms(samples []float32, terms []string) (Result, error)
+}
+
+// maxKeyterms and maxKeytermBytes bound the dictionary one request carries.
+const (
+	maxKeyterms     = 200
+	maxKeytermBytes = 100
+)
+
+// Keyterms returns the request's dictionary terms: trimmed, without blanks or
+// overlong ones, at most maxKeyterms.
+func Keyterms(values []string) []string {
+	out := make([]string, 0, min(len(values), maxKeyterms))
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" || len(v) > maxKeytermBytes {
+			continue
+		}
+		out = append(out, v)
+		if len(out) == maxKeyterms {
+			break
+		}
+	}
+	return out
+}
+
 // ServerOptions configures [NewHandler].
 type ServerOptions struct {
 	// InferencePath is the transcription route, as whisper-server's
@@ -216,14 +246,20 @@ func (h *handler) transcribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	start := time.Now()
-	result, err := h.t.Transcribe(samples)
+	terms := Keyterms(r.MultipartForm.Value["keyterm"])
+	var result Result
+	if tt, ok := h.t.(TermTranscriber); ok && len(terms) > 0 {
+		result, err = tt.TranscribeTerms(samples, terms)
+	} else {
+		result, err = h.t.Transcribe(samples)
+	}
 	if err != nil {
 		h.log().Error("transcription failed", "model", h.modelName(), "error", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.log().Info("transcribed", "model", h.modelName(), "audio_seconds", result.Duration,
-		"segments", len(result.Segments), "decode_ms", time.Since(start).Milliseconds())
+		"segments", len(result.Segments), "keyterms", len(terms), "decode_ms", time.Since(start).Milliseconds())
 
 	switch format {
 	case "text":

@@ -110,6 +110,7 @@ restore_delay_ms = 300      # Pause between paste and clipboard restore.
 
 [speech]
 language = "multi"       # Canonical cross-provider speech language; "multi" (default) transcribes every language spoken. general.language remains a compatibility alias.
+language_source = "default"  # "user" once you choose a language in Settings or with the overlay switch; only a "default" language is migrated by updates.
 detect_language = false  # When supported, omit/fill provider-native auto language detection.
 punctuation = true
 smart_format = true
@@ -475,7 +476,7 @@ port = 8081
 # voice = "af_bella"             # server-specific voice id
 
 [tts.sherpa]
-# Bundled on-device voices (German Thorsten, English Lessac) spoken by
+# Bundled on-device voices (German Ramona, English LJSpeech) spoken by
 # sherpa-runtime\speechkit-tts-sherpa.exe. This is the fresh-install default:
 # both voices ship with the installer, so no cloud key and no download are
 # needed. Leave voices_dir empty to use models\tts next to the app.
@@ -741,6 +742,15 @@ vad_silence_duration_ms = 700
 # # Cloud standing grant. Only turn_on/turn_off for one light.* entity is
 # # accepted, and the RFC3339 window must be positive and at most 31 days.
 # [[server.device_agent.devices.local_rules]]
+# rule_id = "kitchen-light-on"
+# trigger_text = "turn on the kitchen light"
+# locale = "en-US"
+# action = "turn_on"
+# entity_id = "light.kitchen"
+# not_before = "2026-07-19T00:00:00Z" # Replace with a current approved window.
+# expires_at = "2026-08-18T00:00:00Z"
+#
+# [[server.device_agent.devices.local_rules]]
 # rule_id = "kitchen-light-off"
 # trigger_text = "turn off the kitchen light"
 # locale = "en-US"
@@ -768,9 +778,17 @@ vad_silence_duration_ms = 700
 # device_id = "speaker-kitchen-001"
 # pairing_id = "pairing-kitchen-2026-07"
 # room_id = "kitchen"
+# locale = "en-US"
+# # Closed exact mapping set for ONE light: 1..8 entries covering turn_on and
+# # turn_off. Each entry must name an unexpired G0 local rule of the device
+# # above with the identical trigger_text and locale. Duplicates, ambiguous
+# # transcripts, foreign rules or a second light fail closed at startup.
+# [[server.device_agent.box_media.mappings]]
+# transcript = "turn on the kitchen light"
+# command_id = "kitchen-light-on"
+# [[server.device_agent.box_media.mappings]]
 # transcript = "turn off the kitchen light"
 # command_id = "kitchen-light-off"
-# locale = "en-US"
 
 # [model_selection.tts]
 # # Voice-Output model selection — pins which TTS provider Assist and

@@ -17,14 +17,14 @@ export const SPEECHKIT_CAPTURE_POLICIES = [
   "explicit_record",
   "hotkey_local",
   "wakeword_local",
-  "device_agent"
+  "device_agent",
 ] as const;
 export const SPEECHKIT_TRANSPORTS = [
   "local_http",
   "gateway_http",
   "voiceagent_ws_ticket",
   "dictation_stream_ws_ticket",
-  "livekit_optional"
+  "livekit_optional",
 ] as const;
 export const SPEECHKIT_VOICE_EVENT_TYPES = [
   "voice.capture_started",
@@ -37,7 +37,7 @@ export const SPEECHKIT_VOICE_EVENT_TYPES = [
   "voice.tts_finished",
   "voice.cancelled",
   "voice.barge_in",
-  "voice.denied"
+  "voice.denied",
 ] as const;
 
 export type SpeechKitVoiceMode = (typeof SPEECHKIT_VOICE_MODES)[number];
@@ -171,7 +171,7 @@ export function isSpeechKitVoiceMode(value: string): value is SpeechKitVoiceMode
 }
 
 export function createSpeechKitVoiceSessionState(
-  contract: Pick<SpeechKitVoiceSurfaceContract, "surface" | "mode" | "session">
+  contract: Pick<SpeechKitVoiceSurfaceContract, "surface" | "mode" | "session">,
 ): SpeechKitVoiceSessionState {
   return {
     surface: contract.surface,
@@ -183,13 +183,13 @@ export function createSpeechKitVoiceSessionState(
     transcript_final: "",
     spoken_response: "",
     barge_in: false,
-    events: []
+    events: [],
   };
 }
 
 export function reduceSpeechKitVoiceEvent(
   state: SpeechKitVoiceSessionState,
-  event: SpeechKitVoiceEvent
+  event: SpeechKitVoiceEvent,
 ): SpeechKitVoiceSessionState {
   const next: SpeechKitVoiceSessionState = {
     ...state,
@@ -198,32 +198,46 @@ export function reduceSpeechKitVoiceEvent(
     session_id: event.session_id ?? state.session_id,
     ai_session_id: event.ai_session_id ?? state.ai_session_id,
     last_event_type: event.type,
-    events: [...state.events, event]
+    events: [...state.events, event],
   };
 
   switch (event.type) {
     case "voice.capture_started":
-      return { ...next, status: "capturing", reason_code: undefined, denial: undefined, barge_in: false };
+      return {
+        ...next,
+        status: "capturing",
+        reason_code: undefined,
+        denial: undefined,
+        barge_in: false,
+      };
     case "voice.capture_stopped":
       return { ...next, status: "processing" };
     case "voice.transcript_draft":
-      return { ...next, status: "capturing", transcript_draft: event.text ?? state.transcript_draft };
+      return {
+        ...next,
+        status: "capturing",
+        transcript_draft: event.text ?? state.transcript_draft,
+      };
     case "voice.transcript_final":
       return {
         ...next,
         status: "processing",
         transcript_draft: "",
-        transcript_final: event.text ?? state.transcript_final
+        transcript_final: event.text ?? state.transcript_final,
       };
     case "voice.assist_result":
     case "voice.agent_turn":
       return {
         ...next,
         status: event.speak_text || event.output_text ? "speaking" : "processing",
-        spoken_response: event.speak_text ?? event.output_text ?? state.spoken_response
+        spoken_response: event.speak_text ?? event.output_text ?? state.spoken_response,
       };
     case "voice.tts_started":
-      return { ...next, status: "speaking", spoken_response: event.speak_text ?? state.spoken_response };
+      return {
+        ...next,
+        status: "speaking",
+        spoken_response: event.speak_text ?? state.spoken_response,
+      };
     case "voice.tts_finished":
       return { ...next, status: "idle" };
     case "voice.cancelled":
@@ -235,7 +249,7 @@ export function reduceSpeechKitVoiceEvent(
         ...next,
         status: "denied",
         denial: event.error,
-        reason_code: event.error?.reason_code ?? event.reason_code
+        reason_code: event.error?.reason_code ?? event.reason_code,
       };
   }
 }

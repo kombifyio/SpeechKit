@@ -26,7 +26,7 @@ function renderTokensCss(doc) {
   const light = doc.themes.light;
   const dark = doc.themes.dark;
   const reducedMotion = Object.fromEntries(
-    Object.entries(doc["reduced-motion-overrides"] ?? {}).filter(([name]) => !name.startsWith("_"))
+    Object.entries(doc["reduced-motion-overrides"] ?? {}).filter(([name]) => !name.startsWith("_")),
   );
   const reducedMotionBlock =
     Object.keys(reducedMotion).length > 0

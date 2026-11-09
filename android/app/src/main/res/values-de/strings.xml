@@ -106,6 +106,8 @@
     <string name="settings_connection_account_not_provisioned">Dein kombify-Konto ist noch nicht eingerichtet. Schließe die Einrichtung ab und aktualisiere dann.</string>
     <string name="settings_connection_account_open_dashboard">kombify öffnen</string>
     <string name="settings_connection_account_unavailable">Dein Tarif konnte nicht geladen werden. Prüfe deine Verbindung und aktualisiere.</string>
+    <string name="settings_connection_account_support_code">Support-Code: %1$s</string>
+    <string name="settings_connection_account_plan_unknown">Deine Tarifdetails sind gerade nicht verfügbar. Aktualisiere, um es erneut zu versuchen.</string>
     <string name="settings_connection_self_host_show">Eigener SpeechKit-Server</string>
     <string name="settings_connection_self_host_hide">Eigenen Server ausblenden</string>
     <string name="onboarding_welcome">Willkommen bei SpeechKit</string>
@@ -195,10 +197,26 @@
     <string name="settings_on_device_pause">Download pausieren</string>
     <string name="settings_on_device_ready_active">%1$s ist geladen und diktiert auf diesem Gerät.</string>
     <string name="settings_on_device_ready_inactive">%1$s ist geladen. Wähle oben das Offline-Modell aus, um damit zu diktieren.</string>
+    <string name="settings_on_device_cloud_active">kombify Cloud ist aktiv, deshalb diktierst du über die Cloud. %1$s übernimmt, wenn die Cloud nicht erreichbar ist.</string>
+    <string name="settings_on_device_use_device">Stattdessen auf diesem Gerät diktieren</string>
     <string name="settings_on_device_delete">%1$s löschen (%2$d MB)</string>
     <string name="settings_on_device_failed">Download fehlgeschlagen: %1$s</string>
     <string name="settings_on_device_needs_download">Bis %1$s geladen ist, diktiert weiter die System-Spracherkennung.</string>
     <string name="settings_on_device_metered">Du bist in einem getakteten Netz; der Download ist %1$d MB groß.</string>
     <string name="settings_on_device_download">%1$s laden (%2$d MB)</string>
     <string name="settings_on_device_discard_partial">Teilweisen Download entfernen (%1$d MB)</string>
+    <string name="settings_voice_title">Offline-Stimme</string>
+    <string name="settings_voice_subtitle">Antworten des Assistenten spricht die Systemstimme. Lade eine natürliche Stimme herunter, dann liest sie die Antworten stattdessen auf diesem Telefon vor, ohne Netzwerk. Für deutsche und englische Antworten; andere Sprachen behalten die Systemstimme.</string>
+    <string name="settings_voice_unsupported">Natürliche Stimmen brauchen ein 64-Bit-Telefon.</string>
+    <string name="settings_voice_ready">%1$s ist heruntergeladen und spricht Antworten auf diesem Gerät.</string>
+    <string name="settings_voice_play_sample">Hörprobe abspielen</string>
+    <string name="settings_voice_stop_sample">Stopp</string>
+    <string name="settings_voice_sample_failed">Die Hörprobe ließ sich nicht abspielen; es wird die Systemstimme verwendet.</string>
+    <string name="settings_vocabulary_title">Vokabular</string>
+    <string name="settings_vocabulary_subtitle">Die Begriffe deines angemeldeten Kontos. Jede Diktatur sendet sie an die Erkennung, und ein On-Device-Ergebnis ersetzt falsch erkannte Varianten durch den richtigen Begriff.</string>
+    <string name="settings_vocabulary_empty">Noch kein Vokabular. Melde dich an, um deine Begriffe zu holen.</string>
+    <string name="settings_vocabulary_count">%1$d Begriffe in diesem Konto</string>
+    <string name="settings_vocabulary_sample_heard">Falsch gehoerte Variante</string>
+    <string name="settings_vocabulary_sample_result">Erkannt\\ als</string>
+    <string name="settings_vocabulary_no_aliases">Dieses Konto hat noch keine falsch gehoerten Varianten.</string>
 </resources>

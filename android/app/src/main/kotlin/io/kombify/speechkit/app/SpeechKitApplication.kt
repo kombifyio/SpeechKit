@@ -11,15 +11,18 @@ import io.kombify.speechkit.app.companion.CoinstallTurnClient
 import io.kombify.speechkit.app.companion.CompanionProvisioner
 import io.kombify.speechkit.app.keyboard.InlineVoicePanel
 import io.kombify.speechkit.app.keyboard.SpeechKitStripLayout
+import io.kombify.speechkit.app.voice.NeuralVoiceEngine
 import io.kombify.speechkit.domain.ConnectionProfileSource
 import dagger.hilt.android.HiltAndroidApp
 import io.kombify.speechkit.BuildConfig
 import io.kombify.speechkit.log.VoiceLog
+import io.kombify.speechkit.net.AccountVocabulary
 import io.kombify.speechkit.net.CloudBearer
 import io.kombify.speechkit.net.CloudRefresh
 import io.kombify.speechkit.net.CloudTokenLifecycle
 import io.kombify.speechkit.net.KombifyCloudAuth
 import io.kombify.speechkit.net.StoredCloudSession
+import io.kombify.speechkit.net.VoiceRenewalProfileSource
 import io.kombify.speechkit.stt.parakeet.ParakeetOnDevice
 import timber.log.Timber
 
@@ -36,6 +39,7 @@ class SpeechKitApplication : App() {
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         ParakeetOnDevice.onTrimMemory(level)
+        NeuralVoiceEngine.get(this).onTrimMemory(level)
     }
 
     override fun onCreate() {
@@ -62,6 +66,10 @@ class SpeechKitApplication : App() {
         }
         VoiceLog.i(VoiceLog.NET, "app start debug=${BuildConfig.DEBUG}")
         installCloudSessionLifecycle()
+        // The signed-in account's vocabulary: last synced pack first, so an
+        // offline start keeps it, then a fresh one.
+        AccountVocabulary.restore(this)
+        AccountVocabulary.syncInBackground(this)
         SpeechKitStripLayout.apply(this)
         // Answer the keyboard's voice key in place. Registered once, for the
         // process lifetime: the panel itself is built per activation and takes
@@ -74,6 +82,7 @@ class SpeechKitApplication : App() {
             profileSource = entry.profileSource(),
             companion = entry.companionProvisioner(),
             companionTurns = entry.companionTurns(),
+            voiceRenewalProfiles = entry.voiceRenewalProfiles(),
         )
     }
 
@@ -112,5 +121,6 @@ class SpeechKitApplication : App() {
         fun profileSource(): ConnectionProfileSource
         fun companionProvisioner(): CompanionProvisioner
         fun companionTurns(): CoinstallTurnClient
+        fun voiceRenewalProfiles(): VoiceRenewalProfileSource
     }
 }

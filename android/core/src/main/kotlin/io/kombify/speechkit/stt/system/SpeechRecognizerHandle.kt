@@ -14,6 +14,11 @@ data class RecognitionRequest(
      * The API 31+ on-device recognizer is offline by construction.
      */
     val preferOffline: Boolean = true,
+    /**
+     * Terms the recognizer should favour (`RecognizerIntent.EXTRA_BIASING_STRINGS`,
+     * API 33+; services that do not honour it ignore it).
+     */
+    val biasingStrings: List<String> = emptyList(),
 )
 
 /**

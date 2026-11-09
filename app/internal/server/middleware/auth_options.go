@@ -98,6 +98,11 @@ type AuthOptions struct {
 	// "primary") plus the "<edge secret env>_NEXT" rotation slot (key id
 	// from EDGE_AUTH_KEY_ID_NEXT, default "next").
 	EdgeKeysProvider func() []EdgeKey
+	// DataProfileMode is off (default) or enforce on hosted content routes.
+	// A carried profile is always verified, even before activation.
+	DataProfileMode string
+	// ProfileKeysProvider uses only the separate EDGE_PROFILE_SECRET keys.
+	ProfileKeysProvider func() []EdgeKey
 }
 
 type PublicRoute struct {

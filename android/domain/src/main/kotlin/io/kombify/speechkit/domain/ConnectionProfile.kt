@@ -29,6 +29,8 @@ sealed interface ConnectionProfile {
     data class Server(
         val baseUrl: String,
         val bearerToken: String? = null,
+        /** Persistent identity of an independently signed-in Cloud session. */
+        val cloudSessionGeneration: String? = null,
     ) : ConnectionProfile {
         /** Base URL without trailing slashes, ready for path concatenation. */
         val normalizedBaseUrl: String get() = baseUrl.trim().trimEnd('/')

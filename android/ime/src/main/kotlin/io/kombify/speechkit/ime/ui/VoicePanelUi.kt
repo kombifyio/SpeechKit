@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.kombify.speechkit.ime.R
+import io.kombify.speechkit.stt.isMultilanguage
 import io.kombify.speechkit.ime.VoicePanelController
 import io.kombify.speechkit.ime.VoicePanelState
 import io.kombify.speechkit.net.KombifyLinks
@@ -108,7 +109,12 @@ private fun HeaderRow(
     ) {
         AssistChip(
             onClick = onLanguageToggle,
-            label = { Text(language.uppercase()) },
+            label = {
+                Text(
+                    if (isMultilanguage(language)) stringResource(R.string.speechkit_ime_language_multi)
+                    else language.uppercase(),
+                )
+            },
         )
         Spacer(Modifier.weight(1f))
         if (state is VoicePanelState.Listening) {
@@ -288,6 +294,12 @@ private fun errorLabel(code: String): String = when (code) {
 
     VoicePanelController.ERROR_PLAN_BUDGET ->
         stringResource(NetR.string.plan_denial_budget_title)
+
+    VoicePanelController.ERROR_LIMIT -> stringResource(R.string.speechkit_ime_error_limit)
+    VoicePanelController.ERROR_OUTAGE -> stringResource(R.string.speechkit_ime_error_outage)
+    VoicePanelController.ERROR_RIGHT -> stringResource(R.string.speechkit_ime_error_right)
+    VoicePanelController.ERROR_CONSENT -> stringResource(R.string.speechkit_ime_error_consent)
+    VoicePanelController.ERROR_EXPIRED -> stringResource(R.string.speechkit_ime_error_expired)
 
     else -> stringResource(R.string.speechkit_ime_error_generic)
 }

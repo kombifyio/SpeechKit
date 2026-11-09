@@ -16,9 +16,15 @@
     <string name="speechkit_ime_action_retry">फिर से कोशिश करें</string>
     <string name="speechkit_ime_switch_keyboard">कीबोर्ड पर वापस जाएँ</string>
     <string name="speechkit_ime_language_chip">डिक्टेशन भाषा</string>
+    <string name="speechkit_ime_language_multi">बहुभाषी</string>
     <string name="speechkit_ime_error_generic">डिक्टेशन विफल रहा</string>
     <string name="speechkit_ime_error_not_configured">कोई सर्वर कॉन्फ़िगर नहीं है: SpeechKit ऐप खोलें</string>
     <string name="speechkit_ime_error_mic_denied">माइक्रोफ़ोन की अनुमति अस्वीकृत</string>
+    <string name="speechkit_ime_error_limit">फ़िलहाल डिक्टेशन सीमा पूरी हो गई</string>
+    <string name="speechkit_ime_error_outage">डिक्टेशन सेवा उपलब्ध नहीं है। थोड़ी देर में फिर कोशिश करें</string>
+    <string name="speechkit_ime_error_right">इस खाते में डिक्टेशन शामिल नहीं है</string>
+    <string name="speechkit_ime_error_consent">SpeechKit ऐप में क्लाउड वॉइस की अनुमति दें</string>
+    <string name="speechkit_ime_error_expired">डिक्टेशन सत्र समाप्त हो गया</string>
     <string name="speechkit_ime_action_voice_agent">वॉइस असिस्टेंट</string>
     <string name="speechkit_ime_agent_action_dictation">डिक्टेशन</string>
     <string name="speechkit_ime_agent_action_end">बातचीत समाप्त करें</string>
@@ -36,4 +42,9 @@
     <string name="speechkit_ime_agent_error_no_server">वॉइस असिस्टेंट को पेयर किए गए SpeechKit सर्वर की आवश्यकता है</string>
     <string name="speechkit_ime_agent_error_audio">वॉइस ऑडियो जारी नहीं रखा जा सका</string>
     <string name="speechkit_ime_agent_error_generic">वॉइस कनेक्शन विफल हो गया</string>
+    <string name="speechkit_ime_agent_class_limit">फ़िलहाल वॉइस सीमा पूरी हो गई</string>
+    <string name="speechkit_ime_agent_class_outage">वॉइस सेवा उपलब्ध नहीं है। थोड़ी देर में फिर कोशिश करें</string>
+    <string name="speechkit_ime_agent_class_right">यह खाता वॉइस बातचीत का उपयोग नहीं कर सकता</string>
+    <string name="speechkit_ime_agent_class_consent">SpeechKit ऐप में क्लाउड वॉइस की अनुमति दें</string>
+    <string name="speechkit_ime_agent_class_expired">वॉइस सत्र समाप्त हो गया। नई बातचीत शुरू करें</string>
 </resources>

@@ -145,10 +145,18 @@ check, the host converts L16 to PCM16LE/WAV and invokes a dependency that
 explicitly attests `LocalOnly`; there is no call to the general STT router and
 therefore no cloud or dynamic fallback.
 
-Phase A contains exactly one server-owned transcript-to-`command_id` mapping.
-The normalized local-STT transcript must match that mapping exactly, and the
-mapping must itself match an existing G0 light rule for the same device,
-pairing epoch, room, and locale. The exported host-side `ExecuteTurn` method
+The pilot binds a closed set of server-owned transcript-to-`command_id`
+mappings for one selected light (at most eight entries). The set must cover
+both `turn_on` and `turn_off` of that light, and every entry must re-resolve an
+existing, unexpired G0 light rule for the exact selected device, current
+pairing epoch, authoritative room, and locale. The normalized local-STT
+transcript selects at most one entry by exact lookup; there is no fuzzy
+matching, search, LLM or Assist fallback. Duplicate command IDs, ambiguous
+(equal after normalization) transcripts, foreign device, pairing, room or
+locale rules, a second light, a missing action, and an expired rule fail
+closed when the listener is built, so the server does not start the endpoint.
+A rule that expires while the server runs is denied per turn by the G0 policy
+(`local_rule_expired`) before any Home Assistant dispatch. The exported host-side `ExecuteTurn` method
 then reuses the durable Home Assistant claim, exact target/state readback, and
 claim-bound local TTS path. The verified input-audio SHA joins the claim digest,
 so replaying one request ID with different audio conflicts before another Home
@@ -163,7 +171,7 @@ credential, or service bearer.
 
 `NewBoxMediaHandler` and `NewBoxMediaTLSServer` are dependency-injected and
 fail closed before listening when the bridge, proven local-only STT dependency,
-independent media-pairing token, single rule, explicit local IP, certificate,
+independent media-pairing token, closed mapping set, explicit local IP, certificate,
 key, current validity, or IP SAN is missing. The production server lifecycle is
 an additional explicit opt-in under `[server.device_agent.box_media]`. It starts
 and probes the concrete host-local Whisper runtime, requires one ready
@@ -217,6 +225,15 @@ token_env = "SPEECHKIT_DEVICE_KITCHEN_TOKEN"
 allowed_client_cidrs = ["192.168.10.42/32"]
 
 [[server.device_agent.devices.local_rules]]
+rule_id = "kitchen-light-on"
+trigger_text = "turn on the kitchen light"
+locale = "en-US"
+action = "turn_on"
+entity_id = "light.kitchen"
+not_before = "2026-07-19T00:00:00Z"
+expires_at = "2026-08-18T00:00:00Z"
+
+[[server.device_agent.devices.local_rules]]
 rule_id = "kitchen-light-off"
 trigger_text = "turn off the kitchen light"
 locale = "en-US"
@@ -236,9 +253,15 @@ token_env = "SPEECHKIT_BOX_MEDIA_KITCHEN_TOKEN"
 device_id = "speaker-kitchen-001"
 pairing_id = "pairing-kitchen-2026-07"
 room_id = "kitchen"
+locale = "en-US"
+
+[[server.device_agent.box_media.mappings]]
+transcript = "turn on the kitchen light"
+command_id = "kitchen-light-on"
+
+[[server.device_agent.box_media.mappings]]
 transcript = "turn off the kitchen light"
 command_id = "kitchen-light-off"
-locale = "en-US"
 ```
 
 Replace the sample authorization window with a current operator-approved
@@ -258,9 +281,12 @@ edge-HMAC, smoke, or four-route device credentials. `certificate_file`,
 openssl x509 -in /etc/speechkit/box-media-ca.crt -outform DER | sha256sum
 ```
 
-The configured device, pairing epoch, room, transcript, locale, and command ID
-must exactly select one existing G0 rule. Removing or rotating any of those
-inputs causes the listener to fail closed on the next server start.
+The configured device, pairing epoch, room, and locale select the binding, and
+each `[[server.device_agent.box_media.mappings]]` entry's transcript and
+command ID must exactly select one existing G0 rule of that binding. The set
+holds one to eight entries, targets one light, and covers `turn_on` and
+`turn_off`. Removing or rotating any of those inputs, or letting a selected
+rule expire, causes the listener to fail closed on the next server start.
 
 ## Device example
 

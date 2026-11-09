@@ -443,16 +443,6 @@ func defaults() *Config {
 				TokenTTLSec:  600,
 				RoomPrefix:   "speechkit-va",
 			},
-			VoiceAgent: ServerVoiceAgentConfig{
-				ToolBridge: ServerToolBridgeConfig{
-					// Fail-closed default: no bridge unless an operator enables
-					// it in config or deployment env sets SPEECHKIT_TOOLBRIDGE_URL.
-					Enabled:            false,
-					TimeoutMs:          10000,
-					MaxCallsPerSession: 20,
-					CredentialHeader:   "X-Edge-Obo-Subject-Token", //nolint:gosec // header name, not a credential
-				},
-			},
 			WhisperBinary: "/usr/local/bin/whisper-server",
 			WhisperPort:   8180,
 			ModelDir:      "/var/lib/speechkit/models",

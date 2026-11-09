@@ -71,8 +71,17 @@ class DictationWsClient(
                     is StreamSegmentDoneFrame ->
                         events.trySend(TranscriptEvent.SegmentDone(frame.segmentId))
 
-                    is StreamErrorFrame ->
+                    is StreamErrorFrame -> {
+                        // The server's stable code is the only thing that says
+                        // WHY a stream died (provider refusal, protocol error,
+                        // empty transcript). Without it in the log, a failed
+                        // dictation is indistinguishable from a broken mic.
+                        VoiceLog.e(
+                            VoiceLog.DICTATION,
+                            "ws error code=${frame.code} message=${frame.message}",
+                        )
                         events.trySend(TranscriptEvent.Failure(frame.code, frame.message))
+                    }
 
                     is StreamSessionEndFrame -> {
                         events.trySend(TranscriptEvent.Closed(frame.reason))
@@ -150,7 +159,9 @@ private class WsStreamingSession(
     override val events: Flow<TranscriptEvent> = channel.receiveAsFlow()
 
     override suspend fun startSegment(options: DictationSegmentOptions) {
-        webSocket.send(codec.encodeStart(options.toStartFrame()))
+        val frame = options.toStartFrame()
+        VoiceLog.i(VoiceLog.DICTATION, "ws start keyterms=${frame.keyterms?.size ?: 0}")
+        webSocket.send(codec.encodeStart(frame))
     }
 
     override suspend fun sendAudio(pcm: ByteArray) {

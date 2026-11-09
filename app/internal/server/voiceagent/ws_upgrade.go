@@ -101,15 +101,16 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 		native:          h.native,
 		MediaBridge:     h.mediaBridge,
 		WakeVerifier:    h.wakeVerifier,
+		Vocabulary:      h.vocabulary,
 		IdleTimeout:     h.idleTimeout,
 		MaxDuration:     h.maxSessionDuration,
-		ToolRouter:      h.toolRouter,
+		Heartbeat:       h.heartbeat,
 		OnStart: func() error {
 			return h.manager.StartConversation(sessionID)
 		},
 		//nolint:contextcheck // OnUsage has no context parameter and runs after the request context is done
 		OnUsage: func(usage VoiceUsage) {
-			h.reportVoiceUsage(session.BridgeCredential, usage)
+			h.reportVoiceUsage(session.DelegatedCredential, usage)
 		},
 		SetVoiceBudgetRenewer: func(renew func(wssession.VoiceBudget) error) {
 			h.manager.SetVoiceBudgetRenewer(sessionID, renew)

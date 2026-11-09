@@ -20,8 +20,14 @@ export type RecognitionHints = components["schemas"]["RecognitionHints"];
 
 export interface TranscribeOptions extends Pick<
   components["schemas"]["DictateJSONRequest"],
-  "language" | "model" | "prompt" | "provider_profile_id" | "keyterms" |
-  "vocabulary_hints" | "options" | "provider_options"
+  | "language"
+  | "model"
+  | "prompt"
+  | "provider_profile_id"
+  | "keyterms"
+  | "vocabulary_hints"
+  | "options"
+  | "provider_options"
 > {}
 
 export interface TranscribeResponse {
@@ -247,6 +253,8 @@ export interface VoiceAgentSessionTicket {
    */
   ws_subprotocol: string;
   expires_at: string;
+  /** Voice budget deadline, distinct from the WebSocket ticket expiry. */
+  budget_expires_at?: NonNullable<components["schemas"]["CreateSessionResponse"]["budget_expires_at"]>;
 }
 
 export interface VoiceAgentTranscript {

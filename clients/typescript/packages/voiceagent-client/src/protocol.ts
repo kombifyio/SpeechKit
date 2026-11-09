@@ -143,7 +143,13 @@ export interface SimpleClientFrame {
   type: "audio_end" | "ping" | "stop" | "cancel";
 }
 
-export type ClientFrame = StartFrame | TextFrame | ToolResponseFrame | AdvanceStepFrame | ConversationModeFrame | SimpleClientFrame;
+export type ClientFrame =
+  | StartFrame
+  | TextFrame
+  | ToolResponseFrame
+  | AdvanceStepFrame
+  | ConversationModeFrame
+  | SimpleClientFrame;
 
 // ── Server → client frames ───────────────────────────────────────────────
 
@@ -293,7 +299,15 @@ export interface ErrorFrame {
 
 export interface SessionEndFrame extends ServerFrameMeta {
   type: "session_end";
-  reason: "idle" | "go_away" | "client" | "error" | "shutdown" | "max_duration" | "authorization_expired" | "wake_rejected";
+  reason:
+    | "idle"
+    | "go_away"
+    | "client"
+    | "error"
+    | "shutdown"
+    | "max_duration"
+    | "authorization_expired"
+    | "wake_rejected";
 }
 
 /** Second-stage verdict on a start frame's wake candidate. */
@@ -349,4 +363,6 @@ export interface SessionTicket {
    */
   ws_subprotocol?: string;
   expires_at?: string;
+  /** Voice budget deadline, distinct from the WebSocket ticket expiry. */
+  budget_expires_at?: string;
 }

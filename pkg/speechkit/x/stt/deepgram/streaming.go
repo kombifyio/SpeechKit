@@ -57,12 +57,19 @@ type deepgramDictationStream struct {
 // "nova-3", and the provider's formatting flags, keyterms and endpointing
 // apply.
 func (p *Provider) StartSpeakerStream(ctx context.Context, opts speaker.Options, format speaker.AudioFormat) (speaker.SpeakerStream, error) {
+	p, err := p.forRequest(ctx)
+	if err != nil {
+		return nil, err
+	}
 	opts = opts.Normalized()
 	if !opts.WantsDiarization() {
 		return nil, fmt.Errorf("deepgram speaker streaming requires diarization options")
 	}
 	format = format.Normalized()
 	model := stt.FirstNonEmptyTrimmed(opts.Model, p.Model, "nova-3")
+	if err := p.validateEUModel(ctx, model); err != nil {
+		return nil, err
+	}
 	endpoint, err := p.deepgramStreamingEndpoint(model, opts.Language, format)
 	if err != nil {
 		return nil, err
@@ -93,6 +100,13 @@ func (p *Provider) StartSpeakerStream(ctx context.Context, opts speaker.Options,
 // whole recording (see completeCaptureStream); otherwise the stream is the
 // Listen WebSocket, which finalizes utterance by utterance.
 func (p *Provider) StartDictationStream(ctx context.Context, opts speechkit.DictationStreamOptions, format speaker.AudioFormat) (speechkit.DictationStream, error) {
+	p, err := p.forRequest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.validateEUModel(ctx, stt.FirstNonEmptyTrimmed(opts.Model, p.Model, "nova-3")); err != nil {
+		return nil, err
+	}
 	if opts.CompleteCapture {
 		return p.startCompleteCaptureStream(ctx, opts, format)
 	}

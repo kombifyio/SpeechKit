@@ -57,5 +57,6 @@
   "sk.voice.dialog.label": "वॉइस वार्तालाप",
   "sk.voice.dialog.end": "वार्तालाप समाप्त करें",
   "sk.voice.dialog.hide": "वार्तालाप छिपाएँ",
-  "sk.voice.transcript.label": "लाइव ट्रांसक्रिप्ट"
+  "sk.voice.transcript.label": "लाइव ट्रांसक्रिप्ट",
+  "sk.voice.pill.elapsed": "रिकॉर्डिंग का समय"
 }

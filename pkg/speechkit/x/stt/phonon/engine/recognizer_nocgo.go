@@ -18,5 +18,10 @@ func (*Recognizer) Transcribe([]float32) (sherpa.Result, error) {
 	return sherpa.Result{}, ErrCgoRequired
 }
 
+// TranscribeTerms returns [ErrCgoRequired].
+func (*Recognizer) TranscribeTerms([]float32, []string) (sherpa.Result, error) {
+	return sherpa.Result{}, ErrCgoRequired
+}
+
 // Close does nothing.
 func (*Recognizer) Close() {}

@@ -71,6 +71,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import io.kombify.speechkit.coinstall.v1.CoinstallContract
 import io.kombify.speechkit.domain.ConnectionMode
+import io.kombify.speechkit.log.VoiceLog
 import io.kombify.speechkit.domain.fallbackModeAfterDisconnect
 import javax.inject.Inject
 
@@ -511,6 +512,10 @@ private fun LibraryTab() {
 
 // --- Settings Tab ---
 
+/** Whether `io.kombify.companion` has a public Play listing; false routes the install button to the tester page. */
+private const val COMPANION_PLAY_LISTED = false
+private const val COMPANION_TESTER_URL = "https://appdistribution.firebase.google.com/testerapps"
+
 @Composable
 private fun SettingsTab(
     companionProvisioner: CompanionProvisioner,
@@ -527,14 +532,20 @@ private fun SettingsTab(
     ) {
         Text(stringResource(R.string.nav_settings), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
 
+        var modeVersion by remember { mutableIntStateOf(0) }
         ServerConnectionCard(
             provisioner = companionProvisioner,
+            modeVersion = modeVersion,
             connectCloudRequested = connectCloudRequested,
             onConnectSucceeded = onConnectSucceeded,
             onConnectAbandoned = onConnectAbandoned,
         )
 
-        OnDeviceModelCard()
+        OnDeviceModelCard(onModeChanged = { modeVersion += 1 })
+
+        NeuralVoiceCard()
+
+        VocabularyCard()
 
         VoiceAgentProviderCard()
 
@@ -599,6 +610,7 @@ private fun SettingsTab(
 @Composable
 private fun ServerConnectionCard(
     provisioner: CompanionProvisioner,
+    modeVersion: Int = 0,
     connectCloudRequested: Boolean = false,
     onConnectSucceeded: () -> Unit = {},
     onConnectAbandoned: () -> Unit = {},
@@ -609,6 +621,13 @@ private fun ServerConnectionCard(
     }
     val scope = rememberCoroutineScope()
     var modeTick by remember { mutableIntStateOf(0) }
+    // Resolved off the main thread and again on every resume (modeTick), so an install or update of the
+    // Companion shows up without leaving Settings; null until the first answer.
+    var companionInstalled by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(modeVersion) { if (modeVersion > 0) modeTick += 1 }
+    LaunchedEffect(modeTick) {
+        companionInstalled = withContext(Dispatchers.IO) { provisioner.isCompanionInstalled() }
+    }
 
     var url by remember {
         mutableStateOf(prefs.getString(StoredServerProfile.KEY_SERVER_URL, "") ?: "")
@@ -673,12 +692,20 @@ private fun ServerConnectionCard(
             context.startActivity(launch)
             return
         }
-        context.startActivity(
-            Intent(
-                Intent.ACTION_VIEW,
-                Uri.parse("market://details?id=${CoinstallContract.COMPANION_RELEASE_PACKAGE}"),
-            ),
-        )
+        // Until the Play listing exists the store only says "not found": the invited-tester page is the one
+        // working route (same pattern as the Companion's own SpeechKit install). Flip COMPANION_PLAY_LISTED
+        // once `io.kombify.companion` is public on Play.
+        val targets = if (COMPANION_PLAY_LISTED) {
+            listOf("market://details?id=${CoinstallContract.COMPANION_RELEASE_PACKAGE}", COMPANION_TESTER_URL)
+        } else {
+            listOf(COMPANION_TESTER_URL)
+        }
+        val opened = targets.any { target ->
+            runCatching {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }.isSuccess
+        }
+        if (!opened) VoiceLog.w(VoiceLog.NET, "no handler for the Companion install link")
     }
 
     fun connectCloud() {
@@ -874,7 +901,7 @@ private fun ServerConnectionCard(
                     ) {
                         Text(
                             stringResource(
-                                if (provisioner.isCompanionInstalled()) {
+                                if (companionInstalled != false) {
                                     R.string.settings_connection_open_companion
                                 } else {
                                     R.string.settings_connection_install_companion

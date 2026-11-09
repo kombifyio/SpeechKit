@@ -32,8 +32,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.kombify.speechkit.R
+import io.kombify.speechkit.app.build.ShippedDefaults
+import io.kombify.speechkit.domain.ConnectionMode
 import io.kombify.speechkit.net.OnDeviceEngine
+import io.kombify.speechkit.net.StoredServerProfile
 import io.kombify.speechkit.stt.parakeet.ParakeetDownloads
+import io.kombify.speechkit.stt.parakeet.ParakeetLanguages
 import io.kombify.speechkit.stt.parakeet.ParakeetModel
 import io.kombify.speechkit.stt.parakeet.ParakeetModels
 import io.kombify.speechkit.stt.parakeet.ParakeetOnDevice
@@ -51,7 +55,7 @@ import kotlinx.coroutines.withContext
  * and resumes where it stopped.
  */
 @Composable
-internal fun OnDeviceModelCard() {
+internal fun OnDeviceModelCard(onModeChanged: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // The support checks load native libraries, so they run off the main thread; null until they are done.
@@ -70,10 +74,28 @@ internal fun OnDeviceModelCard() {
     // Bumped after a download finishes or the model is deleted, so the
     // installed state is read again.
     var storeTick by remember { mutableIntStateOf(0) }
+    // Bumped when the connection mode is switched from this card.
+    var modeTick by remember { mutableIntStateOf(0) }
+    val serverMode = remember(modeTick, storeTick) {
+        val mode = StoredServerProfile.resolvedMode(
+            context,
+            StoredServerProfile.load(context),
+            ShippedDefaults.shippedProfile(),
+        )
+        mode != ConnectionMode.ON_DEVICE
+    }
     val installed = remember(storeTick, download, model) { model?.let(store::isInstalled) ?: false }
 
     LaunchedEffect(download) {
-        if (download is ParakeetDownloads.State.Done) storeTick += 1
+        if (download is ParakeetDownloads.State.Done) {
+            storeTick += 1
+            // A finished download selects the offline model once: not when the person picked an engine before,
+            // and not when it cannot serve the language they dictate in (Phonon-2.5 English only English).
+            val language = java.util.Locale.getDefault().language
+            val fits = ParakeetLanguages.supports(language) && (model?.englishOnly != true || language == "en")
+            if (!OnDeviceEngine.hasChoice(context) && fits) OnDeviceEngine.setChoice(context, OnDeviceEngine.Choice.PARAKEET)
+            choice = OnDeviceEngine.choice(context)
+        }
     }
 
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -184,6 +206,22 @@ internal fun OnDeviceModelCard() {
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary,
                         )
+                        // A server or Cloud connection keeps dictating through the server; say so and offer the switch.
+                        if (serverMode && choice == OnDeviceEngine.Choice.PARAKEET) {
+                            Text(
+                                stringResource(R.string.settings_on_device_cloud_active, current.name),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Button(
+                                onClick = {
+                                    StoredServerProfile.saveMode(context, ConnectionMode.ON_DEVICE)
+                                    modeTick += 1
+                                    onModeChanged()
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text(stringResource(R.string.settings_on_device_use_device)) }
+                        }
                         TextButton(onClick = {
                             scope.launch {
                                 ParakeetOnDevice.deleteModel(context, current)

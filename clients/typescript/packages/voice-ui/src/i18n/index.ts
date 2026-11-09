@@ -4,7 +4,7 @@ import {
   en,
   type VoiceUiLocale,
   type VoiceUiMessageCatalog,
-  type VoiceUiMessageId
+  type VoiceUiMessageId,
 } from "./catalogs.js";
 
 export {
@@ -12,7 +12,7 @@ export {
   VOICE_UI_LOCALES,
   type VoiceUiLocale,
   type VoiceUiMessageCatalog,
-  type VoiceUiMessageId
+  type VoiceUiMessageId,
 };
 
 /**
@@ -28,7 +28,9 @@ export function resolveVoiceUiLocale(locale?: string): VoiceUiLocale {
   if (primary === "zh") {
     try {
       return new Intl.Locale(normalized).maximize().script === "Hans" ? "zh-Hans" : "en";
-    } catch { return "en"; }
+    } catch {
+      return "en";
+    }
   }
   const byPrimary = VOICE_UI_LOCALES.find((candidate) => candidate.toLowerCase() === primary);
   return byPrimary ?? "en";
@@ -40,7 +42,7 @@ export function resolveVoiceUiLocale(locale?: string): VoiceUiLocale {
  */
 export function voiceUiMessages(
   locale?: string,
-  overrides?: Partial<Record<VoiceUiMessageId, string>>
+  overrides?: Partial<Record<VoiceUiMessageId, string>>,
 ): VoiceUiMessageCatalog {
   const resolved = VOICE_UI_CATALOGS[resolveVoiceUiLocale(locale)];
   if (resolved === en && !overrides) return en;

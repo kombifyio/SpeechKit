@@ -30,6 +30,7 @@ import io.kombify.speechkit.net.PlanDenial
 import io.kombify.speechkit.net.SpeechKitApiException
 import io.kombify.speechkit.net.userText
 import io.kombify.speechkit.ui.ServiceWindowOwner
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -57,9 +58,10 @@ class SpeechKitAssistantSessionService : VoiceInteractionSessionService() {
     @Inject lateinit var profileSource: ConnectionProfileSource
     @Inject lateinit var companionTurns: CompanionTurnExecutor
     @Inject lateinit var cloudRecovery: CloudSessionRecovery
+    @Inject lateinit var neuralVoice: NeuralReplyVoice
 
     override fun onNewSession(args: Bundle?): VoiceInteractionSession =
-        SpeechKitVoiceSession(this, profileSource, companionTurns, cloudRecovery)
+        SpeechKitVoiceSession(this, profileSource, companionTurns, cloudRecovery, neuralVoice)
 }
 
 /**
@@ -80,12 +82,14 @@ class SpeechKitVoiceSession(
     private val profileSource: ConnectionProfileSource,
     private val companionTurns: CompanionTurnExecutor? = null,
     private val cloudRecovery: CloudSessionRecovery? = null,
+    private val neuralVoice: NeuralReplyVoice = NeuralReplyVoice.None,
 ) : VoiceInteractionSession(context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val intentRouter = IntentRouter(GeneralQueryExecutor(profileSource))
     private var listeningJob: Job? = null
     private var tts: TextToSpeech? = null
+    private var speechJob: Job? = null
 
     private val _uiState = MutableStateFlow<AssistantUiState>(AssistantUiState.Idle)
     val uiState: StateFlow<AssistantUiState> = _uiState.asStateFlow()
@@ -156,6 +160,7 @@ class SpeechKitVoiceSession(
 
     override fun onDestroy() {
         scope.cancel()
+        neuralVoice.stop()
         tts?.stop()
         tts?.shutdown()
         tts = null
@@ -192,6 +197,11 @@ class SpeechKitVoiceSession(
                     companionTurn = companionTurns,
                     onLevel = { level ->
                         _uiState.value = AssistantUiState.Listening(level)
+                    },
+                    // Waiting on the Companion shows Processing, then the answer as it streams in.
+                    onCompanionProgress = { partial ->
+                        _uiState.value = if (partial.isNullOrBlank()) AssistantUiState.Processing
+                        else AssistantUiState.Result(partial)
                     },
                 ).run()
 
@@ -273,12 +283,33 @@ class SpeechKitVoiceSession(
 
         val spoken = result.responseText.trim()
         if (result.success && spoken.isNotEmpty()) {
-            tts?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "assist-reply")
+            speakReply(spoken)
         }
 
         if (result.success && !result.keepOpen) {
             delay(RESULT_LINGER_MILLIS)
             hide()
+        }
+    }
+
+    /**
+     * Speaks the reply with the downloaded neural voice for the device language and, when there is none or it
+     * cannot speak, with the platform engine. A new reply cuts off the previous one either way.
+     */
+    private fun speakReply(spoken: String) {
+        speechJob?.cancel()
+        tts?.stop()
+        speechJob = scope.launch {
+            val locale = context.resources.configuration.locales[0]
+            val handled = try {
+                neuralVoice.speak(spoken, locale)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                VoiceLog.w(VoiceLog.ASSIST, "neural voice failed, using the platform voice", e)
+                false
+            }
+            if (!handled) tts?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "assist-reply")
         }
     }
 

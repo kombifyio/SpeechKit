@@ -4,6 +4,8 @@ import (
 	"math"
 	"strings"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 )
 
@@ -11,22 +13,11 @@ import (
 // the listen/think/speak providers, the system prompt, and any tool functions.
 // It is pure (no I/O) so the listen/think/speak wiring can be unit-tested.
 func (p *Provider) buildSettings(cfg live.LiveConfig) map[string]any {
-	resolved := live.ResolveLiveOptions("deepgram", "realtime.deepgram.voice-agent", cfg, nil, nil)
-	think := map[string]any{
-		"provider": map[string]any{
-			"type":  dgFirst(p.ThinkProvider, deepgramThinkProviderDefault),
-			"model": dgFirst(p.ThinkModel, deepgramThinkModelDefault),
-		},
-	}
-	if endpoint := p.thinkEndpoint(); endpoint != nil {
-		think["endpoint"] = endpoint
-	}
-	if prompt := live.AppendContextPrompt(composeDeepgramPrompt(cfg), resolved.ContextPrompt); prompt != "" {
-		think["prompt"] = prompt
-	}
-	if funcs := buildDeepgramFunctions(cfg.Tools); len(funcs) > 0 {
-		think["functions"] = funcs
-	}
+	resolved := live.ResolveLiveOptions("deepgram", deepgramVoiceAgentProfileID, cfg, nil, nil)
+	p.turnMu.Lock()
+	index := p.thinkIndex
+	p.turnMu.Unlock()
+	think := p.buildThink(cfg, index)
 
 	listenModel := dgFirst(p.ListenModel, deepgramListenModelDefault)
 	listenProvider := map[string]any{
@@ -35,7 +26,8 @@ func (p *Provider) buildSettings(cfg live.LiveConfig) map[string]any {
 	}
 	// VocabularyHint boosts recognition of domain terms — Nova-3 exposes this
 	// as keyterms on the listen provider.
-	if keyterms := resolved.Keyterms; len(keyterms) > 0 {
+	// Capped like Listen: past 500 tokens Deepgram refuses the whole session.
+	if keyterms := provideropts.CapKeyterms(resolved.Keyterms, provideropts.DeepgramKeytermLimits); len(keyterms) > 0 {
 		listenProvider["keyterms"] = keyterms
 	}
 	hints := deepgramListenLanguageHints(resolved.LanguageHints, resolved.Locale, listenModel)
@@ -86,6 +78,62 @@ func (p *Provider) buildSettings(cfg live.LiveConfig) map[string]any {
 	}
 }
 
+// buildThink assembles agent.think for the think model at index of
+// thinkCandidates. The Settings message and an in-turn UpdateThink share it,
+// so a fallback keeps the session's prompt, endpoint and functions.
+func (p *Provider) buildThink(cfg live.LiveConfig, index int) map[string]any {
+	resolved := live.ResolveLiveOptions("deepgram", deepgramVoiceAgentProfileID, cfg, nil, nil)
+	candidates := p.thinkCandidates()
+	selected := candidates[min(max(index, 0), len(candidates)-1)]
+	think := map[string]any{
+		"provider": map[string]any{
+			"type":  selected.Provider,
+			"model": selected.Model,
+		},
+	}
+	if endpoint := p.thinkEndpoint(); endpoint != nil {
+		think["endpoint"] = endpoint
+	}
+	if prompt := live.AppendContextPrompt(composeDeepgramPrompt(cfg), resolved.ContextPrompt); prompt != "" {
+		think["prompt"] = prompt
+	}
+	if funcs := buildDeepgramFunctions(cfg.Tools); len(funcs) > 0 {
+		think["functions"] = funcs
+	}
+	return think
+}
+
+// thinkCandidates is this session's think chain: an explicit ThinkModel
+// leads, followed by the catalog default chain. A bring-your-own endpoint has
+// exactly one candidate: its turns are retried on that endpoint and never
+// moved to a Deepgram-managed model, which would answer outside the endpoint
+// owner's agent and policy.
+func (p *Provider) thinkCandidates() []catalog.ThinkModel {
+	chain := catalog.VoiceAgentThinkChain(deepgramVoiceAgentProfileID)
+	out := make([]catalog.ThinkModel, 0, len(chain)+1)
+	provider := strings.TrimSpace(p.ThinkProvider)
+	model := strings.TrimSpace(p.ThinkModel)
+	defaultThink := catalog.ThinkModel{}
+	if len(chain) > 0 {
+		defaultThink = chain[0]
+	}
+	explicit := catalog.ThinkModel{Provider: dgFirst(provider, defaultThink.Provider), Model: dgFirst(model, defaultThink.Model)}
+	if p.thinkEndpoint() != nil {
+		// deepgram_think_endpoint_url set: that endpoint is the whole chain.
+		return []catalog.ThinkModel{explicit}
+	}
+	if provider != "" || model != "" {
+		out = append(out, explicit)
+	}
+	for _, candidate := range chain {
+		if len(out) > 0 && candidate == out[0] {
+			continue
+		}
+		out = append(out, candidate)
+	}
+	return out
+}
+
 // thinkEndpoint returns the agent.think.endpoint block for a bring-your-own
 // think LLM, or nil to use Deepgram's managed model. Per the Deepgram Voice
 // Agent Settings schema, a BYO credential travels as an Authorization header on
@@ -96,8 +144,17 @@ func (p *Provider) thinkEndpoint() map[string]any {
 		return nil
 	}
 	endpoint := map[string]any{"url": url}
+	headers := map[string]any{}
+	for name, value := range p.ThinkHeaders {
+		if name = strings.ToLower(strings.TrimSpace(name)); name != "" && name != "authorization" && strings.TrimSpace(value) != "" {
+			headers[name] = strings.TrimSpace(value)
+		}
+	}
 	if key := strings.TrimSpace(p.ThinkAPIKey); key != "" {
-		endpoint["headers"] = map[string]any{"authorization": "Bearer " + key}
+		headers["authorization"] = "Bearer " + key
+	}
+	if len(headers) > 0 {
+		endpoint["headers"] = headers
 	}
 	return endpoint
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 )
 
@@ -176,8 +177,9 @@ type providerLister interface {
 // resolveProviderProfile applies the server-side provider precedence for one
 // batch request (AI voice target, "User Voice Preferences"):
 //
-//	explicit request override → edge-injected user preference (primary, then
-//	secondary, skipping providers this server does not have) → configured
+//	explicit request override → edge-injected user preference (v2 STT model,
+//	then v1 primary, then secondary, skipping providers this server does not
+//	have) → configured
 //	ModelSelection primary → router default order (empty).
 //
 // The returned reference is either a full provider-profile ID or a bare
@@ -194,6 +196,10 @@ func (h *Handler) resolveProviderProfile(ctx context.Context, explicit string) (
 		return normalized, nil
 	}
 	prefs := middleware.VoicePrefsFromContext(ctx)
+	// The v2 model (catalog profile id) wins over the v1 provider names.
+	if model := preferredSTTModel(ctx, prefs.STTModel); model != "" && h.providerAvailable(catalog.NormalizeProviderID(model)) {
+		return model, nil
+	}
 	for _, pref := range []string{prefs.STTPrimary, prefs.STTSecondary} {
 		provider := catalog.NormalizeProviderID(pref)
 		if provider == "" || strings.Contains(provider, ".") {
@@ -217,6 +223,23 @@ func (h *Handler) providerAvailable(provider string) bool {
 		}
 	}
 	return false
+}
+
+// preferredSTTModel returns the v2 STT model preference as a dictation
+// catalog profile id, or "" when it names no dictation profile or (under the
+// EU data profile) a processor the EU policy refuses: a preference degrades
+// to the next one instead of failing the request.
+func preferredSTTModel(ctx context.Context, model string) string {
+	model = speechkit.NormalizeProviderProfileID(model)
+	if model == "" || !dictationProfileExists(model) {
+		return ""
+	}
+	if netsec.DataProfileEU(ctx) {
+		if provider := catalog.NormalizeProviderID(model); provider != "deepgram" && provider != "assemblyai" {
+			return ""
+		}
+	}
+	return model
 }
 
 func dictationProfileExists(profileID string) bool {

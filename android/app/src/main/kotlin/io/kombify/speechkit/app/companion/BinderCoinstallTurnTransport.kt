@@ -32,10 +32,13 @@ class BinderCoinstallTurnTransport internal constructor(
     private val scheduler: ScheduledExecutorService = bindTimeoutScheduler,
 ) : CoinstallTurnTransport {
 
-    constructor(context: Context) : this(
+    constructor(context: Context) : this(context, CompanionPackageCache(context))
+
+    // Only a genuine, pinned Companion receives a turn; none installed is the local-Assist fallback. The
+    // package is resolved once per transport and again after a Companion package change, never per turn.
+    private constructor(context: Context, companions: CompanionPackageCache) : this(
         bind = { conn ->
-            // Only a genuine, pinned Companion receives a turn; none installed is the local-Assist fallback.
-            val companion = CompanionPackage.resolve(context.packageManager, ownPackage = context.packageName)
+            val companion = companions.current()
             companion != null && context.bindService(
                 Intent(CoinstallContract.BIND_ACTION).setPackage(companion),
                 conn,

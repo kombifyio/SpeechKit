@@ -1,7 +1,12 @@
 # SpeechKit — multi-stage Linux container build.
 #
 #   docker build -f deploy/docker/Dockerfile.server \
-#     --target speechkit-server -t speechkit-server:dev .
+#     --target speechkit-server-selfhosted -t speechkit-server:dev .
+#
+# Targets: speechkit-server-selfhosted is the published self-host image with
+# the bundled Phonon-2.5 speech-to-text model; speechkit-server (the last
+# stage, so also the default) is the same server without a bundled model, the
+# one kombify's hosted production and Early Access build.
 #
 # The server is the central Framework wrapper: Dictation REST, Assist REST,
 # and Voice Agent WebSocket are exposed by one reusable HTTP/WebSocket adapter.
@@ -76,6 +81,49 @@ RUN go build \
     && mkdir -p /out/sherpa-onnx \
     && cp "$(go list -m -f '{{.Dir}}' github.com/k2-fsa/sherpa-onnx-go-linux)/lib/x86_64-unknown-linux-gnu/"*.so /out/sherpa-onnx/
 
+# ── Stage 1b: bundled local speech-to-text model (self-hosted image only) ───
+# Phonon-2.5 (Fermion Research, CC-BY-4.0; 25 languages, 178 MB five-value
+# container) is the self-hosted install's local STT: with no STT endpoint and
+# no cloud key, the server runs speechkit-stt-sherpa on it
+# (config.bundledServerSTTDefault). Only the speechkit-server-selfhosted target
+# copies it; BuildKit skips this stage for every other target, so the
+# production image neither carries the model nor fetches anything here.
+#
+# Pins: the same revision and SHA-256 values as the desktop download catalog
+# (app/host/downloads/catalog_artifacts.go, parakeet.phonon-2.5), the Windows
+# installer (scripts/prepare-phonon-model.ps1) and the phonon profile of
+# docker-compose.local-only.yml; scripts/ci/check-phonon-pins.sh fails the
+# SpeechKit gate when any of the four disagree. The archive is checked against
+# Fermion's SHA256SUMS entry, then every unpacked file against the catalog pin.
+# Fermion's NOTICE and the CC-BY-4.0 legal code travel with the model.
+FROM debian:bookworm-slim@sha256:0104b334637a5f19aa9c983a91b54c89887c0984081f2068983107a6f6c21eeb AS phonon-model
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl zstd \
+    && rm -rf /var/lib/apt/lists/*
+
+# Plain curl, tar and WORKDIR only: the Delivery download guard admits a
+# Dockerfile whose RUN steps it can read, and a shell function, cd or a bare
+# zstd call is not one of them (D-2026-10-25-03).
+WORKDIR /out/phonon-2.5
+
+RUN set -eux; \
+    base=https://huggingface.co/FermionResearch/Phonon-2.5/resolve/2673618ad8636c8dfd20fe57e94d1f67f75bdeaa; \
+    curl -fL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 30 -o /tmp/phonon-2.5.tar.zst "$base/phonon-2.5.bps.tar.zst"; \
+    echo '1faa04053a472cabab3bc31d07f30c23f22906f71044ca10eb1f0de36d1f19a9  /tmp/phonon-2.5.tar.zst' | sha256sum -c -; \
+    tar --zstd -xf /tmp/phonon-2.5.tar.zst model.fermion config.json packed_manifest.json; \
+    rm /tmp/phonon-2.5.tar.zst; \
+    curl -fL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 30 -o NOTICE "$base/NOTICE"; \
+    curl -fL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 30 -o LICENSE "$base/LICENSE-WEIGHTS-CC-BY-4.0.txt"; \
+    printf '%s  %s\n' \
+      17cb62d08e751a41819eb779db089aa7ac4eb2bab433ba5c2991d8cbd3cfefb9 model.fermion \
+      b8ee2310784b2ffb62200bc9d2301cdc0576141ee9c53f7a41a5a2d181910cc9 config.json \
+      2c98e5d0e1349fa146f21cdc168d681b186711c78abcfac47af16c25649f5c89 packed_manifest.json \
+      dd4993badd45eb336280a0ab5b4ecb3ed06260d189a30fcae8b9e89a587c4de8 NOTICE \
+      9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411 LICENSE \
+      | sha256sum -c -; \
+    chmod 0644 ./*
+
 # ── Stage 2: Shared runtime base ─────────────────────────────────────────────
 # Keeping this as a separate stage keeps apt + ONNX install layers stable
 # across rebuilds.
@@ -130,14 +178,14 @@ RUN groupadd -r speechkit --gid 2000 \
     && mkdir -p /etc/speechkit /var/lib/speechkit/data /var/lib/speechkit/models \
     && chown -R speechkit:speechkit /etc/speechkit /var/lib/speechkit
 
-# whisper.cpp binary is expected at /usr/local/bin/whisper-server; it is
-# intentionally NOT baked into this image so that the OSS container stays
-# small and license-clean. Operators provide whisper.cpp via a sidecar or
-# compose-service (see deploy/docker/docker-compose.yml). The Parakeet sidecar
-# speechkit-stt-sherpa ships next to the server binary (stage 3): the local
-# provider starts it for a Parakeet model directory, and the same image runs
-# it as a standalone STT service (docker-compose.local-only.yml, profile
-# parakeet).
+# Local speech-to-text: speechkit-stt-sherpa ships next to the server binary
+# in every image. The self-hosted image (target speechkit-server-selfhosted)
+# adds Phonon-2.5 under /usr/local/share/speechkit/models, which the
+# self-hosted defaults start when no STT endpoint and no cloud key are
+# configured. whisper.cpp is not baked in; an operator who prefers it, or whose
+# processor lacks AVX2, runs the whisper-server sidecar
+# (deploy/docker/docker-compose.yml, profile whisper; install-server.sh adds it
+# on such a host) and sets SPEECHKIT_SELFHOSTED_STT_URL.
 
 USER speechkit
 WORKDIR /home/speechkit
@@ -147,8 +195,8 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
   CMD curl -fsS http://localhost:8080/healthz || exit 1
 
-# ── Stage 3: speechkit-server (all three modes) ──────────────────────────────
-FROM runtime-base AS speechkit-server
+# ── Stage 3: server core (all three modes), shared by both targets ───────────
+FROM runtime-base AS server-core
 
 LABEL org.opencontainers.image.title="SpeechKit Server"
 LABEL org.opencontainers.image.description="SpeechKit Framework — full server (Dictation, Assist, Voice Agent over HTTP/WebSocket)."
@@ -174,3 +222,19 @@ RUN chmod +x /app/entrypoint.sh
 # itself stays secret-manager neutral and works with any env-var injector.
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["--config=/etc/speechkit/config.toml"]
+
+# ── Stage 4: speechkit-server-selfhosted (published self-host image) ────────
+# The image ghcr.io/kombifyio/speechkit-server and the install E2E build: the
+# server core plus the bundled Phonon-2.5 (stage 1b), so a fresh self-hosted
+# install dictates locally with no STT container and no key.
+FROM server-core AS speechkit-server-selfhosted
+
+LABEL org.opencontainers.image.licenses="Apache-2.0 AND CC-BY-4.0"
+COPY --from=phonon-model /out/phonon-2.5/ /usr/local/share/speechkit/models/phonon-2.5/
+
+# ── Stage 5: speechkit-server (kombify production; default target) ──────────
+# The production build (CONFIG_FILE=deploy/config/server.kombify-prod.toml),
+# Early Access on Render (which builds the last stage) and any build without
+# --target: the server core without a bundled model. It must stay the last
+# stage.
+FROM server-core AS speechkit-server

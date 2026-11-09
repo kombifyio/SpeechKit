@@ -46,6 +46,7 @@ func (p *Provider) Connect(ctx context.Context, cfg SessionConfig) error {
 	p.systemPrompt = firstNonEmpty(cfg.SystemPrompt, "")
 	p.refinement = cfg.RefinementPrompt
 	p.speaker = cfg.Speaker.Normalized()
+	p.keyterms = append([]string(nil), cfg.Keyterms...)
 	p.mu.Unlock()
 
 	if err := p.ensureSpeakerStream(ctx); err != nil {
@@ -91,6 +92,9 @@ func (p *Provider) UpdateInstructions(ctx context.Context, cfg SessionConfig) er
 	}
 	if cfg.RefinementPrompt != "" {
 		p.refinement = cfg.RefinementPrompt
+	}
+	if len(cfg.Keyterms) > 0 {
+		p.keyterms = append([]string(nil), cfg.Keyterms...)
 	}
 	if cfg.Speaker.WantsDiarization() || cfg.Speaker.Enabled {
 		p.speaker = cfg.Speaker.Normalized()

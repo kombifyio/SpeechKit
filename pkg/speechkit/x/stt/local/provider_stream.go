@@ -70,6 +70,9 @@ func (p *Provider) StartDictationStream(ctx context.Context, opts speechkit.Dict
 	}
 	base := p.serverURL()
 	query := url.Values{"rate": {strconv.Itoa(format.SampleRateHz)}, "language": {language}}
+	if resolved.UseVocabularyKeyterms && len(resolved.Keyterms) > 0 {
+		query["keyterm"] = resolved.Keyterms
+	}
 	var opened struct {
 		ID string `json:"id"`
 	}

@@ -4,7 +4,7 @@ import type { VoiceUiController } from "../core/controller.js";
 import { reduceVoiceAgentTurns, type VoiceAgentTurn } from "../core/turns.js";
 import type {
   SpeechKitVoiceSessionState,
-  SpeechKitVoiceSessionStatus
+  SpeechKitVoiceSessionStatus,
 } from "../core/voice-surface.js";
 import type { VoiceUiMessageCatalog } from "../i18n/index.js";
 import { voiceNoticeKind, voiceNoticeKindForDenial, voiceNoticeMessage } from "../core/notice.js";
@@ -47,7 +47,7 @@ const AURA_STATES: readonly VoiceAuraState[] = [
   "speaking",
   "recovering",
   "settling",
-  "error"
+  "error",
 ];
 
 export function sessionStatusToAuraState(status: VoiceAssistantStatus): VoiceAuraState {
@@ -345,7 +345,7 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
       "frame",
       "variant",
       "mark-src",
-      "aura-state"
+      "aura-state",
     ];
   }
 
@@ -523,7 +523,7 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
       const aura = this.auraState;
       const options = {
         active: aura !== "inactive" && aura !== "error",
-        reducedMotion: SpeechKitVoiceAssistantElement.#reducedMotion()
+        reducedMotion: SpeechKitVoiceAssistantElement.#reducedMotion(),
       };
       for (const wave of this.#waveforms) wave.onFrame(input, output, now, options);
     }
@@ -752,7 +752,9 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
       const role = document.createElement("span");
       role.className = "turn-role";
       role.textContent =
-        turn.role === "user" ? messages["sk.voice.agent.you"] : messages["sk.voice.agent.assistant"];
+        turn.role === "user"
+          ? messages["sk.voice.agent.you"]
+          : messages["sk.voice.agent.assistant"];
       head.append(dot, role);
       if (turn.interrupted) {
         const flag = document.createElement("span");

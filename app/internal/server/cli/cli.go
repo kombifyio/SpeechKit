@@ -74,6 +74,12 @@ func runOnce(opts Options) int {
 	modesFlag := fs.String("modes", "", "comma-separated list of enabled modes (dictation,assist,voiceagent); empty = built-in server default")
 	listenArg := fs.String("listen", "", "override server.listen_addr, e.g. :8080")
 	printVer := fs.Bool("version", false, "print version and exit")
+	discoveryOnly := fs.Bool("discovery-only", false, "announce _speechkit._tcp on the LAN via mDNS and bind nothing else; run in the host network namespace next to the server")
+	probe := fs.Bool("probe", false, "with --discovery-only: exit 0 while the announcer in this container runs (health check; no network call)")
+	discoveryPort := fs.Int("discovery-port", 0, "with --discovery-only: port to announce (default: [server.discovery] advertise_port, else the listen port, else 8080)")
+	discoveryModes := fs.String("discovery-modes", "", "with --discovery-only: comma-separated modes for the TXT record (default: dictation,assist,voiceagent)")
+	discoveryInstance := fs.String("discovery-instance", "", "with --discovery-only: service instance name (default: host name)")
+	discoveryURL := fs.String("discovery-url", "", "with --discovery-only: URL to announce (default: http://<primary LAN IPv4>:<port>)")
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		// flag.ExitOnError already prints + exits; this is
 		// effectively unreachable but keeps the linter quiet.
@@ -85,6 +91,18 @@ func runOnce(opts Options) int {
 		// is closed, since `--version` is supposed to be a cheap probe.
 		_, _ = fmt.Fprintln(os.Stdout, version)
 		return 0
+	}
+
+	if *discoveryOnly {
+		return discoveryOnlyMain(fs, banner, version, discoveryFlags{
+			configPath: *configPath, listen: *listenArg, modes: *modesFlag, probe: *probe,
+			port: *discoveryPort, discoveryModes: *discoveryModes,
+			instance: *discoveryInstance, url: *discoveryURL,
+		})
+	}
+	if *probe {
+		fmt.Fprintf(os.Stderr, "%s: --probe needs --discovery-only\n", banner)
+		return 2
 	}
 
 	cfg, err := config.Load(*configPath)

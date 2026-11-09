@@ -2823,6 +2823,8 @@ export interface components {
             availableModes?: components["schemas"]["ModeAvailability"];
             /** @description Audit forwarding is required but failing; cloud sessions are refused. */
             auditDegraded?: boolean;
+            /** @description A request waits while the local speech model loads and warms up. */
+            localModelLoading?: boolean;
         } & {
             [key: string]: unknown;
         };

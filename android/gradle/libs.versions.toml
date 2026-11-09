@@ -15,6 +15,8 @@ navigation = "2.8.5"
 room = "2.8.5"
 savedstate = "1.2.1"
 onnxruntime = "1.31.0"
+# bzip2 + tar for the neural voice archives (app module only).
+commons-compress = "1.28.0"
 okhttp = "5.4.0"
 retrofit = "3.0.0"
 moshi = "1.15.2"
@@ -70,6 +72,9 @@ room-testing = { group = "androidx.room", name = "room-testing", version.ref = "
 
 # ONNX Runtime (VAD + Whisper on-device)
 onnxruntime = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
+
+# Archive unpacking (.tar.bz2 neural voices)
+commons-compress = { group = "org.apache.commons", name = "commons-compress", version.ref = "commons-compress" }
 
 # Networking
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }

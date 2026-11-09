@@ -57,5 +57,6 @@
   "sk.voice.dialog.label": "Sprachkonversation",
   "sk.voice.dialog.end": "Konversation beenden",
   "sk.voice.dialog.hide": "Konversation ausblenden",
-  "sk.voice.transcript.label": "Live-Transkript"
+  "sk.voice.transcript.label": "Live-Transkript",
+  "sk.voice.pill.elapsed": "Aufnahmedauer"
 }

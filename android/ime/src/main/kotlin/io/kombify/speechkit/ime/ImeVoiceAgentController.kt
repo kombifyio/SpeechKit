@@ -4,6 +4,7 @@ import io.kombify.speechkit.audio.AudioCapture
 import io.kombify.speechkit.audio.PcmPlaybackException
 import io.kombify.speechkit.audio.PcmPlaybackQueue
 import io.kombify.speechkit.log.VoiceLog
+import io.kombify.speechkit.net.SpeechKitApiException
 import io.kombify.speechkit.net.VoiceAgentEvent
 import io.kombify.speechkit.net.VoiceAgentSessionDriver
 import io.kombify.speechkit.net.VoiceAgentStartFrame
@@ -117,6 +118,7 @@ class ImeVoiceAgentController(
                 phase = VoiceAgentUiState.Phase.Ended,
                 error = "microphone permission denied",
                 errorCode = ERROR_MIC_DENIED,
+                errorClass = null,
             )
         }
     }
@@ -180,7 +182,7 @@ class ImeVoiceAgentController(
 
     private fun fail(code: String, message: String) {
         _state.value = _state.value.copy(phase = VoiceAgentUiState.Phase.Ended,
-            error = message, errorCode = code)
+            error = message, errorCode = code, errorClass = null)
         stop()
     }
 
@@ -233,6 +235,7 @@ class ImeVoiceAgentController(
                         VoiceAgentUiState.Phase.Ended
                     },
                     error = if (noServer) "Voice Agent needs a configured server" else "Voice conversation failed",
+                    errorClass = if (planCode == null) setup?.errorClass ?: (error as? SpeechKitApiException)?.errorClass else null,
                     // A profile without a server throws before a single frame
                     // moves; with no code the panel could only show the raw
                     // exception text, which reads like a server outage.

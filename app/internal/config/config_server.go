@@ -81,6 +81,12 @@ type ServerConfig struct {
 	// Defaults to 900 (15 min). Set to 0 to disable the server-side idle
 	// timeout (kernel-level idle handling stays in effect either way).
 	VoiceAgentIdleTimeoutSec int `toml:"voiceagent_idle_timeout_sec"`
+	// VoiceAgentHeartbeatSec is the WebSocket ping period of a running Voice
+	// Agent conversation. A socket without any traffic (frame or pong read,
+	// frame written) for three periods is gone and its session ends, which
+	// frees its device slot long before the idle timeout. 0 uses the default
+	// (15 s); a negative value disables the heartbeat.
+	VoiceAgentHeartbeatSec int `toml:"voiceagent_heartbeat_sec"`
 	// VoiceAgentMaxSessionSec hard-caps a single Voice Agent WebSocket
 	// session. Zero disables the hard cap for normal self-hosted installs;
 	// public beta deployments should set a finite budget because realtime
@@ -133,6 +139,12 @@ type ServerConfig struct {
 	// multicasting its presence; a homelab operator opts in explicitly.
 	Discovery ServerDiscoveryConfig `toml:"discovery"`
 
+	// CloudLink links a self-hosted server to a person's account on an
+	// OAuth 2.0 identity provider (device authorization grant, RFC 8628) and
+	// checks it in with that account's device registry. Default OFF: nothing
+	// calls out until an operator enables it and starts the link.
+	CloudLink ServerCloudLinkConfig `toml:"cloud_link"`
+
 	// OIDC configures JWT validation against an external identity provider,
 	// used when auth_mode is "oidc" or "bearer_or_oidc".
 	OIDC ServerOIDCConfig `toml:"oidc"`
@@ -148,11 +160,6 @@ type ServerConfig struct {
 	// has its own per-device credentials; the general server bearer, OIDC,
 	// edge-HMAC, Gateway, and federation identities do not authorize it.
 	DeviceAgent ServerDeviceAgentConfig `toml:"device_agent"`
-
-	// VoiceAgent carries Server-Target-only Voice Agent wiring such as the
-	// generic tool bridge ([server.voiceagent.tool_bridge]). Session behavior
-	// (provider, prompts, VAD) stays in the shared [voice_agent] section.
-	VoiceAgent ServerVoiceAgentConfig `toml:"voiceagent"`
 }
 
 // ServerDeviceAgentConfig configures the local speechkit-device-agent bridge.
@@ -176,7 +183,10 @@ type ServerDeviceAgentConfig struct {
 }
 
 // ServerDeviceAgentBoxMediaConfig binds one Waveshare/Kombify Box to one
-// existing paired device and one existing G0 command. The media token is
+// existing paired device (current pairing epoch, authoritative room, locale)
+// and a closed set of exact transcript mappings for one selected light that
+// covers both turn_on and turn_off. Every mapping re-resolves one existing G0
+// local rule of that binding. The media token is
 // independently provisioned through TokenEnv; no Home Assistant, general
 // server, or device-agent credential is copied to the Box.
 //
@@ -194,12 +204,25 @@ type ServerDeviceAgentBoxMediaConfig struct {
 	PinnedCASHA256  string `toml:"pinned_ca_sha256"`
 	TokenEnv        string `toml:"token_env"`
 
-	DeviceID   string `toml:"device_id"`
-	PairingID  string `toml:"pairing_id"`
-	RoomID     string `toml:"room_id"`
+	DeviceID  string `toml:"device_id"`
+	PairingID string `toml:"pairing_id"`
+	RoomID    string `toml:"room_id"`
+	Locale    string `toml:"locale"`
+
+	Mappings []ServerDeviceAgentBoxMediaMappingConfig `toml:"mappings"`
+}
+
+// MaxServerDeviceAgentBoxMediaMappings bounds the closed Box media mapping
+// set: a few exact phrasings per action for one light, never a general
+// command vocabulary.
+const MaxServerDeviceAgentBoxMediaMappings = 8
+
+// ServerDeviceAgentBoxMediaMappingConfig maps one exact transcript to one
+// existing G0 local rule of the selected Box binding. There is no fuzzy
+// matching, search, intent inference or fallback.
+type ServerDeviceAgentBoxMediaMappingConfig struct {
 	Transcript string `toml:"transcript"`
 	CommandID  string `toml:"command_id"`
-	Locale     string `toml:"locale"`
 }
 
 // ServerDeviceAgentDeviceConfig binds one device identity to an independent
@@ -408,6 +431,36 @@ type ServerDiscoveryConfig struct {
 	// "http://192.168.1.20:8080" or "https://speechkit.fritz.box". Empty
 	// falls back to public_base_url, then to http://<hostname>:<listen-port>.
 	AdvertiseURL string `toml:"advertise_url"`
+	// AdvertisePort is the TCP port announced in the SRV record and the
+	// derived URL. 0 (default) uses the port of listen_addr. Set it when the
+	// listener is published on a different host port (container port maps).
+	AdvertisePort int `toml:"advertise_port"`
+}
+
+// ServerCloudLinkConfig configures the account link of a self-hosted server
+// ([server.cloud_link]). The server obtains its own OAuth credential through
+// the device authorization grant, the person approves on another device, and
+// the server then checks in with the account's device registry. Every value
+// is explicit: a missing one fails closed with the key to set.
+type ServerCloudLinkConfig struct {
+	Enabled bool `toml:"enabled"`
+	// Issuer is the OAuth/OIDC issuer URL; its
+	// /.well-known/openid-configuration names the device authorization,
+	// token and revocation endpoints.
+	Issuer string `toml:"issuer"`
+	// ClientID is the public (secretless) client with the device code grant.
+	ClientID string `toml:"client_id"`
+	// Audience is the API audience the access token is minted for.
+	Audience string `toml:"audience"`
+	// Scope defaults to "openid profile email offline_access"; offline_access
+	// yields the refresh token the server keeps.
+	Scope string `toml:"scope"`
+	// GatewayURL is the base URL of the registry API; the server checks in
+	// with PUT <gateway_url>/v1/connect/edge-devices/<device id>.
+	GatewayURL string `toml:"gateway_url"`
+	// DisplayName labels the server in the account's device list. Empty uses
+	// [server.discovery] instance_name, then the host name.
+	DisplayName string `toml:"display_name"`
 }
 
 // DefaultMaxPreparedVoiceAgentSessions bounds unstarted sessions per account.
@@ -427,45 +480,6 @@ type VoiceAgentLimitsConfig struct {
 	MaxPreparedPerIdentitySessions int `toml:"max_prepared_per_identity_sessions"`
 	// MaxAnonymousSessions caps the anonymous public guide. Default 1.
 	MaxAnonymousSessions int `toml:"max_anonymous_sessions"`
-}
-
-// ServerVoiceAgentConfig groups Server-Target-only Voice Agent integration
-// settings ([server.voiceagent]). Session behavior (provider, prompts, VAD)
-// stays in the shared [voice_agent] section; this block only carries wiring
-// that exists exclusively on the server binary.
-type ServerVoiceAgentConfig struct {
-	ToolBridge ServerToolBridgeConfig `toml:"tool_bridge"`
-}
-
-// ServerToolBridgeConfig configures the generic voice-agent tool bridge
-// ([server.voiceagent.tool_bridge]): an HTTP endpoint pair that supplies
-// per-session tool definitions (manifest) and executes tool calls (invoke)
-// under the wire contract documented in docs/server/toolbridge.v1.md
-// (version "speechkit.toolbridge.v1").
-//
-// The bridge is fail-closed on every axis: it is disabled by default, a
-// session without a bridge credential gets no tools, and any manifest or
-// invoke failure degrades the session to tool-less instead of erroring.
-// The credential is supplied per session by the fronting proxy via
-// CredentialHeader and is held memory-only — never persisted, never logged.
-type ServerToolBridgeConfig struct {
-	// Enabled turns the bridge on. Default false. Deployment env can flip
-	// this by setting SPEECHKIT_TOOLBRIDGE_URL (see server_deployment_env.go).
-	Enabled bool `toml:"enabled"`
-	// ManifestURL is the GET endpoint returning the session tool manifest.
-	ManifestURL string `toml:"manifest_url"`
-	// InvokeURL is the POST endpoint executing one tool call.
-	InvokeURL string `toml:"invoke_url"`
-	// TimeoutMs bounds one invoke round-trip. Default 10000.
-	TimeoutMs int `toml:"timeout_ms"`
-	// MaxCallsPerSession hard-caps bridge tool calls per voice session.
-	// Default 20.
-	MaxCallsPerSession int `toml:"max_calls_per_session"`
-	// CredentialHeader names the request header on POST /v1/voiceagent/sessions
-	// that carries the per-session bridge credential. The header is accepted
-	// only when edge-HMAC authentication succeeded on the same request.
-	// Default "X-Edge-Obo-Subject-Token".
-	CredentialHeader string `toml:"credential_header"`
 }
 
 // ServerTrainingDataConfig governs the server-side wake-word

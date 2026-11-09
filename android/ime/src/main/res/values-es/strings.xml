@@ -16,9 +16,15 @@
     <string name="speechkit_ime_action_retry">Reintentar</string>
     <string name="speechkit_ime_switch_keyboard">Volver al teclado</string>
     <string name="speechkit_ime_language_chip">Idioma de dictado</string>
+    <string name="speechkit_ime_language_multi">Multi</string>
     <string name="speechkit_ime_error_generic">Error en el dictado</string>
     <string name="speechkit_ime_error_not_configured">No hay servidor configurado: abre la app SpeechKit</string>
     <string name="speechkit_ime_error_mic_denied">Permiso del micrófono denegado</string>
+    <string name="speechkit_ime_error_limit">Límite de dictado alcanzado por ahora</string>
+    <string name="speechkit_ime_error_outage">Servicio de dictado no disponible. Inténtalo en breve</string>
+    <string name="speechkit_ime_error_right">El dictado no está incluido en esta cuenta</string>
+    <string name="speechkit_ime_error_consent">Permite la voz en la nube en la app SpeechKit</string>
+    <string name="speechkit_ime_error_expired">La sesión de dictado caducó</string>
     <string name="speechkit_ime_action_voice_agent">Asistente de voz</string>
     <string name="speechkit_ime_agent_action_dictation">Dictado</string>
     <string name="speechkit_ime_agent_action_end">Finalizar conversación</string>
@@ -36,4 +42,9 @@
     <string name="speechkit_ime_agent_error_no_server">El asistente de voz necesita un servidor SpeechKit vinculado</string>
     <string name="speechkit_ime_agent_error_audio">No se pudo continuar con el audio de voz</string>
     <string name="speechkit_ime_agent_error_generic">La conexión de voz falló</string>
+    <string name="speechkit_ime_agent_class_limit">Límite de voz alcanzado por ahora</string>
+    <string name="speechkit_ime_agent_class_outage">Servicio de voz no disponible. Inténtalo en breve</string>
+    <string name="speechkit_ime_agent_class_right">Esta cuenta no puede usar la conversación por voz</string>
+    <string name="speechkit_ime_agent_class_consent">Permite la voz en la nube en la app SpeechKit</string>
+    <string name="speechkit_ime_agent_class_expired">La sesión de voz caducó. Inicia una nueva conversación</string>
 </resources>

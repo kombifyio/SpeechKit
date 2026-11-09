@@ -30,8 +30,9 @@ type VoiceAgentConfig struct {
 	FallbackModel string `toml:"fallback_model"` // Fallback real-time model
 	Voice         string `toml:"voice"`          // Voice name for real-time model
 	// Deepgram Voice Agent think-LLM overrides. The think leg reasons over the
-	// transcript; listen and speak stay Deepgram. When unset, the kernel default
-	// (Deepgram-managed open_ai/gpt-4o-mini) applies. Setting
+	// transcript; listen and speak stay Deepgram. When unset, the catalog
+	// default think chain (catalog.VoiceAgentThinkChain, Deepgram-managed)
+	// applies, with its fallback serving a failing turn. Setting
 	// DeepgramThinkEndpointURL + DeepgramThinkAPIKeyEnv switches the think leg to
 	// a bring-your-own LLM deployment, with the credential resolved from the
 	// named env var (env -> Doppler). Read by the Server- and Device-Target

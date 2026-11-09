@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -35,6 +36,8 @@ type Adapter struct {
 	// WakeVerifier checks start frames that carry a wake candidate before any
 	// provider connects (wake_verify.go). Nil skips the stage.
 	WakeVerifier WakeVerifier
+	// Vocabulary resolves the session's recognition keyterms. Nil sends none.
+	Vocabulary VocabularyResolver
 	// Provider, when set, is used directly (tests pre-inject a fake). In
 	// production it is nil and the provider is chosen per session from
 	// Providers[StartFrame.Provider || DefaultProvider] after the start frame
@@ -60,13 +63,13 @@ type Adapter struct {
 	// MaxDuration terminates a session after this wall-clock duration even
 	// when it remains active. Zero disables the hard cap.
 	MaxDuration time.Duration
+	// Heartbeat is the WebSocket ping period of a running conversation; a
+	// socket without any traffic (frame or pong read, frame written) for
+	// three periods is gone and its session ends (adapter_liveness.go). Zero
+	// uses defaultHeartbeat; a negative value disables it.
+	Heartbeat time.Duration
 	// ConnectTimeout bounds provider and media readiness. Zero uses 15 seconds.
 	ConnectTimeout time.Duration
-	// ToolRouter, when non-nil, supplies server-executed tools for this
-	// session. Tool names it claims (via Definitions) are executed
-	// server-side; all other provider tool calls keep the existing client
-	// pass-through wire contract.
-	ToolRouter SessionToolRouter
 	// OnClose runs after both pumps have returned. Typically removes the
 	// session from the manager.
 	OnClose func()
@@ -91,6 +94,8 @@ type Adapter struct {
 	failureEndReason string             // guarded by writeMu; fatal error determines subsequent terminal reason
 	stopAdmission    context.CancelFunc // set before pumps start; fatal writes cancel upstream first
 	idle             *idleWatchdog
+	live             clientLiveness
+	uplink           *uplinkWatch // nil-safe; armed only while client audio streams
 	flow             *SequenceRunner
 
 	// replyActive tracks whether an agent reply is currently streaming from
@@ -114,10 +119,10 @@ type Adapter struct {
 	outputEpoch  uint64 // guarded by writeMu; currently relayed reply
 	mutedThrough uint64 // guarded by writeMu; cancelled reply epochs
 
-	// bridgeTools is the set of tool names claimed by ToolRouter for this
+	// serverTools is the set of server tool names (server_tools.go) of this
 	// session, keyed by name. Written once before the pumps start; read-only
 	// afterwards, so no lock is needed.
-	bridgeTools map[string]ToolDefinitionFrame
+	serverTools map[string]ToolDefinitionFrame
 	// toolSem bounds concurrent server-side tool executions; toolWG lets Run
 	// wait for in-flight executions before tearing the provider down.
 	toolSem chan struct{}
@@ -203,7 +208,7 @@ func (a *Adapter) Run(parent context.Context) {
 	var authorizationExpiry time.Time
 	if a.Session != nil && (a.Session.VoiceAgentBinding.TargetAgentID != "" || a.Session.VoiceAgentBinding.DirectEndpoint != nil) {
 		var err error
-		authorizationExpiry, err = voiceAuthorizationExpiry(LiveConfigFrame{CapabilityLease: a.Session.VoiceAgentBinding.Lease, OboSubjectToken: a.Session.BridgeCredential,
+		authorizationExpiry, err = voiceAuthorizationExpiry(LiveConfigFrame{CapabilityLease: a.Session.VoiceAgentBinding.Lease, OboSubjectToken: a.Session.DelegatedCredential,
 			CredentialExpiresAt: a.Session.VoiceAgentBinding.CredentialExpiresAt, DirectEndpoint: a.Session.VoiceAgentBinding.DirectEndpoint,
 			EndpointBinding: a.Session.VoiceAgentBinding.EndpointBinding, EndpointSignature: a.Session.VoiceAgentBinding.EndpointSignature})
 		if err != nil || !time.Now().Before(authorizationExpiry) {
@@ -322,12 +327,15 @@ func (a *Adapter) Run(parent context.Context) {
 		cfg.OwnerUserID = a.Session.Owner.UserID
 		cfg.OwnerOrgID = a.Session.Owner.OrgID
 		cfg.OwnerPlan = a.Session.Owner.Plan
-		cfg.OboSubjectToken = a.Session.BridgeCredential
+		cfg.OboSubjectToken = a.Session.DelegatedCredential
 		cfg.AnonymousGrant = a.Session.AnonymousGrant
 		cfg.DirectEndpoint = binding.DirectEndpoint
 		cfg.EndpointBinding, cfg.EndpointSignature = binding.EndpointBinding, binding.EndpointSignature
 		if cfg.DirectEndpoint != nil {
 			cfg.SystemPrompt, cfg.RefinementPrompt = "", ""
+		}
+		if a.Vocabulary != nil {
+			cfg.Keyterms = a.Vocabulary(ctx, a.Session.Owner.UserID, a.Session.Owner.OrgID, a.Session.VoicePrefs, cfg.Locale)
 		}
 	}
 	a.configureFrontDoor(start, &cfg)
@@ -362,11 +370,10 @@ func (a *Adapter) Run(parent context.Context) {
 		}
 		wakeAudio = audio
 	}
-	// Merge server-executed tool definitions from the tool bridge into the
-	// provider config before Connect. Bounded and fail-open to tool-less:
-	// a slow or failing bridge never blocks or kills the voice session.
+	// Merge the front door's server-executed control tools into the
+	// provider config before Connect.
 	if cfg.DirectEndpoint == nil {
-		a.mergeBridgeTools(ctx, &cfg)
+		a.mergeServerTools(&cfg)
 	}
 	// Server-prompted sessions learn the local time and, without tools, that
 	// they must not promise checks or actions they cannot perform. Agents and
@@ -469,12 +476,14 @@ func (a *Adapter) Run(parent context.Context) {
 		a.sendJSON(ctx, *entered)
 	}
 
-	a.toolSem = make(chan struct{}, maxConcurrentBridgeToolCalls)
+	a.toolSem = make(chan struct{}, maxConcurrentServerToolCalls)
 	if duplex, ok := a.Provider.(live.ContinuousDuplexProvider); ok {
 		a.continuousDuplex = duplex.ContinuousDuplex()
 	}
 	a.idle = newIdleWatchdog(a.IdleTimeout)
 	defer a.idle.Stop()
+	a.uplink = newUplinkWatch(a.IdleTimeout)
+	defer a.uplink.stop()
 	var maxDuration <-chan time.Time
 	var maxTimer *time.Timer
 	if a.MaxDuration > 0 {
@@ -485,9 +494,11 @@ func (a *Adapter) Run(parent context.Context) {
 
 	a.receiveEpoch = 1
 	results := make(chan providerReceiveResult, 1)
-	done := make(chan struct{}, 3)
+	done := make(chan struct{}, 4)
+	var clientGone atomic.Bool
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4)
+	go func() { defer wg.Done(); defer a.guardPump("heartbeat", done); a.heartbeat(ctx, done, &clientGone) }()
 	go func() { defer wg.Done(); defer a.guardPump("read", done); a.readPump(ctx, done) }()
 	go func() { defer wg.Done(); defer a.guardPump("provider", done); a.providerReadPump(ctx, results) }()
 	go func() { defer wg.Done(); defer a.guardPump("write", done); a.writePump(ctx, done, results) }()
@@ -503,6 +514,8 @@ func (a *Adapter) Run(parent context.Context) {
 			endReason = "authorization_expired"
 		} else if parent.Err() != nil {
 			endReason = "shutdown"
+		} else if clientGone.Load() {
+			endReason = "client_gone"
 		}
 	case <-ctx.Done():
 		if budgetEnded() {
@@ -516,6 +529,15 @@ func (a *Adapter) Run(parent context.Context) {
 		slog.Info("voiceagent: session idle timeout reached; closing",
 			"session_id", a.Session.ID,
 			"timeout", a.IdleTimeout,
+		)
+		endReason = "idle"
+	case <-a.uplink.fired():
+		// The client was streaming input audio and then delivered nothing
+		// (a stalled device uplink). Close instead of waiting for the
+		// client's own teardown or the general idle timeout.
+		slog.Info("voiceagent: client audio uplink stalled mid-input; closing",
+			"session_id", a.Session.ID,
+			"timeout", min(uplinkStallTimeout, a.IdleTimeout),
 		)
 		endReason = "idle"
 	case <-maxDuration:

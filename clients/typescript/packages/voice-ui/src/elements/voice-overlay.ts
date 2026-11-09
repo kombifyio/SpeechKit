@@ -4,20 +4,24 @@ import { reduceVoiceAgentTurns, type VoiceAgentTurn } from "../core/turns.js";
 import {
   SpeechKitVoiceConsentElement,
   createLocalStorageConsentAdapter,
-  type VoiceConsentAdapter
+  type VoiceConsentAdapter,
 } from "./voice-consent.js";
 import {
   SpeechKitVoiceVisualizerElement,
-  sessionStatusToVisualizerState
+  sessionStatusToVisualizerState,
 } from "./voice-visualizer.js";
 import type {
   SpeechKitVoiceDenial,
   SpeechKitVoiceEvent,
   SpeechKitVoiceSessionState,
-  SpeechKitVoiceSessionStatus
+  SpeechKitVoiceSessionStatus,
 } from "../core/voice-surface.js";
 import type { VoiceUiMessageCatalog } from "../i18n/index.js";
-import { INDICATOR_CSS, RecordingIndicator, sessionStatusToIndicatorState } from "../core/indicator.js";
+import {
+  INDICATOR_CSS,
+  RecordingIndicator,
+  sessionStatusToIndicatorState,
+} from "../core/indicator.js";
 import { SpeechKitVoiceNoticeElement } from "./voice-notice.js";
 
 const EXIT_ICON =
@@ -284,7 +288,7 @@ export class SpeechKitVoiceOverlayElement extends SpeechKitElement {
     this.#exit.addEventListener("click", () => this.exit());
 
     this.#notice = document.createElement(
-      SpeechKitVoiceNoticeElement.tagName
+      SpeechKitVoiceNoticeElement.tagName,
     ) as SpeechKitVoiceNoticeElement;
     this.#notice.setAttribute("part", "denied");
     this.#notice.setAttribute("flat", "");
@@ -332,7 +336,7 @@ export class SpeechKitVoiceOverlayElement extends SpeechKitElement {
   get consentAdapter(): VoiceConsentAdapter {
     if (!this.#consentAdapter) {
       this.#consentAdapter = createLocalStorageConsentAdapter(
-        this.controller?.contract.surface ?? "default"
+        this.controller?.contract.surface ?? "default",
       );
     }
     return this.#consentAdapter;
@@ -505,7 +509,7 @@ export class SpeechKitVoiceOverlayElement extends SpeechKitElement {
     wrap.className = "consent-wrap";
     wrap.setAttribute("part", "consent");
     const consent = document.createElement(
-      SpeechKitVoiceConsentElement.tagName
+      SpeechKitVoiceConsentElement.tagName,
     ) as SpeechKitVoiceConsentElement;
     consent.setAttribute("scope", "continuous");
     const locale = this.getAttribute("locale");
@@ -538,7 +542,9 @@ export class SpeechKitVoiceOverlayElement extends SpeechKitElement {
       const role = document.createElement("span");
       role.className = "role";
       role.textContent =
-        turn.role === "user" ? messages["sk.voice.agent.you"] : messages["sk.voice.agent.assistant"];
+        turn.role === "user"
+          ? messages["sk.voice.agent.you"]
+          : messages["sk.voice.agent.assistant"];
       const text = document.createElement("span");
       text.className = "text";
       text.textContent = turn.text;
@@ -600,13 +606,11 @@ export class SpeechKitVoiceOverlayElement extends SpeechKitElement {
     orb.setAttribute("aria-label", speaking ? messages["sk.voice.agent.interrupt"] : statusLabel);
     orb.addEventListener("click", () => this.#interrupt());
     this.#visualizer = document.createElement(
-      SpeechKitVoiceVisualizerElement.tagName
+      SpeechKitVoiceVisualizerElement.tagName,
     ) as SpeechKitVoiceVisualizerElement;
     this.#visualizer.setAttribute(
       "state",
-      this.state || this.#statusOverride
-        ? sessionStatusToVisualizerState(status)
-        : "connecting"
+      this.state || this.#statusOverride ? sessionStatusToVisualizerState(status) : "connecting",
     );
     orb.append(this.#visualizer);
     this.#stage.append(orb);

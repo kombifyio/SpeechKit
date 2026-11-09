@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -170,7 +171,13 @@ func (a *Agent) StreamTurn(ctx context.Context, input cascaded.AgentInput, turnI
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
-		return cascaded.AgentOutput{}, &TurnError{reason: "permission_denied"}
+		if response.StatusCode == http.StatusUnauthorized {
+			// The server-held endpoint credential was refused: an outage of the
+			// endpoint, never an expiry of the person's own voice session.
+			slog.Warn("speechkit responses: endpoint credential rejected",
+				"endpoint_id", a.config.Connection.EndpointID, "status", response.StatusCode)
+		}
+		return cascaded.AgentOutput{}, &TurnError{reason: statusFailureCode(response.StatusCode)}
 	}
 	if mediaType := strings.Split(response.Header.Get("Content-Type"), ";")[0]; strings.TrimSpace(mediaType) != "text/event-stream" {
 		return cascaded.AgentOutput{}, errors.New("speechkit responses: expected answer stream")
@@ -235,11 +242,34 @@ func (a *Agent) StreamTurn(ctx context.Context, input cascaded.AgentInput, turnI
 	return cascaded.AgentOutput{Text: text, Action: "display"}, nil
 }
 
-// TurnError reports a denied turn without exposing upstream error details.
+// statusFailureCode names the public outcome of a non-200 endpoint answer by
+// its status class. Only an explicit 403 is a missing right; an outage or a
+// used-up limit never reads like a denial (cascaded.FailureClass). A 401
+// refuses the server-held endpoint credential, not the person: it falls to
+// provider_unavailable (outage), which leaves the voice session usable.
+func statusFailureCode(status int) string {
+	switch {
+	case status == http.StatusPaymentRequired:
+		return "quota_exhausted"
+	case status == http.StatusForbidden:
+		return "permission_denied"
+	case status == http.StatusTooManyRequests:
+		return "rate_limited"
+	case status == http.StatusRequestTimeout || status == http.StatusGatewayTimeout:
+		return "turn_timeout"
+	case status == http.StatusUnauthorized || status >= http.StatusInternalServerError:
+		return "provider_unavailable"
+	default:
+		return "provider_failed"
+	}
+}
+
+// TurnError reports a failed or denied turn without exposing upstream error
+// details; Code names the public outcome.
 type TurnError struct{ reason string }
 
-// Error returns the public denial description.
-func (e *TurnError) Error() string { return "speechkit responses: turn denied" }
+// Error returns the public failure description.
+func (e *TurnError) Error() string { return "speechkit responses: turn failed: " + e.reason }
 
 // Code returns the structured safe failure code.
 func (e *TurnError) Code() string { return e.reason }

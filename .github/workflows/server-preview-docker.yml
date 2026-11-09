@@ -68,7 +68,7 @@ jobs:
         with:
           context: .
           file: deploy/docker/Dockerfile.server
-          target: speechkit-server
+          target: speechkit-server-selfhosted
           push: false
           load: true
           platforms: linux/amd64
@@ -94,7 +94,7 @@ jobs:
         with:
           context: .
           file: deploy/docker/Dockerfile.server
-          target: speechkit-server
+          target: speechkit-server-selfhosted
           push: true
           platforms: linux/amd64
           tags: |

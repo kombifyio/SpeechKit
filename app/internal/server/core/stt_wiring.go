@@ -16,6 +16,7 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/allproviders"
+	localstt "github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/local"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/openaicompat"
 )
 
@@ -233,11 +234,64 @@ func buildSTTRouter(cfg *config.Config) (*stt.Router, []namedProvider, []string)
 	return r, providers, notes
 }
 
+// startLocalSTT starts and supervises the router's host-local STT sidecar
+// for the server's process lifetime, so a [local] model (the image's bundled
+// Phonon-2.5 under the self-hosted defaults) serves Dictation, Assist and the
+// Voice Agent without a separate STT container. The Box media listener
+// starts and supervises the same runtime itself, so it is left to it there.
+// The stt.local readiness component follows the sidecar: starting before each
+// start, ok once it answers, degraded with the error after a failed start or
+// an exit, and the stt aggregate is recomputed on every change.
+func startLocalSTT(ctx context.Context, app *App, cfg *config.Config, router *stt.Router) {
+	provider := supervisedLocalSTT(cfg, router)
+	if provider == nil {
+		return
+	}
+	component := namedProvider{name: "stt.local", provider: provider}
+	onState := func(state localSTTState, err error) {
+		if app == nil || app.Health == nil {
+			return
+		}
+		switch state {
+		case localSTTStarting:
+			app.Health.SetReadyWithOptions(component.name, StatusStarting, "starting local STT sidecar", sttProviderOptions(component))
+		case localSTTReady:
+			app.Health.SetReadyWithOptions(component.name, StatusOK, "ready", sttProviderOptions(component))
+		case localSTTDown:
+			detail := "local STT sidecar is down"
+			if err != nil {
+				detail = err.Error()
+			}
+			app.Health.SetReadyWithOptions(component.name, StatusDegraded, detail, sttProviderOptions(component))
+		}
+		if app.ModeEnabled(ModeDictation) {
+			updateSTTAggregate(app)
+		}
+	}
+	go superviseLocalSTT(ctx, provider, cfg.Local.ModelPath, "STT wiring: local STT", "local dictation is unavailable until it restarts", onState)
+}
+
+// supervisedLocalSTT is the router's host-local provider when startLocalSTT
+// runs it, nil otherwise.
+func supervisedLocalSTT(cfg *config.Config, router *stt.Router) *localstt.Provider {
+	if cfg == nil || router == nil || cfg.Server.DeviceAgent.BoxMedia.Enabled {
+		return nil
+	}
+	provider, ok := router.Local().(*localstt.Provider)
+	if !ok {
+		return nil
+	}
+	return provider
+}
+
 // namedProvider pairs a provider with the health-component name the bootstrap
 // registers it under.
 type namedProvider struct {
 	name     string
 	provider stt.STTProvider
+	// supervised components get their status from their supervisor
+	// (startLocalSTT), not from the one-shot probe.
+	supervised bool
 }
 
 // registerProviderHealth schedules a one-shot readiness check per provider
@@ -259,6 +313,9 @@ func registerProviderHealth(app *App, providers []namedProvider, blockSTT bool) 
 	}
 	for _, np := range providers {
 		app.Health.SetReadyWithOptions(np.name, StatusStarting, "probing", sttProviderOptions(np))
+		if np.supervised {
+			continue
+		}
 		go probeProviderHealth(app, np, blockSTT)
 	}
 }

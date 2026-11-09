@@ -16,9 +16,15 @@
     <string name="speechkit_ime_action_retry">重试</string>
     <string name="speechkit_ime_switch_keyboard">切换回键盘</string>
     <string name="speechkit_ime_language_chip">听写语言</string>
+    <string name="speechkit_ime_language_multi">多语言</string>
     <string name="speechkit_ime_error_generic">听写失败</string>
     <string name="speechkit_ime_error_not_configured">未配置服务器：请打开 SpeechKit 应用</string>
     <string name="speechkit_ime_error_mic_denied">麦克风权限被拒绝</string>
+    <string name="speechkit_ime_error_limit">暂时已达到听写上限</string>
+    <string name="speechkit_ime_error_outage">听写服务暂不可用，请稍后再试</string>
+    <string name="speechkit_ime_error_right">此账户不包含听写功能</string>
+    <string name="speechkit_ime_error_consent">请在 SpeechKit 应用中允许云端语音</string>
+    <string name="speechkit_ime_error_expired">听写会话已过期</string>
     <string name="speechkit_ime_action_voice_agent">语音助手</string>
     <string name="speechkit_ime_agent_action_dictation">听写</string>
     <string name="speechkit_ime_agent_action_end">结束对话</string>
@@ -36,4 +42,9 @@
     <string name="speechkit_ime_agent_error_no_server">语音助手需要已配对的 SpeechKit 服务器</string>
     <string name="speechkit_ime_agent_error_audio">无法继续传输语音</string>
     <string name="speechkit_ime_agent_error_generic">语音连接失败</string>
+    <string name="speechkit_ime_agent_class_limit">暂时已达到语音使用上限</string>
+    <string name="speechkit_ime_agent_class_outage">语音服务暂不可用，请稍后再试</string>
+    <string name="speechkit_ime_agent_class_right">此账户无法使用语音对话</string>
+    <string name="speechkit_ime_agent_class_consent">请在 SpeechKit 应用中允许云端语音</string>
+    <string name="speechkit_ime_agent_class_expired">语音会话已过期，请开始新的对话</string>
 </resources>

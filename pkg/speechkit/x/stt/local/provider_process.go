@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/procguard"
@@ -129,12 +130,21 @@ func (p *Provider) StartServer(ctx context.Context) error {
 		return fmt.Errorf("%s startup was stopped", name)
 	}
 
+	// Model load (health) and the inference warmup run here, right after the
+	// process starts, so the first dictation meets a warm model. Requests
+	// that arrive meanwhile wait in Transcribe and report the wait to the
+	// host (SetStartupWaitObserver). A failure is returned to the caller;
+	// nothing here falls back to another provider.
+	warmupStarted := time.Now()
+	p.log().Info("local STT warmup started", "server", name, "model", p.displayModel())
 	if err := p.waitForReady(ctx); err != nil {
 		p.stopStartedProcess(generation, cmd, processDone)
+		p.log().Warn("local STT warmup failed", "server", name, "phase", "model_load", "error", err)
 		return fmt.Errorf("%s health probe never returned ready: %w", name, err)
 	}
 	if err := p.waitForInferenceReady(ctx); err != nil {
 		p.stopStartedProcess(generation, cmd, processDone)
+		p.log().Warn("local STT warmup failed", "server", name, "phase", "inference", "error", err)
 		return fmt.Errorf("%s inference probe never returned ready: %w", name, err)
 	}
 
@@ -142,6 +152,7 @@ func (p *Provider) StartServer(ctx context.Context) error {
 		p.stopStartedProcess(generation, cmd, processDone)
 		return fmt.Errorf("%s stopped before readiness: %w", name, err)
 	}
+	p.log().Info("local STT warmup finished", "server", name, "model", p.displayModel(), "ms", time.Since(warmupStarted).Milliseconds())
 	p.log().Info("local STT server ready", "server", name, "url", p.serverURL())
 	return nil
 }

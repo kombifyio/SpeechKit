@@ -34,6 +34,8 @@ class AssistantListenTurn(
     private val executeIntent: suspend (AssistantIntent) -> ActionResult,
     private val companionTurn: CompanionTurnExecutor? = null,
     private val onLevel: (Float) -> Unit = {},
+    /** The Companion took the heard text (null) and then each answer so far, so the overlay never sits idle. */
+    private val onCompanionProgress: (String?) -> Unit = {},
 ) {
     suspend fun run(): AssistantTurnOutcome {
         val utterance = try {
@@ -63,12 +65,15 @@ class AssistantListenTurn(
     private suspend fun heard(text: String): AssistantTurnOutcome {
         val intent = intentRouter.classify(text)
         val companion = companionTurn
+        // With the hosted Cloud connection selected the Companion answers a general query (the app's gate keeps a transcript
+        // on the device otherwise); a turn it does not take falls back to local Assist.
         val assist = if (
             intent.type == IntentType.GENERAL_QUERY &&
             companion != null &&
-            companion.hasSession()
+            companion.available()
         ) {
-            companion.startTurn(text)
+            onCompanionProgress(null)
+            companion.startTurn(text) { partial -> onCompanionProgress(partial) } ?: executeIntent(intent)
         } else {
             executeIntent(intent)
         }

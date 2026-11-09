@@ -93,14 +93,9 @@ func validateServerDeviceAgentBoxMedia(cfg *config.Config, reservedEnvs, reserve
 	deviceID := strings.TrimSpace(media.DeviceID)
 	pairingID := strings.TrimSpace(media.PairingID)
 	roomID := strings.TrimSpace(media.RoomID)
-	commandID := strings.TrimSpace(media.CommandID)
-	transcript := strings.TrimSpace(media.Transcript)
 	locale := strings.TrimSpace(media.Locale)
-	if !validServerDeviceAgentID(deviceID) || !validServerDeviceAgentID(pairingID) || !validServerDeviceAgentID(roomID) || !validServerDeviceAgentID(commandID) {
-		return fmt.Errorf("%s device_id, pairing_id, room_id, and command_id must be bounded stable identifiers", path)
-	}
-	if transcript == "" || len(transcript) > 512 || strings.ContainsAny(transcript, "\x00\r\n") {
-		return fmt.Errorf("%s.transcript must be one bounded single-line utterance", path)
+	if !validServerDeviceAgentID(deviceID) || !validServerDeviceAgentID(pairingID) || !validServerDeviceAgentID(roomID) {
+		return fmt.Errorf("%s device_id, pairing_id, and room_id must be bounded stable identifiers", path)
 	}
 	if !validServerDeviceAgentLanguage(locale) {
 		return fmt.Errorf("%s.locale must be a bounded language tag", path)
@@ -116,18 +111,69 @@ func validateServerDeviceAgentBoxMedia(cfg *config.Config, reservedEnvs, reserve
 		if !serverDeviceAgentBoxMediaHasRFC1918Prefix(device.AllowedClientCIDRs) {
 			return fmt.Errorf("%s selected device allowed_client_cidrs must include at least one RFC1918 IPv4 prefix", path)
 		}
-		for _, rule := range device.LocalRules {
-			if strings.TrimSpace(rule.RuleID) != commandID {
-				continue
-			}
-			if strings.TrimSpace(rule.TriggerText) != transcript || strings.TrimSpace(rule.Locale) != locale {
-				return fmt.Errorf("%s transcript and locale must exactly match the selected G0 rule", path)
-			}
-			return nil
-		}
-		return fmt.Errorf("%s.command_id must select one existing G0 rule for the paired device", path)
+		return validateServerDeviceAgentBoxMediaMappings(path, media.Mappings, device.LocalRules, locale)
 	}
 	return fmt.Errorf("%s.device_id must select one existing paired device", path)
+}
+
+// validateServerDeviceAgentBoxMediaMappings proves the closed mapping set:
+// bounded, unique by command and normalized transcript, every entry an exact
+// re-statement of one G0 rule of the selected binding in the binding locale,
+// all entries one light, and both turn_on and turn_off present.
+func validateServerDeviceAgentBoxMediaMappings(path string, mappings []config.ServerDeviceAgentBoxMediaMappingConfig, rules []config.ServerDeviceAgentLocalRuleConfig, locale string) error {
+	if len(mappings) == 0 || len(mappings) > config.MaxServerDeviceAgentBoxMediaMappings {
+		return fmt.Errorf("%s.mappings must contain 1..%d exact entries", path, config.MaxServerDeviceAgentBoxMediaMappings)
+	}
+	rulesByID := make(map[string]config.ServerDeviceAgentLocalRuleConfig, len(rules))
+	for _, rule := range rules {
+		rulesByID[strings.TrimSpace(rule.RuleID)] = rule
+	}
+	seenCommands := make(map[string]int, len(mappings))
+	seenTranscripts := make(map[string]int, len(mappings))
+	actions := make(map[string]bool, 2)
+	entityID := ""
+	for index, mapping := range mappings {
+		entry := fmt.Sprintf("%s.mappings[%d]", path, index)
+		commandID := strings.TrimSpace(mapping.CommandID)
+		transcript := strings.TrimSpace(mapping.Transcript)
+		if !validServerDeviceAgentID(commandID) {
+			return fmt.Errorf("%s.command_id must be a bounded stable identifier", entry)
+		}
+		if transcript == "" || len(transcript) > 512 || strings.ContainsAny(transcript, "\x00\r\n") {
+			return fmt.Errorf("%s.transcript must be one bounded single-line utterance", entry)
+		}
+		if previous, exists := seenCommands[commandID]; exists {
+			return fmt.Errorf("%s duplicates the command_id of mappings[%d]", entry, previous)
+		}
+		seenCommands[commandID] = index
+		normalized := strings.ToLower(strings.Join(strings.Fields(transcript), " "))
+		if previous, exists := seenTranscripts[normalized]; exists {
+			return fmt.Errorf("%s is ambiguous: its normalized transcript repeats mappings[%d]", entry, previous)
+		}
+		seenTranscripts[normalized] = index
+		rule, exists := rulesByID[commandID]
+		if !exists {
+			return fmt.Errorf("%s.command_id must select one existing G0 rule for the paired device", entry)
+		}
+		if strings.TrimSpace(rule.TriggerText) != transcript || strings.TrimSpace(rule.Locale) != locale {
+			return fmt.Errorf("%s transcript and locale must exactly match the selected G0 rule", entry)
+		}
+		action := strings.TrimSpace(rule.Action)
+		if action != "turn_on" && action != "turn_off" {
+			return fmt.Errorf("%s must select a turn_on or turn_off G0 rule", entry)
+		}
+		actions[action] = true
+		ruleEntity := strings.TrimSpace(rule.EntityID)
+		if entityID == "" {
+			entityID = ruleEntity
+		} else if ruleEntity != entityID {
+			return fmt.Errorf("%s must target the one selected light %q", entry, entityID)
+		}
+	}
+	if !actions["turn_on"] || !actions["turn_off"] {
+		return fmt.Errorf("%s.mappings must cover both turn_on and turn_off of the selected light", path)
+	}
+	return nil
 }
 
 func serverDeviceAgentBoxMediaRFC1918Addr(addr netip.Addr) bool {

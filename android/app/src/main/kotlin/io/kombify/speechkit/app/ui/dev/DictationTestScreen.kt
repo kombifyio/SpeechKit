@@ -45,6 +45,10 @@ import io.kombify.speechkit.domain.testSurfaceConnectProfile
 import io.kombify.speechkit.stt.streaming.DictationSegmentOptions
 import io.kombify.speechkit.stt.streaming.StreamingSttSession
 import io.kombify.speechkit.stt.streaming.TranscriptEvent
+import io.kombify.speechkit.stt.streaming.VocabularySession
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -157,6 +161,36 @@ fun DictationTestScreen(profileSource: ConnectionProfileSource) {
         }
     }
 
+    var injected by remember { mutableStateOf("") }
+
+    // Feeds a typed transcript through the same on-device wrapper the
+    // DictationController applies, so the account vocabulary can be checked
+    // without speaking: the keyterms a segment would carry and the rewrite.
+    fun runInjected() {
+        val text = injected.trim()
+        if (text.isEmpty()) return
+        scope.launch {
+            val scripted = ScriptedSession(text)
+            val wrapped = VocabularySession(scripted, rewriteResults = true, keytermsWithAliases = false)
+            val collector = launch {
+                wrapped.events.collect { event ->
+                    when (event) {
+                        is TranscriptEvent.Draft -> appendLog("Injected draft: ${event.text}")
+                        is TranscriptEvent.Final -> {
+                            finals.add(event.text)
+                            appendLog("Injected final: ${event.text}")
+                        }
+                        else -> Unit
+                    }
+                }
+            }
+            wrapped.startSegment(DictationSegmentOptions())
+            appendLog("Injected segment keyterms: ${scripted.keyterms}")
+            wrapped.finishSegment()
+            collector.join()
+        }
+    }
+
     fun micPermissionGranted(): Boolean = ContextCompat.checkSelfPermission(
         context, Manifest.permission.RECORD_AUDIO,
     ) == PackageManager.PERMISSION_GRANTED
@@ -230,6 +264,16 @@ fun DictationTestScreen(profileSource: ConnectionProfileSource) {
 
         Text(status, style = MaterialTheme.typography.labelLarge)
 
+        OutlinedTextField(
+            value = injected,
+            onValueChange = { injected = it },
+            label = { Text("Simulated on-device result") },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedButton(onClick = { runInjected() }, enabled = injected.isNotBlank()) {
+            Text("Run through account vocabulary")
+        }
+
         Button(
             onClick = {
                 val open = session ?: return@Button
@@ -293,4 +337,29 @@ fun DictationTestScreen(profileSource: ConnectionProfileSource) {
             )
         }
     }
+}
+
+/** A session that answers the next segment with a fixed transcript. */
+private class ScriptedSession(private val text: String) : StreamingSttSession {
+    private val channel = Channel<TranscriptEvent>(Channel.UNLIMITED)
+    override val events: Flow<TranscriptEvent> = channel.receiveAsFlow()
+
+    /** What the last segment was started with. */
+    var keyterms: List<String> = emptyList()
+        private set
+
+    override suspend fun startSegment(options: DictationSegmentOptions) {
+        keyterms = options.keyterms
+    }
+
+    override suspend fun sendAudio(pcm: ByteArray) = Unit
+
+    override suspend fun finishSegment() {
+        channel.trySend(TranscriptEvent.Draft(1, text))
+        channel.trySend(TranscriptEvent.Final(1, text))
+        channel.trySend(TranscriptEvent.SegmentDone(1))
+        channel.close()
+    }
+
+    override suspend fun close() = channel.close().let { }
 }

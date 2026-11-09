@@ -4,6 +4,9 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/phonon"
 )
 
 const (
@@ -14,6 +17,9 @@ const (
 	defaultServerLLMBaseURL = "http://speechkit-llm:8080/v1"
 	defaultServerLLMModel   = DefaultLocalLLMModel
 	defaultServerSQLitePath = "/var/lib/speechkit/data/speechkit.db"
+	// bundledServerSTTModelDir is where deploy/docker/Dockerfile.server puts
+	// Phonon-2.5, outside the models volume so a mounted volume cannot hide it.
+	bundledServerSTTModelDir = "/usr/local/share/speechkit/models/phonon-2.5"
 
 	serverPublicURLEnv         = "SPEECHKIT_PUBLIC_URL"
 	serverPostgresDSNEnv       = "POSTGRES_DSN"
@@ -31,6 +37,16 @@ func ApplyServerRuntimeDefaults(cfg *Config) []string {
 	}
 
 	var notes []string
+
+	// The built-in "local-only" strategy is the desktop's, which embeds a
+	// local engine. A server config that sets no strategy and no [local]
+	// model reaches its providers over the network, so its absent-key default
+	// is cloud-only; the self-hosted default below may still choose the
+	// bundled local model. A strategy the file sets is never rewritten.
+	if !cfg.keyDefined("routing.strategy") && strings.TrimSpace(cfg.Local.ModelPath) == "" &&
+		strings.EqualFold(strings.TrimSpace(cfg.Routing.Strategy), "local-only") {
+		cfg.Routing.Strategy = "cloud-only"
+	}
 
 	if publicURL, envName := firstPresentEnv(serverPublicURLEnv); publicURL != "" && strings.TrimSpace(cfg.Server.PublicURL) == "" {
 		cfg.Server.PublicURL = strings.TrimRight(publicURL, "/")
@@ -95,31 +111,13 @@ func ApplyServerRuntimeDefaults(cfg *Config) []string {
 		return notes
 	}
 
-	sttURL := envOrDefault("SPEECHKIT_SELFHOSTED_STT_URL", defaultServerSTTURL)
-	if strings.TrimSpace(cfg.VPS.URL) == "" {
-		cfg.VPS.URL = sttURL
-		notes = append(notes, "self-hosted STT default: "+LogSafeURL(sttURL))
-	}
-	if !cfg.VPS.Enabled {
-		cfg.VPS.Enabled = true
-	}
-	if strings.TrimSpace(cfg.VPS.Model) == "" {
-		cfg.VPS.Model = envOrDefault("SPEECHKIT_SELFHOSTED_STT_MODEL", defaultServerSTTModel)
-	}
-	if strings.TrimSpace(cfg.VPS.APIKeyEnv) == "" || strings.TrimSpace(cfg.VPS.APIKeyEnv) == "VPS_API_KEY" {
-		cfg.VPS.APIKeyEnv = "SPEECHKIT_SELFHOSTED_STT_API_KEY"
-	}
-	// The kernel's default config Strategy is "local-only" because the
-	// Device-Target embeds an in-process whisper.cpp Local provider. The
-	// Server-Target has no such Local provider — it reaches whisper.cpp
-	// over the network via the VPS-shaped client at SPEECHKIT_SELFHOSTED_
-	// STT_URL. Force Strategy to cloud-only here (not just default-when-
-	// empty) so a fresh self-hosted install routes through the VPS
-	// provider instead of failing with "local provider not configured".
-	switch strings.TrimSpace(strings.ToLower(cfg.Routing.Strategy)) {
-	case "", "local-only":
-		cfg.Routing.Strategy = "cloud-only"
-		notes = append(notes, "self-hosted routing: forced strategy=cloud-only (server reaches whisper.cpp via VPS endpoint)")
+	if bundled, note := bundledServerSTTDefault(cfg); bundled {
+		notes = append(notes, note)
+	} else {
+		if note != "" {
+			notes = append(notes, note)
+		}
+		notes = append(notes, applyServerVPSSTTDefaults(cfg)...)
 	}
 
 	llmBaseURL := envOrDefault("SPEECHKIT_SELFHOSTED_LLM_BASE_URL", defaultServerLLMBaseURL)
@@ -185,6 +183,92 @@ func ApplyServerRuntimeDefaults(cfg *Config) []string {
 		})
 	}
 
+	return notes
+}
+
+// bundledServerSTTDefault makes the server image's bundled Phonon-2.5 the
+// self-hosted STT when nothing else is configured: no
+// SPEECHKIT_SELFHOSTED_STT_URL, no [vps] url, no [local] model and no cloud
+// credential in the environment. The server then runs speechkit-stt-sherpa on
+// it (core.startLocalSTT), so a fresh install dictates with no STT container
+// and no key. An explicit operator choice always wins: a config file that sets
+// [local] enabled or model_path, or a routing strategy the local model cannot
+// serve (cloud-only), keeps the whisper-server default, and a strategy the file
+// sets is never rewritten. It reports false, with the reason in note, when the
+// image has no bundled model, the processor cannot run it (Phonon needs
+// x86-64-v3 or ARM dot product) or the full_local data profile is bound (it
+// admits whisper.cpp only).
+func bundledServerSTTDefault(cfg *Config) (bool, string) {
+	if envPresent("SPEECHKIT_SELFHOSTED_STT_URL") || strings.TrimSpace(cfg.VPS.URL) != "" {
+		return false, ""
+	}
+	if cfg.keyDefined("local.enabled") || cfg.keyDefined("local.model_path") || strings.TrimSpace(cfg.Local.ModelPath) != "" {
+		return false, ""
+	}
+	strategy := strings.TrimSpace(strings.ToLower(cfg.Routing.Strategy))
+	if cfg.keyDefined("routing.strategy") && strategy != "local-only" && strategy != "dynamic" {
+		return false, "self-hosted STT: bundled Phonon-2.5 not used because config.toml sets [routing] strategy = \"" + cfg.Routing.Strategy + "\""
+	}
+	for _, name := range CloudCredentialEnvNames(cfg) {
+		if envPresent(name) {
+			return false, ""
+		}
+	}
+	dir := envOrDefault("SPEECHKIT_SELFHOSTED_STT_MODEL_DIR", bundledServerSTTModelDir)
+	if !phonon.IsModelDir(dir) {
+		return false, ""
+	}
+	if netsec.FullLocal() {
+		return false, "self-hosted STT: bundled Phonon-2.5 not used under the full_local data profile, which admits whisper.cpp only; using the whisper-server default (SPEECHKIT_SELFHOSTED_STT_URL)"
+	}
+	if !phonon.CPUSupported() {
+		return false, "self-hosted STT: bundled Phonon-2.5 skipped (this processor lacks AVX2/x86-64-v3); using the whisper-server default (SPEECHKIT_SELFHOSTED_STT_URL)"
+	}
+	cfg.Local.Enabled = true
+	cfg.Local.ModelPath = dir
+	cfg.Local.Port = 0
+	if !cfg.keyDefined("routing.strategy") {
+		cfg.Routing.Strategy = "local-only"
+	}
+	return true, "self-hosted STT default: bundled Phonon-2.5 (" + dir + "), strategy=" + cfg.Routing.Strategy
+}
+
+// applyServerVPSSTTDefaults points the self-hosted STT at an
+// OpenAI-compatible whisper-server (SPEECHKIT_SELFHOSTED_STT_URL, default the
+// compose sidecar) when the image's bundled model is not the default.
+func applyServerVPSSTTDefaults(cfg *Config) []string {
+	var notes []string
+	sttURL := envOrDefault("SPEECHKIT_SELFHOSTED_STT_URL", defaultServerSTTURL)
+	if strings.TrimSpace(cfg.VPS.URL) == "" {
+		cfg.VPS.URL = sttURL
+		notes = append(notes, "self-hosted STT default: "+LogSafeURL(sttURL))
+	}
+	if !cfg.VPS.Enabled {
+		cfg.VPS.Enabled = true
+	}
+	if strings.TrimSpace(cfg.VPS.Model) == "" {
+		cfg.VPS.Model = envOrDefault("SPEECHKIT_SELFHOSTED_STT_MODEL", defaultServerSTTModel)
+	}
+	if strings.TrimSpace(cfg.VPS.APIKeyEnv) == "" || strings.TrimSpace(cfg.VPS.APIKeyEnv) == "VPS_API_KEY" {
+		cfg.VPS.APIKeyEnv = "SPEECHKIT_SELFHOSTED_STT_API_KEY"
+	}
+	// The kernel's default config Strategy is "local-only" because the
+	// Device-Target embeds an in-process whisper.cpp Local provider. The
+	// Server-Target has no such Local provider — it reaches whisper.cpp
+	// over the network via the VPS-shaped client at SPEECHKIT_SELFHOSTED_
+	// STT_URL. Force Strategy to cloud-only here (not just default-when-
+	// empty) so a fresh self-hosted install routes through the VPS
+	// provider instead of failing with "local provider not configured".
+	// A strategy the config file sets explicitly is the operator's choice
+	// and stays.
+	switch strings.TrimSpace(strings.ToLower(cfg.Routing.Strategy)) {
+	case "", "local-only":
+		if cfg.keyDefined("routing.strategy") {
+			break
+		}
+		cfg.Routing.Strategy = "cloud-only"
+		notes = append(notes, "self-hosted routing: forced strategy=cloud-only (server reaches whisper.cpp via VPS endpoint)")
+	}
 	return notes
 }
 

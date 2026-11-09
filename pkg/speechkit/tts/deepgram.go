@@ -25,6 +25,7 @@ const (
 	deepgramTTSSampleRate     = 24000
 	deepgramTTSMaxChars       = 1900 // Aura REST hard limit is 2000 chars/request; stay under.
 	deepgramTTSMaxAudio       = 64 << 20
+	deepgramStreamFrameBytes  = 8192 // the live output's frame size (cascaded ChunkAudio)
 )
 
 // Deepgram implements Provider using the Deepgram Aura-2 text-to-speech REST
@@ -278,6 +279,20 @@ func (d *Deepgram) buildSpeakEndpoint(model, format string) (string, error) {
 }
 
 func (d *Deepgram) synthesizeChunk(ctx context.Context, endpoint, text string) ([]byte, error) {
+	resp, err := d.speak(ctx, endpoint, text)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
+	audio, err := io.ReadAll(io.LimitReader(resp.Body, deepgramTTSMaxAudio))
+	if err != nil {
+		return nil, fmt.Errorf("deepgram tts: read response: %w", err)
+	}
+	return audio, nil
+}
+
+// speak sends one /v1/speak request and returns the 200 response for the caller to read and close.
+func (d *Deepgram) speak(ctx context.Context, endpoint, text string) (*http.Response, error) {
 	body, err := json.Marshal(map[string]string{"text": text})
 	if err != nil {
 		return nil, fmt.Errorf("deepgram tts: marshal request: %w", err)
@@ -293,17 +308,94 @@ func (d *Deepgram) synthesizeChunk(ctx context.Context, endpoint, text string) (
 	if err != nil {
 		return nil, fmt.Errorf("deepgram tts: request failed: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck // response body close error is not actionable
-
 	if resp.StatusCode != http.StatusOK {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		_ = resp.Body.Close()
 		return nil, netsec.ProviderStatusError("deepgram tts", resp.StatusCode, errBody)
 	}
-	audio, err := io.ReadAll(io.LimitReader(resp.Body, deepgramTTSMaxAudio))
-	if err != nil {
-		return nil, fmt.Errorf("deepgram tts: read response: %w", err)
+	return resp, nil
+}
+
+// SynthesizePCMStream implements [PCMStreamer]: Aura streams raw 16-bit PCM at
+// its native 24 kHz while it renders, so playback can start after the first
+// bytes instead of the whole clip. Another rate, an empty text, a missing key
+// and the English Flux voices (a socket protocol of their own) are not streamed.
+func (d *Deepgram) SynthesizePCMStream(ctx context.Context, text string, opts SynthesizeOpts, sampleRate int, emit func(pcm []byte) error) (bool, error) {
+	text = strings.TrimSpace(text)
+	if text == "" || d.apiKey == "" || sampleRate != deepgramTTSSampleRate || emit == nil {
+		return false, nil
 	}
-	return audio, nil
+	providerOverrides := provideropts.Values{}
+	if strings.TrimSpace(d.model) != "" {
+		providerOverrides[provideropts.OptionVoice] = strings.TrimSpace(d.model)
+	}
+	resolved := ResolveSynthesizeOptions("deepgram", "tts.deepgram.aura-2", opts, provideropts.Values{
+		provideropts.OptionAudioFormat: "mp3",
+	}, providerOverrides)
+	model := d.resolveModel(SynthesizeOpts{Locale: resolved.Locale, Voice: resolved.Voice})
+	if IsDeepgramFluxVoice(model) {
+		if deepgramLocaleIsEnglish(resolved.Locale) {
+			return false, nil
+		}
+		model = deepgramLocaleAuraVoice(resolved.Locale)
+	}
+	endpoint, err := d.buildSpeakEndpoint(model, "pcm")
+	if err != nil {
+		return false, err
+	}
+	var total int64
+	buf := make([]byte, 8192)
+	// Frames leave at deepgramStreamFrameBytes (about 170 ms): one network read is often under 4 KB, and a
+	// live output queue bounds its items, so read-sized frames would fill it on a long answer.
+	// emitted reports whether any audio reached emit: only then may a caller skip its non-streaming retry.
+	var pending []byte
+	emitted := false
+	flush := func(all bool) error {
+		for len(pending) >= deepgramStreamFrameBytes || (all && len(pending) >= 2) {
+			n := min(len(pending), deepgramStreamFrameBytes) &^ 1
+			frame := append([]byte(nil), pending[:n]...)
+			pending = pending[n:]
+			if err := emit(frame); err != nil {
+				return err
+			}
+			emitted = true
+		}
+		return nil
+	}
+	for _, chunk := range splitForDeepgramTTS(text, deepgramTTSMaxChars) {
+		resp, err := d.speak(ctx, endpoint, chunk)
+		if err != nil {
+			return emitted, err
+		}
+		for {
+			n, readErr := resp.Body.Read(buf)
+			if n > 0 {
+				total += int64(n)
+				if total > deepgramTTSMaxAudio {
+					_ = resp.Body.Close()
+					return emitted, fmt.Errorf("deepgram tts: audio exceeds %d bytes", deepgramTTSMaxAudio)
+				}
+				pending = append(pending, buf[:n]...)
+				if err := flush(false); err != nil {
+					_ = resp.Body.Close()
+					return emitted, err
+				}
+			}
+			if readErr == io.EOF {
+				break
+			}
+			if readErr != nil {
+				_ = resp.Body.Close()
+				return emitted, fmt.Errorf("deepgram tts: read response: %w", readErr)
+			}
+		}
+		_ = resp.Body.Close()
+	}
+	// A trailing odd byte is half a sample and is dropped.
+	if err := flush(true); err != nil {
+		return emitted, err
+	}
+	return emitted, nil
 }
 
 // Health synthesizes a one-word mp3 clip, which is a billable request; it

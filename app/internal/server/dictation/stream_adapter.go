@@ -315,7 +315,7 @@ func (a *StreamAdapter) startSegment(ctx context.Context, id uint64, start Strea
 	// candidate prioritization treats an unknown/unconfigured preference as a
 	// no-op, so an unsatisfiable preference falls back instead of erroring.
 	if strings.TrimSpace(start.ProviderProfileID) == "" {
-		start.ProviderProfileID = a.sessionPreferredProfile()
+		start.ProviderProfileID = a.sessionPreferredProfile(ctx)
 	}
 	format := start.AudioFormat()
 	segCtx, segCancel := context.WithCancel(ctx)
@@ -328,6 +328,8 @@ func (a *StreamAdapter) startSegment(ctx context.Context, id uint64, start Strea
 			scope.UserID = a.Session.Owner.UserID
 			scope.TenantID = a.Session.Owner.OrgID
 			segCtx = speechstorage.WithScope(segCtx, scope)
+			// The signed vocabulary preference captured at session mint.
+			segCtx = internalcustomize.WithVocabularyRef(segCtx, a.Session.VoicePrefs.Vocabulary)
 		}
 		request, rules := a.Customization.applyCustomizationHints(segCtx, stt.TranscribeOptionsFromStream(streamOpts))
 		replacements = rules
@@ -336,9 +338,9 @@ func (a *StreamAdapter) startSegment(ctx context.Context, id uint64, start Strea
 	var stream speechkit.DictationStream
 	if !streamOpts.InterimResults {
 		if resolver, ok := a.Router.(interface {
-			DictationBatchProvider(speechkit.DictationStreamOptions) (stt.STTProvider, bool)
+			DictationBatchProvider(context.Context, speechkit.DictationStreamOptions) (stt.STTProvider, bool)
 		}); ok {
-			if provider, batchOnly := resolver.DictationBatchProvider(streamOpts); batchOnly {
+			if provider, batchOnly := resolver.DictationBatchProvider(segCtx, streamOpts); batchOnly {
 				stream = a.completeCapture(segCtx, nil, providerCaptureTranscriber{provider}, streamOpts, format)
 			}
 		}
@@ -511,13 +513,17 @@ func (a *StreamAdapter) finishSegment(ctx context.Context, seg *streamSegment, c
 	a.sendJSON(ctx, StreamSegmentDoneFrame{Type: StreamMsgSegmentDone, SegmentID: seg.id})
 }
 
-// sessionPreferredProfile returns the STT provider preference captured on
-// this session at mint time: primary first, secondary when the primary is
-// unset. Values are bare provider names ("deepgram", "assemblyai"), which the
-// router's profile prioritization accepts directly.
-func (a *StreamAdapter) sessionPreferredProfile() string {
+// sessionPreferredProfile returns the STT preference captured on this
+// session at mint time: the v2 STT model (a dictation catalog profile id)
+// first, then the v1 primary, then the secondary provider name. The router's
+// profile prioritization accepts both forms and keeps every other configured
+// provider as fallback.
+func (a *StreamAdapter) sessionPreferredProfile(ctx context.Context) string {
 	if a.Session == nil {
 		return ""
+	}
+	if model := preferredSTTModel(ctx, a.Session.VoicePrefs.STTModel); model != "" {
+		return model
 	}
 	if primary := strings.TrimSpace(a.Session.VoicePrefs.STTPrimary); primary != "" {
 		return primary

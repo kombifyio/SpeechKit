@@ -156,7 +156,7 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 	}
 	model := stt.FirstNonEmptyTrimmed(opts.Model, p.Model)
 	resolved := stt.ResolveTranscribeOptionsWithManifest(p.TranscribeManifest(model), "", opts, provideropts.Values{
-		provideropts.OptionLanguage: "de",
+		provideropts.OptionLanguage: stt.LanguageMulti,
 	}, nil)
 
 	body := &bytes.Buffer{}
@@ -229,7 +229,7 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 
-	lang := stt.FirstNonEmptyTrimmed(resolved.Language, "de")
+	lang := stt.FirstNonEmptyTrimmed(resolved.Language, stt.LanguageMulti)
 
 	return &stt.Result{
 		Text:     result.Text,

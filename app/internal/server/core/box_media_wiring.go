@@ -350,10 +350,7 @@ func wireBoxMediaListener(ctx context.Context, cfg *config.Config, app *App) (*b
 		Bridge:            app.DeviceAgentBridge,
 		LocalSTT:          &boxMediaLocalTranscriber{runtime: local},
 		MediaPairingToken: mediaToken,
-		Rule: deviceagentserver.BoxMediaRuleOptions{
-			DeviceID: media.DeviceID, PairingID: media.PairingID, RoomID: media.RoomID,
-			Transcript: media.Transcript, CommandID: media.CommandID, Locale: media.Locale,
-		},
+		Mappings:          boxMediaMappingSetOptions(media),
 		OnIncompleteWrite: func(wrote, want int, _ error) {
 			app.Health.SetReadyWithOptions(boxMediaHealthComponent, StatusDegraded,
 				fmt.Sprintf("turn audio write truncated (%d/%d)", wrote, want),
@@ -392,9 +389,22 @@ func wireBoxMediaListener(ctx context.Context, cfg *config.Config, app *App) (*b
 		"addr", runtime.Addr().String(),
 		"device_id", strings.TrimSpace(media.DeviceID),
 		"pairing_id", strings.TrimSpace(media.PairingID),
-		"command_id", strings.TrimSpace(media.CommandID),
+		"mappings", len(media.Mappings),
 		"pinned_ca_sha256", strings.TrimSpace(media.PinnedCASHA256))
 	return runtime, nil
+}
+
+func boxMediaMappingSetOptions(media config.ServerDeviceAgentBoxMediaConfig) deviceagentserver.BoxMediaMappingSetOptions {
+	entries := make([]deviceagentserver.BoxMediaMappingOptions, 0, len(media.Mappings))
+	for _, mapping := range media.Mappings {
+		entries = append(entries, deviceagentserver.BoxMediaMappingOptions{
+			Transcript: mapping.Transcript, CommandID: mapping.CommandID,
+		})
+	}
+	return deviceagentserver.BoxMediaMappingSetOptions{
+		DeviceID: media.DeviceID, PairingID: media.PairingID, RoomID: media.RoomID,
+		Locale: media.Locale, Mappings: entries,
+	}
 }
 
 type boxMediaLocalTranscriber struct {

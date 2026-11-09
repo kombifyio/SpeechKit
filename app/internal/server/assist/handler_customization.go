@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	internalcustomize "github.com/kombifyio/SpeechKit/app/internal/customize"
+	"github.com/kombifyio/SpeechKit/app/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/app/internal/store"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	speechcustomize "github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
@@ -21,6 +22,8 @@ func (h *Handler) resolveAssistCustomization(ctx context.Context, locale string)
 		ScopeOrder:        speechcustomize.DefaultServerScopeOrder(),
 		ActiveTemplateIDs: h.activeTemplates,
 	})
+	// The signed vocabulary preference of the caller selects the vocabulary set.
+	ctx = internalcustomize.WithVocabularyRef(ctx, middleware.VoicePrefsFromContext(ctx).Vocabulary)
 	return service.Resolve(ctx, speechcustomize.Context{
 		Mode:              speechcustomize.ModeAssist,
 		Language:          locale,

@@ -22,14 +22,14 @@ const RETRYABLE_KINDS: ReadonlySet<VoiceNoticeKind> = new Set([
   "mic_unavailable",
   "mic_busy",
   "connection",
-  "generic"
+  "generic",
 ]);
 
 /** Maps a reason/error code (any casing, any producer) to a notice kind. */
 export function voiceNoticeKind(code: string | undefined | null): VoiceNoticeKind {
   const value = (code ?? "").toLowerCase();
   if (!value) return "generic";
-  const mic = /(^|[_.\-])(mic|microphone|audio_capture|getusermedia)/.test(value);
+  const mic = /(^|[_.-])(mic|microphone|audio_capture|getusermedia)/.test(value);
   if (mic || /not_?allowed|permission/.test(value)) {
     if (/unsupported|not_supported|insecure/.test(value)) return "mic_unsupported";
     if (/unavailable|not_?found|missing|no_device|no_input/.test(value)) return "mic_unavailable";
@@ -43,14 +43,14 @@ export function voiceNoticeKind(code: string | undefined | null): VoiceNoticeKin
   if (/(server|service|upstream|gateway|provider)_?unavailable/.test(value)) return "connection";
   if (
     /entitle|plan|subscription|upgrade|forbidden|capability|not_available|unavailable|locked|feature|controller_missing|disabled/.test(
-      value
+      value,
     )
   ) {
     return "not_available";
   }
   if (
     /network|connect|socket|timeout|timed_out|offline|unreachable|session|server|gateway|upstream|transport|ticket|closed/.test(
-      value
+      value,
     )
   ) {
     return "connection";
@@ -59,7 +59,9 @@ export function voiceNoticeKind(code: string | undefined | null): VoiceNoticeKin
 }
 
 /** Kind for a denial envelope (reason code first, then the error code). */
-export function voiceNoticeKindForDenial(denial: SpeechKitVoiceDenial | undefined): VoiceNoticeKind {
+export function voiceNoticeKindForDenial(
+  denial: SpeechKitVoiceDenial | undefined,
+): VoiceNoticeKind {
   if (!denial) return "generic";
   const byReason = voiceNoticeKind(denial.reason_code);
   return byReason === "generic" ? voiceNoticeKind(denial.error_code) : byReason;
@@ -82,5 +84,8 @@ const URL_PATTERN = /\b(?:[a-z][a-z0-9+.-]*:\/\/|www\.)\S+|\b[a-z0-9-]+(?:\.[a-z
 
 /** Removes URLs and host/path fragments from free text before it is shown. */
 export function stripUrls(text: string): string {
-  return text.replace(URL_PATTERN, "").replace(/\s{2,}/g, " ").trim();
+  return text
+    .replace(URL_PATTERN, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }

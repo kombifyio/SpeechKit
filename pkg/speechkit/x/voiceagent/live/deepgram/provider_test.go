@@ -1,11 +1,12 @@
 package deepgram
 
 import (
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 	"strings"
 	"testing"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 )
 
 func TestDeepgramParseConversationText(t *testing.T) {
@@ -91,9 +92,10 @@ func TestDeepgramParseError(t *testing.T) {
 		"code":        "INVALID_AUTH",
 		"description": "bad token",
 	})
+	// Before SettingsApplied the settings were refused: a session failure.
 	_, _, err := p.parseEvent(frame)
 	if err == nil {
-		t.Fatal("Error event must surface a Go error")
+		t.Fatal("Error before SettingsApplied must surface a Go error")
 	}
 }
 
@@ -131,7 +133,11 @@ func TestDeepgramBuildSettingsManagedThink(t *testing.T) {
 	if !ok {
 		t.Fatalf("think.provider missing or wrong type: %#v", think["provider"])
 	}
-	if provider["type"] != deepgramThinkProviderDefault || provider["model"] != deepgramThinkModelDefault {
+	chain := catalog.VoiceAgentThinkChain(deepgramVoiceAgentProfileID)
+	if len(chain) < 2 {
+		t.Fatalf("catalog think chain needs a default and a fallback, got %#v", chain)
+	}
+	if provider["type"] != chain[0].Provider || provider["model"] != chain[0].Model {
 		t.Errorf("managed think provider mismatch: %#v", provider)
 	}
 	if _, hasEndpoint := think["endpoint"]; hasEndpoint {

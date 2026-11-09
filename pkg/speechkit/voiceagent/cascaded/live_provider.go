@@ -112,6 +112,7 @@ func sessionConfigFromLive(cfg live.LiveConfig) SessionConfig {
 		SystemPrompt:     live.AppendContextPrompt(cfg.FrameworkPrompt, resolved.ContextPrompt),
 		RefinementPrompt: cfg.RefinementPrompt,
 		Speaker:          cfg.Speaker,
+		Keyterms:         resolved.Keyterms,
 	}
 }
 

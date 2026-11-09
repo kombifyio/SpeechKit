@@ -31,6 +31,13 @@ object VoiceAgentContract {
     const val ERROR_SERVER = "server_error"
     const val ERROR_MEDIA_PROVIDER_UNAVAILABLE = "media_provider_unavailable"
 
+    /** Served reason classes on onError (SpeechKit's voice error class model). */
+    const val CLASS_LIMIT = "limit"
+    const val CLASS_OUTAGE = "outage"
+    const val CLASS_RIGHT = "right"
+    const val CLASS_CONSENT = "consent"
+    const val CLASS_EXPIRED = "expired"
+
     /** Explicit native selection must never be silently dropped by an older callee. */
     fun supportsMediaProvider(version: Int, mediaProvider: String?): Boolean =
         mediaProvider.isNullOrEmpty() ||

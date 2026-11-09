@@ -60,6 +60,7 @@ class BatchDictationSession(
                 language = options.language,
                 model = options.model,
                 prompt = options.promptHint,
+                keyterms = options.keyterms,
             )
         }
             .onSuccess { result ->

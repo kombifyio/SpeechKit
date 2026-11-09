@@ -1,3 +1,6 @@
+import java.net.HttpURLConnection
+import java.net.URI
+import java.security.MessageDigest
 import java.io.FileInputStream
 import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -29,8 +32,8 @@ android {
         applicationId = "io.kombify.speechkit"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7818
-        versionName = "0.78.18"
+        versionCode = 7915
+        versionName = "0.79.15"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // An OSS installation has no admitted hosted media origin.
         buildConfigField("String", "HOSTED_VOICE_ORIGIN", "\"\"")
@@ -146,6 +149,80 @@ android {
 
 }
 
+// sherpa-onnx, the runtime of the on-device neural voices (io.kombify.speechkit.app.voice). The release's
+// "static-link-onnxruntime" AAR carries ONNX Runtime inside libsherpa-onnx-jni.so: the other flavour ships its own
+// libonnxruntime.so, which would collide with the one Java ONNX Runtime (Silero VAD, :core) brings. It is not on
+// Maven Central, so the build fetches it from the pinned GitHub release into the build directory, checks the
+// SHA-256 and drops the ABIs this app does not ship (the Phonon engine builds arm64-v8a and x86_64 only; the 32-bit
+// and x86 libraries would add 48 MB and an x86 libonnxruntime.so that clashes with Java ONNX Runtime's). The binary
+// is never committed. It is a file dependency, which a library module cannot publish: that is why the voice lives
+// in this module and :assistant only sees the NeuralReplyVoice interface.
+//
+// The version is pinned to 1.13.8, the runtime the desktop sidecar speaks with (sherpa-onnx-go v1.13.8). It is not the
+// newest release on purpose: sherpa-onnx v2.0.0 dropped the espeak-ng frontend, and the Piper voices are phoneme
+// models - without the frontend they cannot turn text into token IDs at all ("phoneme_codepoints is empty, no
+// lexicon, and no frontend available"). Since v2.0.0 a text-to-phoneme conversion needs an external phonemizer and a
+// lexicon, which the shipped voices do not carry. 1.13.8 still phonemizes with espeak-ng from the voice archive's
+// espeak-ng-data, so the phone speaks exactly like the desktop.
+val sherpaOnnxVersion = "1.13.8"
+val sherpaOnnxAarSha256 = "b22c3fc1b6a45666d28892bb2f7694beeb77a8362d7ebd77c1a5431ec9435471"
+val sherpaOnnxDir = layout.buildDirectory.dir("sherpa-onnx")
+
+fun sha256Of(file: File): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { input ->
+        val buffer = ByteArray(1 shl 16)
+        while (true) {
+            val n = input.read(buffer)
+            if (n < 0) break
+            digest.update(buffer, 0, n)
+        }
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }
+}
+
+val fetchSherpaOnnxAar by tasks.registering {
+    description = "Downloads sherpa-onnx $sherpaOnnxVersion (static-link-onnxruntime AAR) and checks its SHA-256"
+    val target = sherpaOnnxDir.map { it.file("upstream/sherpa-onnx-static-link-onnxruntime-$sherpaOnnxVersion.aar").asFile }
+    val url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaOnnxVersion/" +
+        "sherpa-onnx-static-link-onnxruntime-$sherpaOnnxVersion.aar"
+    inputs.property("sha256", sherpaOnnxAarSha256)
+    outputs.file(target)
+    outputs.upToDateWhen { target.get().isFile && sha256Of(target.get()) == sherpaOnnxAarSha256 }
+    doLast {
+        val out = target.get()
+        out.parentFile.mkdirs()
+        val partial = File(out.parentFile, out.name + ".partial")
+        val connection = URI(url).toURL().openConnection() as HttpURLConnection
+        connection.instanceFollowRedirects = true
+        connection.connectTimeout = 30_000
+        connection.readTimeout = 60_000
+        if (connection.responseCode != 200) {
+            throw GradleException("sherpa-onnx download failed: HTTP ${connection.responseCode} for $url")
+        }
+        connection.inputStream.use { input -> partial.outputStream().use { input.copyTo(it) } }
+        val got = sha256Of(partial)
+        if (got != sherpaOnnxAarSha256) {
+            partial.delete()
+            throw GradleException("sherpa-onnx AAR failed verification: SHA-256 $got, expected $sherpaOnnxAarSha256")
+        }
+        if (out.exists()) out.delete()
+        if (!partial.renameTo(out)) throw GradleException("could not install $out")
+    }
+}
+
+val trimSherpaOnnxAar by tasks.registering(Zip::class) {
+    description = "Repackages the sherpa-onnx AAR with only the ABIs the app ships"
+    dependsOn(fetchSherpaOnnxAar)
+    from(zipTree(sherpaOnnxDir.map { it.file("upstream/sherpa-onnx-static-link-onnxruntime-$sherpaOnnxVersion.aar") })) {
+        exclude("jni/armeabi-v7a/**", "jni/x86/**")
+    }
+    destinationDirectory.set(sherpaOnnxDir.map { it.dir("trimmed") })
+    archiveFileName.set("sherpa-onnx-static-link-onnxruntime-$sherpaOnnxVersion.aar")
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+}
+
 dependencies {
     implementation(project(":core"))
     implementation(project(":domain"))
@@ -157,6 +234,9 @@ dependencies {
     implementation(project(":net"))
     implementation(project(":coinstall"))
     implementation(project(":voice-ui-compose"))
+    // On-device neural voices: the sherpa-onnx runtime (fetched above) and bzip2/tar for the voice archives.
+    implementation(files(trimSherpaOnnxAar.flatMap { it.archiveFile }))
+    implementation(libs.commons.compress)
     // The HeliBoard keyboard. GPL-3.0: linking it puts this APK under GPL-3.0
     // as a whole, so no proprietary Kombify code may enter here. Companion
     // integration stays IPC-only. See android/HELIBOARD.md.

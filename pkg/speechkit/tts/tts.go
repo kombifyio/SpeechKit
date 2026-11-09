@@ -198,6 +198,42 @@ func (r *Router) Synthesize(ctx context.Context, text string, opts SynthesizeOpt
 	return nil, fmt.Errorf("tts router: no eligible providers for strategy %s", r.strategy)
 }
 
+// PCMStreamer is an optional [Provider] extension for live playback: it
+// streams the speech as raw signed 16-bit little-endian mono PCM at sampleRate
+// while the provider is still rendering it. streamed reports whether any audio
+// was emitted; false with a nil error means this request cannot be streamed
+// (another rate, an unsupported voice) and the caller uses Synthesize. Once
+// audio was emitted an error fails the request: it is never retried.
+type PCMStreamer interface {
+	SynthesizePCMStream(ctx context.Context, text string, opts SynthesizeOpts, sampleRate int, emit func(pcm []byte) error) (streamed bool, err error)
+}
+
+// SynthesizePCMStream implements [PCMStreamer] for the provider Synthesize
+// would try first. A provider that cannot stream the request, or fails before
+// emitting audio, leaves the request to Synthesize and its fallback order.
+func (r *Router) SynthesizePCMStream(ctx context.Context, text string, opts SynthesizeOpts, sampleRate int, emit func(pcm []byte) error) (bool, error) {
+	r.mu.RLock()
+	providers := make([]Provider, len(r.providers))
+	copy(providers, r.providers)
+	r.mu.RUnlock()
+	for _, p := range providers {
+		if !r.isAllowed(p) {
+			continue
+		}
+		streamer, ok := p.(PCMStreamer)
+		if !ok {
+			return false, nil
+		}
+		streamed, err := streamer.SynthesizePCMStream(ctx, text, opts.ForProvider(p.Name()), sampleRate, emit)
+		if err != nil && !streamed {
+			r.log().Warn("TTS router: streaming synthesis failed; synthesizing whole", "provider", p.Name(), "err", err)
+			return false, nil
+		}
+		return streamed, err
+	}
+	return false, nil
+}
+
 func (r *Router) isAllowed(p Provider) bool {
 	isLocal := isLocalProviderKind(p.Kind())
 

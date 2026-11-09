@@ -14,12 +14,16 @@ class CloudTokenLifecycleTest {
     private class MemoryStore(var session: CloudSession?) : CloudSessionStore {
         var signedOut = false
         override fun load() = session
-        override fun save(session: CloudSession) {
-            this.session = session
+        override fun saveIfCurrent(expected: CloudSession, replacement: CloudSession): Boolean {
+            if (session != expected) return false
+            session = replacement
+            return true
         }
-        override fun signOut() {
+        override fun signOutIfCurrent(expected: CloudSession): Boolean {
+            if (session != expected) return false
             session = null
             signedOut = true
+            return true
         }
     }
 
@@ -97,15 +101,82 @@ class CloudTokenLifecycleTest {
             nowMs = { now },
         )
 
-        assertEquals("old-at", lifecycle.bearerFor("old-at"))
+        assertNull(lifecycle.bearerFor("old-at"))
         assertTrue(store.signedOut)
         assertNull(store.session)
     }
 
     @Test
+    fun `public bearer hooks do not restore a rejected credential`() = runBlocking<Unit> {
+        val lifecycle = CloudTokenLifecycle(
+            store = MemoryStore(expiring()),
+            refresher = { CloudRefresh.Rejected },
+            nowMs = { now },
+        )
+        CloudBearer.install(lifecycle)
+        try {
+            assertNull(CloudBearer.freshForSession("old-at"))
+            assertNull(CloudBearer.fresh("old-at"))
+        } finally {
+            CloudBearer.install(null)
+        }
+    }
+
+    @Test
+    fun `session generation rejects an unseen old account after restart`() = runBlocking<Unit> {
+        val store = MemoryStore(CloudSession("account-c", "rt-c", now + 900_000L, "generation-c"))
+        val lifecycle = CloudTokenLifecycle(store, { CloudRefresh.Unavailable }, nowMs = { now })
+        CloudBearer.install(lifecycle)
+        try {
+            assertNull(CloudBearer.fresh("unseen-account-b", "generation-b"))
+            assertEquals("account-c", CloudBearer.fresh("old-rotation-c", "generation-c"))
+            store.session = null
+            assertNull(CloudBearer.freshForSession("account-c", "generation-c"))
+        } finally {
+            CloudBearer.install(null)
+        }
+    }
+
+    @Test
+    fun `an account switch during refresh cannot replace the new session`() = runBlocking<Unit> {
+        val old = CloudSession("account-a", "rt-a", now + 30_000L, "generation-a")
+        val next = CloudSession("account-b", "rt-b", now + 900_000L, "generation-b")
+        val store = MemoryStore(old)
+        val exchangeStarted = CompletableDeferred<Unit>()
+        val finishExchange = CompletableDeferred<Unit>()
+        val lifecycle = CloudTokenLifecycle(store, {
+            exchangeStarted.complete(Unit)
+            finishExchange.await()
+            CloudRefresh.Refreshed(KombifyCloudAuth.Tokens("rotated-a", "rotated-rt-a", 900))
+        }, nowMs = { now })
+        var result: String? = "pending"
+        val caller = launch { result = lifecycle.bearerFor("account-a", generation = "generation-a") }
+        exchangeStarted.await()
+        store.session = next
+        finishExchange.complete(Unit)
+        caller.join()
+        assertNull(result)
+        assertEquals(next, store.session)
+    }
+
+    @Test
+    fun `a rejected refresh cannot sign out a newly installed session`() = runBlocking<Unit> {
+        val old = CloudSession("account-a", "rt-a", now + 30_000L, "generation-a")
+        val next = CloudSession("account-b", "rt-b", now + 900_000L, "generation-b")
+        val store = MemoryStore(old)
+        val lifecycle = CloudTokenLifecycle(store, {
+            store.session = next
+            CloudRefresh.Rejected
+        }, nowMs = { now })
+        assertNull(lifecycle.bearerFor("account-a", generation = "generation-a"))
+        assertEquals(next, store.session)
+        assertFalse(store.signedOut)
+    }
+
+    @Test
     fun `a voice session mint renews a token with less than ten minutes left`() = runBlocking<Unit> {
-        // Five minutes left: fine for a REST call, too short to open a hosted
-        // voice session that the Gateway would cut when the token expires.
+        // Five minutes is enough for a REST call; a new session asks for
+        // a bearer with a larger freshness margin.
         val store = MemoryStore(CloudSession("old-at", "old-rt", expiresAtEpochMs = now + 5 * 60_000L))
         var calls = 0
         val lifecycle = CloudTokenLifecycle(

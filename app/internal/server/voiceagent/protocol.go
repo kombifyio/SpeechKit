@@ -169,10 +169,14 @@ type ConversationControlStart struct {
 // does not know it ignores it, so a device can send it before the server
 // supports it. Routes lists the route_switch targets the client can act on
 // (only "agent"; unknown entries are ignored). Without routes the client gets
-// conversation_mode receipts but never a route_switch.
+// conversation_mode receipts but never a route_switch. Unavailable names the
+// routes the client tried and could not open for this request (only "agent"):
+// this plain session then answers in their place and says so in its first
+// answer, and it offers no switch to them.
 type FrontDoorStart struct {
-	Version int      `json:"version"`
-	Routes  []string `json:"routes,omitempty"`
+	Version     int      `json:"version"`
+	Routes      []string `json:"routes,omitempty"`
+	Unavailable []string `json:"unavailable,omitempty"`
 }
 
 // ConversationModeFrame invokes the agent-owned command from a client button.
@@ -278,8 +282,14 @@ type InterruptedFrame struct {
 }
 
 type ErrorFrame struct {
-	Type    string `json:"type"` // "error"
-	Code    string `json:"code"`
+	Type string `json:"type"` // "error"
+	Code string `json:"code"`
+	// Class is the user-facing reason class (cascaded.ErrorClass: limit,
+	// outage, right, consent, expired). Every voice client renders its
+	// localized text from it; Message is English guidance for logs and
+	// integrators, never the text a surface shows. Absent for a code the
+	// model leaves unclassed (credential rejections, request faults).
+	Class   string `json:"class,omitempty"`
 	Message string `json:"message"`
 	// Fatal means this session is ending; turn failures otherwise remain usable.
 	Fatal bool `json:"fatal,omitempty"`

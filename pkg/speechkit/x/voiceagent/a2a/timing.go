@@ -8,7 +8,7 @@ import (
 // recordTiming keeps the phases of the latest turn: request to response
 // headers, to the first answer text and to the end of the stream, plus the
 // perimeter's Server-Timing durations ("edge;dur=3574, origin;dur=2157").
-func (a *Agent) recordTiming(headerMs, firstDeltaMs, totalMs int64, serverTiming string, orchestrator map[string]int64) {
+func (a *Agent) recordTiming(turnID string, headerMs, firstDeltaMs, totalMs int64, serverTiming string, orchestrator map[string]int64) {
 	timing := map[string]int64{"a2a_header_ms": headerMs, "a2a_total_ms": totalMs}
 	if firstDeltaMs >= 0 {
 		timing["a2a_first_delta_ms"] = firstDeltaMs
@@ -27,7 +27,7 @@ func (a *Agent) recordTiming(headerMs, firstDeltaMs, totalMs int64, serverTiming
 		timing["orch_"+name] = ms
 	}
 	a.timingMu.Lock()
-	a.lastTiming = timing
+	a.lastTiming, a.lastTimingTurn = timing, turnID
 	a.timingMu.Unlock()
 }
 
@@ -41,6 +41,22 @@ func (a *Agent) LastTurnTiming() map[string]int64 {
 		out[name] = ms
 	}
 	return out
+}
+
+// TurnTiming returns the phase durations recorded for the turn identity
+// turnID (the host's native final-transcript identity passed to StreamTurn),
+// and false when the latest recorded turn is another one or none.
+func (a *Agent) TurnTiming(turnID string) (map[string]int64, bool) {
+	a.timingMu.Lock()
+	defer a.timingMu.Unlock()
+	if turnID == "" || a.lastTimingTurn != turnID || a.lastTiming == nil {
+		return nil, false
+	}
+	out := make(map[string]int64, len(a.lastTiming))
+	for name, ms := range a.lastTiming {
+		out[name] = ms
+	}
+	return out, true
 }
 
 // captureRunTimings reads the agent's own per-hop spans (metadata "io.kombify.run_timings", numbers only).

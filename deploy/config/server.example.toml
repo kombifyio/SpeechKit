@@ -157,6 +157,15 @@ wakeword_models = true
 # # action + entity must match. Only turn_on/turn_off for light.* is accepted.
 # # This local allowlist is not a remote approval or standing grant.
 # [[server.device_agent.devices.local_rules]]
+# rule_id      = "kitchen-light-on"
+# trigger_text = "turn on the kitchen light"
+# locale       = "en-US"
+# action       = "turn_on"
+# entity_id    = "light.kitchen"
+# not_before   = "2026-07-19T00:00:00Z" # Replace with a current approved window.
+# expires_at   = "2026-08-18T00:00:00Z" # Maximum authorization window: 31 days.
+#
+# [[server.device_agent.devices.local_rules]]
 # rule_id      = "kitchen-light-off"
 # trigger_text = "turn off the kitchen light"
 # locale       = "en-US"
@@ -182,9 +191,15 @@ wakeword_models = true
 # device_id           = "speaker-kitchen-001"
 # pairing_id          = "pairing-kitchen-2026-07"
 # room_id             = "kitchen"
+# locale              = "en-US"
+# # Closed exact mapping set for one light (1..8 entries, turn_on and turn_off),
+# # each naming an unexpired G0 local rule above with identical text and locale.
+# [[server.device_agent.box_media.mappings]]
+# transcript          = "turn on the kitchen light"
+# command_id          = "kitchen-light-on"
+# [[server.device_agent.box_media.mappings]]
 # transcript          = "turn off the kitchen light"
 # command_id          = "kitchen-light-off"
-# locale              = "en-US"
 #
 # The bridge exposes only POST /v1/device-agent/{register,events,assist,tts}.
 # It is absent from /api/v1, MCP, edge proxies, federation, and general Assist/LLM.
@@ -283,15 +298,23 @@ stt_model      = "whisper-large-v3-turbo"
 # Vocabulary of your own deployment (product and place names, jargon). Each term
 # is a recognition hint for the providers; each sounds_like entry is a common
 # mishearing that is replaced by the term after recognition.
+# vocabulary_ref is an optional second name of this vocabulary for signed
+# vocabulary preferences (x-speechkit-pref-vocabulary); "operator-terms"
+# always names it.
+# [customization]
+# vocabulary_ref = "acme.product"
+#
 # [[customization.terms]]
 # term = "Acme Cloud"
 # sounds_like = ["acme klaud", "ac me cloud"]
 
 [routing]
-# Server-Target containers ship without an in-process whisper.cpp, so the STT
-# router must reach cloud providers (HF, OpenAI). The kernel default is
-# "local-only" because Device-Target embeds whisper.cpp; we override here.
-strategy                   = "cloud-only"
+# strategy is left to the server: without it and without a [local] model the
+# server routes cloud-only (to the configured providers and a whisper-server
+# URL), and the self-hosted defaults (SPEECHKIT_SELFHOSTED_DEFAULTS) choose
+# local-only for the image's bundled Phonon-2.5. Set it here only to override
+# that choice; the server never rewrites a strategy this file sets.
+# strategy                 = "cloud-only"
 prefer_local_under_seconds = 0
 parallel_cloud             = false
 

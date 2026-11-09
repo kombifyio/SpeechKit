@@ -51,8 +51,24 @@ const (
 	followUpRuleImperative   = "imperative_phrase"
 	followUpRulePoliteCloser = "polite_closer"
 	followUpRuleInvitation   = "invitation_phrase"
+	followUpRuleQuestionThen = "question_then_short_statement"
 	followUpRuleStatement    = "statement"
 )
+
+// replyAnswersItself reports a remark that answers the question before it
+// ("Warum? Weil der Server neu startet."): a rhetorical question.
+func replyAnswersItself(sentence string) bool {
+	for _, opener := range []string{"weil ", "denn ", "because ", "since ", "porque ", "ja, ", "nein, ", "yes, ", "no, "} {
+		if strings.HasPrefix(sentence, opener) {
+			return true
+		}
+	}
+	return false
+}
+
+// replyFollowUpTailWords bounds the statement that may follow a question and
+// still leave the question open ("Welches Homelab meinst du? Ich sehe zwei.").
+const replyFollowUpTailWords = 12
 
 // replyFollowUpDecision is replyExpectsAnswer plus the rule that decided it.
 func replyFollowUpDecision(text string) (bool, string) {
@@ -67,7 +83,9 @@ func replyFollowUpDecision(text string) (bool, string) {
 	if strings.HasSuffix(last, "?") || strings.HasSuffix(last, "？") {
 		return true, followUpRuleQuestionMark
 	}
+	head := ""
 	if i := strings.LastIndexAny(last, ".!?…\n"); i >= 0 {
+		head = strings.TrimSpace(last[:i+1])
 		last = last[i+1:]
 	}
 	last = strings.ToLower(strings.TrimSpace(last))
@@ -83,6 +101,12 @@ func replyFollowUpDecision(text string) (bool, string) {
 		if strings.HasPrefix(last, invitation) {
 			return true, followUpRuleInvitation
 		}
+	}
+	// An agent often asks and then adds one short remark; the question still
+	// waits for the answer unless the remark hands the turn back to the user.
+	if (strings.HasSuffix(head, "?") || strings.HasSuffix(head, "？")) &&
+		len(strings.Fields(last)) <= replyFollowUpTailWords && !replyIsPoliteCloser(last) && !replyAnswersItself(last) {
+		return true, followUpRuleQuestionThen
 	}
 	return false, followUpRuleStatement
 }

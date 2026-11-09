@@ -11,6 +11,11 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## Unreleased
 
+### Fixed
+
+- AssemblyAI Sync transcription and warm-up use the current `/v1/transcribe`
+  and `/v1/warm` endpoints, including the EU data zone.
+
 ### Added
 
 - Parakeet is a new built-in local transcription option next to Whisper.
@@ -94,15 +99,186 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
-## 0.78.18 (2026-11-03)
-
-### Features
-
-* **agents:** cut over to the single kombify /mcp connector; retire kombify-knowledge and tools
+## 0.79.15 (2026-11-09)
 
 ### Bug Fixes
 
-* **companion:** correct the Android artifact source identity
+* **speechkit:** local dictation sends a WAV container, not bare PCM
+* **speechkit:** the public export passes the OSS boundary again
+
+## 0.79.14 (2026-11-09)
+
+### Bug Fixes
+
+* **speechkit:** a failed Companion turn ends with a spoken notice, never in silence after One moment
+* **speechkit:** hand the Firebase tester rollout the tag form its stamp check expects
+
+## 0.79.13 (2026-11-09)
+
+### Bug Fixes
+
+* **speechkit:** cut the workflow lint and Box contract over to the kombify-ci App
+* **speechkit:** pin the Gradle wrapper distribution checksum and allow a slow download
+* **speechkit:** the Firebase tester workflow accepts the speechkit-v release tag
+* **speechkit:** use explicit App billing budget access
+
+## 0.79.12 (2026-11-09)
+
+### Bug Fixes
+
+* **speechkit:** the Firebase tester rollout runs before the public Android artifacts
+
+## 0.79.11 (2026-11-09)
+
+### Bug Fixes
+
+* **speechkit:** the self-host model stage uses commands the Delivery download guard reads
+
+## 0.79.10 (2026-11-09)
+
+### Features
+
+* **speechkit:** prepare French website catalog
+
+### Bug Fixes
+
+* **speechkit:** plan errors show their cause, Phonon is used when chosen, the Companion install path works
+
+## 0.79.9 (2026-11-07)
+
+### Bug Fixes
+
+* **delivery:** admit exact native children and retain dispatch acknowledgements
+
+### Performance Improvements
+
+* **voice:** spoken Companion turns take the catalog's standard class, read session sources during preparation and time every stage
+
+## 0.79.8 (2026-11-07)
+
+### Features
+
+* **voice:** every signed-in voice surface talks to the Companion; the curated voice tool bridge is gone
+
+## 0.79.7 (2026-11-06)
+
+### Bug Fixes
+
+* **speechkit:** voice sessions per board (Box sends device_id), heartbeat releases dropped sockets, two-room journey
+
+## 0.79.6 (2026-11-06)
+
+### Bug Fixes
+
+* **model-matrix:** preserve free cohort credit estimates
+* **speechkit:** display Android voice error classes
+* **speechkit:** substantiate voice fallback evidence
+
+## 0.79.5 (2026-11-05)
+
+### Features
+
+* **speechkit:** native realtime turns with the Companion as brain report their timing, and a journey measures it
+
+## 0.79.4 (2026-11-05)
+
+### Features
+
+* **voice:** turns survive a think-provider error, one served error class rendered honestly on Box, Android, Companion and the web
+
+### Bug Fixes
+
+* **speechkit:** handle proxy separators in host smoke paths
+
+## 0.79.3 (2026-11-04)
+
+### Features
+
+* **memory:** project-scoped Companion history and account erasure of companion_memory
+* **speechkit-android:** in Cloud mode the assistant and keyboard reach the Companion, never in local modes
+* **speechkit:** fresh installs speak and transcribe locally with redistributable voices
+* **speechkit:** the signed voice preference selects the product vocabulary in every transcription path, capped per provider
+
+### Bug Fixes
+
+* **agent-device:** bounded result backoff and a typed terminal answer for an abandoned intent
+* **ci:** adopt fail-closed internal dependency updater
+* **model-catalog:** read the committed catalogue back as the pinned serving runtime
+* **speechkit:** bind host smoke to consolidated release source
+* **speechkit:** Publish OSS passes again: one fail-closed tracker-id filter and no kombify claim namespace in the public net library
+* **speechkit:** repair compatibility baselines after consolidation
+* **workbench-orchestrator:** verify owner-equipment v2 leases through the Gateway owner read
+
+## 0.79.2 (2026-11-04)
+
+### Features
+
+* **journeys:** Journey C free Support and structured denial window checks
+* **m08:** Companion acceptance lanes, multilingual dictation, v2 voice prefs, voice session stalls, Box feed popups and Studio Box settings
+* **sessions:** chat sessions carry their agent run state from the run record (workbench-desktop-side)
+* **speechkit:** one wake-word training pipeline, pinned wake models as Box build inputs, provenance-bound publish
+
+### Bug Fixes
+
+* **calls:** a split native turn cancelled before any effect is superseded, never replayed
+* **journey-e:** step receipts bind only source runs from main or the window branch, of the lane's workflow, testing the bound live source
+
+## 0.79.1 (2026-11-04)
+
+## 0.79.0 (2026-11-04)
+
+### Features
+
+* **box:** discover the homelab server over mDNS and pair with a device token
+* **coinstall:** Companion implements ICoinstallService so the SpeechKit assistant and keyboard reach it
+* consume current policy for finite Stage memory operations
+* **observability:** Sentry release and trace coverage for agents Workers, AI edge Workers and SpeechKit server
+* **speechkit:** announce-only LAN discovery and Cloud account link for self-hosted servers
+* **speechkit:** count voice sessions per device from the signed edge identity
+* **speechkit:** kombify product vocabulary via operator terms, synced to signed-in desktops
+* **speechkit:** kombify terms learn the mishearings seen on Early Access
+* **speechkit:** LFM3-1.7B as an additional local LLM for Assist and the Voice Agent, llama.cpp b12032
+* **speechkit:** Phonon boosts dictionary terms in its decoder
+* **speechkit:** set up a kombify Box over USB from the signed-in desktop
+* **voice:** mobile on-device voice for SpeechKit and Companion
+
+### Bug Fixes
+
+* **box,speechkit:** keep tracker ids out of exported firmware and refresh localization exports
+* **box:** the public publisher and the SpeechKit publication paths accept as their source repository
+* **catalog:** activate model catalog snapshots without a TEMP table
+* **ci:** SpeechKit Early Access keeps the service-relative Dockerfile path
+* **ci:** SpeechKit Early Access runs from speechkit/ after the consolidation
+* **coinstall:** keep CompanionPackage free of ecosystem coupling for the OSS boundary
+* pin Stage memory exchange to Gateway version
+* read SpeechKit release identity from the product tree
+* **release:** reviewed release message for merge batch 96ee5fce
+* **speechkit,box:** settle voice holds at shutdown, retry receipts, stop the always-warm mint loop
+* **speechkit:** attribute the managed relay release change
+* **speechkit:** bound devices per account, drop the heartbeat, keep the OSS boundary ( review)
+* **speechkit:** Deepgram keyterm budget, local fallback under load, overlay model switch
+* **speechkit:** export the Early Access server file and accept the released schema classifier
+* **speechkit:** name the Android POM package repository without the organization
+* **speechkit:** overlay model button cycles the active Dictation models
+* **speechkit:** publish the managed production image through the governed App relay
+* **speechkit:** publish the release assets, clients and Android libraries
+* **speechkit:** release the public server image without the private host log
+* **speechkit:** stamp sentry.release on every exported span
+* use verified delegation entitlements in RIL A2A
+
+## 0.78.19 (2026-11-03)
+
+### Features
+
+* **box:** discover the homelab server over mDNS and pair with a device token
+* **speechkit:** announce-only LAN discovery and Cloud account link for self-hosted servers
+* **speechkit:** Phonon boosts dictionary terms in its decoder
+* **voice:** mobile on-device voice for SpeechKit and Companion
+
+## 0.78.18 (2026-11-03)
+
+### Bug Fixes
+
 * pin Stage memory exchange to Gateway version
 * **release:** reviewed release message for merge batch 96ee5fce
 * **speechkit,box:** settle voice holds at shutdown, retry receipts, stop the always-warm mint loop
@@ -232,23 +408,18 @@ behavior is unchanged.
 
 * **speechkit:** release tooling and repository references follow the consolidated repository layout
 
-
-
 ## [0.77.19](https://github.com/kombifyio/SpeechKit/compare/v0.77.18...v0.77.19) (2026-10-30)
-
 
 ### Bug Fixes
 
-* **release:** the production schema leg admits the two retired ledger steps; commit the regenerated go.work.sum (platform-9l42i) ([#1210](https://github.com/kombifyio/SpeechKit/issues/1210)) ([0ed8309](https://github.com/kombifyio/SpeechKit/commit/0ed8309326bfe1864aaba9e606a1118ff366d38f))
+* **release:** the production schema leg admits the two retired ledger steps; commit the regenerated go.work.sum ([#1210](https://github.com/kombifyio/SpeechKit/issues/1210)) ([0ed8309](https://github.com/kombifyio/SpeechKit/commit/0ed8309326bfe1864aaba9e606a1118ff366d38f))
 
 ## [0.77.18](https://github.com/kombifyio/SpeechKit/compare/v0.77.17...v0.77.18) (2026-10-30)
-
 
 ### Features
 
 * **desktop:** ship Phonon-2.5 in the Windows installer; download the Copilot CLI on demand ([#1189](https://github.com/kombifyio/SpeechKit/issues/1189)) ([13d3b58](https://github.com/kombifyio/SpeechKit/commit/13d3b586727be2e841012feff7e80310db1eb475))
 * **store:** schema floor for the runtime-role Postgres boot ([#1195](https://github.com/kombifyio/SpeechKit/issues/1195)) ([620b622](https://github.com/kombifyio/SpeechKit/commit/620b62298a5bcbf07de37a7884f3c42e72d32065))
-
 
 ### Bug Fixes
 
@@ -262,18 +433,15 @@ behavior is unchanged.
 
 ## [0.77.17](https://github.com/kombifyio/SpeechKit/compare/v0.77.16...v0.77.17) (2026-10-26)
 
-
 ### Features
 
 * **android:** Phonon-2.5 on the phone through SpeechKit's five-value engine (163 MB, 3 GB phones) ([#1183](https://github.com/kombifyio/SpeechKit/issues/1183)) ([da0f67a](https://github.com/kombifyio/SpeechKit/commit/da0f67abde1acd451e7acce130e48d3cbf049e4b))
-* **models:** run live vendor model discovery in the freshness gate ([#1166](https://github.com/kombifyio/SpeechKit/issues/1166)) ([3650cd4](https://github.com/kombifyio/SpeechKit/commit/3650cd43e977efac76c63eb70364a6ffd21afff4))
 * **stt:** Bark 3.0 and Phonon-2.5 local models, Phonon converted by SpeechKit ([#1176](https://github.com/kombifyio/SpeechKit/issues/1176)) ([bf754fa](https://github.com/kombifyio/SpeechKit/commit/bf754fa047c33fc57045ae2bed5192185153c708))
 * **stt:** live dictation with Phonon-2.5 through the five-value engine's stream ([#1180](https://github.com/kombifyio/SpeechKit/issues/1180)) ([4228595](https://github.com/kombifyio/SpeechKit/commit/4228595cd0915243c901c5becb863cfa4ebccaa1))
 * **stt:** run Phonon-2.5 natively in its five-value format (178 MB, less than half the memory) ([#1177](https://github.com/kombifyio/SpeechKit/issues/1177)) ([33aef0e](https://github.com/kombifyio/SpeechKit/commit/33aef0ed0b045239e95b7629dbe4c5ecfa98b0c7))
 * **voiceagent:** front door routes spoken mode and Companion commands from the final transcript ([#1159](https://github.com/kombifyio/SpeechKit/issues/1159)) ([1e052cd](https://github.com/kombifyio/SpeechKit/commit/1e052cd6f2e04e9e64a185341e9cdb5221407e30))
 * **voiceagent:** log the dialog-end decision; raise the per-account session caps for several devices ([#1161](https://github.com/kombifyio/SpeechKit/issues/1161)) ([92d2930](https://github.com/kombifyio/SpeechKit/commit/92d293089c79ee22aea6b8e3e8f36f1a3212b0e6))
 * **voiceagent:** verify wake candidates on the local Parakeet sidecar, cloud only as fallback ([#1164](https://github.com/kombifyio/SpeechKit/issues/1164)) ([b2a6f20](https://github.com/kombifyio/SpeechKit/commit/b2a6f207aec4b17a918310f2262183feb867bea5))
-
 
 ### Bug Fixes
 
@@ -282,13 +450,11 @@ behavior is unchanged.
 * **voiceagent:** post-merge review findings for the local wake second stage ([#1170](https://github.com/kombifyio/SpeechKit/issues/1170)) ([8931c04](https://github.com/kombifyio/SpeechKit/commit/8931c047c5818c4fd79240b4065378af7733cae7))
 * **windows:** build the VersionInfo resource into SpeechKit.exe with go-winres ([#1165](https://github.com/kombifyio/SpeechKit/issues/1165)) ([f8b1756](https://github.com/kombifyio/SpeechKit/commit/f8b1756eaba4b085e890a081a45552fbdef4be2c))
 
-
 ### Performance Improvements
 
 * **stt:** Phonon int8 kernels on x86 (AVX2), twice as fast at the same accuracy ([#1181](https://github.com/kombifyio/SpeechKit/issues/1181)) ([ec45cc0](https://github.com/kombifyio/SpeechKit/commit/ec45cc0bc7c815d7a4cc533a2f3df1ebda4e647b))
 
 ## [0.77.16](https://github.com/kombifyio/SpeechKit/compare/v0.77.15...v0.77.16) (2026-10-25)
-
 
 ### Bug Fixes
 
@@ -299,16 +465,14 @@ behavior is unchanged.
 
 ## [0.77.15](https://github.com/kombifyio/SpeechKit/compare/v0.77.14...v0.77.15) (2026-10-24)
 
-
 ### Features
 
 * **android:** dictate on device with Parakeet ([#1141](https://github.com/kombifyio/SpeechKit/issues/1141)) ([46feac2](https://github.com/kombifyio/SpeechKit/commit/46feac29606e638fcd7c3cc55046f0bb73238e8a))
 * **auth:** sign SpeechKit service calls with caller EdDSA keys ([#1146](https://github.com/kombifyio/SpeechKit/issues/1146)) ([fad9a25](https://github.com/kombifyio/SpeechKit/commit/fad9a2518a6ab09078dd4eece9dc9dfadb7341e2))
 * **auth:** verify caller-bound EdDSA at the SpeechKit receiver ([#1145](https://github.com/kombifyio/SpeechKit/issues/1145)) ([2edd877](https://github.com/kombifyio/SpeechKit/commit/2edd8774165d37d4883028953dfc73c318e269f5))
 * **settings:** Local Models page and a one-list Model tab ([#1149](https://github.com/kombifyio/SpeechKit/issues/1149)) ([a1f75f6](https://github.com/kombifyio/SpeechKit/commit/a1f75f6314cd217562557ddd39bd4f5f544ef07a))
-* **speechkit:** hand Box firmware publication to its own product (platform-9d7tk.3) ([#1140](https://github.com/kombifyio/SpeechKit/issues/1140)) ([74a50b7](https://github.com/kombifyio/SpeechKit/commit/74a50b711ea15e11a93600fad716d9ce863d54ea))
+* **speechkit:** hand Box firmware publication to its own product ([#1140](https://github.com/kombifyio/SpeechKit/issues/1140)) ([74a50b7](https://github.com/kombifyio/SpeechKit/commit/74a50b711ea15e11a93600fad716d9ce863d54ea))
 * **stt:** add Parakeet as a local speech-to-text option ([#1139](https://github.com/kombifyio/SpeechKit/issues/1139)) ([7cfff8f](https://github.com/kombifyio/SpeechKit/commit/7cfff8f217cf34360db104efefde8dbecf3e8176))
-
 
 ### Bug Fixes
 
@@ -316,12 +480,10 @@ behavior is unchanged.
 
 ## [0.77.14](https://github.com/kombifyio/SpeechKit/compare/v0.77.13...v0.77.14) (2026-10-23)
 
-
 ### Features
 
 * **server:** enable bounded multilingual anonymous voice ([#1134](https://github.com/kombifyio/SpeechKit/issues/1134)) ([7ef24ab](https://github.com/kombifyio/SpeechKit/commit/7ef24ab4ca7002e4556e501568a68fc3a0284a79))
 * **voiceagent:** two-stage wake word verification before provider start ([#1129](https://github.com/kombifyio/SpeechKit/issues/1129)) ([3177611](https://github.com/kombifyio/SpeechKit/commit/317761165601589578cebc4eb1bc731c6283e03c))
-
 
 ### Bug Fixes
 
@@ -330,13 +492,11 @@ behavior is unchanged.
 * **voiceagent:** allow bounded preparations for multiple Boxes ([#1137](https://github.com/kombifyio/SpeechKit/issues/1137)) ([19cb239](https://github.com/kombifyio/SpeechKit/commit/19cb2392fc387f424ff6288cef2d30afe36fcbb2))
 * **voice:** live recognition keeps the 800 ms turn end and logs why it fell back to batch ([#1120](https://github.com/kombifyio/SpeechKit/issues/1120)) ([9c6f53b](https://github.com/kombifyio/SpeechKit/commit/9c6f53b545716db6dbda819d405c113961dc5166))
 
-
 ### Performance Improvements
 
 * **voice:** the first spoken piece leaves early, a session warms the Gateway's policy read ahead of the turn ([#1125](https://github.com/kombifyio/SpeechKit/issues/1125)) ([0d6e4da](https://github.com/kombifyio/SpeechKit/commit/0d6e4dac920f905384d9abe31c4dba47de988919))
 
 ## [0.77.13](https://github.com/kombifyio/SpeechKit/compare/v0.77.12...v0.77.13) (2026-10-22)
-
 
 ### Bug Fixes
 
@@ -344,12 +504,10 @@ behavior is unchanged.
 
 ## [0.77.12](https://github.com/kombifyio/SpeechKit/compare/v0.77.11...v0.77.12) (2026-10-22)
 
-
 ### Features
 
 * **release:** publish the Box firmware for every board, including the RLCD 4.2 ([#1114](https://github.com/kombifyio/SpeechKit/issues/1114)) ([cd551e7](https://github.com/kombifyio/SpeechKit/commit/cd551e708c0116705540055552b0d7e8ab59a722))
 * **voice:** recognise registered-agent speech while it is spoken, log why a native consent check denied ([#1111](https://github.com/kombifyio/SpeechKit/issues/1111)) ([61fef57](https://github.com/kombifyio/SpeechKit/commit/61fef57e496fcb24460da7ae960854e1cc97397b))
-
 
 ### Bug Fixes
 
@@ -357,12 +515,10 @@ behavior is unchanged.
 
 ## [0.77.11](https://github.com/kombifyio/SpeechKit/compare/v0.77.10...v0.77.11) (2026-10-22)
 
-
 ### Features
 
 * **voice:** carry the orchestrator's per-hop run timings on a registered-agent turn ([#1107](https://github.com/kombifyio/SpeechKit/issues/1107)) ([f614c57](https://github.com/kombifyio/SpeechKit/commit/f614c5799c85272a8dc8906b942b527567068bf4))
 * **voice:** log where a native registered-agent turn spends its time ([#1108](https://github.com/kombifyio/SpeechKit/issues/1108)) ([17773d0](https://github.com/kombifyio/SpeechKit/commit/17773d0982c15ba2c76fd0af7afd2af605ebd36d))
-
 
 ### Bug Fixes
 
@@ -371,13 +527,11 @@ behavior is unchanged.
 
 ## [0.77.10](https://github.com/kombifyio/SpeechKit/compare/v0.77.9...v0.77.10) (2026-10-22)
 
-
 ### Features
 
 * **store:** serve hosted Postgres as a runtime role, migrate only through the governed step ([#1083](https://github.com/kombifyio/SpeechKit/issues/1083)) ([32f187d](https://github.com/kombifyio/SpeechKit/commit/32f187de25afb96e2fb5feca26eaca8ee91673bc))
 * **voice:** carry the phase durations of a cascaded voice turn on its closing message ([#1091](https://github.com/kombifyio/SpeechKit/issues/1091)) ([2be82c3](https://github.com/kombifyio/SpeechKit/commit/2be82c3749d84a139d9706aa1cb46c733130e78c))
 * **voice:** stream registered-agent answers sentence by sentence into TTS and speak the disclosure first ([#1090](https://github.com/kombifyio/SpeechKit/issues/1090)) ([71242af](https://github.com/kombifyio/SpeechKit/commit/71242af0ffc97bd7c5daa900426c0f559b4f4f10))
-
 
 ### Bug Fixes
 
@@ -390,11 +544,9 @@ behavior is unchanged.
 
 ## [0.77.9](https://github.com/kombifyio/SpeechKit/compare/v0.77.8...v0.77.9) (2026-10-21)
 
-
 ### Features
 
 * **voiceagent:** flag replies that expect an answer with expects_reply on turn_end ([#1048](https://github.com/kombifyio/SpeechKit/issues/1048)) ([d126090](https://github.com/kombifyio/SpeechKit/commit/d126090b1f052c6021229e107224d77cccab6931))
-
 
 ### Bug Fixes
 
@@ -419,11 +571,9 @@ behavior is unchanged.
 
 ## [0.77.8](https://github.com/kombifyio/SpeechKit/compare/v0.77.7...v0.77.8) (2026-10-19)
 
-
 ### Features
 
 * **voiceagent:** let a pre-dialed socket stand by for its start frame ([#1030](https://github.com/kombifyio/SpeechKit/issues/1030)) ([6a1bb28](https://github.com/kombifyio/SpeechKit/commit/6a1bb289b4e1beb86be68ff0bfd6e4f1fa551f83))
-
 
 ### Bug Fixes
 
@@ -431,12 +581,10 @@ behavior is unchanged.
 
 ## [0.77.7](https://github.com/kombifyio/SpeechKit/compare/v0.77.6...v0.77.7) (2026-10-18)
 
-
 ### Features
 
 * **voiceagent:** add governed conversation mode controls ([#1016](https://github.com/kombifyio/SpeechKit/issues/1016)) ([e9873ae](https://github.com/kombifyio/SpeechKit/commit/e9873aed8b29cfd70d5a3e8373a2575046fbbcf5))
 * **voiceagent:** renew a live voice session's budget reservation ([#1014](https://github.com/kombifyio/SpeechKit/issues/1014)) ([df90e51](https://github.com/kombifyio/SpeechKit/commit/df90e51adb1ec3ec39d7b394de8783c9451e5ab2))
-
 
 ### Bug Fixes
 
@@ -444,13 +592,11 @@ behavior is unchanged.
 
 ## [0.77.6](https://github.com/kombifyio/SpeechKit/compare/v0.77.5...v0.77.6) (2026-10-17)
 
-
 ### Release documentation
 
 * **release:** document the standalone Box and renewable WLAN updater ([#1010](https://github.com/kombifyio/SpeechKit/issues/1010)) ([7e22b3a](https://github.com/kombifyio/SpeechKit/commit/7e22b3a1a326f7e94049d93d2e5a8611372d3938))
 
 ## [0.77.5](https://github.com/kombifyio/SpeechKit/compare/v0.77.4...v0.77.5) (2026-10-17)
-
 
 ### Bug Fixes
 
@@ -458,13 +604,11 @@ behavior is unchanged.
 
 ## [0.77.4](https://github.com/kombifyio/SpeechKit/compare/v0.77.3...v0.77.4) (2026-10-17)
 
-
 ### Bug Fixes
 
 * **release:** keep public pairing buildable and deploy the pinned production lane ([#1006](https://github.com/kombifyio/SpeechKit/issues/1006)) ([8836967](https://github.com/kombifyio/SpeechKit/commit/883696726f839af05e8ee91aba4d6e77db5c201c))
 
 ## [0.77.3](https://github.com/kombifyio/SpeechKit/compare/v0.77.2...v0.77.3) (2026-10-17)
-
 
 ### Bug Fixes
 
@@ -474,20 +618,15 @@ behavior is unchanged.
 
 ## [0.77.2](https://github.com/kombifyio/SpeechKit/compare/v0.77.1...v0.77.2) (2026-10-17)
 
-
 ### Features
 
-* **cloud:** connect the kombify account and let the plan switch on cloud voice ([#972](https://github.com/kombifyio/SpeechKit/issues/972)) ([1aea4df](https://github.com/kombifyio/SpeechKit/commit/1aea4df59a4b4f6c96fc303d1ee5c55db75f4ef2))
 * **providers:** xAI Grok as a complete opt-in provider ([#977](https://github.com/kombifyio/SpeechKit/issues/977)) ([66be0f5](https://github.com/kombifyio/SpeechKit/commit/66be0f54d656ebc3417a01274fdede297b78dafa))
-
 
 ### Bug Fixes
 
-* **cloud:** keep the session through refresh races and renew before voice sessions ([#973](https://github.com/kombifyio/SpeechKit/issues/973)) ([89c9f47](https://github.com/kombifyio/SpeechKit/commit/89c9f470586ebdd340d20dfb2fe32c7f7b3bb4df))
 * **ops,contract:** prod deploy guards and dictation_stream_ws_ticket transport ([#978](https://github.com/kombifyio/SpeechKit/issues/978)) ([4e1b593](https://github.com/kombifyio/SpeechKit/commit/4e1b5934a76435de84eb66962204c7669c71fc64))
 
 ## [0.77.1](https://github.com/kombifyio/SpeechKit/compare/v0.77.0...v0.77.1) (2026-10-16)
-
 
 ### Bug Fixes
 
@@ -501,14 +640,11 @@ behavior is unchanged.
 - **Native realtime voice for registered agents**: Registered agents can speak through GPT-Live, Gemini Live or Grok Voice directly, with the provider handling their audio natively.
 - **Releases that ship complete**: The self-hosted server image, the Android libraries and app, and the desktop bundle publish together with each release.
 
-
-
 ### Bug Fixes
 
 * **android:** the Android libraries and app build again for the release by keeping Compose, Navigation and OkHttp on versions the current Android Gradle plugin supports
 
 ## [0.76.9](https://github.com/kombifyio/SpeechKit/compare/v0.76.8...v0.76.9) (2026-10-16)
-
 
 ### Bug Fixes
 
@@ -516,14 +652,12 @@ behavior is unchanged.
 
 ## [0.76.8](https://github.com/kombifyio/SpeechKit/compare/v0.76.7...v0.76.8) (2026-10-16)
 
-
 ### Bug Fixes
 
 * **server:** the public server builds from the exported sources again, and the self-hosted Docker image, Android libraries and desktop bundle publish together with the release
 * **android:** keep the Android build on a Hilt version that matches the Android Gradle plugin in use
 
 ## [0.76.7](https://github.com/kombifyio/SpeechKit/compare/v0.76.6...v0.76.7) (2026-10-16)
-
 
 ### Bug Fixes
 
@@ -538,8 +672,6 @@ behavior is unchanged.
 - **Control where traffic can go**: Network scope now limits outgoing connections too: device-only, local network or open, with model downloads and update checks only when you allow them.
 - **Restrict providers, keep your notes**: Hosts can allow only named providers, and ephemeral retention keeps the notes you typed while sweeping recordings.
 - **Complete dictation transcripts**: Deepgram dictation can transcribe the finished recording instead of the live window, so words at chunk boundaries and at the end are no longer lost.
-
-
 
 ### Bug Fixes
 
@@ -558,8 +690,6 @@ behavior is unchanged.
 - **Restrict providers, keep your notes**: Hosts can allow only named providers, and ephemeral retention keeps the notes you typed while sweeping recordings.
 - **Complete dictation transcripts**: Deepgram dictation can transcribe the finished recording instead of the live window, so words at chunk boundaries and at the end are no longer lost.
 
-
-
 ### Bug Fixes
 
 * **deps:** move livekit server-sdk-go to v2.19.0 to match protocol v1.52.1 ([#874](https://github.com/kombifyio/SpeechKit/issues/874)) ([0393ade](https://github.com/kombifyio/SpeechKit/commit/0393ade556f2bbe060618c47ccec5776e5af29ef))
@@ -572,7 +702,6 @@ behavior is unchanged.
 * **onboarding:** repeat setup safely with focused provider choices ([#818](https://github.com/kombifyio/SpeechKit/issues/818)) ([a5a182b](https://github.com/kombifyio/SpeechKit/commit/a5a182ba6e2870ef617d9dd5d4f10be5b4b1d43f))
 * **release:** make the OSS export build (providerpolicy, subjectrights decoupled) ([#922](https://github.com/kombifyio/SpeechKit/issues/922)) ([07c9b44](https://github.com/kombifyio/SpeechKit/commit/07c9b4460133cd8091781f604bcd34404bc359d8))
 * **server:** erase wake-word audio from the upload directory by default ([#915](https://github.com/kombifyio/SpeechKit/issues/915)) ([8071515](https://github.com/kombifyio/SpeechKit/commit/8071515abbf02d5af08f86658f8e9901a057b4fe))
-
 
 ### Release documentation
 
@@ -588,14 +717,11 @@ behavior is unchanged.
 - **Extend provider support consistently**: SDK adapters can declare recognition capabilities for their actual model and transport. Dictionary previews and requests share those definitions, including supported prompt and keyterm channels.
 - **Review retained recordings**: Live dictation can keep its complete source audio and duration under your existing recording retention settings.
 
-
-
 ### Release documentation
 
 * **release:** explain complete dictation reliability update ([#802](https://github.com/kombifyio/SpeechKit/issues/802)) ([417e701](https://github.com/kombifyio/SpeechKit/commit/417e701698add797d2bb032a5a11644f288a379c))
 
 ## [0.76.3](https://github.com/kombifyio/SpeechKit/compare/v0.76.2...v0.76.3) (2026-10-05)
-
 
 ### Bug Fixes
 
@@ -605,7 +731,6 @@ behavior is unchanged.
 
 ## [0.76.2](https://github.com/kombifyio/SpeechKit/compare/v0.76.1...v0.76.2) (2026-10-05)
 
-
 ### Bug Fixes
 
 * **dictation:** preserve complete audio and dictionary hints across framework consumers ([#795](https://github.com/kombifyio/SpeechKit/issues/795)) ([b01f8db](https://github.com/kombifyio/SpeechKit/commit/b01f8db914976737217eb605cb43ac3fc78269f2))
@@ -613,11 +738,9 @@ behavior is unchanged.
 
 ## [0.76.1](https://github.com/kombifyio/SpeechKit/compare/v0.76.0...v0.76.1) (2026-10-05)
 
-
 ### Bug Fixes
 
 * **release:** include public release documentation corrections ([#792](https://github.com/kombifyio/SpeechKit/issues/792)) ([d6a13f0](https://github.com/kombifyio/SpeechKit/commit/d6a13f032eeffcd71e3eb4c7fc3e5162694109e3))
-
 
 ### Release documentation
 
@@ -632,8 +755,6 @@ behavior is unchanged.
 - **Choose speed or accuracy**: AssemblyAI conversations support balanced, lower-latency and higher-accuracy transcription profiles, including the Android SDK.
 - **Use multilingual speech reliably**: Deepgram language hints apply to multilingual Flux while English-only sessions keep their supported configuration.
 
-
-
 ### Features
 
 * **quality-gate:** move the sandbox Worker to Sandbox SDK 1.0 on ctx.container ([#744](https://github.com/kombifyio/SpeechKit/issues/744)) ([f0f3144](https://github.com/kombifyio/SpeechKit/commit/f0f3144ab5acfa573fd07bbb3740b13bd94a32f4))
@@ -641,7 +762,6 @@ behavior is unchanged.
 * **voice:** preserve signed instance handoff and Task answers ([#776](https://github.com/kombifyio/SpeechKit/issues/776)) ([7be6e22](https://github.com/kombifyio/SpeechKit/commit/7be6e22bc54bf5b679e310b95aad72425fadb9ad))
 * **voice:** retain signed floating endpoint conversations ([#782](https://github.com/kombifyio/SpeechKit/issues/782)) ([969b74e](https://github.com/kombifyio/SpeechKit/commit/969b74ee0b625a046eb97b29856a2b32cdd338eb))
 * **voice:** stream direct endpoint conversations through native media ([#777](https://github.com/kombifyio/SpeechKit/issues/777)) ([cd6f7c1](https://github.com/kombifyio/SpeechKit/commit/cd6f7c17a4b2543c4025eb10c06d081abf0b13d0))
-
 
 ### Bug Fixes
 
@@ -665,20 +785,17 @@ Notes cover changes after VERSION 0.75.0 (fad34bd7c3a81e897f815fd70b55b52fb9edf9
 
 ## [0.75.9](https://github.com/kombifyio/SpeechKit/compare/v0.75.8...v0.75.9) (2026-10-05)
 
-
 ### Bug Fixes
 
 * **android:** forward voice transcription profile through SDK ([#784](https://github.com/kombifyio/SpeechKit/issues/784)) ([40af1d3](https://github.com/kombifyio/SpeechKit/commit/40af1d3444fba237aa471b413d553ca392d38a86))
 
 ## [0.75.8](https://github.com/kombifyio/SpeechKit/compare/v0.75.7...v0.75.8) (2026-10-05)
 
-
 ### Features
 
 * **voice:** forward native AssemblyAI transcription profiles ([#783](https://github.com/kombifyio/SpeechKit/issues/783)) ([79431e1](https://github.com/kombifyio/SpeechKit/commit/79431e1366d65db7acdc968a67a8b37a7cf8da67))
 * **voice:** retain signed floating endpoint conversations ([#782](https://github.com/kombifyio/SpeechKit/issues/782)) ([969b74e](https://github.com/kombifyio/SpeechKit/commit/969b74ee0b625a046eb97b29856a2b32cdd338eb))
 * **voice:** stream direct endpoint conversations through native media ([#777](https://github.com/kombifyio/SpeechKit/issues/777)) ([cd6f7c1](https://github.com/kombifyio/SpeechKit/commit/cd6f7c17a4b2543c4025eb10c06d081abf0b13d0))
-
 
 ### Bug Fixes
 
@@ -687,11 +804,9 @@ Notes cover changes after VERSION 0.75.0 (fad34bd7c3a81e897f815fd70b55b52fb9edf9
 
 ## [0.75.7](https://github.com/kombifyio/SpeechKit/compare/v0.75.6...v0.75.7) (2026-10-05)
 
-
 ### Features
 
 * **voice:** preserve signed instance handoff and Task answers ([#776](https://github.com/kombifyio/SpeechKit/issues/776)) ([7be6e22](https://github.com/kombifyio/SpeechKit/commit/7be6e22bc54bf5b679e310b95aad72425fadb9ad))
-
 
 ### Bug Fixes
 
@@ -705,8 +820,6 @@ Notes cover changes after VERSION 0.75.0 (fad34bd7c3a81e897f815fd70b55b52fb9edf9
 - **Stay in control of consent**: Native Voice checks your cloud-processing permission throughout the conversation, with separate recording consent for AssemblyAI.
 - **Interrupt with confidence**: Interruptions and cancellation stop pending agent work, even before the first spoken reply.
 - **Keep your choice on Android**: The Android SDK carries your selected voice provider through direct and coinstalled sessions and clearly rejects unsupported combinations.
-
-
 
 ### Bug Fixes
 
@@ -729,8 +842,6 @@ Notes cover changes after VERSION 0.75.0 (fad34bd7c3a81e897f815fd70b55b52fb9edf9
 - The Android SDK carries the selected media provider through direct and coinstalled sessions. Explicit native selection requires coinstall contract version 3; older clients may continue omitting this choice.
 - The public source export includes the complete native session runtime and consent reader. Linux checks exercise cancellation, signed consent admission and the exported server, MCP and CLI builds. Provider audio and device acceptance remain separate release checks.
 
-
-
 ### Bug Fixes
 
 * **release:** include native registered Voice scope in 0.75.5 ([#767](https://github.com/kombifyio/SpeechKit/issues/767)) ([5d150c5](https://github.com/kombifyio/SpeechKit/commit/5d150c5f59909f1e76935fbaad4ae94241499ea8))
@@ -744,12 +855,9 @@ Notes cover changes after VERSION 0.75.0 (fad34bd7c3a81e897f815fd70b55b52fb9edf9
 - Hosted Voice sessions require a signed reservation from the separate Voice minutes quota before issuing a media ticket or connecting a provider. The reserved deadline bounds the session.
 - Reservations for sessions that never start settle through trusted zero-usage receipts, including failed admission and abandoned pending tickets. Connected sessions retain their actual connected-time accounting.
 
-
-
 ### Features
 
 * **quality-gate:** move the sandbox Worker to Sandbox SDK 1.0 on ctx.container ([#744](https://github.com/kombifyio/SpeechKit/issues/744)) ([f0f3144](https://github.com/kombifyio/SpeechKit/commit/f0f3144ab5acfa573fd07bbb3740b13bd94a32f4))
-
 
 ### Bug Fixes
 
@@ -759,13 +867,11 @@ Notes cover changes after VERSION 0.75.0 (fad34bd7c3a81e897f815fd70b55b52fb9edf9
 
 ## [0.75.3](https://github.com/kombifyio/SpeechKit/compare/v0.75.2...v0.75.3) (2026-10-04)
 
-
 ### Bug Fixes
 
 * **voice:** prefer managed speech providers and allow bounded four-hour sessions ([#745](https://github.com/kombifyio/SpeechKit/issues/745)) ([4975a23](https://github.com/kombifyio/SpeechKit/commit/4975a23cb75a4cb3dcc6e3fb13c6e4329323afcd))
 
 ## [0.75.2](https://github.com/kombifyio/SpeechKit/compare/v0.75.1...v0.75.2) (2026-10-03)
-
 
 ### Bug Fixes
 
@@ -778,8 +884,6 @@ Notes cover changes after VERSION 0.75.0 (fad34bd7c3a81e897f815fd70b55b52fb9edf9
 * **One dictation, one entry:** A live (streaming) dictation is saved as a single Library entry with the whole text, instead of one entry per pause, so it can be copied in one go.
 * **Hold-to-talk inserts on release:** With hold-to-talk, the provider still transcribes while you speak, and the text is inserted once when you release the hotkey. Mid-dictation pastes no longer have to force the held hotkey keys up.
 * **Blocked insertion recovers:** If the target window refuses a live insertion, SpeechKit holds the rest of the dictation and inserts it once when the recording ends.
-
-
 
 ### Bug Fixes
 
@@ -796,8 +900,6 @@ Notes cover changes after VERSION 0.75.0 (fad34bd7c3a81e897f815fd70b55b52fb9edf9
 * **Clear session endings:** Voice clients preserve safe failure reasons and end expired authorization promptly. Start a fresh authenticated session to continue; interrupted turns are not replayed.
 * **Android keyboard migration:** Keyboard embedders must replace `ImeVoiceAgentController.audio` with `consumeAudio(flush, play)`. This public source API change brings bounded playback and cancellation to the keyboard host.
 
-
-
 ### ⚠ BREAKING CHANGES
 
 * **voice:** IME source embedders replace the removed audio property with consumeAudio(flush, play).
@@ -807,14 +909,12 @@ Notes cover changes after VERSION 0.75.0 (fad34bd7c3a81e897f815fd70b55b52fb9edf9
 * **android:** run attested hosted Voice co-install sessions ([#720](https://github.com/kombifyio/SpeechKit/issues/720)) ([741d92b](https://github.com/kombifyio/SpeechKit/commit/741d92b8e75527b2b9f19c3bf2952a2b0427431d))
 * **voice:** bound readiness, media and session authority ([#730](https://github.com/kombifyio/SpeechKit/issues/730)) ([f8ca761](https://github.com/kombifyio/SpeechKit/commit/f8ca761266117b71721dd40c8163edf2490c872d))
 
-
 ### Bug Fixes
 
 * **android:** bind application artifacts to prepared release version ([#722](https://github.com/kombifyio/SpeechKit/issues/722)) ([4974d11](https://github.com/kombifyio/SpeechKit/commit/4974d11428eeea5ccc381879eae8c69b9e41a2c1))
 * **android:** stamp the delivery version into Firebase tester builds ([#705](https://github.com/kombifyio/SpeechKit/issues/705)) ([d71053e](https://github.com/kombifyio/SpeechKit/commit/d71053ea613a60e101a9b57e5fd358d3c2bd5182))
 * **android:** start coinstalled Voice from the visible caller ([#724](https://github.com/kombifyio/SpeechKit/issues/724)) ([0992ba5](https://github.com/kombifyio/SpeechKit/commit/0992ba50b5bf12d63e89d7a4dcbf1ce125cabf6b))
 * **dictation:** keep long Deepgram live dictations whole ([#733](https://github.com/kombifyio/SpeechKit/issues/733)) ([ea738fa](https://github.com/kombifyio/SpeechKit/commit/ea738fa16d6ade7b012c3591376332f341be790f))
-* **models:** download Gemma 4 E4B Q4_K_M from a live, pinned source ([#714](https://github.com/kombifyio/SpeechKit/issues/714)) ([4435a08](https://github.com/kombifyio/SpeechKit/commit/4435a081aeca23ab99246da8184e49174aab3906))
 * **oss:** export only standalone open-source content to kombifyio/SpeechKit ([#717](https://github.com/kombifyio/SpeechKit/issues/717)) ([c8a5a2d](https://github.com/kombifyio/SpeechKit/commit/c8a5a2dad9ff804d62f2fe855d8a051c5587a736))
 * **pipeline:** preserve pending audio across recording restart ([#726](https://github.com/kombifyio/SpeechKit/issues/726)) ([641f6b4](https://github.com/kombifyio/SpeechKit/commit/641f6b4dec1fcf16c6bad31b48b02741a645b34c))
 * **server:** derive WS origin from public_url and free the session slot on rejected upgrade ([#707](https://github.com/kombifyio/SpeechKit/issues/707)) ([3c7d8f8](https://github.com/kombifyio/SpeechKit/commit/3c7d8f834475708198268eb61a08a6eca74ae6b0))
@@ -825,18 +925,15 @@ Notes cover changes after VERSION 0.74.0 (f78a55815bf3e5f96ba4b1262aab303f7200ef
 
 ## [0.74.6](https://github.com/kombifyio/SpeechKit/compare/v0.74.5...v0.74.6) (2026-10-03)
 
-
 ### Bug Fixes
 
 * **android:** start coinstalled Voice from the visible caller ([#724](https://github.com/kombifyio/SpeechKit/issues/724)) ([0992ba5](https://github.com/kombifyio/SpeechKit/commit/0992ba50b5bf12d63e89d7a4dcbf1ce125cabf6b))
 
 ## [0.74.5](https://github.com/kombifyio/SpeechKit/compare/v0.74.4...v0.74.5) (2026-10-02)
 
-
 ### Features
 
 * **android:** run attested hosted Voice co-install sessions ([#720](https://github.com/kombifyio/SpeechKit/issues/720)) ([741d92b](https://github.com/kombifyio/SpeechKit/commit/741d92b8e75527b2b9f19c3bf2952a2b0427431d))
-
 
 ### Bug Fixes
 
@@ -844,27 +941,19 @@ Notes cover changes after VERSION 0.74.0 (f78a55815bf3e5f96ba4b1262aab303f7200ef
 
 ## [0.74.4](https://github.com/kombifyio/SpeechKit/compare/v0.74.3...v0.74.4) (2026-10-02)
 
-
 ### Bug Fixes
 
 * **oss:** export only standalone open-source content to kombifyio/SpeechKit ([#717](https://github.com/kombifyio/SpeechKit/issues/717)) ([c8a5a2d](https://github.com/kombifyio/SpeechKit/commit/c8a5a2dad9ff804d62f2fe855d8a051c5587a736))
 
 ## [0.74.3](https://github.com/kombifyio/SpeechKit/compare/v0.74.2...v0.74.3) (2026-10-02)
 
-
-### Bug Fixes
-
-* **models:** download Gemma 4 E4B Q4_K_M from a live, pinned source ([#714](https://github.com/kombifyio/SpeechKit/issues/714)) ([4435a08](https://github.com/kombifyio/SpeechKit/commit/4435a081aeca23ab99246da8184e49174aab3906))
-
 ## [0.74.2](https://github.com/kombifyio/SpeechKit/compare/v0.74.1...v0.74.2) (2026-10-02)
-
 
 ### Bug Fixes
 
 * **voiceagent:** report failed turns as error frames with the agent's typed reason ([#712](https://github.com/kombifyio/SpeechKit/issues/712)) ([49cf642](https://github.com/kombifyio/SpeechKit/commit/49cf642fbc206efed89a9c7b0f6616c73244942d))
 
 ## [0.74.1](https://github.com/kombifyio/SpeechKit/compare/v0.74.0...v0.74.1) (2026-10-02)
-
 
 ### Bug Fixes
 
@@ -881,8 +970,6 @@ Notes cover changes after VERSION 0.74.0 (f78a55815bf3e5f96ba4b1262aab303f7200ef
 * **Compact voice on the web:** the voice UI kit gains a clear recording indicator, a live transcript, a frameless dialog card and one-line error notices, and it checks the microphone before a session starts, with consent asked only once.
 * **Six languages and a calmer settings page:** the desktop app, tray, Android app and website speak six languages, and settings are organized into tabs. Go SDK users should read the migration notes for the renamed STT, catalog and telemetry APIs.
 
-
-
 ### ⚠ BREAKING CHANGES
 
 * **stt,live,agentkit:** STT provider constructors take Options; see docs/migration-stt-provider-options.md.
@@ -892,18 +979,14 @@ Notes cover changes after VERSION 0.74.0 (f78a55815bf3e5f96ba4b1262aab303f7200ef
 
 ### Features
 
-* **api:** annotate the server contract for the agent-native surface and guard MCP drift ([#650](https://github.com/kombifyio/SpeechKit/issues/650)) ([c4f2d68](https://github.com/kombifyio/SpeechKit/commit/c4f2d68008b92441b4f41f8de9d2bfa488da25b8))
 * **catalog:** model IDs become data; add a gorelease report ([#681](https://github.com/kombifyio/SpeechKit/issues/681)) ([daec51a](https://github.com/kombifyio/SpeechKit/commit/daec51addced26fbeb5b3fefd11274df9d88a8d1))
 * **client:** drop the legacy Transcript.AudioPath field ([#682](https://github.com/kombifyio/SpeechKit/issues/682)) ([0b8dea8](https://github.com/kombifyio/SpeechKit/commit/0b8dea846f045ac30e39f550ac62e87a1093e914))
 * **i18n:** six-locale SpeechKit Android and website ([#642](https://github.com/kombifyio/SpeechKit/issues/642)) ([30dcb87](https://github.com/kombifyio/SpeechKit/commit/30dcb877644960eeea9ba713612472ce5eb87c98))
 * **i18n:** six-locale SpeechKit desktop app and tray ([#646](https://github.com/kombifyio/SpeechKit/issues/646)) ([86eea85](https://github.com/kombifyio/SpeechKit/commit/86eea8581d39698158b2ca2145bffbf1ac99a305))
-* **models:** 2026-09-30 model refresh, retirements and new adapters ([#674](https://github.com/kombifyio/SpeechKit/issues/674)) ([d4c32e7](https://github.com/kombifyio/SpeechKit/commit/d4c32e7447f315fff54115216571747d4cd8ce8f))
-* **models:** GPT-Live on Microsoft Foundry and Gemini Transcribe Live dictation ([#676](https://github.com/kombifyio/SpeechKit/issues/676)) ([fe3921c](https://github.com/kombifyio/SpeechKit/commit/fe3921cf0a2a6a7f1fc2edce401467f037bcbfef))
 * **server:** OpenAI-compatible audio endpoints and local-only stack ([#638](https://github.com/kombifyio/SpeechKit/issues/638)) ([d7b3e29](https://github.com/kombifyio/SpeechKit/commit/d7b3e2935ee51f2cc12f85c4bfe03fd7d9e41656))
 * **settings:** tabbed settings with one place per setting and per-page folders ([#666](https://github.com/kombifyio/SpeechKit/issues/666)) ([7063525](https://github.com/kombifyio/SpeechKit/commit/70635252ae25797db6f433a87c70ccacbf82126d))
 * **stt,live,agentkit:** typed STT errors, deterministic shutdown, one provider constructor shape ([#684](https://github.com/kombifyio/SpeechKit/issues/684)) ([0caf7ad](https://github.com/kombifyio/SpeechKit/commit/0caf7ad663416fc7577a6d8c29db26fa5f2429d8))
 * **voice-ui:** compact recording indicator, voice dialog, live transcript and notice ([#702](https://github.com/kombifyio/SpeechKit/issues/702)) ([b25c740](https://github.com/kombifyio/SpeechKit/commit/b25c740a863d0a09c9a30d727af613afb78cb5d4))
-
 
 ### Bug Fixes
 
@@ -919,7 +1002,6 @@ Notes cover changes after VERSION 0.74.0 (f78a55815bf3e5f96ba4b1262aab303f7200ef
 * **wakeword:** replace physical-room publication gate with simulated-room evidence ([#680](https://github.com/kombifyio/SpeechKit/issues/680)) ([0482808](https://github.com/kombifyio/SpeechKit/commit/048280806042ead2d08af23326324d4360f6ec6c))
 * **website:** verify the localized release heading and version separately ([#648](https://github.com/kombifyio/SpeechKit/issues/648)) ([a23b97f](https://github.com/kombifyio/SpeechKit/commit/a23b97fdacf49f27faa58e9987f564834712f144))
 
-
 ### Code Refactoring
 
 * nested app module (ADR 0004), OTel out of the root kernel, PR quality gates, store leak fix, vulnerable deps ([#667](https://github.com/kombifyio/SpeechKit/issues/667)) ([70f8782](https://github.com/kombifyio/SpeechKit/commit/70f8782280aef09056bb757adb0b4f0744743fb3))
@@ -928,18 +1010,11 @@ Notes cover changes after VERSION 0.73.0 (bb3e4fef280e89618e9ddf56d83ea8c6596286
 
 ## [0.73.4](https://github.com/kombifyio/SpeechKit/compare/v0.73.3...v0.73.4) (2026-09-29)
 
-
-### Features
-
-* **api:** annotate the server contract for the agent-native surface and guard MCP drift ([#650](https://github.com/kombifyio/SpeechKit/issues/650)) ([c4f2d68](https://github.com/kombifyio/SpeechKit/commit/c4f2d68008b92441b4f41f8de9d2bfa488da25b8))
-
-
 ### Bug Fixes
 
 * **build:** resolve the sherpa-onnx native lib dir from go.mod ([#652](https://github.com/kombifyio/SpeechKit/issues/652)) ([b8eed62](https://github.com/kombifyio/SpeechKit/commit/b8eed6251b795db6b37f3b9400554c72199bfd60))
 
 ## [0.73.3](https://github.com/kombifyio/SpeechKit/compare/v0.73.2...v0.73.3) (2026-09-29)
-
 
 ### Bug Fixes
 
@@ -947,19 +1022,16 @@ Notes cover changes after VERSION 0.73.0 (bb3e4fef280e89618e9ddf56d83ea8c6596286
 
 ## [0.73.2](https://github.com/kombifyio/SpeechKit/compare/v0.73.1...v0.73.2) (2026-09-29)
 
-
 ### Features
 
 * **i18n:** six-locale SpeechKit desktop app and tray ([#646](https://github.com/kombifyio/SpeechKit/issues/646)) ([86eea85](https://github.com/kombifyio/SpeechKit/commit/86eea8581d39698158b2ca2145bffbf1ac99a305))
 
 ## [0.73.1](https://github.com/kombifyio/SpeechKit/compare/v0.73.0...v0.73.1) (2026-09-29)
 
-
 ### Features
 
 * **i18n:** six-locale SpeechKit Android and website ([#642](https://github.com/kombifyio/SpeechKit/issues/642)) ([30dcb87](https://github.com/kombifyio/SpeechKit/commit/30dcb877644960eeea9ba713612472ce5eb87c98))
 * **server:** OpenAI-compatible audio endpoints and local-only stack ([#638](https://github.com/kombifyio/SpeechKit/issues/638)) ([d7b3e29](https://github.com/kombifyio/SpeechKit/commit/d7b3e2935ee51f2cc12f85c4bfe03fd7d9e41656))
-
 
 ### Bug Fixes
 
@@ -973,7 +1045,6 @@ Notes cover changes after VERSION 0.73.0 (bb3e4fef280e89618e9ddf56d83ea8c6596286
 - **Menus that work on tablets**: The speechkit.cc navigation opens with a tap and stays open, on iPad and every touch screen.
 - **Updates that finish the job**: Install and restart now relaunches SpeechKit on the first try.
 
-
 ### ⚠ BREAKING CHANGES
 
 * **framework:** capture.OnCaptureDeviceRebound is removed; set capture.Config.OnDeviceRebound (and optionally Config.FramePool) on the session instead.
@@ -981,7 +1052,6 @@ Notes cover changes after VERSION 0.73.0 (bb3e4fef280e89618e9ddf56d83ea8c6596286
 ### Features
 
 * **providers:** restore Google Cloud STT/TTS and Gemini Live as opt-in BYOK providers ([#559](https://github.com/kombifyio/SpeechKit/issues/559)) ([9518cfa](https://github.com/kombifyio/SpeechKit/commit/9518cfa7bf27ca7bd25392228e7766c1df913910))
-
 
 ### Bug Fixes
 
@@ -1004,7 +1074,6 @@ Notes cover changes after VERSION 0.73.0 (bb3e4fef280e89618e9ddf56d83ea8c6596286
 * **website:** keep nav dropdowns open on touch and tablet ([#610](https://github.com/kombifyio/SpeechKit/issues/610)) ([a906f92](https://github.com/kombifyio/SpeechKit/commit/a906f921b360aeb36841ba3627282992cd394ce8))
 * **website:** load the nav lockup from the WebP web tier ([#554](https://github.com/kombifyio/SpeechKit/issues/554)) ([571145a](https://github.com/kombifyio/SpeechKit/commit/571145a2fa763e42309a893236ea105b3bd3e3d1))
 
-
 ### Code Refactoring
 
 * **framework:** dogfood the public SDK, per-session capture hooks, doc-gated pkg surface ([#540](https://github.com/kombifyio/SpeechKit/issues/540)) ([e5d8aea](https://github.com/kombifyio/SpeechKit/commit/e5d8aeaad22c2e660fa388d6edbc79168877517b))
@@ -1012,7 +1081,6 @@ Notes cover changes after VERSION 0.73.0 (bb3e4fef280e89618e9ddf56d83ea8c6596286
 Notes cover changes after VERSION 0.72.0 (a5999471f8d81f6082631a3c550d8e261b64d6fc), the earliest available contiguous 0.72.x VERSION anchor, through selected source a906f921b360aeb36841ba3627282992cd394ce8.
 
 ## [0.72.1](https://github.com/kombifyio/SpeechKit/compare/v0.72.0...v0.72.1) (2026-09-20)
-
 
 ### Bug Fixes
 
@@ -1034,7 +1102,6 @@ Notes cover changes after VERSION 0.72.0 (a5999471f8d81f6082631a3c550d8e261b64d6
 * **meeting:** import the Teams transcript after a Teams meeting ([#518](https://github.com/kombifyio/SpeechKit/issues/518)) ([de48097](https://github.com/kombifyio/SpeechKit/commit/de480972b162e4aea3f3f716c3d58121e25530b0))
 * **website:** FAQ section on speechkit.cc and a /faq page ([#517](https://github.com/kombifyio/SpeechKit/issues/517)) ([d68a98a](https://github.com/kombifyio/SpeechKit/commit/d68a98af72a1bc7fea6d67cfd0f01fa147c3a3ae))
 
-
 ### Bug Fixes
 
 * **dictation:** stop leftover commas after German fillers ([#529](https://github.com/kombifyio/SpeechKit/issues/529)) ([715ff1d](https://github.com/kombifyio/SpeechKit/commit/715ff1d400b8e5b6fe18747c9fe5255f06df89aa))
@@ -1046,18 +1113,15 @@ Notes cover changes after VERSION 0.71.0 (1928f9295bcc67faf0a3a8b67150c75b9c5e58
 
 ## [0.71.0](https://github.com/kombifyio/SpeechKit/compare/00b17c502201393702b34091f46c9b25a4df8ca4...9d5d9b3e1f08b616874c0f30ba63b8504e35ab1b) (2026-09-16)
 
-
 ### Highlights
 
 - **Notes that keep their moment**: Every meeting note is now its own bullet, stamped with the moment you wrote it, and the compact pill takes a quick note without opening the full window.
 - **Summaries that say what is wrong**: SpeechKit checks the summary provider before a meeting starts, explains why a summary is missing, and finishes the waiting summaries once you sign in again.
 - **SpeechKit without Google AI**: Dictation, voice output and the Voice Agent no longer use Google AI, and new setups start with other providers.
 
-
 ### Features
 
 * **meeting:** notes as timestamped bullets, with a quick note from the pill ([#509](https://github.com/kombifyio/SpeechKit/issues/509)) ([9d5d9b3](https://github.com/kombifyio/SpeechKit/commit/9d5d9b3e1f08b616874c0f30ba63b8504e35ab1b))
-
 
 ### Bug Fixes
 
@@ -1072,7 +1136,6 @@ Notes cover changes after VERSION 0.71.0 (1928f9295bcc67faf0a3a8b67150c75b9c5e58
 * **server:** keep production Voice Agent off retired Gemini ([#503](https://github.com/kombifyio/SpeechKit/issues/503)) ([77d0ec8](https://github.com/kombifyio/SpeechKit/commit/77d0ec819f85a2285544e5448a57103cfe07276c))
 * **wakeword:** hey_kubi default with hey_quby alias (p6xf) ([#489](https://github.com/kombifyio/SpeechKit/issues/489)) ([649a0c8](https://github.com/kombifyio/SpeechKit/commit/649a0c8b19dabab8b3f08466e595a5200d768ab8))
 
-
 ### Performance Improvements
 
 * **delivery:** adopt consolidated source runner ([#487](https://github.com/kombifyio/SpeechKit/issues/487)) ([d0230c3](https://github.com/kombifyio/SpeechKit/commit/d0230c3949a2d041184ec21e06563c997d4f3d6d))
@@ -1081,13 +1144,11 @@ Notes cover changes after VERSION 0.70.0 (00b17c502201393702b34091f46c9b25a4df8c
 
 ## [0.70.3](https://github.com/kombifyio/SpeechKit/compare/v0.70.2...v0.70.3) (2026-09-15)
 
-
 ### Bug Fixes
 
 * **server:** keep production Voice Agent off retired Gemini ([#503](https://github.com/kombifyio/SpeechKit/issues/503)) ([77d0ec8](https://github.com/kombifyio/SpeechKit/commit/77d0ec819f85a2285544e5448a57103cfe07276c))
 
 ## [0.70.2](https://github.com/kombifyio/SpeechKit/compare/v0.70.1...v0.70.2) (2026-09-14)
-
 
 ### Bug Fixes
 
@@ -1095,20 +1156,17 @@ Notes cover changes after VERSION 0.70.0 (00b17c502201393702b34091f46c9b25a4df8c
 * remove Google AI STT/TTS and Gemini Live ([#485](https://github.com/kombifyio/SpeechKit/issues/485)) ([134cc86](https://github.com/kombifyio/SpeechKit/commit/134cc86f793167ccc273b1df4ab46e79d89065db))
 * **wakeword:** hey_kubi default with hey_quby alias ([#489](https://github.com/kombifyio/SpeechKit/issues/489)) ([649a0c8](https://github.com/kombifyio/SpeechKit/commit/649a0c8b19dabab8b3f08466e595a5200d768ab8))
 
-
 ### Changed
 
 * **website:** SpeechKit now explains the Windows, macOS beta, Android, browser
   and server paths, introduces Meeting notes and reviews, and provides updated
   developer guides and a Meeting starter prompt in the existing site design. ([#486](https://github.com/kombifyio/SpeechKit/issues/486)) ([0a10bd5](https://github.com/kombifyio/SpeechKit/commit/0a10bd59520b3aae30278dce9ae38a90ecd2b05d))
 
-
 ### Performance Improvements
 
 * **delivery:** adopt consolidated source runner ([#487](https://github.com/kombifyio/SpeechKit/issues/487)) ([d0230c3](https://github.com/kombifyio/SpeechKit/commit/d0230c3949a2d041184ec21e06563c997d4f3d6d))
 
 ## [0.70.1](https://github.com/kombifyio/SpeechKit/compare/v0.70.0...v0.70.1) (2026-09-12)
-
 
 ### Bug Fixes
 
@@ -1603,7 +1661,6 @@ Notes cover changes after VERSION 0.70.0 (00b17c502201393702b34091f46c9b25a4df8c
 
 ### Deprecated
 
-* **api:** `POST /api/v1/meeting/snapshot` is deprecated and will be removed in
   v0.69.0. Every response now carries `Deprecation: true`, a `Sunset` date and
   a `Link` header with `rel="successor-version"`. Capture screenshots with
   `POST /api/v1/recording-sessions/{sessionId}/snapshots` (resolve the live
@@ -1732,7 +1789,6 @@ Notes cover changes after VERSION 0.70.0 (00b17c502201393702b34091f46c9b25a4df8c
   openWakeWord helper program gained a fallback entry point that exits with a
   clear message instead of leaving the build without one.
 
-
 ## [0.67.0](https://github.com/kombifyio/SpeechKit/compare/v0.66.0...v0.67.0) (2026-09-01)
 
 ### Highlights
@@ -1791,7 +1847,6 @@ Notes cover changes after VERSION 0.70.0 (00b17c502201393702b34091f46c9b25a4df8c
   general failure. Connecting could not succeed in any released pairing before
   this, which looked like the button doing nothing.
 
-
 ## [0.66.0](https://github.com/kombifyio/SpeechKit/compare/v0.65.0...v0.66.0) (2026-08-28)
 
 ### Highlights
@@ -1817,7 +1872,6 @@ Notes cover changes after VERSION 0.70.0 (00b17c502201393702b34091f46c9b25a4df8c
 ### Changed
 
 * **docs:** the canonical voice-surface contract moved out of the desktop frontend into the exported server contracts directory, so the drift check runs in the public mirror instead of skipping there.
-
 
 ## [0.65.0](https://github.com/kombifyio/SpeechKit/compare/v0.64.0...v0.65.0) (2026-08-28)
 
@@ -1855,7 +1909,6 @@ Notes cover changes after VERSION 0.70.0 (00b17c502201393702b34091f46c9b25a4df8c
   OpenTelemetry. `RecordOutcome` takes SpeechKit's own attribute type, so
   whether a tracing backend is installed stays SpeechKit's business instead of
   appearing in an embedder's signatures.
-
 
 ## [0.64.0](https://github.com/kombifyio/SpeechKit/compare/v0.62.0...v0.64.0) (2026-08-28)
 
@@ -1995,7 +2048,6 @@ Notes cover changes after VERSION 0.70.0 (00b17c502201393702b34091f46c9b25a4df8c
 * **desktop:** toggle overlay shortcut functions in Settings ([4848a5e](https://github.com/kombifyio/SpeechKit/commit/4848a5ecbe871f9c6e617b42e8e50c7b55622100))
 * **server:** LAN discovery via mDNS/DNS-SD (_speechkit._tcp, opt-in) ([c3903be](https://github.com/kombifyio/SpeechKit/commit/c3903be58fda83ddbcca43d20c0bb649b5c14c33))
 
-
 ### Fixed
 
 * **android:** put SpeechKit on the Gboard suggestion strip ([34b3342](https://github.com/kombifyio/SpeechKit/commit/34b3342ca2874054ee14643b13a1a0cc68c88144))
@@ -2007,7 +2059,6 @@ Notes cover changes after VERSION 0.70.0 (00b17c502201393702b34091f46c9b25a4df8c
 * **tts:** declare Hugging Face and Piper provider-option manifests ([1987d8a](https://github.com/kombifyio/SpeechKit/commit/1987d8a93cc6b71f97378a36ceef4048dab9fff0))
 
 ## [0.59.1](https://github.com/kombifyio/SpeechKit/compare/v0.59.0...v0.59.1) (2026-08-21)
-
 
 ### Fixed
 
@@ -2021,8 +2072,6 @@ Notes cover changes after VERSION 0.70.0 (00b17c502201393702b34091f46c9b25a4df8c
 - **The call is recorded as two voices, not a mix**: microphone and system audio stay on separate tracks, so speaker labels come for free and the audio is never kept.
 - **A call starting is enough to offer notes**: SpeechKit notices when a calling app takes the microphone and waits for you to accept before it records anything.
 - **The overlay is the control strip**: choose which actions sit on it, rotate the speech language, start a meeting, and the keyboard says when it needs a server instead of looking finished.
-
-
 
 ### Added
 
@@ -2040,7 +2089,6 @@ Notes cover changes after VERSION 0.70.0 (00b17c502201393702b34091f46c9b25a4df8c
 * **meeting:** write a meeting up as soon as it ends ([b27f1ef](https://github.com/kombifyio/SpeechKit/commit/b27f1eff3c95b7d381280af90b97d1655f48139e))
 * **meeting:** write meetings up from the transcript and the user's notes ([ec4441c](https://github.com/kombifyio/SpeechKit/commit/ec4441c02ff516a5e83a6d198549a4a3cba4c6d8))
 * overlay actions, language cycle, meeting start, and Android assist answers ([8b1db23](https://github.com/kombifyio/SpeechKit/commit/8b1db2362530611e0943590b3adc9ccc44a91785))
-
 
 ### Fixed
 
@@ -2074,7 +2122,6 @@ Notes cover changes after VERSION 0.70.0 (00b17c502201393702b34091f46c9b25a4df8c
 * **android:** put dictation and the Voice Agent on the keyboard itself ([70afa60](https://github.com/kombifyio/SpeechKit/commit/70afa60dab77a42986f4879e8a5c252dd0d91439))
 * **voiceagent:** list gpt-realtime-2.1 and its mini, without promoting them ([390ef31](https://github.com/kombifyio/SpeechKit/commit/390ef3102176f7c8effd5f18219b0c35010f3d87))
 
-
 ### Fixed
 
 * **android:** stop the keyboard fork from adding a second launcher icon ([5f0a965](https://github.com/kombifyio/SpeechKit/commit/5f0a96534349ec3e1e55d234e7b06e8c86941b59))
@@ -2107,7 +2154,6 @@ Notes cover changes after VERSION 0.70.0 (00b17c502201393702b34091f46c9b25a4df8c
 * **oss:** publish the Android corresponding source ([984404b](https://github.com/kombifyio/SpeechKit/commit/984404b9aaf15dcbbcacc0e46d0c2e39c5dc606b))
 * **ui:** brand the shell as SpeechKit UI and keep mode settings reachable ([e947869](https://github.com/kombifyio/SpeechKit/commit/e947869f79924106fde64e736843ece130186854))
 
-
 ### Fixed
 
 * **android:** let the keyboard actually appear ([d0ded81](https://github.com/kombifyio/SpeechKit/commit/d0ded810c473627df6dc003ae13a8df25d150fae))
@@ -2120,7 +2166,6 @@ Notes cover changes after VERSION 0.70.0 (00b17c502201393702b34091f46c9b25a4df8c
 * **oss:** let the export carry the Android corresponding source ([e978fb2](https://github.com/kombifyio/SpeechKit/commit/e978fb21729adb1f1a50202e37223db30e1cbc81))
 * **release:** fail loudly when NSIS never actually installs ([80a4fd4](https://github.com/kombifyio/SpeechKit/commit/80a4fd4ed631638e1da09af51f807fdba6b12d2e))
 * **release:** stop the draft reaper from deleting the in-flight release ([a9e5f94](https://github.com/kombifyio/SpeechKit/commit/a9e5f943757a39be50fc77d231c7758f23daaf56))
-
 
 ### Changed
 
@@ -2153,7 +2198,6 @@ Notes cover changes after VERSION 0.70.0 (00b17c502201393702b34091f46c9b25a4df8c
 * **android:** make the Voice Agent reachable in the app ([359ee48](https://github.com/kombifyio/SpeechKit/commit/359ee48766010b20805927a2d0945b5671299b61))
 * **android:** publish the shared orb so other apps can stop copying it ([60496d4](https://github.com/kombifyio/SpeechKit/commit/60496d4d191cda52db4ae586e10f0b1bf8289bb0))
 
-
 ### Fixed
 
 * **android:** detect our own keyboard instead of a stranger's ([288723a](https://github.com/kombifyio/SpeechKit/commit/288723a54e7cce34da31efc2f6c7a8da4cf3cd00))
@@ -2183,7 +2227,6 @@ Notes cover changes after VERSION 0.70.0 (00b17c502201393702b34091f46c9b25a4df8c
 
 * **desktop:** move Quick Note to the overlay and label every overlay icon ([df3c892](https://github.com/kombifyio/SpeechKit/commit/df3c8921f93f287dcf43e387a6fd123ced5df535))
 * **desktop:** rebuild the Voice Agent overlay around the conversation ([2358a48](https://github.com/kombifyio/SpeechKit/commit/2358a48b24143f96a104d39b1595f20fbc485f21))
-
 
 ### Fixed
 
@@ -2217,7 +2260,6 @@ Notes cover changes after VERSION 0.70.0 (00b17c502201393702b34091f46c9b25a4df8c
 * **server:** /assistant — the hosted Voice Assistant web page ([ed0d402](https://github.com/kombifyio/SpeechKit/commit/ed0d402af2d54e06472fa17156f525ccfdf6c3a5))
 * **voice-ui:** waveform variant, semantic marks, and OSS lab guard ([64ede5d](https://github.com/kombifyio/SpeechKit/commit/64ede5d3900267c29c7eff6b6784e464b280b44b))
 
-
 ### Fixed
 
 * **delivery:** migrate repository auth contract ([#273](https://github.com/kombifyio/SpeechKit/issues/273)) ([865f99d](https://github.com/kombifyio/SpeechKit/commit/865f99dfa38f6fa01a3616e290ad5e93c88d5b42))
@@ -2245,7 +2287,6 @@ Speech provider and update reliability release. No existing public API was remov
 
 ## [0.54.1](https://github.com/kombifyio/SpeechKit/compare/v0.54.0...v0.54.1) (2026-08-12)
 
-
 ### Fixed
 
 * **server:** stop one transient probe failure from killing the server ([ba48092](https://github.com/kombifyio/SpeechKit/commit/ba48092ee06633782068af9d057b348f7763db72))
@@ -2268,7 +2309,6 @@ Speech provider and update reliability release. No existing public API was remov
 
 * **server:** wire local Box media lifecycle ([#170](https://github.com/kombifyio/SpeechKit/issues/170)) ([ecb20fd](https://github.com/kombifyio/SpeechKit/commit/ecb20fdd94498df067924f8b5ca3c06108b216df))
 
-
 ### Fixed
 
 * **lint:** keep the empty-final commit inside the contextcheck exemption ([96af795](https://github.com/kombifyio/SpeechKit/commit/96af79585728b5de454d43ede9b652fe534e896e))
@@ -2277,7 +2317,6 @@ Speech provider and update reliability release. No existing public API was remov
 * **wyoming:** bound untrusted PCM metadata before building the WAV header ([e6d8826](https://github.com/kombifyio/SpeechKit/commit/e6d88265d34a6de038939a862ca89e844c5969d0))
 
 ## [0.53.0](https://github.com/kombifyio/SpeechKit/compare/v0.52.14...v0.53.0) (2026-08-11)
-
 
 ### Added
 
@@ -2299,7 +2338,6 @@ Speech provider and update reliability release. No existing public API was remov
 * **voice-ui-lab:** Voice Assistant UI Lab — 3 mockup variants with fake + live voice drivers ([7d71835](https://github.com/kombifyio/SpeechKit/commit/7d71835ed67c91497e62f634ec3e135487ca8d4b))
 * **voice-ui:** promote Aura Orb as speechkit-voice-assistant (b3rv) ([eff5f36](https://github.com/kombifyio/SpeechKit/commit/eff5f366a856f78e42b3f9cc17f1713c303f05b8))
 * **voiceagent:** additive agent_progress host prompt (M4 kernel piece) ([9d96ab7](https://github.com/kombifyio/SpeechKit/commit/9d96ab7fa6b403601c3ef34a9eab267c2b73536d))
-
 
 ### Fixed
 
@@ -2323,14 +2361,12 @@ Speech provider and update reliability release. No existing public API was remov
 
 ## [0.52.12](https://github.com/kombifyio/SpeechKit/compare/v0.52.11...v0.52.12) (2026-08-10)
 
-
 ### Fixed
 
 * **release:** close Release Please after publication ([#225](https://github.com/kombifyio/SpeechKit/issues/225)) ([1335f12](https://github.com/kombifyio/SpeechKit/commit/1335f12db3c671c54ee927ca1430c1ca0927c52f))
 * **update:** relaunch the app ourselves instead of trusting the installer ([8a56909](https://github.com/kombifyio/SpeechKit/commit/8a56909024b94679e2cbb481985ba0fb0e3eb6dd))
 
 ## [0.52.11](https://github.com/kombifyio/SpeechKit/compare/v0.52.10...v0.52.11) (2026-08-10)
-
 
 ### Fixed
 
@@ -5629,8 +5665,6 @@ no setup completed.
   call. Three new tests cover the same gate for the Assist and Voice
   Agent hotkeys and a positive control (gate must not fire once
   `SetupDone=true`).
-
-
 
 ## [0.32.0] - 2026-05-13
 

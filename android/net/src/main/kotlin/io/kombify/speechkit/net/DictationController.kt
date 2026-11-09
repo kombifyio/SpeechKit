@@ -8,6 +8,7 @@ import io.kombify.speechkit.stt.parakeet.LocalParakeetSession
 import io.kombify.speechkit.stt.parakeet.ParakeetOnDevice
 import io.kombify.speechkit.stt.streaming.KeepAliveSession
 import io.kombify.speechkit.stt.streaming.StreamingSttSession
+import io.kombify.speechkit.stt.streaming.VocabularySession
 import io.kombify.speechkit.stt.system.SystemSpeechRecognizerSession
 import kotlinx.coroutines.CancellationException
 import okhttp3.OkHttpClient
@@ -46,7 +47,7 @@ class DictationController(
     suspend fun openSession(): StreamingSttSession {
         VoiceLog.i(VoiceLog.DICTATION, "open ${profile.describe()}")
         return try {
-            val session = when (profile) {
+            val opened = when (profile) {
                 is ConnectionProfile.SystemOnDevice ->
                     SystemSpeechRecognizerSession(
                         context = checkNotNull(context) {
@@ -58,7 +59,25 @@ class DictationController(
 
                 is ConnectionProfile.Server -> {
                     val api = SpeechKitServerApi(profile, okHttp)
-                    val mint = api.createDictationStreamSession()
+                    val mint = try {
+                        api.createDictationStreamSession()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // Server down or no network: dictate with the ready offline model instead of failing.
+                        // A rejected sign-in (401/403) or a plan denial is never masked: the caller's recovery
+                        // (token refresh, sign-in prompt, plan notice) must run, so those always propagate.
+                        if (!offlineFallbackAllowed(e)) throw e
+                        val files = context
+                            ?.takeIf { OnDeviceEngine.choice(it) == OnDeviceEngine.Choice.PARAKEET }
+                            ?.let(ParakeetOnDevice::usableFiles)
+                            ?: throw e
+                        VoiceLog.w(
+                            VoiceLog.DICTATION,
+                            "server session failed (${(e as? SpeechKitApiException)?.let { "HTTP ${it.httpStatus} ${it.code}" } ?: e.javaClass.simpleName}), using the offline model",
+                        )
+                        return finish(LocalParakeetSession(files))
+                    }
                     if (mint.capabilities.streaming) {
                         // KeepAliveSession for the idle watchdog; RetryingDictationSession
                         // rescues a dead stream via one batch POST. The system tier is
@@ -89,11 +108,7 @@ class DictationController(
                     LocalParakeetSession(files)
                 }
             }
-            VoiceLog.i(
-                VoiceLog.DICTATION,
-                "opened capturesOwnAudio=${session.capturesOwnAudio}",
-            )
-            session
+            finish(opened, profile is ConnectionProfile.SystemOnDevice || profile is ConnectionProfile.Local)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -102,9 +117,39 @@ class DictationController(
         }
     }
 
+    /**
+     * Wraps [opened] with the account vocabulary: hosted tiers get it as keyterms (the server rewrites the result
+     * itself); on-device tiers rewrite their own results and the system recognizer is biased with the terms.
+     */
+    private fun finish(
+        opened: StreamingSttSession,
+        onDevice: Boolean = opened is LocalParakeetSession,
+    ): StreamingSttSession {
+        val session = VocabularySession(
+            delegate = opened,
+            rewriteResults = onDevice,
+            keytermsWithAliases = !onDevice,
+        )
+        VoiceLog.i(
+            VoiceLog.DICTATION,
+            "opened capturesOwnAudio=${session.capturesOwnAudio}",
+        )
+        return session
+    }
+
     /** Quick reachability probe for settings/onboarding UI. */
     suspend fun serverHealthy(): Boolean = when (profile) {
         is ConnectionProfile.Server -> SpeechKitServerApi(profile, okHttp).healthy()
         else -> false
     }
+}
+
+/**
+ * Only an unreachable or failing server lets dictation fall back to the offline model: a network error or
+ * a 5xx. Sign-in (401/403) and plan denials stay with the caller, which knows how to recover or explain.
+ */
+private fun offlineFallbackAllowed(e: Exception): Boolean = when (e) {
+    is SpeechKitApiException -> e.denial == null && e.httpStatus >= 500
+    is java.io.IOException -> true
+    else -> false
 }

@@ -99,6 +99,11 @@ static inline int argmax(const float *v, int n)
     return best;
 }
 
+int p2_tdt_duration(const float *duration_logits)
+{
+    return DURATIONS[argmax(duration_logits, P2_N_DURATIONS)];
+}
+
 int p2_greedy_decode(const P2Model *m, const float *enc_out, int T, P2Token **out_tokens)
 {
     LSTMState state;

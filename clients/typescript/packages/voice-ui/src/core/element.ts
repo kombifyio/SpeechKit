@@ -4,7 +4,7 @@ import { upgradeOwnProperties } from "./upgrade.js";
 import {
   voiceUiMessages,
   type VoiceUiMessageCatalog,
-  type VoiceUiMessageId
+  type VoiceUiMessageId,
 } from "../i18n/index.js";
 import type { SpeechKitVoiceSessionState } from "./voice-surface.js";
 

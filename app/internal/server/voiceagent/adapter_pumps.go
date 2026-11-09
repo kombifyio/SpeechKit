@@ -25,6 +25,7 @@ func (a *Adapter) readPump(ctx context.Context, done chan<- struct{}) {
 		// Canceling coder/websocket's Read context closes the socket immediately.
 		// Keep transport reads alive until Run has written the terminal frame;
 		// the session context still gates every admitted upstream operation.
+		a.live.handling.Store(false)
 		typ, data, err := a.Conn.Read(context.WithoutCancel(ctx))
 		if err != nil {
 			return
@@ -32,6 +33,9 @@ func (a *Adapter) readPump(ctx context.Context, done chan<- struct{}) {
 		if ctx.Err() != nil {
 			return
 		}
+		// While this frame is handled no pong can be read (heartbeat).
+		a.live.handling.Store(true)
+		a.live.touch()
 		a.idle.Reset()
 		switch typ {
 		case websocket.MessageBinary:
@@ -39,7 +43,10 @@ func (a *Adapter) readPump(ctx context.Context, done chan<- struct{}) {
 				a.sendError(ctx, "audio_transport_mismatch", "binary audio frames are disabled when media_transport=livekit")
 				continue
 			}
-			if err := a.Provider.SendAudio(data); err != nil {
+			a.uplink.audio(len(data))
+			// A stuck provider leg must end the session with
+			// audio_upstream_failed instead of blocking this pump silently.
+			if err := boundedUpstreamSend(func() error { return a.Provider.SendAudio(data) }); err != nil {
 				a.sendProviderError(ctx, "audio_upstream_failed", err, true)
 				return
 			}
@@ -51,7 +58,8 @@ func (a *Adapter) readPump(ctx context.Context, done chan<- struct{}) {
 			}
 			switch env.Type {
 			case MsgAudioEnd:
-				if err := a.Provider.SendAudioStreamEnd(); err != nil {
+				a.uplink.turnBoundary()
+				if err := boundedUpstreamSend(a.Provider.SendAudioStreamEnd); err != nil {
 					a.sendProviderError(ctx, "audio_upstream_failed", err, true)
 					return
 				}
@@ -257,6 +265,9 @@ func (a *Adapter) admitProviderOutput(ctx context.Context, result providerReceiv
 		return true
 	}
 	a.idle.Reset()
+	if providerConcludesInput(msg) {
+		a.uplink.turnBoundary()
+	}
 	a.writeMu.Lock()
 	if !msg.Interrupted && (len(msg.Audio) > 0 || msg.OutputTranscript != "") {
 		pending.receivedReplyActive = true
@@ -378,12 +389,12 @@ func (a *Adapter) forwardProviderOutput(ctx context.Context, msg *LiveMessage, s
 		})
 	}
 	for _, call := range msg.ToolCalls {
-		if _, claimed := a.bridgeTools[call.Name]; claimed {
+		if _, claimed := a.serverTools[call.Name]; claimed {
 			// Server-executed tool: the client still receives the
 			// tool_call frame for UI transparency (tagged
 			// execution=server) but must not answer it — the adapter
-			// resolves it against the tool router asynchronously.
-			a.dispatchBridgeToolCall(ctx, msg, call)
+			// runs it asynchronously (server_tools.go).
+			a.dispatchServerToolCall(ctx, msg, call)
 			continue
 		}
 		a.sendJSON(ctx, ToolCallFrame{

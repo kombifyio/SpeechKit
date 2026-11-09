@@ -15,6 +15,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/app/internal/server/wssession"
 	"github.com/kombifyio/SpeechKit/app/internal/store"
+	publiccascaded "github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/cascaded"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/a2a"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/live/assemblyai"
@@ -27,13 +28,18 @@ type nativeVoiceSessions struct {
 	agents        assemblyai.Agents
 	signingSecret func() string
 	consentReader NativeConsentReader
-	mu            sync.Mutex
-	callbacks     map[string]*a2a.OpenAIHandler
+	// plain answers a Companion turn the Companion cannot serve, after a spoken notice; nil keeps
+	// the typed error.
+	plain publiccascaded.Agent
+	// callbackHeaders ride on every vendor callback (NativeCallbackHeaders option).
+	callbackHeaders map[string]string
+	mu              sync.Mutex
+	callbacks       map[string]*a2a.OpenAIHandler
 }
 
-func newNativeVoiceSessions(publicURL string, storage store.Store, assemblyKey string, signingSecret func() string, consentReader NativeConsentReader) *nativeVoiceSessions {
+func newNativeVoiceSessions(publicURL string, storage store.Store, assemblyKey string, signingSecret func() string, consentReader NativeConsentReader, plain publiccascaded.Agent, callbackHeaders map[string]string) *nativeVoiceSessions {
 	journal, _ := storage.(store.VoiceProviderResourceStore)
-	return &nativeVoiceSessions{publicURL: publicURL, journal: journal, agents: assemblyai.Agents{APIKey: assemblyKey}, signingSecret: signingSecret, consentReader: consentReader, callbacks: make(map[string]*a2a.OpenAIHandler)}
+	return &nativeVoiceSessions{publicURL: publicURL, journal: journal, agents: assemblyai.Agents{APIKey: assemblyKey}, signingSecret: signingSecret, consentReader: consentReader, plain: plain, callbackHeaders: callbackHeaders, callbacks: make(map[string]*a2a.OpenAIHandler)}
 }
 
 func (s *nativeVoiceSessions) serveCallback(w http.ResponseWriter, r *http.Request, id string) {
@@ -81,6 +87,13 @@ type registeredNativeProvider struct {
 	// result; speakSeen notes that the response has started.
 	speakOpen bool
 	speakSeen bool
+	// clock measures each answered turn from the caller's final transcript
+	// (native_timing.go); timer is the bound agent's own phase report.
+	clock nativeTurnClock
+	timer nativeTurnTimer
+	// warm asks the Gateway for the next turn's policy read over this session's agent connection (read-only, no
+	// credential, rate-limited inside); nil for a direct endpoint. Set once in Connect, before Receive runs.
+	warm func()
 	// Set before invoking Create. An interrupted invocation stays uncertain;
 	// only an intent known not to have crossed this boundary may be discarded.
 	createDispatched bool
@@ -134,16 +147,29 @@ func (p *registeredNativeProvider) Connect(ctx context.Context, cfg LiveConfigFr
 		agent, err = responses.New(responses.Config{URL: cfg.AgentEndpoint, Connection: cfg.DirectEndpoint.Connection,
 			Messages: cfg.DirectEndpoint.Messages, Surface: cfg.DirectEndpoint.Surface, Headers: headers})
 	} else {
-		agent, err = a2a.New(a2a.Config{Endpoint: cfg.AgentEndpoint, TargetAgentID: cfg.AgentTargetID, SessionID: firstNonBlank(cfg.AISessionID, cfg.VoiceSessionID), Headers: registeredAgentHeaders(cfg, secret), Conversation: cfg.Conversation})
+		client := agentHTTPClient()
+		agent, err = a2a.New(a2a.Config{Endpoint: cfg.AgentEndpoint, TargetAgentID: cfg.AgentTargetID, SessionID: firstNonBlank(cfg.AISessionID, cfg.VoiceSessionID), HTTPClient: client, Headers: registeredAgentHeaders(cfg, secret), Conversation: cfg.Conversation})
+		// The Companion's turns go through the Gateway: warm its policy read and this session's connection to it now
+		// and whenever the caller starts to speak (Receive), as the cascaded route does.
+		if err == nil {
+			p.warm = gatewayPolicyWarmer(cfg.AgentEndpoint, client)
+		}
 	}
 	if err != nil {
 		p.cancel()
 		return err
 	}
+	if p.warm != nil {
+		go p.warm()
+	}
+	p.mu.Lock()
 	if cfg.Conversation != nil {
-		p.mu.Lock()
 		p.conversationAgent, _ = agent.(*a2a.Agent)
-		p.mu.Unlock()
+	}
+	p.timer, _ = agent.(nativeTurnTimer)
+	p.mu.Unlock()
+	if cfg.DirectEndpoint == nil {
+		agent = newNativeCompanionAgent(agent, p.sessions.plain, !delegated)
 	}
 	callbackToken := rand.Text() + rand.Text()
 	callback, err := a2a.NewOpenAIHandler(ctx, agent, callbackToken, expiresAt, cfg.Locale)
@@ -194,6 +220,7 @@ func (p *registeredNativeProvider) Connect(ctx context.Context, cfg LiveConfigFr
 		cfg.NativeLLMBaseURL = strings.Replace(callbackURL, "wss://", "https://", 1)
 		cfg.NativeLLMToken = callbackToken
 		cfg.NativeLLMModel = cfg.AgentTargetID
+		cfg.NativeLLMHeaders = p.sessions.callbackHeaders
 		if cfg.DirectEndpoint != nil {
 			cfg.NativeLLMModel = cfg.DirectEndpoint.Connection.Model
 		}
@@ -409,6 +436,18 @@ func (p *registeredNativeProvider) deleteResource(parent context.Context, resour
 }
 
 func (p *registeredNativeProvider) Receive(ctx context.Context) (*LiveMessage, error) {
+	message, err := p.receive(ctx)
+	if err == nil {
+		if message != nil && message.Interrupted && p.warm != nil {
+			// The vendor heard the caller start to speak (UserStartedSpeaking, StartOfTurn): the turn is seconds away.
+			go p.warm()
+		}
+		p.observeTurnTiming(message)
+	}
+	return message, err
+}
+
+func (p *registeredNativeProvider) receive(ctx context.Context) (*LiveMessage, error) {
 	message, err := p.LiveProviderAdapter.Receive(ctx)
 	for {
 		if message != nil && message.Interrupted {

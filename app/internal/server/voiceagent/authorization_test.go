@@ -62,7 +62,7 @@ func TestRegisteredSessionEndsAtEarliestAuthorizationExpiry(t *testing.T) {
 			if token == "" {
 				token = boundTestToken(jwtExpiry)
 			}
-			session := &ManagedSession{ID: "expiry-session", BridgeCredential: token}
+			session := &ManagedSession{ID: "expiry-session", DelegatedCredential: token}
 			session.VoiceAgentBinding.TargetAgentID = "test-agent"
 			session.VoiceAgentBinding.Lease = boundTestToken(leaseExpiry)
 			session.VoiceAgentBinding.CredentialExpiresAt = issuerExpiry
@@ -139,7 +139,7 @@ func TestRegisteredSessionEndsAtEarliestAuthorizationExpiry(t *testing.T) {
 
 func TestOpaqueCredentialWithoutIssuerExpiryCannotStart(t *testing.T) {
 	provider := newFakeProvider()
-	session := &ManagedSession{ID: "missing-expiry", BridgeCredential: "opaque-credential"}
+	session := &ManagedSession{ID: "missing-expiry", DelegatedCredential: "opaque-credential"}
 	session.VoiceAgentBinding.TargetAgentID = "test-agent"
 	session.VoiceAgentBinding.Lease = boundTestToken(time.Now().Add(time.Hour).Unix())
 	conn, _ := startReliabilityAdapter(t, provider, session, 0)

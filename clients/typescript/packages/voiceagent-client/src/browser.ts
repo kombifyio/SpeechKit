@@ -15,7 +15,9 @@ export interface BrowserSocket extends WireSocket {
   binaryType: string;
 }
 
-export interface BrowserOpenOptions<TSocket extends BrowserSocket = WebSocket> extends SessionOptions {
+export interface BrowserOpenOptions<
+  TSocket extends BrowserSocket = WebSocket,
+> extends SessionOptions {
   serverUrl: string;
   token?: string;
   /**
@@ -85,24 +87,45 @@ export interface BrowserSession<TSocket extends BrowserSocket = WebSocket> {
  * WebSocket authenticated via the `ticket.<ticket>` subprotocol, and
  * returns a {@link BrowserSession} ready to attach mic + playback.
  */
-export function openBrowserSession<TSocket extends BrowserSocket = WebSocket>(options: BrowserOpenOptions<TSocket>): Promise<BrowserSession<TSocket>>;
-export async function openBrowserSession(options: BrowserOpenOptions<BrowserSocket>): Promise<BrowserSession<BrowserSocket>> {
+export function openBrowserSession<TSocket extends BrowserSocket = WebSocket>(
+  options: BrowserOpenOptions<TSocket>,
+): Promise<BrowserSession<TSocket>>;
+export async function openBrowserSession(
+  options: BrowserOpenOptions<BrowserSocket>,
+): Promise<BrowserSession<BrowserSocket>> {
   throwIfAborted(options.signal);
   const captures = new Set<() => void>();
   let session: VoiceAgentSession | undefined;
-  const playback = options.playback ?? createPlayback(options.onPlaybackLevel, code => session?.fail(code), options.createAudioContext);
+  const playback =
+    options.playback ??
+    createPlayback(
+      options.onPlaybackLevel,
+      (code) => session?.fail(code),
+      options.createAudioContext,
+    );
   let cleaned = false;
   const cleanup = () => {
     if (cleaned) return;
     cleaned = true;
-    for (const stop of captures) { try { stop(); } catch { /* release other captures */ } }
+    for (const stop of captures) {
+      try {
+        stop();
+      } catch {
+        /* release other captures */
+      }
+    }
     captures.clear();
-    try { playback.dispose(); } catch { /* host adapter must not prevent session cleanup */ }
+    try {
+      playback.dispose();
+    } catch {
+      /* host adapter must not prevent session cleanup */
+    }
   };
   try {
     // Invoke resume before minting awaits so the initiating gesture is active.
     // A host can supply playback prepared before its own authentication awaits.
-    if (options.playback || options.createAudioContext || typeof AudioContext === "function") void playback.resume().catch(() => undefined);
+    if (options.playback || options.createAudioContext || typeof AudioContext === "function")
+      void playback.resume().catch(() => undefined);
     const ticket =
       options.presetTicket ??
       (await mintSessionTicket({
@@ -123,17 +146,21 @@ export async function openBrowserSession(options: BrowserOpenOptions<BrowserSock
 
     const sessionOptions: SessionOptions = {
       start: options.start,
-      ...(options.connectTimeoutMs !== undefined ? { connectTimeoutMs: options.connectTimeoutMs } : {}),
+      ...(options.connectTimeoutMs !== undefined
+        ? { connectTimeoutMs: options.connectTimeoutMs }
+        : {}),
       ...(options.readyTimeoutMs !== undefined ? { readyTimeoutMs: options.readyTimeoutMs } : {}),
-      ...(options.maxOutboundBytes !== undefined ? { maxOutboundBytes: options.maxOutboundBytes } : {}),
+      ...(options.maxOutboundBytes !== undefined
+        ? { maxOutboundBytes: options.maxOutboundBytes }
+        : {}),
       ...(options.signal !== undefined ? { signal: options.signal } : {}),
       hooks: {
         ...options.hooks,
-        onInterrupted: frame => {
+        onInterrupted: (frame) => {
           playback.flush();
           options.hooks?.onInterrupted?.(frame);
         },
-        onClose: reason => {
+        onClose: (reason) => {
           cleanup();
           options.hooks?.onClose?.(reason);
         },
@@ -147,15 +174,22 @@ export async function openBrowserSession(options: BrowserOpenOptions<BrowserSock
       session: activeSession,
       socket,
       ticket,
-      attachMicrophone: stream => {
+      attachMicrophone: (stream) => {
         if (activeSession.isClosed) {
-          stream.getTracks().forEach(track => track.stop());
+          stream.getTracks().forEach((track) => track.stop());
           return () => undefined;
         }
         let stopCapture: () => void;
-        try { stopCapture = attachMicrophone(activeSession, stream, options.createAudioContext); }
-        catch {
-          stream.getTracks().forEach(track => { try { track.stop(); } catch { /* release other tracks */ } });
+        try {
+          stopCapture = attachMicrophone(activeSession, stream, options.createAudioContext);
+        } catch {
+          stream.getTracks().forEach((track) => {
+            try {
+              track.stop();
+            } catch {
+              /* release other tracks */
+            }
+          });
           activeSession.fail("audio_capture_failed");
           return () => undefined;
         }
@@ -165,11 +199,16 @@ export async function openBrowserSession(options: BrowserOpenOptions<BrowserSock
           stopCapture();
           return () => undefined;
         }
-        const stop = () => { captures.delete(stop); stopCapture(); };
+        const stop = () => {
+          captures.delete(stop);
+          stopCapture();
+        };
         captures.add(stop);
         return stop;
       },
-      playChunk: chunk => { if (activeSession.acceptsAudio) playback.play(chunk); },
+      playChunk: (chunk) => {
+        if (activeSession.acceptsAudio) playback.play(chunk);
+      },
       flushPlayback: () => playback.flush(),
       resumeAudio: () => playback.resume(),
       close: () => {
@@ -183,7 +222,9 @@ export async function openBrowserSession(options: BrowserOpenOptions<BrowserSock
   } catch (error) {
     cleanup();
     session?.close();
-    throw error instanceof VoiceAgentClientError ? error : new VoiceAgentClientError("ws_setup_failed");
+    throw error instanceof VoiceAgentClientError
+      ? error
+      : new VoiceAgentClientError("ws_setup_failed");
   }
 }
 
@@ -206,12 +247,21 @@ registerProcessor("speechkit-capture", class extends AudioWorkletProcessor {
 });
 `;
 
-function attachMicrophone(session: VoiceAgentSession, stream: MediaStream, createAudioContext?: () => AudioContext): () => void {
+function attachMicrophone(
+  session: VoiceAgentSession,
+  stream: MediaStream,
+  createAudioContext?: () => AudioContext,
+): () => void {
   const audioContext = createAudioContext ? createAudioContext() : new AudioContext();
   let source: MediaStreamAudioSourceNode;
-  try { source = audioContext.createMediaStreamSource(stream); }
-  catch {
-    try { void audioContext.close().catch(() => undefined); } catch { /* already closed */ }
+  try {
+    source = audioContext.createMediaStreamSource(stream);
+  } catch {
+    try {
+      void audioContext.close().catch(() => undefined);
+    } catch {
+      /* already closed */
+    }
     throw new VoiceAgentClientError("audio_capture_failed");
   }
   const sourceRate = audioContext.sampleRate;
@@ -221,11 +271,29 @@ function attachMicrophone(session: VoiceAgentSession, stream: MediaStream, creat
   const stop = () => {
     if (stopped) return;
     stopped = true;
-    try { disposeGraph?.(); } catch { /* continue releasing capture */ }
+    try {
+      disposeGraph?.();
+    } catch {
+      /* continue releasing capture */
+    }
     disposeGraph = null;
-    try { source.disconnect(); } catch { /* already disconnected */ }
-    try { void audioContext.close().catch(() => undefined); } catch { /* already closed */ }
-    stream.getTracks().forEach(track => { try { track.stop(); } catch { /* release other tracks */ } });
+    try {
+      source.disconnect();
+    } catch {
+      /* already disconnected */
+    }
+    try {
+      void audioContext.close().catch(() => undefined);
+    } catch {
+      /* already closed */
+    }
+    stream.getTracks().forEach((track) => {
+      try {
+        track.stop();
+      } catch {
+        /* release other tracks */
+      }
+    });
   };
 
   const push = (channelData: Float32Array): void => {
@@ -249,7 +317,10 @@ function attachMicrophone(session: VoiceAgentSession, stream: MediaStream, creat
       return;
     }
     disposeGraph = graph.dispose;
-  })().catch(() => { stop(); if (!session.isClosed) session.fail("audio_capture_failed"); });
+  })().catch(() => {
+    stop();
+    if (!session.isClosed) session.fail("audio_capture_failed");
+  });
 
   return stop;
 }
@@ -279,7 +350,10 @@ async function createCaptureGraph(
       } finally {
         URL.revokeObjectURL(moduleUrl);
       }
-      if (stopped()) { sink.disconnect(); return { dispose: () => undefined }; }
+      if (stopped()) {
+        sink.disconnect();
+        return { dispose: () => undefined };
+      }
       const worklet = new AudioWorkletNode(audioContext, "speechkit-capture", {
         numberOfInputs: 1,
         numberOfOutputs: 1,
@@ -301,7 +375,10 @@ async function createCaptureGraph(
     }
   }
 
-  if (stopped()) { sink.disconnect(); return { dispose: () => undefined }; }
+  if (stopped()) {
+    sink.disconnect();
+    return { dispose: () => undefined };
+  }
 
   // Fallback: ScriptProcessorNode is deprecated but universally
   // available.
@@ -379,17 +456,29 @@ export interface BrowserPlayback {
   resume(): Promise<void>;
 }
 
-function createPlayback(onLevel: ((level: number) => void) | undefined, onFailure: (code: string) => void, createAudioContext?: () => AudioContext): BrowserPlayback {
+function createPlayback(
+  onLevel: ((level: number) => void) | undefined,
+  onFailure: (code: string) => void,
+  createAudioContext?: () => AudioContext,
+): BrowserPlayback {
   let context: AudioContext | null = null;
   let nextStartTime = 0;
   const active = new Map<AudioBufferSourceNode, number>();
   let bufferedBytes = 0;
   let disposed = false;
-  const emitLevel = (level: number) => { try { onLevel?.(level); } catch { /* advisory host callback */ } };
+  const emitLevel = (level: number) => {
+    try {
+      onLevel?.(level);
+    } catch {
+      /* advisory host callback */
+    }
+  };
 
   function ensureContext(): AudioContext {
     if (!context) {
-      context = createAudioContext ? createAudioContext() : new AudioContext({ sampleRate: SERVER_SAMPLE_RATE });
+      context = createAudioContext
+        ? createAudioContext()
+        : new AudioContext({ sampleRate: SERVER_SAMPLE_RATE });
       nextStartTime = context.currentTime;
     }
     return context;
@@ -398,17 +487,29 @@ function createPlayback(onLevel: ((level: number) => void) | undefined, onFailur
   return {
     async resume() {
       if (disposed) throw new VoiceAgentClientError("session_closed");
-      try { await ensureContext().resume(); }
-      catch { throw new VoiceAgentClientError("audio_resume_required"); }
+      try {
+        await ensureContext().resume();
+      } catch {
+        throw new VoiceAgentClientError("audio_resume_required");
+      }
     },
     play(chunk) {
       if (disposed) return;
-      if (!chunk.byteLength || chunk.byteLength % 2 || bufferedBytes + chunk.byteLength > MAX_PLAYBACK_BYTES || active.size >= 64) {
-        onFailure("voice_buffer_overflow"); return;
+      if (
+        !chunk.byteLength ||
+        chunk.byteLength % 2 ||
+        bufferedBytes + chunk.byteLength > MAX_PLAYBACK_BYTES ||
+        active.size >= 64
+      ) {
+        onFailure("voice_buffer_overflow");
+        return;
       }
       try {
         const ctx = ensureContext();
-        if (ctx.state !== "running") { onFailure("audio_resume_required"); return; }
+        if (ctx.state !== "running") {
+          onFailure("audio_resume_required");
+          return;
+        }
         const samples = new Int16Array(chunk);
         const buffer = ctx.createBuffer(1, samples.length, SERVER_SAMPLE_RATE);
         const channel = buffer.getChannelData(0);
@@ -433,7 +534,10 @@ function createPlayback(onLevel: ((level: number) => void) | undefined, onFailur
         const startAt = Math.max(ctx.currentTime, nextStartTime);
         source.start(startAt);
         nextStartTime = startAt + buffer.duration;
-      } catch { this.flush(); onFailure("audio_playback_failed"); }
+      } catch {
+        this.flush();
+        onFailure("audio_playback_failed");
+      }
     },
     flush() {
       for (const source of active.keys()) {
@@ -443,7 +547,11 @@ function createPlayback(onLevel: ((level: number) => void) | undefined, onFailur
         } catch {
           /* already stopped */
         }
-        try { source.disconnect(); } catch { /* already disconnected */ }
+        try {
+          source.disconnect();
+        } catch {
+          /* already disconnected */
+        }
       }
       active.clear();
       bufferedBytes = 0;
@@ -455,7 +563,11 @@ function createPlayback(onLevel: ((level: number) => void) | undefined, onFailur
       disposed = true;
       this.flush();
       if (context) {
-        try { void context.close().catch(() => undefined); } catch { /* already closed */ }
+        try {
+          void context.close().catch(() => undefined);
+        } catch {
+          /* already closed */
+        }
         context = null;
       }
     },

@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/cascaded"
@@ -40,12 +41,43 @@ type OpenAIHandler struct {
 	// FirstResponsePrefix is trusted host disclosure, spoken once before the
 	// first successful answer starts. It is never supplied by the vendor.
 	FirstResponsePrefix string
-	disclosed           bool
+	disclosed           atomic.Bool
 	// admit serializes turns without allowing an unbounded callback queue.
 	admit      chan struct{}
 	seen       map[[32]byte]struct{}
 	turnMu     sync.Mutex
 	turnCancel context.CancelFunc
+	// callbackTiming is the latest bound callback's own phases (CallbackTiming).
+	timingMu       sync.Mutex
+	callbackTiming CallbackTiming
+	callbackTurn   string
+}
+
+// CallbackTiming is where one bound callback spent its time: when the vendor's
+// request arrived, how long admission took (including the authority
+// revalidation) and when the agent's first answer text left, in milliseconds
+// from arrival (-1 when none did). Durations only, never text.
+type CallbackTiming struct {
+	Arrived       time.Time
+	AdmitMs       int64
+	FirstAnswerMs int64
+}
+
+// CallbackTiming returns the phases of the callback bound to turnID, and false
+// when the latest bound callback is another turn or none.
+func (h *OpenAIHandler) CallbackTiming(turnID string) (CallbackTiming, bool) {
+	h.timingMu.Lock()
+	defer h.timingMu.Unlock()
+	if turnID == "" || h.callbackTurn != turnID {
+		return CallbackTiming{}, false
+	}
+	return h.callbackTiming, true
+}
+
+func (h *OpenAIHandler) recordCallbackTiming(turnID string, timing CallbackTiming) {
+	h.timingMu.Lock()
+	h.callbackTurn, h.callbackTiming = turnID, timing
+	h.timingMu.Unlock()
 }
 
 // TurnStreamer is the existing host-observed native turn boundary. An endpoint
@@ -64,6 +96,10 @@ func (h *OpenAIHandler) CancelTurn() {
 		cancel()
 	}
 }
+
+// Disclosed reports whether the trusted disclosure has been handed to the
+// provider to speak.
+func (h *OpenAIHandler) Disclosed() bool { return h.disclosed.Load() }
 
 // ResponsePending includes admission/correlation before the first answer delta.
 func (h *OpenAIHandler) ResponsePending() bool {
@@ -154,11 +190,11 @@ func (h *OpenAIHandler) bind(ctx context.Context, utterance string) (string, int
 func (h *OpenAIHandler) stream(ctx context.Context, utterance, turnID string, emit func(string) error) (cascaded.AgentOutput, error) {
 	// The disclosure is host-trusted text and needs nothing from the agent, so it
 	// is spoken now, while the agent works, instead of after its first delta.
-	if !h.disclosed && h.FirstResponsePrefix != "" {
+	if !h.disclosed.Load() && h.FirstResponsePrefix != "" {
 		if err := emit(h.FirstResponsePrefix); err != nil {
 			return cascaded.AgentOutput{}, err
 		}
-		h.disclosed = true
+		h.disclosed.Store(true)
 	}
 	return h.Agent.StreamTurn(ctx, cascaded.AgentInput{Utterance: utterance, Locale: h.Locale}, turnID, emit)
 }
@@ -193,9 +229,9 @@ func (h *OpenAIHandler) Answer(ctx context.Context, utterance string) (string, e
 		return "", err
 	}
 	text := answer.String()
-	if !h.disclosed && h.FirstResponsePrefix != "" {
+	if !h.disclosed.Load() && h.FirstResponsePrefix != "" {
 		text = h.FirstResponsePrefix + text
-		h.disclosed = true
+		h.disclosed.Store(true)
 	}
 	return text, nil
 }
@@ -255,6 +291,7 @@ func (h *OpenAIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(status)
 		return
 	}
+	h.recordCallbackTiming(turnID, CallbackTiming{Arrived: arrived, AdmitMs: admittedMs, FirstAnswerMs: -1})
 	controller := http.NewResponseController(w)
 	w.Header().Set("Content-Type", "text/event-stream")
 	id := fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano())
@@ -273,7 +310,7 @@ func (h *OpenAIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return controller.Flush()
 	}
 	firstChunkMs, firstAnswerMs := int64(-1), int64(-1)
-	disclosure := !h.disclosed && h.FirstResponsePrefix != ""
+	disclosure := !h.disclosed.Load() && h.FirstResponsePrefix != ""
 	chunks := 0
 	_, err := h.stream(ctx, utterance, turnID, func(delta string) error {
 		chunks++
@@ -282,6 +319,7 @@ func (h *OpenAIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if firstAnswerMs < 0 && !(disclosure && chunks == 1) {
 			firstAnswerMs = time.Since(arrived).Milliseconds()
+			h.recordCallbackTiming(turnID, CallbackTiming{Arrived: arrived, AdmitMs: admittedMs, FirstAnswerMs: firstAnswerMs})
 		}
 		return write(map[string]string{"content": delta}, nil)
 	})

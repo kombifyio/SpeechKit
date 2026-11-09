@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -355,9 +356,24 @@ func (a *Adapter) configureFrontDoor(start StartFrame, cfg *LiveConfigFrame) boo
 	if start.Wake != nil {
 		phrase = start.Wake.Phrase
 	}
+	if slices.Contains(opt.Unavailable, routeAgent) {
+		// The client could not open the agent route for this request: say so first, never hand
+		// over to it from here, and keep the person from taking this answer for the agent's.
+		limited := *opt
+		limited.Routes = slices.DeleteFunc(slices.Clone(opt.Routes), func(route string) bool { return route == routeAgent })
+		opt = &limited
+		cfg.SystemPrompt = strings.TrimSpace(cfg.SystemPrompt + "\n\n" + agentUnavailablePrompt)
+	}
 	a.front = newFrontDoor(opt, phrase)
 	return true
 }
+
+// agentUnavailablePrompt opens a plain session that stands in for an agent route the client could
+// not reach: the person expected their agent, with its memory and tools.
+const agentUnavailablePrompt = "The person's own assistant agent, which normally answers them with their memory, data and tools, " +
+	"could not be reached for this request, and you answer in its place. Begin your first answer with one short sentence " +
+	"saying that their assistant is not reachable right now and that you answer without it. You have none of its memory, " +
+	"data or tools: when the request needs them, say so plainly and suggest asking again in a moment."
 
 // routeByTranscript applies the front-door decision to a final user transcript.
 func (a *Adapter) routeByTranscript(ctx context.Context, transcript string) {
@@ -466,7 +482,7 @@ func (a *Adapter) writeFrameChecked(ctx context.Context, frame any) error {
 	}
 	writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	return a.Conn.Write(writeCtx, websocket.MessageText, data)
+	return a.connWrite(writeCtx, websocket.MessageText, data)
 }
 
 // muteReplyForSwitch silences the realtime reply of the switched turn the way

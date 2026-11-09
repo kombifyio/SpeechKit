@@ -26,6 +26,7 @@ import (
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
 )
 
@@ -42,10 +43,6 @@ const (
 	// sttMaxResponse bounds the JSON body, which lists every word with its
 	// timing; 8 MiB covers hours of speech.
 	sttMaxResponse = 8 << 20
-	// keytermLimit and keytermMaxChars are xAI's documented bounds for the
-	// repeated keyterm field.
-	keytermLimit    = 100
-	keytermMaxChars = 50
 )
 
 // Provider implements stt.STTProvider for xAI's batch transcription API.
@@ -206,22 +203,10 @@ func (p *Provider) Transcribe(ctx context.Context, audio []byte, opts stt.Transc
 	}, nil
 }
 
-// keyterms keeps the terms xAI accepts: non-blank, at most keytermMaxChars
-// characters (a longer term is dropped, never truncated into a different
-// word), and at most keytermLimit terms.
+// keyterms keeps the terms xAI accepts (provideropts.XAIKeytermLimits): a
+// longer term is dropped, never truncated into a different word.
 func keyterms(terms []string) []string {
-	var out []string
-	for _, term := range terms {
-		term = strings.TrimSpace(term)
-		if term == "" || len([]rune(term)) > keytermMaxChars {
-			continue
-		}
-		out = append(out, term)
-		if len(out) == keytermLimit {
-			break
-		}
-	}
-	return out
+	return provideropts.CapKeyterms(terms, provideropts.XAIKeytermLimits)
 }
 
 // Name returns "xai".

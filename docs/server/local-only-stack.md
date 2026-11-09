@@ -9,7 +9,7 @@ as Open WebUI use it directly.
 
 | Service | Image | Role | Port | License |
 | --- | --- | --- | --- | --- |
-| `speechkit-server` | `ghcr.io/kombifyio/speechkit-server` | Dictation, Assist, Voice Agent, OpenAI-compatible audio | 8080 | Apache-2.0 |
+| `speechkit-server` | `ghcr.io/kombifyio/speechkit-server` | Dictation, Assist, Voice Agent, OpenAI-compatible audio; carries Phonon-2.5 for the optional local STT below | 8080 | Apache-2.0; Phonon-2.5 weights CC-BY-4.0 |
 | `speechkit-whisper` | `ghcr.io/ggml-org/whisper.cpp` (pinned digest) running `whisper-server` | STT | 8080 (internal) | MIT; Whisper weights MIT |
 | `speechkit-tts` | `ghcr.io/remsky/kokoro-fastapi-cpu:v0.9.0` (pinned digest) | TTS over OpenAI `/v1/audio/speech` | 8880 (internal) | Apache-2.0; Kokoro-82M weights Apache-2.0 |
 | `ollama` | `ollama/ollama:0.34.4` | Assist and Voice Agent LLM | 11434 (internal) | MIT; model licenses vary |
@@ -26,10 +26,9 @@ phonemizer program. It is not linked into SpeechKit.
 
 ### Why Kokoro for this server image
 
-The on-device default (`tts.local.sherpa-piper`) speaks Piper VITS Thorsten
-(German; the dataset is CC0-1.0 and the weights are a fine-tune of Lessac)
-and Lessac (English, Blizzard 2013) through sherpa-onnx, with no network and
-no cloud key. Its phoneme tables are espeak-ng data (GPL-3.0), kept beside
+The on-device default (`tts.local.sherpa-piper`) speaks the Piper VITS
+voices Ramona (German, M-AILABS, BSD-style licence) and LJSpeech (English,
+public domain) through sherpa-onnx, with no network and no cloud key. Its phoneme tables are espeak-ng data (GPL-3.0), kept beside
 the voices and not linked into SpeechKit.
 
 This server image does not carry those voices. Its default stays Kokoro-82M
@@ -49,18 +48,19 @@ Point `[tts.local] url` at it and set `voice` to the Speaches voice ID.
 
 - **STT:** `[vps]` sends requests to `http://speechkit-whisper:8080`. The
   `cloud-only` routing strategy is the name of the setting that selects this
-  network client. It does not enable any cloud provider. For Parakeet instead
-  of Whisper (25 European languages, many times faster on the CPU), run the
-  compose profile `parakeet-setup` once to fetch and verify the model, start
-  with `--profile parakeet`, and set `[vps] url` to
-  `http://speechkit-stt-parakeet:8080`. `speechkit-server` still waits for
-  the `speechkit-whisper` health check, so Whisper keeps running unless a
-  compose override removes that dependency. The Parakeet service runs
-  `speechkit-stt-sherpa` from the server image, so it needs a server image
-  that includes it. Phonon-2.5 (the same 25 languages in Fermion Research's
-  178 MB five-value format, in less than half the memory; needs AVX2 or ARM
-  with dot product) works the same way with the profiles `phonon-setup` and
-  `phonon` and `[vps] url` set to `http://speechkit-stt-phonon:8080`.
+  network client. It does not enable any cloud provider. This stack keeps
+  whisper.cpp because it runs on every x86-64 processor. On a processor with
+  AVX2 (x86-64-v3) or ARM dot product, the server image's bundled Phonon-2.5
+  (25 languages, no container and no download) can replace it: set
+  `[vps] enabled = false`, `strategy = "local-only"` and `[local]
+  enabled = true` with `model_path =
+  "/usr/local/share/speechkit/models/phonon-2.5"`, and remove the
+  `speechkit-whisper` service and its `depends_on` entry; the comment in
+  `server.local-only.toml` lists the same steps. For Parakeet instead of
+  Whisper, run the compose profile `parakeet-setup` once to fetch and verify the
+  model, start with `--profile parakeet`, and set `[vps] url` to
+  `http://speechkit-stt-parakeet:8080`; the `phonon-setup` and `phonon`
+  profiles run Phonon-2.5 as a separate container the same way.
 - **TTS:** `[tts.local]` sends requests to `http://speechkit-tts:8880` with
   model `kokoro` and voice `af_bella`. The `[tts] strategy` is `local-only`.
 - **LLM:** `[local_llm]` sends requests to `http://ollama:11434/v1` with

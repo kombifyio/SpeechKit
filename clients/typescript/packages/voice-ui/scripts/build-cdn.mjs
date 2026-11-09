@@ -18,7 +18,7 @@ await build({
   minify: true,
   format: "esm",
   target: "es2022",
-  outfile: join(outDir, "speechkit-voice-ui.min.js")
+  outfile: join(outDir, "speechkit-voice-ui.min.js"),
 });
 
 await build({
@@ -28,7 +28,7 @@ await build({
   format: "iife",
   globalName: "SpeechKitVoiceUi",
   target: "es2022",
-  outfile: join(outDir, "speechkit-voice-ui.iife.min.js")
+  outfile: join(outDir, "speechkit-voice-ui.iife.min.js"),
 });
 
 console.log("wrote dist/cdn bundles");

@@ -29,6 +29,9 @@ type SessionConfig struct {
 	SystemPrompt     string
 	RefinementPrompt string
 	Speaker          speaker.Options
+	// Keyterms bias speech recognition (live and batch) towards the session's
+	// vocabulary; nil sends none.
+	Keyterms []string
 }
 
 // AgentInput is the request passed to the Agent (LLM) for one turn. It mirrors

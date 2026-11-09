@@ -3,8 +3,14 @@
 // homelab instance under `_speechkit._tcp` without typing an address.
 //
 // Scope: announcement only, opt-in via [server.discovery] (default OFF). The
-// TXT record carries the dial URL plus enabled modes; it never carries
-// credentials — auth (bearer/OIDC) applies unchanged after discovery.
+// TXT record carries the dial URL, the enabled modes, the version and the
+// stable non-secret instance id; it never carries credentials — auth
+// (bearer/OIDC) applies unchanged after discovery.
+//
+// A server in a container bridge network cannot reach the LAN with
+// multicast. RunAnnounceOnly is the announce-only mode for a second, host
+// network process of the same image: it binds nothing but mDNS and announces
+// the host's primary LAN address.
 package discovery
 
 import (
@@ -38,7 +44,7 @@ func Start(cfg *config.Config, version string, modes []string) (*Announcer, erro
 	}
 	d := cfg.Server.Discovery
 
-	port := listenPort(cfg.Server.ListenAddr)
+	port := AdvertisePort(cfg)
 	host, _ := os.Hostname()
 	if host == "" {
 		host = "speechkit"
@@ -57,7 +63,7 @@ func Start(cfg *config.Config, version string, modes []string) (*Announcer, erro
 		advertise = fmt.Sprintf("http://%s:%d", host, port)
 	}
 
-	txt := txtLines(advertise, version, modes)
+	txt := txtLines(advertise, version, modes, stableInstanceID(cfg))
 
 	service, err := mdns.NewMDNSService(instance, ServiceType, "", "", port, nil, txt)
 	if err != nil {
@@ -82,12 +88,28 @@ func (a *Announcer) Shutdown() {
 	}
 }
 
-func txtLines(advertise, version string, modes []string) []string {
-	return []string{
+func txtLines(advertise, version string, modes []string, id string) []string {
+	lines := []string{
 		"url=" + advertise,
 		"modes=" + strings.Join(modes, ","),
 		"version=" + version,
 	}
+	if ValidInstanceID(id) {
+		lines = append(lines, "id="+id)
+	}
+	return lines
+}
+
+// AdvertisePort is the port the announcement names: [server.discovery]
+// advertise_port when set, otherwise the port of listen_addr.
+func AdvertisePort(cfg *config.Config) int {
+	if cfg == nil {
+		return 8080
+	}
+	if p := cfg.Server.Discovery.AdvertisePort; p > 0 && p <= 65535 {
+		return p
+	}
+	return listenPort(cfg.Server.ListenAddr)
 }
 
 // listenPort extracts the TCP port from a listen address like ":8080" or

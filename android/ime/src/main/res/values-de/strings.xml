@@ -17,10 +17,16 @@
     <string name="speechkit_ime_action_retry">Erneut versuchen</string>
     <string name="speechkit_ime_switch_keyboard">Zurück zur Tastatur</string>
     <string name="speechkit_ime_language_chip">Diktatsprache</string>
+    <string name="speechkit_ime_language_multi">Multi</string>
 
     <string name="speechkit_ime_error_generic">Diktat fehlgeschlagen</string>
     <string name="speechkit_ime_error_not_configured">Kein Server konfiguriert — öffne die SpeechKit-App</string>
     <string name="speechkit_ime_error_mic_denied">Mikrofon-Berechtigung verweigert</string>
+    <string name="speechkit_ime_error_limit">Diktierlimit vorerst erreicht</string>
+    <string name="speechkit_ime_error_outage">Diktierdienst nicht erreichbar. Gleich erneut versuchen</string>
+    <string name="speechkit_ime_error_right">Diktieren ist für dieses Konto nicht enthalten</string>
+    <string name="speechkit_ime_error_consent">Cloud-Sprache in der SpeechKit-App erlauben</string>
+    <string name="speechkit_ime_error_expired">Diktiersitzung abgelaufen</string>
     <string name="speechkit_ime_action_voice_agent">Sprachassistent</string>
 
     <string name="speechkit_ime_agent_action_dictation">Diktat</string>
@@ -39,4 +45,9 @@
     <string name="speechkit_ime_agent_error_no_server">Der Sprachassistent braucht einen gekoppelten SpeechKit-Server</string>
     <string name="speechkit_ime_agent_error_audio">Die Sprachübertragung konnte nicht fortgesetzt werden</string>
     <string name="speechkit_ime_agent_error_generic">Die Sprachverbindung ist fehlgeschlagen</string>
+    <string name="speechkit_ime_agent_class_limit">Sprachlimit vorerst erreicht</string>
+    <string name="speechkit_ime_agent_class_outage">Sprachdienst nicht erreichbar. Gleich erneut versuchen</string>
+    <string name="speechkit_ime_agent_class_right">Dieses Konto kann die Sprachunterhaltung nicht nutzen</string>
+    <string name="speechkit_ime_agent_class_consent">Cloud-Sprache in der SpeechKit-App erlauben</string>
+    <string name="speechkit_ime_agent_class_expired">Sprachsitzung abgelaufen. Starte eine neue Unterhaltung</string>
 </resources>

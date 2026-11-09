@@ -6,7 +6,10 @@ import com.squareup.moshi.JsonClass
 import com.squareup.moshi.Moshi
 import io.kombify.speechkit.log.VoiceLog
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -39,6 +42,19 @@ data class CreateVoiceAgentSessionResponse(
     @Json(name = "ws_subprotocol") val wsSubprotocol: String? = null,
     val ticket: String = "",
     @Json(name = "expires_at") val expiresAt: String = "",
+    /**
+     * RFC 3339 deadline of the Voice budget reserved for this session; empty
+     * when the server reserved none (self-hosted). Distinct from [expiresAt],
+     * which is the WebSocket ticket expiry.
+     */
+    @Json(name = "budget_expires_at") val budgetExpiresAt: String = "",
+)
+
+/** Response of POST /v1/voiceagent/sessions/{id}/renew. */
+@JsonClass(generateAdapter = true)
+data class RenewVoiceAgentSessionResponse(
+    @Json(name = "session_id") val sessionId: String,
+    @Json(name = "budget_expires_at") val budgetExpiresAt: String,
 )
 
 /** Server-side capability flags returned at session-create time. */
@@ -87,6 +103,8 @@ class SpeechKitApiException(
     val code: String,
     message: String,
     val denial: PlanDenial? = null,
+    /** The reason class SpeechKit served; surfaces render their text from it. */
+    val errorClass: VoiceErrorClass? = null,
 ) : IOException("$code (HTTP $httpStatus): $message")
 
 /**
@@ -101,6 +119,8 @@ class SpeechKitServerApi(
     private val sessionAdapter = moshi.adapter(CreateStreamSessionResponse::class.java)
     private val voiceAgentSessionAdapter =
         moshi.adapter(CreateVoiceAgentSessionResponse::class.java)
+    private val renewVoiceAgentSessionAdapter =
+        moshi.adapter(RenewVoiceAgentSessionResponse::class.java)
     private val batchAdapter = moshi.adapter(BatchTranscribeResponse::class.java)
     private val assistRequestAdapter = moshi.adapter(AssistProcessRequest::class.java)
     private val assistResponseAdapter = moshi.adapter(AssistProcessResponse::class.java)
@@ -141,6 +161,54 @@ class SpeechKitServerApi(
             }
         }
 
+    /**
+     * Asks the server to extend a live hosted Voice Agent session with a newly
+     * reserved Voice budget. Not idempotent: the server may have adopted the
+     * reservation even when the answer never arrived, so callers must not
+     * replay a request whose outcome is unknown.
+     *
+     * Cancelling the caller aborts the in-flight call.
+     */
+    suspend fun renewVoiceAgentSession(sessionId: String): RenewVoiceAgentSessionResponse {
+        require(isVoiceSessionId(sessionId)) { "invalid voice agent session id" }
+        return withContext(Dispatchers.IO) {
+            val request = authorized(
+                Request.Builder()
+                    .url(profile.endpoint("/v1/voiceagent/sessions/$sessionId/renew"))
+                    .post(EMPTY_JSON.toRequestBody(JSON_MEDIA_TYPE)),
+            ).build()
+            suspendCancellableCoroutine { continuation ->
+                val renewalClient = client.newBuilder()
+                    .retryOnConnectionFailure(false)
+                    .followRedirects(false)
+                    .followSslRedirects(false)
+                    .build()
+                val call = renewalClient.newCall(request)
+                continuation.invokeOnCancellation { call.cancel() }
+                call.enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) {
+                        continuation.resumeWith(Result.failure(e))
+                    }
+
+                    override fun onResponse(call: Call, response: Response) {
+                        val result = runCatching {
+                            response.use {
+                                val body = requireSuccess(it)
+                                renewVoiceAgentSessionAdapter.fromJson(body)
+                                    ?: throw SpeechKitApiException(
+                                        it.code,
+                                        "invalid_response",
+                                        "empty voice agent renewal response",
+                                    )
+                            }
+                        }
+                        continuation.resumeWith(result)
+                    }
+                })
+            }
+        }
+    }
+
     /** Tears a streaming session down early. Best-effort. */
     suspend fun deleteDictationStreamSession(sessionId: String): Unit =
         withContext(Dispatchers.IO) {
@@ -158,6 +226,7 @@ class SpeechKitServerApi(
         language: String? = null,
         model: String? = null,
         prompt: String? = null,
+        keyterms: List<String> = emptyList(),
         filename: String = "dictation.wav",
         mediaType: String = "audio/wav",
     ): BatchTranscribeResponse =
@@ -173,6 +242,10 @@ class SpeechKitServerApi(
                     language?.takeIf { it.isNotBlank() }?.let { addFormDataPart("language", it) }
                     model?.takeIf { it.isNotBlank() }?.let { addFormDataPart("model", it) }
                     prompt?.takeIf { it.isNotBlank() }?.let { addFormDataPart("prompt", it) }
+                    // The server reads keyterms as one comma-separated field.
+                    keyterms.map { it.replace(",", " ").trim() }.filter { it.isNotEmpty() }
+                        .takeIf { it.isNotEmpty() }
+                        ?.let { addFormDataPart("keyterms", it.joinToString(",")) }
                 }
                 .build()
             val request = authorized(
@@ -232,18 +305,21 @@ class SpeechKitServerApi(
      * Adds the bearer. A cloud-session bearer close to expiry is renewed first
      * (see [CloudBearer]); any other bearer is sent as the profile has it.
      *
-     * @param mintsSession true for the calls that open a hosted voice session:
-     *   the Gateway ends such a session when the bearer expires, so the bearer
-     *   must still have a long life left (see [CloudBearer.freshForSession]).
+     * @param mintsSession true for the calls that open a hosted voice
+     *   session, using [CloudBearer.freshForSession] to avoid sending a
+     *   bearer close to expiry.
      */
     private suspend fun authorized(
         builder: Request.Builder,
         mintsSession: Boolean = false,
     ): Request.Builder {
         val bearer = if (mintsSession) {
-            CloudBearer.freshForSession(profile.bearerToken)
+            CloudBearer.freshForSession(profile.bearerToken, profile.cloudSessionGeneration)
         } else {
-            CloudBearer.fresh(profile.bearerToken)
+            CloudBearer.fresh(profile.bearerToken, profile.cloudSessionGeneration)
+        }
+        if (profile.cloudSessionGeneration != null && bearer == null) {
+            throw SpeechKitApiException(401, "cloud_session_changed", "The Cloud session is no longer current")
         }
         bearer?.takeIf { it.isNotBlank() }?.let {
             builder.header("Authorization", "Bearer $it")
@@ -265,10 +341,16 @@ class SpeechKitServerApi(
             code = parsed.code,
             message = parsed.message ?: body.take(200).ifEmpty { response.message },
             denial = parsed.denial,
+            errorClass = parsed.errorClass,
         )
     }
 
     companion object {
+        private val VOICE_SESSION_ID = Regex("[A-Za-z0-9_-]{1,128}")
+
+        /** True for an id that is safe to place in a request path. */
+        internal fun isVoiceSessionId(id: String): Boolean = VOICE_SESSION_ID.matches(id)
+
         private const val EMPTY_JSON = "{}"
         private val JSON_MEDIA_TYPE = "application/json".toMediaType()
         private val WAV_MEDIA_TYPE = "audio/wav".toMediaType()

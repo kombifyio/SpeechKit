@@ -16,6 +16,7 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/server/middleware"
 	"github.com/kombifyio/SpeechKit/app/internal/server/wssession"
 	"github.com/kombifyio/SpeechKit/app/internal/store"
+	dataprofile "github.com/kombifyio/SpeechKit/internal/dataprofilev1"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
@@ -217,6 +218,9 @@ func (h *StreamHandler) createSession(w http.ResponseWriter, r *http.Request) {
 		// provider names; used as the segment default when a `start` frame
 		// omits provider_profile_id.
 		session.VoicePrefs = wssession.VoicePrefs(middleware.VoicePrefsFromContext(r.Context()))
+		if profile, ok := dataprofile.FromContext(r.Context()); ok {
+			session.DataProfile = &profile
+		}
 	}
 	if err != nil {
 		switch {
@@ -296,6 +300,23 @@ func (h *StreamHandler) upgradeWS(w http.ResponseWriter, r *http.Request, sessio
 		httpx.WriteError(w, http.StatusNotFound, "session_not_found", err.Error())
 		return
 	}
+	ctx := r.Context()
+	current, hasCurrent := dataprofile.FromContext(ctx)
+	if session.DataProfile != nil || hasCurrent {
+		id := middleware.IdentityFromContext(ctx)
+		if !hasCurrent || id.UserID != session.Owner.UserID || id.OrgID != session.Owner.OrgID {
+			httpx.WriteError(w, http.StatusForbidden, dataprofile.ReasonUnresolvable, "A current verified data protection profile is required to resume this recording.")
+			return
+		}
+		if session.DataProfile != nil {
+			current, err = dataprofile.Meet(*session.DataProfile, current)
+		}
+		if err != nil || current.Zero() || current.Local() {
+			httpx.WriteError(w, http.StatusForbidden, dataprofile.ReasonCapabilityDenied, "Streaming dictation is not qualified for these data protection settings.")
+			return
+		}
+		ctx = dataprofile.WithProfile(ctx, current)
+	}
 	if err := h.manager.Attach(sessionID); err != nil {
 		switch {
 		case errors.Is(err, wssession.ErrSessionAlreadyActive):
@@ -336,7 +357,7 @@ func (h *StreamHandler) upgradeWS(w http.ResponseWriter, r *http.Request, sessio
 	// Run the pumps; returns only when the session ends or the client
 	// disconnects. Not run in a goroutine: the HTTP handler owns the
 	// connection for its lifetime, which keeps observability correct.
-	adapter.Run(r.Context())
+	adapter.Run(ctx)
 }
 
 func (h *StreamHandler) webSocketURL(r *http.Request, sessionID string) string {

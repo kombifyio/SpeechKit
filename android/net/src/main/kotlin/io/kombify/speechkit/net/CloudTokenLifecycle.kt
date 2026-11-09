@@ -12,21 +12,18 @@ data class CloudSession(
     val refreshToken: String?,
     /** Epoch milliseconds the access token stops being valid; 0 when unknown. */
     val expiresAtEpochMs: Long = 0L,
+    val generation: String? = null,
 )
 
 /** Where the independent Cloud session lives. */
 interface CloudSessionStore {
     fun load(): CloudSession?
 
-    /**
-     * Replaces the tokens of the current session; never creates one. A store
-     * whose session was disconnected meanwhile ignores the call, so a rotation
-     * that lands late cannot bring a signed-out session back.
-     */
-    fun save(session: CloudSession)
+    /** Atomically replaces the session only if its credentials still match. */
+    fun saveIfCurrent(expected: CloudSession, replacement: CloudSession): Boolean
 
-    /** The session is gone: the next screen must offer Connect again. */
-    fun signOut()
+    /** Atomically signs out only the session whose credentials were rejected. */
+    fun signOutIfCurrent(expected: CloudSession): Boolean
 }
 
 /** Outcome of exchanging a refresh token. */
@@ -67,7 +64,9 @@ class CloudTokenLifecycle(
     // Access tokens this lifecycle replaced. A request object built before the
     // rotation still carries one; it is answered with the current token
     // instead of the stale one.
-    @Volatile private var replaced: List<String> = emptyList()
+    private var replaced: List<String> = emptyList()
+    private var observedToken: String? = null
+    private var retired: List<String> = emptyList()
 
     // Guarded by [mutex]: no refresh attempt before this time (after Unavailable).
     private var pausedUntilMs = 0L
@@ -79,35 +78,63 @@ class CloudTokenLifecycle(
      * session or when the refresh could not run.
      *
      * Ordinary REST calls use the default skew. A request that mints a
-     * hosted voice session passes [SESSION_MIN_REMAINING_MS]: the Gateway
-     * reserves such a session only for the rest of the token's life.
+     * hosted voice session passes [SESSION_MIN_REMAINING_MS] to avoid
+     * starting with a bearer close to expiry.
      */
-    suspend fun bearerFor(current: String?, minRemainingMs: Long = refreshSkewMs): String? {
+    suspend fun bearerFor(
+        current: String?,
+        minRemainingMs: Long = refreshSkewMs,
+        generation: String? = null,
+    ): String? {
         val token = current?.takeIf { it.isNotBlank() } ?: return current
-        val session = ownSession() ?: return current
-        if (token != session.accessToken) {
-            return if (token in replaced) session.accessToken else current
+        return mutex.withLock {
+            if (generation != null) {
+                val owned = store.load()?.takeIf { it.generation == generation } ?: return@withLock null
+                if (owned.refreshToken.isNullOrBlank()) return@withLock owned.accessToken
+                val session = observeSession()?.takeIf { it.generation == generation } ?: return@withLock null
+                if (!expiresWithin(session, minRemainingMs)) return@withLock session.accessToken
+                val refreshed = withContext(NonCancellable) { refreshExclusive(session) }
+                return@withLock refreshed ?: store.load()?.takeIf { it.generation == generation }?.accessToken
+            }
+            val wasOwned = token == observedToken || token in replaced
+            val session = observeSession()
+            if (token in retired && token != session?.accessToken) return@withLock null
+            if (session == null) return@withLock if (wasOwned) null else current
+            if (token != session.accessToken && token !in replaced) {
+                return@withLock if (wasOwned) null else current
+            }
+            val activeToken = session.accessToken
+            if (!expiresWithin(session, minRemainingMs)) return@withLock activeToken
+            val refreshed = withContext(NonCancellable) { refreshExclusive(session) }
+            refreshed ?: observeSession()?.takeIf { it.accessToken == activeToken }?.accessToken
         }
-        if (!expiresWithin(session, minRemainingMs)) return current
-        return refreshLocked(token) ?: current
     }
 
-    /**
-     * The server rejected [rejected]. Returns the replacement bearer, or null
-     * when this is not the device's Cloud session or the session could not be
-     * renewed (a definitive refusal also signs the session out).
-     */
-    suspend fun recoverRejected(rejected: String?): String? {
+    /** Returns a replacement for a rejected bearer, only for the current device session. */
+    suspend fun recoverRejected(rejected: String?, generation: String? = null): String? {
         val token = rejected?.takeIf { it.isNotBlank() } ?: return null
-        val session = ownSession() ?: return null
-        if (token != session.accessToken) {
-            return if (token in replaced) session.accessToken else null
+        return mutex.withLock {
+            val session = observeSession() ?: return@withLock null
+            if (generation != null && generation != session.generation) return@withLock null
+            if (token != session.accessToken) {
+                return@withLock if (token in replaced) session.accessToken else null
+            }
+            withContext(NonCancellable) { refreshExclusive(session) }
         }
-        return refreshLocked(token)
     }
 
-    private fun ownSession(): CloudSession? =
-        store.load()?.takeIf { !it.refreshToken.isNullOrBlank() }
+    // Every change not made by this lifecycle starts a new rotation history.
+    // The lock serializes these observations with refresh and token replacement.
+    private fun observeSession(): CloudSession? {
+        val session = store.load()?.takeIf { !it.refreshToken.isNullOrBlank() }
+        if (observedToken != session?.accessToken) {
+            retired = (retired + replaced + listOfNotNull(observedToken)).takeLast(MAX_RETIRED)
+            replaced = emptyList()
+            pausedUntilMs = 0L
+            observedToken = session?.accessToken
+        }
+        return session
+    }
 
     private fun expiresWithin(session: CloudSession, windowMs: Long): Boolean {
         val expiry = session.expiresAtEpochMs.takeIf { it > 0L }
@@ -116,42 +143,30 @@ class CloudTokenLifecycle(
         return nowMs() >= expiry - windowMs
     }
 
-    // Cancellation can only stop a caller waiting for the lock. Once the
-    // exchange started, the token endpoint has rotated the refresh token and
-    // the answer must reach the store, or the spent token is reused and the
-    // user is signed out.
-    private suspend fun refreshLocked(stale: String): String? = mutex.withLock {
-        withContext(NonCancellable) { refreshExclusive(stale) }
-    }
-
-    private suspend fun refreshExclusive(stale: String): String? {
-        val session = store.load() ?: return null
-        if (session.accessToken != stale) {
-            // Another caller refreshed while this one waited for the lock.
-            return if (stale in replaced) session.accessToken else null
-        }
+    // Once the exchange starts, cancellation must not discard a rotated token.
+    // The caller holds mutex and runs this part in NonCancellable.
+    private suspend fun refreshExclusive(session: CloudSession): String? {
         val refreshToken = session.refreshToken?.takeIf { it.isNotBlank() } ?: return null
         if (nowMs() < pausedUntilMs) return null
         return when (val outcome = refresher(refreshToken)) {
             is CloudRefresh.Refreshed -> {
                 pausedUntilMs = 0L
-                // A Disconnect or a new sign-in during the call wins.
-                if (store.load()?.accessToken != stale) return null
                 val tokens = outcome.tokens
-                store.save(
-                    CloudSession(
-                        accessToken = tokens.accessToken,
-                        refreshToken = tokens.refreshToken ?: refreshToken,
-                        expiresAtEpochMs = nowMs() + tokens.expiresInSec * 1000L,
-                    ),
+                val replacement = CloudSession(
+                    accessToken = tokens.accessToken,
+                    refreshToken = tokens.refreshToken ?: refreshToken,
+                    expiresAtEpochMs = nowMs() + tokens.expiresInSec * 1000L,
+                    generation = session.generation,
                 )
-                replaced = (replaced + stale).takeLast(MAX_REPLACED)
-                tokens.accessToken
+                if (!store.saveIfCurrent(session, replacement)) return null
+                replaced = (replaced + session.accessToken).takeLast(MAX_REPLACED)
+                observedToken = replacement.accessToken
+                replacement.accessToken
             }
 
             CloudRefresh.Rejected -> {
                 pausedUntilMs = 0L
-                if (store.load()?.accessToken == stale) store.signOut()
+                store.signOutIfCurrent(session)
                 null
             }
 
@@ -166,9 +181,8 @@ class CloudTokenLifecycle(
         const val DEFAULT_REFRESH_SKEW_MS: Long = 90_000L
 
         /**
-         * Life a token must still have when it mints a hosted voice session
-         * (Voice Agent, dictation stream): the Gateway ends the session when
-         * the token that opened it expires.
+         * Minimum remaining token life requested when opening a hosted voice
+         * session (Voice Agent or dictation stream).
          */
         const val SESSION_MIN_REMAINING_MS: Long = 10 * 60_000L
 
@@ -176,6 +190,7 @@ class CloudTokenLifecycle(
         const val UNAVAILABLE_BACKOFF_MS: Long = 30_000L
 
         private const val MAX_REPLACED = 8
+        private const val MAX_RETIRED = 32
     }
 }
 
@@ -191,13 +206,22 @@ object CloudBearer {
         this.lifecycle = lifecycle
     }
 
-    suspend fun fresh(current: String?): String? = lifecycle?.bearerFor(current) ?: current
+    suspend fun fresh(current: String?, generation: String? = null): String? =
+        lifecycle.let { installed ->
+            if (installed == null) current.takeIf { generation == null }
+            else installed.bearerFor(current, generation = generation)
+        }
 
     /** Like [fresh], for a request that mints a long-lived hosted voice session. */
-    suspend fun freshForSession(current: String?): String? =
-        lifecycle?.bearerFor(current, CloudTokenLifecycle.SESSION_MIN_REMAINING_MS) ?: current
+    suspend fun freshForSession(current: String?, generation: String? = null): String? =
+        lifecycle.let { installed ->
+            if (installed == null) current.takeIf { generation == null }
+            else installed.bearerFor(current, CloudTokenLifecycle.SESSION_MIN_REMAINING_MS, generation)
+        }
 
-    suspend fun recoverRejected(rejected: String?): String? = lifecycle?.recoverRejected(rejected)
+    suspend fun recoverRejected(rejected: String?, generation: String? = null): String? =
+        lifecycle?.recoverRejected(rejected, generation)
+
 }
 
 private val EXP_CLAIM = Regex("\"exp\"\\s*:\\s*(\\d+)")

@@ -16,7 +16,7 @@ export type RecordingIndicatorState =
 
 export function sessionStatusToIndicatorState(
   status: SpeechKitVoiceSessionStatus,
-  requesting = false
+  requesting = false,
 ): RecordingIndicatorState {
   switch (status) {
     case "capturing":
@@ -198,7 +198,12 @@ export class RecordingIndicator {
 
   #syncLoop(): void {
     const live = this.#state === "listening" || this.#state === "speaking";
-    if (live && this.#hasLevels && !prefersReducedMotion() && typeof requestAnimationFrame === "function") {
+    if (
+      live &&
+      this.#hasLevels &&
+      !prefersReducedMotion() &&
+      typeof requestAnimationFrame === "function"
+    ) {
       if (!this.#raf) this.#raf = requestAnimationFrame(this.#tick);
     } else {
       this.stop();
@@ -211,7 +216,10 @@ export class RecordingIndicator {
     const output = this.#output.tick(now);
     // The active channel leads; the other still counts so a controller that
     // meters only one channel never leaves the bars dead.
-    const level = Math.max(this.#state === "speaking" ? output : input, Math.max(input, output) * 0.6);
+    const level = Math.max(
+      this.#state === "speaking" ? output : input,
+      Math.max(input, output) * 0.6,
+    );
     const heights = indicatorBarHeights(level, this.#bars.length);
     this.#bars.forEach((bar, i) => {
       // A slow idle swell keeps "live" visible during silence.

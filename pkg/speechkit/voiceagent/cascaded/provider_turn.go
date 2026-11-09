@@ -88,7 +88,7 @@ func (p *Provider) processOneTurn(ctx context.Context) {
 		}
 	}
 	if sttResult == nil {
-		sttResult, err = p.stt.Route(ctx, pcm, duration, stt.TranscribeOpts{Language: p.locale, Speaker: p.speaker})
+		sttResult, err = p.stt.Route(ctx, pcm, duration, stt.TranscribeOpts{Language: p.locale, Keyterms: p.keyterms, Speaker: p.speaker})
 	}
 	p.noteSTT(time.Since(sttStarted), streamed)
 	if err != nil {

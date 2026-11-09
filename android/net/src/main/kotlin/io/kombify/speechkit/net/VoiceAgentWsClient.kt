@@ -67,12 +67,14 @@ sealed interface VoiceAgentEvent {
         val message: String,
         val remediation: String? = null,
         val fatal: Boolean = false,
+        /** The served reason class; a surface renders its text from it. Null for local failures. */
+        val errorClass: VoiceErrorClass? = null,
     ) : VoiceAgentEvent {
         // Preserve the published three-field constructor/copy, including default masks.
         constructor(code: String, message: String, remediation: String? = null) :
-            this(code, message, remediation, false)
+            this(code, message, remediation, false, null)
         fun copy(code: String = this.code, message: String = this.message,
-            remediation: String? = this.remediation): Failure = Failure(code, message, remediation, fatal)
+            remediation: String? = this.remediation): Failure = Failure(code, message, remediation, fatal, errorClass)
     }
 
     /** Terminal. No further events follow. */
@@ -80,7 +82,9 @@ sealed interface VoiceAgentEvent {
 }
 
 /** Safe setup failure: capture must not start after a failed session.start. */
-class VoiceAgentSetupException(val code: String) : IllegalStateException(code)
+class VoiceAgentSetupException(val code: String, val errorClass: VoiceErrorClass?) : IllegalStateException(code) {
+    constructor(code: String) : this(code, null)
+}
 
 /** A live Voice Agent conversation. */
 interface VoiceAgentSession {
@@ -153,9 +157,9 @@ class VoiceAgentWsClient(
         val events = VoiceAgentEventQueue()
         val ready = CompletableDeferred<Unit>()
         val providerReady = AtomicBoolean(false)
-        fun failSetup(code: String) {
+        fun failSetup(code: String, errorClass: VoiceErrorClass? = null) {
             providerReady.set(false)
-            ready.completeExceptionally(VoiceAgentSetupException(code))
+            ready.completeExceptionally(VoiceAgentSetupException(code, errorClass))
         }
         fun emit(webSocket: WebSocket, event: VoiceAgentEvent) {
             if (!events.offer(event)) {
@@ -226,9 +230,9 @@ class VoiceAgentWsClient(
 
                     is VoiceAgentErrorFrame -> {
                         val failure = VoiceAgentEvent.Failure(safeVoiceAgentCode(frame.code, "server_error"),
-                            frame.message, frame.remediation, frame.fatal)
+                            frame.message, frame.remediation, frame.fatal, VoiceErrorClass.fromWire(frame.errorClass))
                         if (frame.fatal) {
-                            failSetup(failure.code)
+                            failSetup(failure.code, failure.errorClass)
                             events.finish(voiceAgentFatalEndReason(failure.code), failure)
                         } else emit(webSocket, failure)
                     }

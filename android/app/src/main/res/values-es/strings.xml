@@ -100,6 +100,8 @@
     <string name="settings_connection_account_not_provisioned">Tu cuenta de kombify aún no está configurada. Termina de configurarla y actualiza.</string>
     <string name="settings_connection_account_open_dashboard">Abrir kombify</string>
     <string name="settings_connection_account_unavailable">No se pudo cargar tu plan. Revisa tu conexión y actualiza.</string>
+    <string name="settings_connection_account_support_code">Código de soporte: %1$s</string>
+    <string name="settings_connection_account_plan_unknown">Los detalles de tu plan no están disponibles ahora. Actualiza para reintentar.</string>
     <string name="settings_connection_self_host_show">Tu propio servidor SpeechKit</string>
     <string name="settings_connection_self_host_hide">Ocultar tu propio servidor</string>
     <string name="onboarding_welcome">Te damos la bienvenida a SpeechKit</string>
@@ -189,10 +191,26 @@
     <string name="settings_on_device_pause">Pausar descarga</string>
     <string name="settings_on_device_ready_active">%1$s está descargado y dicta en este dispositivo.</string>
     <string name="settings_on_device_ready_inactive">%1$s está descargado. Elige arriba el modelo sin conexión para dictar con él.</string>
+    <string name="settings_on_device_cloud_active">kombify Cloud está activo, así que el dictado usa la nube. %1$s lo reemplaza cuando no hay conexión con la nube.</string>
+    <string name="settings_on_device_use_device">Dictar en este dispositivo</string>
     <string name="settings_on_device_delete">Eliminar %1$s (%2$d MB)</string>
     <string name="settings_on_device_failed">La descarga falló: %1$s</string>
     <string name="settings_on_device_needs_download">Hasta que %1$s esté descargado, sigue dictando el reconocedor del sistema.</string>
     <string name="settings_on_device_metered">Estás en una conexión medida; la descarga ocupa %1$d MB.</string>
     <string name="settings_on_device_download">Descargar %1$s (%2$d MB)</string>
     <string name="settings_on_device_discard_partial">Eliminar la descarga parcial (%1$d MB)</string>
+    <string name="settings_voice_title">Voz sin conexión</string>
+    <string name="settings_voice_subtitle">Las respuestas del asistente las lee la voz del sistema. Descarga una voz natural y se leerán en este teléfono, sin red. Para respuestas en alemán e inglés; los demás idiomas mantienen la voz del sistema.</string>
+    <string name="settings_voice_unsupported">Las voces naturales necesitan un teléfono de 64 bits.</string>
+    <string name="settings_voice_ready">%1$s está descargada y lee las respuestas en este dispositivo.</string>
+    <string name="settings_voice_play_sample">Reproducir muestra</string>
+    <string name="settings_voice_stop_sample">Detener</string>
+    <string name="settings_voice_sample_failed">No se pudo reproducir la muestra; se usa la voz del sistema.</string>
+    <string name="settings_vocabulary_title">Vocabulario</string>
+    <string name="settings_vocabulary_subtitle">Los términos de tu cuenta iniciada. Cada dictado los envía al reconocedor, y un resultado en el dispositivo sustituye las variantes mal oídas por el término correcto.</string>
+    <string name="settings_vocabulary_empty">Aún no hay vocabulario. Inicia sesión para obtener tus términos.</string>
+    <string name="settings_vocabulary_count">%1$d términos en esta cuenta</string>
+    <string name="settings_vocabulary_sample_heard">Variante mal oída</string>
+    <string name="settings_vocabulary_sample_result">Reconocido\\ como</string>
+    <string name="settings_vocabulary_no_aliases">Esta cuenta todavía no tiene variantes mal oídas.</string>
 </resources>

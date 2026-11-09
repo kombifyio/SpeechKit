@@ -21,11 +21,9 @@ import (
 
 // Universal-3.5 Pro realtime context limits (docs: streaming context
 // carryover). agent_context is capped per value; keyterms_prompt takes up to
-// 100 terms of at most 50 characters each.
+// 100 terms of at most 50 characters each (provideropts.AssemblyAIKeytermLimits).
 const (
 	assemblyAIStreamingMaxContextChars = 1750
-	assemblyAIStreamingMaxKeyterms     = 100
-	assemblyAIStreamingMaxKeytermChars = 50
 )
 
 // StartSpeakerStream implements [speaker.StreamingProvider] over the v3
@@ -34,6 +32,13 @@ const (
 // StreamingModel or the flagship default (batch-only ids are skipped), and
 // the expected speaker count bounds max_speakers.
 func (p *Provider) StartSpeakerStream(ctx context.Context, opts speaker.Options, format speaker.AudioFormat) (speaker.SpeakerStream, error) {
+	p, err := p.forRequest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if netsec.DataProfileEU(ctx) && p.StreamingLLM != nil {
+		return nil, fmt.Errorf("data_profile_processor_ineligible: assemblyai streaming LLM is not qualified for EU")
+	}
 	opts = opts.Normalized()
 	if !opts.WantsDiarization() {
 		return nil, fmt.Errorf("assemblyai speaker streaming requires diarization options")
@@ -74,6 +79,13 @@ func (p *Provider) StartSpeakerStream(ctx context.Context, opts speaker.Options,
 // closes the socket (Receive then returns io.EOF), which matches SpeechKit's
 // one-provider-stream-per-segment model.
 func (p *Provider) StartDictationStream(ctx context.Context, opts speechkit.DictationStreamOptions, format speaker.AudioFormat) (speechkit.DictationStream, error) {
+	p, err := p.forRequest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if netsec.DataProfileEU(ctx) && p.StreamingLLM != nil {
+		return nil, fmt.Errorf("data_profile_processor_ineligible: assemblyai streaming LLM is not qualified for EU")
+	}
 	resolved := stt.ResolveTranscribeOptions(p.Name(), "stt.assemblyai.universal", stt.TranscribeOptionsFromStream(opts).ForProvider(p.Name()), provideropts.Values{provideropts.OptionVocabularyBias: true}, nil)
 	opts = stt.ApplyResolvedDictationStreamOptions(opts, resolved)
 	// Native realtime context uses the same precedence as batch prompting.
@@ -248,18 +260,7 @@ func assemblyAIBatchOnlySpeechModel(id string) bool {
 }
 
 func assemblyAIStreamingKeyterms(terms []string) []string {
-	out := make([]string, 0, len(terms))
-	for _, term := range terms {
-		term = strings.TrimSpace(term)
-		if term == "" || len([]rune(term)) > assemblyAIStreamingMaxKeytermChars {
-			continue
-		}
-		out = append(out, term)
-		if len(out) >= assemblyAIStreamingMaxKeyterms {
-			break
-		}
-	}
-	return out
+	return provideropts.CapKeyterms(terms, provideropts.AssemblyAIKeytermLimits)
 }
 
 func (p *Provider) assemblyAIStreamingEndpoint(model string, opts speaker.Options, format speaker.AudioFormat) (string, error) {

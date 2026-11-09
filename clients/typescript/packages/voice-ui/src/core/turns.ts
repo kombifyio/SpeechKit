@@ -44,7 +44,7 @@ export interface VoiceAgentTurn {
 
 export function reduceVoiceAgentTurns(
   turns: readonly VoiceAgentTurn[],
-  event: SpeechKitVoiceEvent
+  event: SpeechKitVoiceEvent,
 ): VoiceAgentTurn[] {
   switch (event.type) {
     case "voice.transcript_draft":
@@ -73,7 +73,7 @@ function openTurnIndex(turns: readonly VoiceAgentTurn[], role: VoiceAgentTurn["r
 function upsertDraft(
   turns: readonly VoiceAgentTurn[],
   role: VoiceAgentTurn["role"],
-  text: string
+  text: string,
 ): VoiceAgentTurn[] {
   const index = openTurnIndex(turns, role);
   const open = index === -1 ? undefined : turns[index];
@@ -87,7 +87,7 @@ function upsertDraft(
 function closeTurn(
   turns: readonly VoiceAgentTurn[],
   role: VoiceAgentTurn["role"],
-  text: string
+  text: string,
 ): VoiceAgentTurn[] {
   const index = openTurnIndex(turns, role);
   const open = index === -1 ? undefined : turns[index];
@@ -98,13 +98,13 @@ function closeTurn(
   return replaceTurn(turns, index, {
     ...open,
     text: text || open.text,
-    final: true
+    final: true,
   });
 }
 
 function interruptOpenTurn(
   turns: readonly VoiceAgentTurn[],
-  role: VoiceAgentTurn["role"]
+  role: VoiceAgentTurn["role"],
 ): VoiceAgentTurn[] {
   const index = openTurnIndex(turns, role);
   const open = index === -1 ? undefined : turns[index];
@@ -115,7 +115,7 @@ function interruptOpenTurn(
 function replaceTurn(
   turns: readonly VoiceAgentTurn[],
   index: number,
-  turn: VoiceAgentTurn
+  turn: VoiceAgentTurn,
 ): VoiceAgentTurn[] {
   const next = [...turns];
   next[index] = turn;

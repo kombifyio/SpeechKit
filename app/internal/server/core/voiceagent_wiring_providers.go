@@ -17,6 +17,7 @@ import (
 	"github.com/kombifyio/SpeechKit/app/internal/config"
 	vsserver "github.com/kombifyio/SpeechKit/app/internal/server/voiceagent"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/cascaded"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/live/assemblyai"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/live/deepgram"
@@ -80,7 +81,18 @@ func mapKernelLiveMessage(msg *live.LiveMessage) *vsserver.LiveMessage {
 	for _, eventType := range msg.EventTypes {
 		eventTypes = append(eventTypes, string(eventType))
 	}
+	// A failed turn leaves the session usable: it travels as a non-fatal
+	// in-band error with its public code, never as a session failure.
+	errorCode := ""
+	if msg.TurnError != nil {
+		errorCode = "turn_failed"
+		var coded cascaded.CodedError
+		if errors.As(msg.TurnError, &coded) {
+			errorCode = cascaded.SafeFailureCode(coded.Code())
+		}
+	}
 	return &vsserver.LiveMessage{
+		ErrorCode:              errorCode,
 		EventType:              string(msg.EventType),
 		EventTypes:             eventTypes,
 		ProviderMetadata:       msg.ProviderMetadata,
@@ -387,6 +399,7 @@ func (b *assemblyAILiveBridge) Connect(ctx context.Context, cfg vsserver.LiveCon
 			},
 		},
 	}
+	liveCfg.Options = keytermOptions(cfg.Keyterms)
 	if err := b.inner.Connect(ctx, liveCfg); err != nil {
 		slog.Warn("voiceagent: AssemblyAI Voice Agent connect failed", "err", err)
 		return err
@@ -555,6 +568,7 @@ type deepgramLiveBridge struct {
 func (b *deepgramLiveBridge) Connect(ctx context.Context, cfg vsserver.LiveConfigFrame) error {
 	if cfg.NativeLLMBaseURL != "" {
 		b.inner.ConfigureThink("open_ai", cfg.NativeLLMModel, strings.TrimRight(cfg.NativeLLMBaseURL, "/")+"/chat/completions", cfg.NativeLLMToken)
+		b.inner.ThinkHeaders = cfg.NativeLLMHeaders
 	}
 	if cfg.APIKey == "" {
 		return errors.New("voiceagent: no Deepgram API key configured for this deployment")
@@ -567,6 +581,7 @@ func (b *deepgramLiveBridge) Connect(ctx context.Context, cfg vsserver.LiveConfi
 		Locale:           cfg.Locale,
 		Speaker:          cfg.Speaker,
 	}
+	liveCfg.Options = keytermOptions(cfg.Keyterms)
 	if err := b.inner.Connect(ctx, liveCfg); err != nil {
 		return err
 	}

@@ -16,11 +16,11 @@ const VISUALIZER_STATES: readonly VoiceVisualizerState[] = [
   "listening",
   "processing",
   "speaking",
-  "error"
+  "error",
 ];
 
 export function sessionStatusToVisualizerState(
-  status: SpeechKitVoiceSessionState["status"]
+  status: SpeechKitVoiceSessionState["status"],
 ): VoiceVisualizerState {
   switch (status) {
     case "capturing":

@@ -54,6 +54,7 @@ func (p *CascadedProvider) Connect(ctx context.Context, cfg LiveConfigFrame) err
 		SystemPrompt:     cfg.SystemPrompt,
 		RefinementPrompt: cfg.RefinementPrompt,
 		Speaker:          cfg.Speaker,
+		Keyterms:         cfg.Keyterms,
 	})
 }
 
@@ -65,6 +66,7 @@ func (p *CascadedProvider) UpdateInstructions(ctx context.Context, cfg LiveConfi
 		SystemPrompt:     cfg.SystemPrompt,
 		RefinementPrompt: cfg.RefinementPrompt,
 		Speaker:          cfg.Speaker,
+		Keyterms:         cfg.Keyterms,
 	})
 }
 

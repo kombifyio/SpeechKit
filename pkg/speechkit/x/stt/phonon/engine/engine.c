@@ -108,8 +108,8 @@ static int reserve(void **arr, int *cap, int need, size_t size)
 typedef struct { int tok, word, seg; } Caps;   /* allocated sizes of the result's arrays */
 
 /* Encoder and decoder over one block of features → tokens (frames relative to the block). Timings accumulate. */
-static int decode_features(const P2Engine *e, const float *mel, int n_frames, P2Token **toks, int *n_toks, int *T,
-                           P2Result *out)
+static int decode_features(const P2Engine *e, const P2Bias *bias, const float *mel, int n_frames, P2Token **toks,
+                           int *n_toks, int *T, P2Result *out)
 {
     *toks = NULL; *n_toks = 0; *T = 0;
     if (n_frames < P2_SUB_FACTOR) return 0;   /* fewer frames than one encoder step is silence */
@@ -118,7 +118,7 @@ static int decode_features(const P2Engine *e, const float *mel, int n_frames, P2
     if (p2_encoder(&e->model, mel, n_frames, &enc_out, T) != 0) return -1;
     out->t_encoder += now_sec() - t;
     t = now_sec();
-    *n_toks = p2_greedy_decode(&e->model, enc_out, *T, toks);
+    *n_toks = p2_greedy_decode_bias(&e->model, enc_out, *T, bias, toks);
     free(enc_out);
     out->t_decoder += now_sec() - t;
     out->encoder_frames += *T;
@@ -190,7 +190,7 @@ int p2_transcribe_mel(const P2Engine *e, const float *mel, int n_frames, P2Resul
     Caps caps = {0, 0, 0};
     P2Token *toks;
     int n_toks, T;
-    if (decode_features(e, mel, n_frames, &toks, &n_toks, &T, out) != 0 ||
+    if (decode_features(e, NULL, mel, n_frames, &toks, &n_toks, &T, out) != 0 ||
         append_window(e, toks, n_toks, 0, 0.0f, out->duration_seconds, out, &caps) != 0 ||
         join_segments(out) != 0) {
         p2_result_free(out);
@@ -255,8 +255,8 @@ static int window_dropped_out(const float *x, int len, const P2Token *toks, int 
 /* Transcribe x[start, end): features, encoder, decoder; on a dropout, re-decode as two windows split at the
  * longest pause in the middle third (a different start point almost always decodes normally). `base` is how many
  * samples of the whole recording precede x[0] (a stream's consumed audio), for the frames and times reported. */
-static int transcribe_window(const P2Engine *e, const float *x, int start, int end, int depth, long long base,
-                             P2Result *out, Caps *caps)
+static int transcribe_window(const P2Engine *e, const P2Bias *bias, const float *x, int start, int end, int depth,
+                             long long base, P2Result *out, Caps *caps)
 {
     int len = end - start;
     float *mel = NULL;
@@ -268,7 +268,7 @@ static int transcribe_window(const P2Engine *e, const float *x, int start, int e
     }
     P2Token *toks;
     int n_toks, T;
-    int rc = decode_features(e, mel, n_frames, &toks, &n_toks, &T, out);
+    int rc = decode_features(e, bias, mel, n_frames, &toks, &n_toks, &T, out);
     free(mel);
     if (rc != 0) return -1;
 
@@ -285,8 +285,8 @@ static int transcribe_window(const P2Engine *e, const float *x, int start, int e
                     n_toks, speech, t_start, (double)(base + mid) / P2_SAMPLE_RATE,
                     (double)(base + mid) / P2_SAMPLE_RATE, t_end);
         free(toks);
-        if (transcribe_window(e, x, start, mid, depth + 1, base, out, caps) != 0) return -1;
-        return transcribe_window(e, x, mid, end, depth + 1, base, out, caps);
+        if (transcribe_window(e, bias, x, start, mid, depth + 1, base, out, caps) != 0) return -1;
+        return transcribe_window(e, bias, x, mid, end, depth + 1, base, out, caps);
     }
 
     int frame_offset = (int)((double)(base + start) / (P2_HOP_LEN * P2_SUB_FACTOR) + 0.5);
@@ -311,6 +311,12 @@ static const float *finite_samples(const float *x, int n, float **owned)
 }
 
 int p2_transcribe(const P2Engine *e, const float *audio, int n_samples, int sample_rate, P2Result *out)
+{
+    return p2_transcribe_bias(e, audio, n_samples, sample_rate, NULL, out);
+}
+
+int p2_transcribe_bias(const P2Engine *e, const float *audio, int n_samples, int sample_rate, const P2Bias *bias,
+                       P2Result *out)
 {
     memset(out, 0, sizeof(*out));
     if (n_samples < 0 || sample_rate <= 0 || (n_samples > 0 && !audio)) return -1;
@@ -349,7 +355,7 @@ int p2_transcribe(const P2Engine *e, const float *audio, int n_samples, int samp
     Caps caps = {0, 0, 0};
     int rc = 0;
     for (int i = 0; i < n_win && rc == 0; i++)
-        rc = transcribe_window(e, x, win[i].start, win[i].end, depth0, 0, out, &caps);
+        rc = transcribe_window(e, bias, x, win[i].start, win[i].end, depth0, 0, out, &caps);
     free(win);
     free(resampled);
     free(cleaned);
@@ -365,6 +371,7 @@ int p2_transcribe(const P2Engine *e, const float *audio, int n_samples, int samp
  * the window start), decoded with the same transcribe_window and appended to `res`. */
 struct P2Stream {
     const P2Engine *e;
+    const P2Bias *bias;     /* word boosting, NULL for none; the caller keeps it alive until the stream closes */
     P2Resampler *rs;        /* input rate → 16 kHz, NULL when the input is 16 kHz already */
     float     *buf;
     int        n, cap;
@@ -377,10 +384,16 @@ struct P2Stream {
 
 P2Stream *p2_stream_open(const P2Engine *e, int sample_rate)
 {
+    return p2_stream_open_bias(e, sample_rate, NULL);
+}
+
+P2Stream *p2_stream_open_bias(const P2Engine *e, int sample_rate, const P2Bias *bias)
+{
     if (sample_rate <= 0) return NULL;
     P2Stream *s = (P2Stream *)calloc(1, sizeof(*s));
     if (!s) return NULL;
     s->e = e;
+    s->bias = bias;
     s->cap = p2_window_max_samples(P2_SAMPLE_RATE) + P2_SAMPLE_RATE;
     s->buf = (float *)malloc((size_t)s->cap * sizeof(float));
     if (sample_rate != P2_SAMPLE_RATE) s->rs = p2_resampler_open(sample_rate, P2_SAMPLE_RATE);
@@ -400,7 +413,7 @@ void p2_stream_close(P2Stream *s)
 /* Decode buf[0, cut) as the next window and drop it from the buffer. */
 static int stream_cut(P2Stream *s, int cut)
 {
-    if (transcribe_window(s->e, s->buf, 0, cut, 0, s->consumed, &s->res, &s->caps) != 0) return -1;
+    if (transcribe_window(s->e, s->bias, s->buf, 0, cut, 0, s->consumed, &s->res, &s->caps) != 0) return -1;
     memmove(s->buf, s->buf + cut, (size_t)(s->n - cut) * sizeof(float));
     s->n -= cut;
     s->consumed += cut;
@@ -463,7 +476,7 @@ char *p2_stream_partial(P2Stream *s)
     Caps caps = {0, 0, 0};
     char *text = NULL;
     memset(&tmp, 0, sizeof(tmp));
-    if (transcribe_window(s->e, s->buf, 0, s->n, P2_SPLIT_MAX_DEPTH, s->consumed, &tmp, &caps) == 0 &&
+    if (transcribe_window(s->e, s->bias, s->buf, 0, s->n, P2_SPLIT_MAX_DEPTH, s->consumed, &tmp, &caps) == 0 &&
         join_segments(&tmp) == 0) {
         text = tmp.text;
         tmp.text = NULL;

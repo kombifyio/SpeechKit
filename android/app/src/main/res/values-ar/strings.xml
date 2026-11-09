@@ -100,6 +100,8 @@
     <string name="settings_connection_account_not_provisioned">لم يتم إعداد حساب kombify الخاص بك بعد. أكمل الإعداد ثم حدّث.</string>
     <string name="settings_connection_account_open_dashboard">فتح kombify</string>
     <string name="settings_connection_account_unavailable">تعذّر تحميل باقتك. تحقق من اتصالك ثم حدّث.</string>
+    <string name="settings_connection_account_support_code">رمز الدعم: %1$s</string>
+    <string name="settings_connection_account_plan_unknown">تفاصيل باقتك غير متاحة حاليًا. حدّث للمحاولة مرة أخرى.</string>
     <string name="settings_connection_self_host_show">خادم SpeechKit الخاص بك</string>
     <string name="settings_connection_self_host_hide">إخفاء خادمك الخاص</string>
     <string name="onboarding_welcome">مرحبًا بك في SpeechKit</string>
@@ -189,10 +191,26 @@
     <string name="settings_on_device_pause">إيقاف التنزيل مؤقتًا</string>
     <string name="settings_on_device_ready_active">تم تنزيل %1$s وهو يُملي على هذا الجهاز.</string>
     <string name="settings_on_device_ready_inactive">تم تنزيل %1$s. اختر النموذج دون اتصال في الأعلى للإملاء به.</string>
+    <string name="settings_on_device_cloud_active">kombify Cloud مفعّل، لذا يستخدم الإملاء السحابة. يتولى %1$s الإملاء عند تعذّر الوصول إلى السحابة.</string>
+    <string name="settings_on_device_use_device">الإملاء على هذا الجهاز بدلًا من ذلك</string>
     <string name="settings_on_device_delete">حذف %1$s ‏(%2$d ميغابايت)</string>
     <string name="settings_on_device_failed">فشل التنزيل: %1$s</string>
     <string name="settings_on_device_needs_download">إلى أن يُنزَّل %1$s، تواصل أداة التعرّف في النظام الإملاء.</string>
     <string name="settings_on_device_metered">أنت على اتصال محدود الاستهلاك؛ حجم التنزيل %1$d ميغابايت.</string>
     <string name="settings_on_device_download">تنزيل %1$s ‏(%2$d ميغابايت)</string>
     <string name="settings_on_device_discard_partial">إزالة التنزيل الجزئي (%1$d ميغابايت)</string>
+    <string name="settings_voice_title">الصوت دون اتصال</string>
+    <string name="settings_voice_subtitle">يقرأ صوت النظام ردود المساعد. نزّل صوتًا طبيعيًا لتُقرأ الردود على هذا الهاتف بدلًا من ذلك، دون شبكة. للردود بالألمانية والإنجليزية؛ وتبقى اللغات الأخرى مع صوت النظام.</string>
+    <string name="settings_voice_unsupported">تحتاج الأصوات الطبيعية إلى هاتف 64 بت.</string>
+    <string name="settings_voice_ready">تم تنزيل %1$s وهو يقرأ الردود على هذا الجهاز.</string>
+    <string name="settings_voice_play_sample">تشغيل عينة</string>
+    <string name="settings_voice_stop_sample">إيقاف</string>
+    <string name="settings_voice_sample_failed">تعذّر تشغيل العينة؛ يُستخدم صوت النظام.</string>
+    <string name="settings_vocabulary_title">المفردات</string>
+    <string name="settings_vocabulary_subtitle">مصطلحات حسابك الذي سجّل الدخول. يرسل كل إملاء هذه المصطلحات إلى محرك التعرّف، والنتيجة على الجهاز تستبدل الصيغ المسموعة خطأ بالمصطلح الصحيح.</string>
+    <string name="settings_vocabulary_empty">لا توجد مفردات بعد. سجّل الدخول لجلب مصطلحاتك.</string>
+    <string name="settings_vocabulary_count">%1$d مصطلحًا في هذا الحساب</string>
+    <string name="settings_vocabulary_sample_heard">الصيغة المسموعة خطأ</string>
+    <string name="settings_vocabulary_sample_result">مُعرَّف\\ كـ</string>
+    <string name="settings_vocabulary_no_aliases">لا يوجد في هذا الحساب صيغ مسموعة خطأ بعد.</string>
 </resources>

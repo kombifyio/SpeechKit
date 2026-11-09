@@ -4,6 +4,8 @@ import android.content.Context
 import io.kombify.speechkit.domain.ConnectionMode
 import io.kombify.speechkit.domain.ConnectionProfile
 import io.kombify.speechkit.domain.inferConnectionMode
+import io.kombify.speechkit.log.VoiceLog
+import java.util.UUID
 
 /**
  * Read-only view of the server profile the app persists today — the
@@ -19,6 +21,7 @@ object StoredServerProfile {
     const val KEY_CLOUD_REFRESH = "cloud_refresh_token"
     const val KEY_CLOUD_EXPIRES_AT = "cloud_access_expires_at"
     const val KEY_CLOUD_OWNED = "cloud_owned"
+    private const val KEY_CLOUD_GENERATION = "cloud_session_generation"
 
     fun load(context: Context): ConnectionProfile.Server? {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -57,12 +60,23 @@ object StoredServerProfile {
             .apply()
     }
 
-    fun loadCloud(context: Context): ConnectionProfile.Server? {
+    fun loadCloud(context: Context): ConnectionProfile.Server? = synchronized(cloudLock) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val url = prefs.getString(KEY_CLOUD_URL, null)?.trim().orEmpty()
-        if (url.isEmpty()) return null
+        if (url.isEmpty()) return@synchronized null
         val token = prefs.getString(KEY_CLOUD_TOKEN, null)?.trim()?.ifEmpty { null }
-        return ConnectionProfile.Server(url, token)
+        val owned = prefs.getBoolean(KEY_CLOUD_OWNED, false) ||
+            !prefs.getString(KEY_CLOUD_REFRESH, null).isNullOrBlank()
+        val generation = if (owned) cloudGeneration(prefs) else null
+        ConnectionProfile.Server(url, token, generation)
+    }
+
+    // Legacy stored sessions receive one identity before their first profile is returned.
+    private fun cloudGeneration(prefs: android.content.SharedPreferences): String {
+        prefs.getString(KEY_CLOUD_GENERATION, null)?.takeIf { it.isNotBlank() }?.let { return it }
+        val generation = UUID.randomUUID().toString()
+        prefs.edit().putString(KEY_CLOUD_GENERATION, generation).apply()
+        return generation
     }
 
     fun loadCloudRefreshToken(context: Context): String? =
@@ -95,8 +109,10 @@ object StoredServerProfile {
             .putString(KEY_CLOUD_REFRESH, refreshToken?.trim().orEmpty())
             .putLong(KEY_CLOUD_EXPIRES_AT, expiresAtEpochMs)
             .putBoolean(KEY_CLOUD_OWNED, true)
+            .putString(KEY_CLOUD_GENERATION, UUID.randomUUID().toString())
             .putString(KEY_CONNECTION_MODE, ConnectionMode.KOMBIFY_CLOUD.wire)
             .apply()
+        AccountVocabulary.syncInBackground(context)
     }
 
     /**
@@ -145,30 +161,40 @@ object StoredServerProfile {
         edit.commit()
     }
 
-    /**
-     * Stores the tokens of a refresh, but only while a Cloud session is still
-     * connected: the URL key is the proof. A rotation that finishes after a
-     * Disconnect must not bring tokens back that have no URL. Shares its lock
-     * with [clearCloud], so the check and the write cannot interleave with it.
-     * Returns false when nothing was written.
-     */
-    internal fun saveCloudTokensIfConnected(
-        context: Context,
-        accessToken: String,
-        refreshToken: String?,
-        expiresAtEpochMs: Long,
-    ): Boolean = synchronized(cloudLock) {
+    internal fun loadCloudSession(context: Context): CloudSession? = synchronized(cloudLock) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        if (prefs.getString(KEY_CLOUD_URL, null).isNullOrBlank()) return@synchronized false
-        val edit = prefs.edit()
-            .putString(KEY_CLOUD_TOKEN, accessToken.trim())
-            .putLong(KEY_CLOUD_EXPIRES_AT, expiresAtEpochMs)
-        refreshToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
-            edit.putString(KEY_CLOUD_REFRESH, it)
-        }
-        // commit(): a process death right after a rotation must not lose the
-        // new refresh token, the old one is already spent.
-        edit.commit()
+        if (prefs.getString(KEY_CLOUD_URL, null).isNullOrBlank()) return@synchronized null
+        val access = prefs.getString(KEY_CLOUD_TOKEN, null)?.trim()?.ifEmpty { null }
+            ?: return@synchronized null
+        CloudSession(
+            accessToken = access,
+            refreshToken = prefs.getString(KEY_CLOUD_REFRESH, null)?.trim()?.ifEmpty { null },
+            expiresAtEpochMs = prefs.getLong(KEY_CLOUD_EXPIRES_AT, 0L),
+            generation = if (hasOwnCloudSession(context)) cloudGeneration(prefs) else null,
+        )
+    }
+
+    internal fun saveCloudTokensIfCurrent(
+        context: Context,
+        expected: CloudSession,
+        replacement: CloudSession,
+    ): Boolean = synchronized(cloudLock) {
+        if (loadCloudSession(context) != expected) return@synchronized false
+        // The old refresh token is spent, so wait for the rotated one to reach disk.
+        val persisted = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putString(KEY_CLOUD_TOKEN, replacement.accessToken.trim())
+            .putString(KEY_CLOUD_REFRESH, replacement.refreshToken?.trim().orEmpty())
+            .putLong(KEY_CLOUD_EXPIRES_AT, replacement.expiresAtEpochMs)
+            .commit()
+        // commit updates memory even when disk persistence fails. The CAS did
+        // succeed in memory; do not misclassify the replacement as another login.
+        if (!persisted) VoiceLog.w(VoiceLog.NET, "could not persist rotated Cloud credentials")
+        true
+    }
+
+    internal fun clearCloudIfCurrent(context: Context, expected: CloudSession): Boolean = synchronized(cloudLock) {
+        if (loadCloudSession(context) != expected) return@synchronized false
+        clearCloud(context)
         true
     }
 
@@ -181,7 +207,10 @@ object StoredServerProfile {
             .remove(KEY_CLOUD_REFRESH)
             .remove(KEY_CLOUD_EXPIRES_AT)
             .remove(KEY_CLOUD_OWNED)
+            .remove(KEY_CLOUD_GENERATION)
             .apply()
+        // Every sign-out passes here (Disconnect and a refused refresh token).
+        AccountVocabulary.clear(context)
     }
 
     // One lock for every writer of the Cloud session keys.
@@ -190,29 +219,11 @@ object StoredServerProfile {
 
 /** [CloudSessionStore] over the `speechkit_config` prefs the Connect flow writes. */
 class StoredCloudSession(private val context: Context) : CloudSessionStore {
-    private val prefs
-        get() = context.getSharedPreferences(StoredServerProfile.PREFS_NAME, Context.MODE_PRIVATE)
+    override fun load(): CloudSession? = StoredServerProfile.loadCloudSession(context)
 
-    override fun load(): CloudSession? {
-        val profile = StoredServerProfile.loadCloud(context) ?: return null
-        val access = profile.bearerToken ?: return null
-        return CloudSession(
-            accessToken = access,
-            refreshToken = StoredServerProfile.loadCloudRefreshToken(context),
-            expiresAtEpochMs = prefs.getLong(StoredServerProfile.KEY_CLOUD_EXPIRES_AT, 0L),
-        )
-    }
+    override fun saveIfCurrent(expected: CloudSession, replacement: CloudSession): Boolean =
+        StoredServerProfile.saveCloudTokensIfCurrent(context, expected, replacement)
 
-    override fun save(session: CloudSession) {
-        StoredServerProfile.saveCloudTokensIfConnected(
-            context,
-            accessToken = session.accessToken,
-            refreshToken = session.refreshToken,
-            expiresAtEpochMs = session.expiresAtEpochMs,
-        )
-    }
-
-    override fun signOut() {
-        StoredServerProfile.clearCloud(context)
-    }
+    override fun signOutIfCurrent(expected: CloudSession): Boolean =
+        StoredServerProfile.clearCloudIfCurrent(context, expected)
 }

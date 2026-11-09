@@ -74,4 +74,7 @@ export {
   type RecordingSessionSummaryRequest,
   type StartReviewRequest,
 } from "./desktop.js";
-export type { components as desktopComponents, paths as desktopPaths } from "./generated/desktop-openapi.js";
+export type {
+  components as desktopComponents,
+  paths as desktopPaths,
+} from "./generated/desktop-openapi.js";
