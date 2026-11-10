@@ -99,6 +99,12 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.79.16 (2026-11-10)
+
+### Bug Fixes
+
+* **speechkit:** the public export carries the voice adapter's uplink file
+
 ## 0.79.15 (2026-11-09)
 
 ### Bug Fixes
