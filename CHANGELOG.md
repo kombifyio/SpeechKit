@@ -99,6 +99,12 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.79.17 (2026-11-10)
+
+### Bug Fixes
+
+* **speechkit:** hosted schema publication accepts the vendored classifier v0.8.13
+
 ## 0.79.16 (2026-11-10)
 
 ### Bug Fixes
