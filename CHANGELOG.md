@@ -99,6 +99,115 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.80.2 (2026-11-12)
+
+### Bug Fixes
+
+* **speechkit:** the public export carries the pairing document it links to (slot repair)
+
+## 0.80.1 (2026-11-12)
+
+### Features
+
+* **speechkit:** add gated authority transport and durable ticket primitives
+* **speechkit:** add revocable LAN device pairing
+* **speechkit:** grant and reconcile hosted object sessions
+* **speechkit:** persist dormant remote execution accounting
+
+### Bug Fixes
+
+* **speechkit:** add the 0.80.0 release highlights the publish lint requires
+* **speechkit:** harden object authority and sequence renewals
+* **speechkit:** publish the Voice UI Kit and the Android AARs under names this repository owns
+
+## 0.80.0 (2026-11-11)
+
+### Highlights
+
+- **Speak offline from the first launch**: A new install already carries redistributable voices, so dictation and read-back work on your device without sending your audio to a cloud provider.
+- **Six languages throughout**: The assistant, the settings and the setup screens now speak six languages, so more people can get SpeechKit running in their own language.
+- **Your voice settings choose the words**: The voice you pick now selects the product vocabulary in every transcription path, so names and terms come back the way you say them.
+- **One assistant on every surface**: A signed-in voice turn on Box, Android, Companion and the web now runs through your Companion, so the same assistant answers wherever you speak.
+
+### Features
+
+* **data-rights:** Refresh processor route map for scheduler snapshot export
+* **data-rights:** Refresh processor routes for personal Workpaths exports
+* **delivery:** remove the Early Access channel from the hosted platform and SpeechKit
+* **journeys:** Journey C free Support and structured denial window checks
+* **m08:** Companion acceptance lanes, multilingual dictation, v2 voice prefs, voice session stalls, Box feed popups and Studio Box settings
+* **memory:** project-scoped Companion history and account erasure of companion_memory
+* **privacy:** preserve AI and SpeechKit processor effects
+* **recovery:** integrate native Agent Container recovery
+* **sessions:** chat sessions carry their agent run state from the run record (workbench-desktop-side)
+* **speechkit-android:** in Cloud mode the assistant and keyboard reach the Companion, never in local modes
+* **speechkit:** add optional Mastra voice adapter
+* **speechkit:** fresh installs speak and transcribe locally with redistributable voices
+* **speechkit:** localize assistant, settings and setup messages in six locales and prepare French settings and Android candidates
+* **speechkit:** native realtime turns with the Companion as brain report their timing, and a journey measures it
+* **speechkit:** one wake-word training pipeline, pinned wake models as Box build inputs, provenance-bound publish
+* **speechkit:** prepare French website catalog
+* **speechkit:** prepared French catalogs for the native, desktop, dashboard, device and recovery surfaces
+* **speechkit:** the signed voice preference selects the product vocabulary in every transcription path, capped per provider
+* **voice:** every signed-in voice surface talks to the Companion; the curated voice tool bridge is gone
+* **voice:** turns survive a think-provider error, one served error class rendered honestly on Box, Android, Companion and the web
+
+### Bug Fixes
+
+* **agent-device:** bounded result backoff and a typed terminal answer for an abandoned intent
+* **android:** verify release APK signers through the apksig API
+* **calls:** a split native turn cancelled before any effect is superseded, never replayed
+* **ci:** adopt fail-closed internal dependency updater
+* **delivery:** admit exact native children and retain dispatch acknowledgements
+* **journey-e:** step receipts bind only source runs from main or the window branch, of the lane's workflow, testing the bound live source
+* **model-catalog:** read the committed catalogue back as the pinned serving runtime
+* **model-matrix:** preserve free cohort credit estimates
+* **speechkit:** a failed Companion turn ends with a spoken notice, never in silence after One moment
+* **speechkit:** bind host smoke to consolidated release source
+* **speechkit:** cut the workflow lint and Box contract over to the kombify-ci App
+* **speechkit:** display Android voice error classes
+* **speechkit:** hand the Firebase tester rollout the tag form its stamp check expects
+* **speechkit:** handle proxy separators in host smoke paths
+* **speechkit:** hosted schema publication accepts the vendored classifier v0.8.13
+* **speechkit:** local dictation sends a WAV container, not bare PCM
+* **speechkit:** pin the Gradle wrapper distribution checksum and allow a slow download
+* **speechkit:** plan errors show their cause, Phonon is used when chosen, the Companion install path works
+* **speechkit:** Publish OSS passes again: one fail-closed tracker-id filter and no kombify claim namespace in the public net library
+* **speechkit:** release lane runs macOS on macos-26 and guards the schema classifier pin
+* **speechkit:** repair compatibility baselines after consolidation
+* **speechkit:** substantiate voice fallback evidence
+* **speechkit:** the Firebase tester rollout runs before the public Android artifacts
+* **speechkit:** the Firebase tester workflow accepts the speechkit-v release tag
+* **speechkit:** the public export carries the voice adapter's uplink file
+* **speechkit:** the public export passes the OSS boundary again
+* **speechkit:** the self-host model stage uses commands the Delivery download guard reads
+* **speechkit:** use explicit App billing budget access
+* **speechkit:** voice sessions per board (Box sends device_id), heartbeat releases dropped sockets, two-room journey
+* **workbench-orchestrator:** verify owner-equipment v2 leases through the Gateway owner read
+
+### Performance Improvements
+
+* **voice:** spoken Companion turns take the catalog's standard class, read session sources during preparation and time every stage
+
+## 0.79.19 (2026-11-11)
+
+### Features
+
+* **recovery:** integrate native Agent Container recovery
+* **speechkit:** add optional Mastra voice adapter
+
+## 0.79.18 (2026-11-10)
+
+### Features
+
+* **speechkit:** localize assistant, settings and setup messages in six locales and prepare French settings and Android candidates
+* **speechkit:** prepared French catalogs for the native, desktop, dashboard, device and recovery surfaces
+
+### Bug Fixes
+
+* **android:** verify release APK signers through the apksig API
+* **speechkit:** release lane runs macOS on macos-26 and guards the schema classifier pin
+
 ## 0.79.17 (2026-11-10)
 
 ### Bug Fixes

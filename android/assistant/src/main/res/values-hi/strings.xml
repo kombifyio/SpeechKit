@@ -25,4 +25,24 @@
     <string name="speechkit_assistant_call_failed">कॉल शुरू नहीं हो सकी</string>
     <string name="speechkit_assistant_action_unsupported">कार्रवाई \'%1$s\' समर्थित नहीं है</string>
     <string name="speechkit_assistant_unknown_error">अज्ञात त्रुटि</string>
+    <string name="speechkit_assistant_no_speech">कोई आवाज़ नहीं सुनी गई</string>
+    <string name="speechkit_assistant_mic_permission">माइक्रोफ़ोन की अनुमति अस्वीकृत</string>
+    <string name="speechkit_assistant_mic_unavailable">माइक्रोफ़ोन उपलब्ध नहीं है</string>
+    <string name="speechkit_assistant_timeout">प्रतिलेख समय पर नहीं आया</string>
+    <string name="speechkit_assistant_connection_closed">कनेक्शन बंद हो गया</string>
+    <string name="speechkit_assistant_stream_failed">वाक् पहचान विफल हुई</string>
+    <string name="speechkit_assistant_stream_failed_detail">वाक् पहचान विफल हुई (%1$s)</string>
+    <string name="speechkit_assistant_action_failed">कार्रवाई विफल हुई</string>
+    <string name="speechkit_assistant_error">त्रुटि</string>
+    <string name="speechkit_assistant_timer_label">SpeechKit टाइमर</string>
+    <string name="speechkit_assistant_alarm_label">SpeechKit अलार्म</string>
+    <string name="speechkit_assistant_send_message">संदेश भेजें</string>
+    <string name="speechkit_assistant_server_required">इसके लिए युग्मित SpeechKit सर्वर चाहिए</string>
+    <string name="speechkit_assistant_intent_open_app">ऐप खोलें</string>
+    <string name="speechkit_assistant_intent_set_timer">टाइमर सेट करें</string>
+    <string name="speechkit_assistant_intent_set_alarm">अलार्म सेट करें</string>
+    <string name="speechkit_assistant_intent_quick_note">नोट बनाएं</string>
+    <string name="speechkit_assistant_intent_search_web">वेब खोज</string>
+    <string name="speechkit_assistant_intent_make_call">कॉल शुरू करें</string>
+    <string name="speechkit_assistant_intent_general_query">सामान्य प्रश्न</string>
 </resources>

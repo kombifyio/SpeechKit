@@ -585,6 +585,12 @@ browses the same service type from Settings and fills the server URL; it
 never takes a token from TXT. The Windows Settings Server Target card
 browses the same service type.
 
+While LAN device pairing is open (`[server.pairing] device_requests`) the
+TXT record also carries `pair=1`: a LAN device such as a room satellite can
+then ask for its own revocable token, show a code and wait for the operator's
+`speechkit-server pairing approve <code>` instead of receiving the shared
+bearer. See [pairing.md](pairing.md) "LAN device pairing".
+
 Find those servers from a machine on the same LAN:
 
 ```bash

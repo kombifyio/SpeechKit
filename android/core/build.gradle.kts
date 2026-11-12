@@ -101,7 +101,7 @@ tasks.named("preBuild") { dependsOn(buildPhononNative) }
 publishing {
     publications {
         register<MavenPublication>("release") {
-            groupId = "io.kombify.speechkit"
+            groupId = "io.kombify.aiplatform.speechkit"
             artifactId = "core"
             version = providers.fileContents(
                 rootProject.layout.projectDirectory.file("../.kombify/VERSION"),

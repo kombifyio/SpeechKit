@@ -145,6 +145,11 @@ type ServerConfig struct {
 	// calls out until an operator enables it and starts the link.
 	CloudLink ServerCloudLinkConfig `toml:"cloud_link"`
 
+	// Pairing configures LAN device pairing (speechkit.pairing.v2): a device
+	// on the local network asks for its own revocable token, shows a code,
+	// and the operator approves that code. See docs/server/pairing.md.
+	Pairing ServerPairingConfig `toml:"pairing"`
+
 	// OIDC configures JWT validation against an external identity provider,
 	// used when auth_mode is "oidc" or "bearer_or_oidc".
 	OIDC ServerOIDCConfig `toml:"oidc"`

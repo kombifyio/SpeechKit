@@ -81,11 +81,11 @@ type App struct {
 	Version    string
 	// SourceRevision is the exact source commit of the build, or empty.
 	SourceRevision string
-	// ReleaseChannel is "stable" or "early-access".
-	ReleaseChannel string
 	AuthState      *middleware.AuthState
-	STTRouter      *stt.Router
-	AssistService  *assistpkg.Service
+	// Exact routes that verify their own machine identity in their handler.
+	SelfAuthenticatedRoutes []middleware.PublicRoute
+	STTRouter               *stt.Router
+	AssistService           *assistpkg.Service
 
 	// Shared AI deps — populated by ensureSharedAIDeps on demand.
 	GenkitRuntime *ai.Runtime
@@ -104,6 +104,11 @@ type App struct {
 	// fact, never on configuration intent alone.
 	DeviceAgentBridgeMounted bool
 	DeviceAgentBridge        *deviceagentserver.Bridge
+
+	// DevicePairing is LAN device pairing (speechkit.pairing.v2): pending
+	// requests, the paired-device registry and the device-token verifier.
+	// Nil when its registry could not be opened (no device token accepted).
+	DevicePairing *devicePairing
 
 	// BoxMediaRuntime owns the separate TLS 1.3 listener and any concrete local
 	// STT subprocess that Box wiring started. It never mounts on Mux or extends
@@ -156,18 +161,13 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	if err := config.BindRuntimePrivacy(cfg); err != nil {
 		return err
 	}
-	channel, err := resolveReleaseChannel()
-	if err != nil {
+	// One release path: a process started with the retired Early Access channel
+	// value refuses to start instead of serving as production.
+	if _, err := resolveReleaseChannel(); err != nil {
 		return err
-	}
-	if channel == releaseChannelEarlyAccess {
-		if err := applyEarlyAccessBounds(cfg); err != nil {
-			return err
-		}
 	}
 
 	app := newServerApp(cfg, opts)
-	app.ReleaseChannel = channel
 	registerCoreEndpoints(app)
 	initServerTelemetry(ctx, app) //nolint:contextcheck // the trace provider is process-scoped startup state, not request-scoped work.
 

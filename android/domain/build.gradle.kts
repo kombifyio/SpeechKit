@@ -34,7 +34,7 @@ android {
 publishing {
     publications {
         register<MavenPublication>("release") {
-            groupId = "io.kombify.speechkit"
+            groupId = "io.kombify.aiplatform.speechkit"
             artifactId = "domain"
             version = providers.fileContents(
                 rootProject.layout.projectDirectory.file("../.kombify/VERSION"),

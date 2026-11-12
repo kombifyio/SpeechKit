@@ -2,7 +2,9 @@ package onboarding
 
 import (
 	_ "embed"
+	"encoding/json"
 	"html"
+	"net/http"
 	"strings"
 )
 
@@ -11,6 +13,17 @@ var testUIHTML string
 
 //go:embed assets/setup.html
 var setupUIHTML string
+
+//go:embed assets/setup.messages.json
+var setupMessagesJSON []byte
+
+var setupMessages = func() map[string]map[string]string {
+	var catalogs map[string]map[string]string
+	if err := json.Unmarshal(setupMessagesJSON, &catalogs); err != nil {
+		panic(err)
+	}
+	return catalogs
+}()
 
 // smokeTokenPlaceholder is the literal sentinel string in testui.html that
 // TestUIHTML replaces with the operator-configured public demo token. The
@@ -29,6 +42,16 @@ func TestUIHTML(smokeToken string) string {
 	return strings.ReplaceAll(testUIHTML, smokeTokenPlaceholder, html.EscapeString(strings.TrimSpace(smokeToken)))
 }
 
-func SetupUIHTML() string {
-	return setupUIHTML
+func SetupUIHTML(r *http.Request) string {
+	locale := deviceAddLocale(r)
+	messages, ok := setupMessages[locale]
+	if !ok {
+		locale = "en"
+		messages = setupMessages[locale]
+	}
+	payload, err := json.Marshal(map[string]any{"locale": locale, "messages": messages})
+	if err != nil {
+		panic(err)
+	}
+	return strings.Replace(setupUIHTML, "__SPEECHKIT_SETUP_MESSAGES__", string(payload), 1)
 }

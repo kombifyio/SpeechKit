@@ -138,6 +138,10 @@ func newAuthRuntime(opts AuthOptions) authRuntime {
 }
 
 func (a authRuntime) serveHTTP(w http.ResponseWriter, r *http.Request, next http.Handler) {
+	if routeAllowed(a.opts.SelfAuthenticatedRoutes, r.URL.Path, r.Method) {
+		next.ServeHTTP(w, r)
+		return
+	}
 	if a.publicAllowed(r) || a.bootstrapAllowed(r) {
 		if profileContentPath(r) == "" || (!hasProfileHeaders(r) && (a.profileMode == "" || a.profileMode == "off")) {
 			next.ServeHTTP(w, r)
@@ -160,6 +164,12 @@ func (a authRuntime) serveHTTP(w http.ResponseWriter, r *http.Request, next http
 	if id, ok := a.authenticateConfiguredMode(r); ok {
 		a.serveAuthenticated(next, w, r, id)
 		return
+	}
+	if a.opts.DeviceTokenVerifier != nil {
+		if id, ok := a.opts.DeviceTokenVerifier(r); ok {
+			a.serveAuthenticated(next, w, r, id)
+			return
+		}
 	}
 	a.writeUnauthorized(w, r, adminUsername, adminPasswordHash)
 }

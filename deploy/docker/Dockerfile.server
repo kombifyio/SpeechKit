@@ -6,7 +6,7 @@
 # Targets: speechkit-server-selfhosted is the published self-host image with
 # the bundled Phonon-2.5 speech-to-text model; speechkit-server (the last
 # stage, so also the default) is the same server without a bundled model, the
-# one kombify's hosted production and Early Access build.
+# one kombify's hosted production build.
 #
 # The server is the central Framework wrapper: Dictation REST, Assist REST,
 # and Voice Agent WebSocket are exposed by one reusable HTTP/WebSocket adapter.
@@ -233,8 +233,7 @@ LABEL org.opencontainers.image.licenses="Apache-2.0 AND CC-BY-4.0"
 COPY --from=phonon-model /out/phonon-2.5/ /usr/local/share/speechkit/models/phonon-2.5/
 
 # ── Stage 5: speechkit-server (kombify production; default target) ──────────
-# The production build (CONFIG_FILE=deploy/config/server.kombify-prod.toml),
-# Early Access on Render (which builds the last stage) and any build without
-# --target: the server core without a bundled model. It must stay the last
-# stage.
+# The production build (CONFIG_FILE=deploy/config/server.kombify-prod.toml)
+# and any build without --target: the server core without a bundled model. It
+# must stay the last stage.
 FROM server-core AS speechkit-server

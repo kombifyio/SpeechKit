@@ -25,4 +25,24 @@
     <string name="speechkit_assistant_call_failed">Anruf konnte nicht gestartet werden</string>
     <string name="speechkit_assistant_action_unsupported">Aktion \'%1$s\' nicht unterstützt</string>
     <string name="speechkit_assistant_unknown_error">Unbekannter Fehler</string>
+    <string name="speechkit_assistant_no_speech">Keine Sprache gehört</string>
+    <string name="speechkit_assistant_mic_permission">Mikrofonberechtigung verweigert</string>
+    <string name="speechkit_assistant_mic_unavailable">Mikrofon nicht verfügbar</string>
+    <string name="speechkit_assistant_timeout">Transkript nicht rechtzeitig eingetroffen</string>
+    <string name="speechkit_assistant_connection_closed">Verbindung geschlossen</string>
+    <string name="speechkit_assistant_stream_failed">Spracherkennung fehlgeschlagen</string>
+    <string name="speechkit_assistant_stream_failed_detail">Spracherkennung fehlgeschlagen (%1$s)</string>
+    <string name="speechkit_assistant_action_failed">Aktion fehlgeschlagen</string>
+    <string name="speechkit_assistant_error">Fehler</string>
+    <string name="speechkit_assistant_timer_label">SpeechKit-Timer</string>
+    <string name="speechkit_assistant_alarm_label">SpeechKit-Wecker</string>
+    <string name="speechkit_assistant_send_message">Nachricht senden</string>
+    <string name="speechkit_assistant_server_required">Dafür benötige ich einen gekoppelten SpeechKit-Server</string>
+    <string name="speechkit_assistant_intent_open_app">App öffnen</string>
+    <string name="speechkit_assistant_intent_set_timer">Timer stellen</string>
+    <string name="speechkit_assistant_intent_set_alarm">Wecker stellen</string>
+    <string name="speechkit_assistant_intent_quick_note">Notiz erstellen</string>
+    <string name="speechkit_assistant_intent_search_web">Websuche</string>
+    <string name="speechkit_assistant_intent_make_call">Anruf starten</string>
+    <string name="speechkit_assistant_intent_general_query">Allgemeine Frage</string>
 </resources>

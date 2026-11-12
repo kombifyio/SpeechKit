@@ -25,4 +25,24 @@
     <string name="speechkit_assistant_call_failed">No se pudo iniciar la llamada</string>
     <string name="speechkit_assistant_action_unsupported">La acción \'%1$s\' no es compatible</string>
     <string name="speechkit_assistant_unknown_error">Error desconocido</string>
+    <string name="speechkit_assistant_no_speech">No se ha oído ninguna voz</string>
+    <string name="speechkit_assistant_mic_permission">Permiso del micrófono denegado</string>
+    <string name="speechkit_assistant_mic_unavailable">Micrófono no disponible</string>
+    <string name="speechkit_assistant_timeout">La transcripción no llegó a tiempo</string>
+    <string name="speechkit_assistant_connection_closed">Conexión cerrada</string>
+    <string name="speechkit_assistant_stream_failed">Falló el reconocimiento de voz</string>
+    <string name="speechkit_assistant_stream_failed_detail">Falló el reconocimiento de voz (%1$s)</string>
+    <string name="speechkit_assistant_action_failed">Falló la acción</string>
+    <string name="speechkit_assistant_error">Error</string>
+    <string name="speechkit_assistant_timer_label">Temporizador de SpeechKit</string>
+    <string name="speechkit_assistant_alarm_label">Alarma de SpeechKit</string>
+    <string name="speechkit_assistant_send_message">Enviar mensaje</string>
+    <string name="speechkit_assistant_server_required">Necesito un servidor SpeechKit vinculado para eso</string>
+    <string name="speechkit_assistant_intent_open_app">Abrir aplicación</string>
+    <string name="speechkit_assistant_intent_set_timer">Programar temporizador</string>
+    <string name="speechkit_assistant_intent_set_alarm">Programar alarma</string>
+    <string name="speechkit_assistant_intent_quick_note">Crear nota</string>
+    <string name="speechkit_assistant_intent_search_web">Buscar en la web</string>
+    <string name="speechkit_assistant_intent_make_call">Iniciar llamada</string>
+    <string name="speechkit_assistant_intent_general_query">Pregunta general</string>
 </resources>

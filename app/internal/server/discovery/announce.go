@@ -45,7 +45,7 @@ func RunAnnounceOnly(ctx context.Context, cfg *config.Config, version string, mo
 	if err != nil {
 		return err
 	}
-	server, err := current.start(version, modes)
+	server, err := current.start(version, modes, func() bool { return pairingAvailable(stateDir) })
 	if err != nil {
 		return err
 	}
@@ -74,7 +74,7 @@ func RunAnnounceOnly(ctx context.Context, cfg *config.Config, version string, mo
 			continue
 		}
 		shutdownResponder(server)
-		server, err = next.start(version, modes)
+		server, err = next.start(version, modes, func() bool { return pairingAvailable(stateDir) })
 		if err != nil {
 			return err
 		}
@@ -152,17 +152,18 @@ func (a announcement) ifaceName() string {
 	return a.iface.Name
 }
 
-func (a announcement) start(version string, modes []string) (*mdns.Server, error) {
+func (a announcement) start(version string, modes []string, pairingEnabled func() bool) (*mdns.Server, error) {
 	// The SRV target is a name of our own with an A record for the chosen
 	// address only; the host name of a container or a 127.0.1.1 mapping
 	// never reaches the LAN.
 	hostName := dnsLabel(a.instance) + ".local."
+	txt := txtLines(a.advertise, version, modes, a.id)
 	service, err := mdns.NewMDNSService(a.instance, ServiceType, "", hostName, a.port, []net.IP{a.ip},
-		txtLines(a.advertise, version, modes, a.id))
+		txt)
 	if err != nil {
 		return nil, fmt.Errorf("discovery-only: build mDNS service: %w", err)
 	}
-	server, err := mdns.NewServer(&mdns.Config{Zone: service, Iface: a.iface})
+	server, err := mdns.NewServer(&mdns.Config{Zone: pairingZone{service: service, enabled: pairingEnabled}, Iface: a.iface})
 	if err != nil {
 		return nil, fmt.Errorf("discovery-only: start mDNS responder on UDP 5353: %w", err)
 	}

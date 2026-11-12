@@ -95,6 +95,9 @@ var postgresMigration028 string
 //go:embed migrations/postgres/029_notebook_site.sql
 var postgresMigration029 string
 
+//go:embed migrations/postgres/030_voice_execution_journal.sql
+var postgresMigration030 string
+
 // PostgresStore implements Store using PostgreSQL for metadata and the local
 // filesystem for optional raw WAV persistence. All query logic lives in the
 // embedded *sqlStore; this type only owns connection setup and migrations.
@@ -155,7 +158,6 @@ func NewPostgresStore(cfg StoreConfig) (*PostgresStore, error) {
 		retentionScope:          normalizeStoreRetentionScope(cfg.RetentionScope),
 		retentionTTLDays:        max(cfg.RetentionTTLDays, 0),
 		onRetentionSweep:        cfg.OnRetentionSweep,
-		maintenanceDisabled:     cfg.MaintenanceDisabled,
 	}}
 	store.startMaintenance()
 	return store, nil

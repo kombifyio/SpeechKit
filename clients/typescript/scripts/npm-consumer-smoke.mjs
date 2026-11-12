@@ -7,7 +7,7 @@ import { publicPackages } from "./npm-public-readiness.mjs";
 
 const args = new Map(
   process.argv.slice(2).map((arg) => {
-    const match = /^--(packages|version|published)=(.+)$/.exec(arg);
+    const match = /^--(packages|version|published|mastra-version)=(.+)$/.exec(arg);
     if (!match) throw new Error(`Unsupported argument: ${arg}`);
     return [match[1], match[2]];
   }),
@@ -24,6 +24,10 @@ if (args.has("published") && !["true", "false"].includes(args.get("published")))
   throw new Error("--published must be true or false.");
 }
 const version = args.get("version");
+const mastraVersion = args.get("mastra-version");
+if (mastraVersion && !/^1\.(?:7[5-9]|[89]\d|[1-9]\d{2,})\.\d+$/.test(mastraVersion)) {
+  throw new Error("--mastra-version must be an exact supported 1.x version, at least 1.75.0.");
+}
 if (published && !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version ?? "")) {
   throw new Error("Registry smoke requires --version=<exact Delivery version>.");
 }
@@ -126,6 +130,39 @@ try {
     ],
     { cwd: root, env, stdio: "inherit", timeout: 30_000 },
   );
+  if (selected.includes("client")) {
+    execFileSync(process.execPath, ["--input-type=module", "--eval", `
+      try {
+        import.meta.resolve('@mastra/core/voice');
+      } catch (error) {
+        if (error.code === 'ERR_MODULE_NOT_FOUND') process.exit(0);
+        throw error;
+      }
+      throw new Error('The ordinary REST client unexpectedly installed Mastra');
+    `], { cwd: root, env, stdio: "inherit", timeout: 30_000 });
+    const manifest = JSON.parse(await readFile(new URL("../packages/client/package.json", import.meta.url), "utf8"));
+    const coreVersion = mastraVersion ?? manifest.devDependencies["@mastra/core"];
+    npm(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact",
+      `@mastra/core@${coreVersion}`, `typescript@${manifest.devDependencies.typescript}`,
+      `@types/node@${manifest.devDependencies["@types/node"]}`]);
+    const consumer = join(root, "mastra-consumer.mts");
+    await writeFile(consumer, `
+      import { Agent } from '@mastra/core/agent';
+      import { MastraVoice } from '@mastra/core/voice';
+      import { SpeechKitClient } from '@kombifyio/speechkit-client';
+      import { SpeechKitVoice } from '@kombifyio/speechkit-client/mastra';
+      const voice = new SpeechKitVoice({ client: new SpeechKitClient() });
+      const agent = new Agent({ id: 'speechkit-consumer', name: 'SpeechKit',
+        instructions: 'Answer briefly.', model: 'openai/gpt-4.1-mini', voice });
+      if (!(voice instanceof MastraVoice) || !agent) throw new Error('Mastra voice is not consumable');
+    `);
+    execFileSync(process.execPath, [join(root, "node_modules/typescript/bin/tsc"),
+      "--noEmit", "--strict", "--exactOptionalPropertyTypes", "--skipLibCheck",
+      "--module", "NodeNext", "--target", "ES2022", consumer],
+      { cwd: root, env, stdio: "inherit", timeout: 30_000 });
+    execFileSync(process.execPath, [consumer], { cwd: root, env, stdio: "inherit", timeout: 30_000 });
+    console.log(`Packed Mastra agent consumer passed with @mastra/core@${coreVersion}; no provider call performed.`);
+  }
   console.log(
     `${published ? "Anonymous registry" : "Packed"} consumer imports passed: ${expected.map((pkg) => `${pkg.name}@${pkg.version}`).join(", ")}`,
   );

@@ -117,6 +117,17 @@ func grantPostgresRuntimeRole(ctx context.Context, db *sql.DB, role string) erro
 			return err
 		}
 	}
+	for _, table := range []string{"voice_execution_attempts", "voice_execution_keys"} {
+		var present bool
+		if err := tx.QueryRowContext(ctx, `SELECT to_regclass($1) IS NOT NULL`, schema+"."+table).Scan(&present); err != nil {
+			return err
+		}
+		if present {
+			if _, err := tx.ExecContext(ctx, `REVOKE DELETE ON TABLE `+s+`.`+quote(table)+` FROM `+r); err != nil {
+				return err
+			}
+		}
+	}
 	return tx.Commit()
 }
 
@@ -379,4 +390,10 @@ func queryStringList(ctx context.Context, db *sql.DB, query string) ([]string, e
 		return nil, fmt.Errorf("store: role assertion rows: %w", err)
 	}
 	return out, nil
+}
+
+// AssertPostgresRuntimeRole rechecks the serving connection before admitting an
+// optional storage feature. It performs no DDL and widens no privileges.
+func AssertPostgresRuntimeRole(ctx context.Context, db *sql.DB) error {
+	return assertPostgresRuntimeRole(ctx, db)
 }

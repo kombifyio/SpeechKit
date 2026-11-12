@@ -38,7 +38,7 @@ type Announcer struct {
 // returns (nil, nil) when discovery is off. version and modes land in the
 // TXT record so clients can filter capable instances (the Box needs
 // "voiceagent").
-func Start(cfg *config.Config, version string, modes []string) (*Announcer, error) {
+func Start(cfg *config.Config, version string, modes []string, pairingEnabled func() bool) (*Announcer, error) {
 	if cfg == nil || !cfg.Server.Discovery.Enabled {
 		return nil, nil
 	}
@@ -69,7 +69,7 @@ func Start(cfg *config.Config, version string, modes []string) (*Announcer, erro
 	if err != nil {
 		return nil, fmt.Errorf("discovery: build mDNS service: %w", err)
 	}
-	server, err := mdns.NewServer(&mdns.Config{Zone: service})
+	server, err := mdns.NewServer(&mdns.Config{Zone: pairingZone{service: service, enabled: pairingEnabled}})
 	if err != nil {
 		return nil, fmt.Errorf("discovery: start mDNS responder: %w", err)
 	}

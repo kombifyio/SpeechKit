@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -174,20 +175,13 @@ func registerHealth(app *App) {
 	app.Mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		// Every channel reports its revision and release channel, Stable
-		// included, so a release can read back what it activated.
-		channel := app.ReleaseChannel
-		if channel == "" {
-			channel = releaseChannelStable
-		}
+		// The process reports its revision, so a release can read back what it
+		// activated.
 		body := map[string]any{
 			"status":          "ok",
 			"version":         app.Version,
 			"revision":        serverRevision(),
-			"release_channel": channel,
-		}
-		if app.EarlyAccess() {
-			body["execution_scope"] = earlyAccessExecutionScope()
+			"release_channel": releaseChannelStable,
 		}
 		// The Postgres store reports its schema floor, its newest migration
 		// and the newest recorded one.
@@ -228,4 +222,16 @@ func registerHealth(app *App) {
 		r.URL.RawQuery = q.Encode()
 		readyHandler(w, r)
 	})
+}
+
+// serverRevision is the source revision /healthz reports:
+// KOMBIFY_SPEECHKIT_REVISION, else the native Render build's commit, else
+// empty for a process that is not revision-bound.
+func serverRevision() string {
+	for _, name := range []string{"KOMBIFY_SPEECHKIT_REVISION", "RENDER_GIT_COMMIT"} {
+		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+			return value
+		}
+	}
+	return ""
 }

@@ -52,6 +52,9 @@ type AuthOptions struct {
 	BearerRole        string
 	AllowPublicPaths  []string // exact path matches that skip auth entirely (e.g. /healthz)
 	AllowPublicRoutes []PublicRoute
+	// SelfAuthenticatedRoutes use handler-owned authentication instead of the
+	// user/edge envelope. Register only exact paths whose handlers fail closed.
+	SelfAuthenticatedRoutes []PublicRoute
 	// HTMLUnauthorizedPaths/Routes keep browser-facing admin UI failures out
 	// of the JSON API envelope while still requiring normal credentials.
 	HTMLUnauthorizedPaths  []string
@@ -103,6 +106,12 @@ type AuthOptions struct {
 	DataProfileMode string
 	// ProfileKeysProvider uses only the separate EDGE_PROFILE_SECRET keys.
 	ProfileKeysProvider func() []EdgeKey
+
+	// DeviceTokenVerifier resolves a per-device LAN pairing token
+	// (speechkit.pairing.v2) after the configured mode rejected the request.
+	// It returns a device identity (Source "device_token", never a role) only
+	// for the device-facing routes it admits. Nil disables device tokens.
+	DeviceTokenVerifier func(*http.Request) (Identity, bool)
 }
 
 type PublicRoute struct {

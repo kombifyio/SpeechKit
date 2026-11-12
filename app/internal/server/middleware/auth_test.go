@@ -149,3 +149,26 @@ func TestAuth_PublicRouteCanMatchPrefixAndSuffix(t *testing.T) {
 		t.Fatalf("other session routes should require auth; got %d", transcriptRec.Code)
 	}
 }
+
+func TestAuth_HandlerOwnedAuthenticationIsExact(t *testing.T) {
+	// Only this exact POST uses handler-owned service auth. User/edge profile
+	// enforcement remains required on adjacent routes and other methods.
+	h := Auth(AuthOptions{Mode: "bearer", BearerTokenProvider: func() string { return "test-bearer" }, DataProfileMode: "enforce",
+		SelfAuthenticatedRoutes: []PublicRoute{{Path: "/v1/voiceagent/machine-operation", Methods: []string{"POST"}}},
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if IdentityFromContext(r.Context()).UserID != "" {
+			t.Error("inherited user authority")
+		}
+		w.WriteHeader(418)
+	}))
+	for _, tc := range []struct {
+		method, path string
+		want         int
+	}{{"POST", "/v1/voiceagent/machine-operation", 418}, {"GET", "/v1/voiceagent/machine-operation", 401}, {"POST", "/v1/voiceagent/machine-operation/extra", 401}, {"POST", "/v1/voiceagent/sessions", 401}} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
+		if w.Code != tc.want {
+			t.Fatalf("%s %s status=%d", tc.method, tc.path, w.Code)
+		}
+	}
+}

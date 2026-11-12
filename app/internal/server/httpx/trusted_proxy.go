@@ -72,6 +72,15 @@ func (t TrustedProxies) TrustsRequest(r *http.Request) bool {
 	if ip.IsLoopback() {
 		return true
 	}
+	return t.ExplicitlyTrustsRequest(r)
+}
+
+// ExplicitlyTrustsRequest requires a configured CIDR; loopback is not implicitly trusted.
+func (t TrustedProxies) ExplicitlyTrustsRequest(r *http.Request) bool {
+	ip := remoteIP(r)
+	if ip == nil {
+		return false
+	}
 	for _, cidr := range t.cidrs {
 		if cidr.Contains(ip) {
 			return true

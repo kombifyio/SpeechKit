@@ -29,6 +29,7 @@ func registerCoreEndpoints(app *App) {
 	registerAssistantUI(app)
 	registerServerSettings(app)
 	registerDeploymentStatus(app)
+	registerDevicePairing(app)
 	registerPprof(app)
 	registerAPIAlias(app.Mux)
 }

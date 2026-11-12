@@ -107,7 +107,10 @@ func serveServer(ctx context.Context, cfg *config.Config, app *App) (returnErr e
 			enabledModes = append(enabledModes, string(mode))
 		}
 	}
-	announcer, err := discovery.Start(cfg, app.Version, enabledModes)
+	pairingEnabled := func() bool { return app.DevicePairing != nil && app.DevicePairing.enabled() }
+	stopPairingState := discovery.MaintainPairingState(ctx, config.ServerStateDir(cfg), pairingEnabled)
+	defer stopPairingState()
+	announcer, err := discovery.Start(cfg, app.Version, enabledModes, pairingEnabled)
 	if err != nil {
 		slog.Warn("mDNS discovery unavailable", "err", err)
 	}
@@ -243,6 +246,11 @@ func serverMiddlewareChain(ctx context.Context, cfg *config.Config, app *App) (f
 	if app.DeviceAgentBridgeMounted {
 		publicRoutes = append(publicRoutes, deviceAgentAuthRoutes()...)
 	}
+	var deviceTokenVerifier func(*http.Request) (middleware.Identity, bool)
+	if app.DevicePairing != nil {
+		publicRoutes = append(publicRoutes, devicePairingPublicRoutes()...)
+		deviceTokenVerifier = app.DevicePairing.verify
+	}
 	bootstrapPaths := serverBootstrapPaths()
 	oidcVerifier, err := serverOIDCVerifier(cfg)
 	if err != nil {
@@ -274,12 +282,13 @@ func serverMiddlewareChain(ctx context.Context, cfg *config.Config, app *App) (f
 			SmokeTokenProvider: app.AuthState.SmokeToken,
 			// Liveness is always public. Detailed readiness and browser operator
 			// UI paths can require authentication in hosted deployments.
-			AllowPublicPaths:      publicPaths,
-			AllowPublicRoutes:     publicRoutes,
-			HTMLUnauthorizedPaths: serverAdminUIPaths(),
-			AllowBootstrapPaths:   bootstrapPaths,
-			AllowBootstrapRoutes:  serverBootstrapAuthRoutes(),
-			BearerRole:            cfg.Server.BearerRole,
+			AllowPublicPaths:        publicPaths,
+			AllowPublicRoutes:       publicRoutes,
+			SelfAuthenticatedRoutes: app.SelfAuthenticatedRoutes,
+			HTMLUnauthorizedPaths:   serverAdminUIPaths(),
+			AllowBootstrapPaths:     bootstrapPaths,
+			AllowBootstrapRoutes:    serverBootstrapAuthRoutes(),
+			BearerRole:              cfg.Server.BearerRole,
 			BootstrapAllowed: func(r *http.Request) bool {
 				return serverSettingsBootstrapWriteAllowed(app)
 			},
@@ -293,6 +302,7 @@ func serverMiddlewareChain(ctx context.Context, cfg *config.Config, app *App) (f
 			RequireAuthenticatedMode: !security.IsLoopbackListenAddr(cfg.Server.ListenAddr),
 			TrustedProxyCIDRs:        cfg.Server.TrustedProxyCIDRs,
 			OIDCVerifier:             oidcVerifier,
+			DeviceTokenVerifier:      deviceTokenVerifier,
 		}),
 		middleware.RateLimit(middleware.RateLimitOptions{ //nolint:contextcheck // RateLimit receives the server lifetime context via options.Context; contextcheck does not model contained context fields.
 			RequestsPerSecond: cfg.Server.RateLimitRPS,

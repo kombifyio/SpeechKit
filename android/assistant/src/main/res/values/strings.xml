@@ -9,8 +9,8 @@
     speechkit_assistant_state_processing -> sk.voice.state.processing
     speechkit_assistant_action_retry     -> sk.voice.denied.retry
   Source of truth: clients/typescript/packages/voice-ui/locales/*.json.
-  Like those catalogs, the non-English values are machine-drafted and still
-  await human review.
+  Translation admission requires signed automated QA under the workspace
+  localization standard.
 -->
 <resources>
     <string name="speechkit_assistant_idle_prompt">How can I help?</string>
@@ -38,4 +38,24 @@
     <string name="speechkit_assistant_call_failed">Could not start the call</string>
     <string name="speechkit_assistant_action_unsupported">Action \'%1$s\' is not supported</string>
     <string name="speechkit_assistant_unknown_error">Unknown error</string>
+    <string name="speechkit_assistant_no_speech">No speech heard</string>
+    <string name="speechkit_assistant_mic_permission">Microphone permission denied</string>
+    <string name="speechkit_assistant_mic_unavailable">Microphone unavailable</string>
+    <string name="speechkit_assistant_timeout">Transcript did not arrive in time</string>
+    <string name="speechkit_assistant_connection_closed">Connection closed</string>
+    <string name="speechkit_assistant_stream_failed">Speech recognition failed</string>
+    <string name="speechkit_assistant_stream_failed_detail">Speech recognition failed (%1$s)</string>
+    <string name="speechkit_assistant_action_failed">Action failed</string>
+    <string name="speechkit_assistant_error">Error</string>
+    <string name="speechkit_assistant_timer_label">SpeechKit Timer</string>
+    <string name="speechkit_assistant_alarm_label">SpeechKit alarm</string>
+    <string name="speechkit_assistant_send_message">Send message</string>
+    <string name="speechkit_assistant_server_required">I need a paired SpeechKit server for that</string>
+    <string name="speechkit_assistant_intent_open_app">Open app</string>
+    <string name="speechkit_assistant_intent_set_timer">Set timer</string>
+    <string name="speechkit_assistant_intent_set_alarm">Set alarm</string>
+    <string name="speechkit_assistant_intent_quick_note">Create note</string>
+    <string name="speechkit_assistant_intent_search_web">Web search</string>
+    <string name="speechkit_assistant_intent_make_call">Start call</string>
+    <string name="speechkit_assistant_intent_general_query">General question</string>
 </resources>

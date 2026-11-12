@@ -43,9 +43,6 @@ type sqlStore struct {
 	// sure it is the sole owner of audioDir may delete files no row of its
 	// own references; see NewSQLiteStore.
 	sweepOrphanAudio bool
-	// maintenanceDisabled turns every retention pass into a no-op
-	// (StoreConfig.MaintenanceDisabled).
-	maintenanceDisabled bool
 	// maintenanceMu guards the periodic maintenance loop: it starts at most
 	// once per store (the first write that needs it), and Close stops it.
 	maintenanceMu      sync.Mutex
@@ -186,9 +183,6 @@ func (s *sqlStore) startMaintenance() {
 // Audio limits do not depend on save_audio: turning saving off stops new
 // recordings, it must not exempt the ones already on disk from deletion.
 func (s *sqlStore) maintenanceConfigured() bool {
-	if s.maintenanceDisabled {
-		return false
-	}
 	return s.meetingRetentionDays > 0 || s.transcriptRetentionDays > 0 ||
 		s.maxStorageMB > 0 || s.audioRetentionDays > 0 ||
 		s.ephemeral() || s.retentionTTLDays > 0

@@ -82,7 +82,7 @@ export class SpeechKitClient {
   }
 
   /**
-   * Build a SpeechKitClient from `SPEECHKIT_SERVER_URL` and
+   * Build a SpeechKitClient from `SPEECHKIT_SERVER_URL`, `SPEECHKIT_BASE_PATH` and
    * `SPEECHKIT_TOKEN` (or `SPEECHKIT_SERVER_TOKEN`). Node-only — in a
    * browser, construct with explicit options instead.
    */
@@ -92,6 +92,8 @@ export class SpeechKitClient {
     const opts: ClientOptions = {};
     const baseUrl = env["SPEECHKIT_SERVER_URL"];
     if (baseUrl) opts.baseUrl = baseUrl;
+    const basePath = env["SPEECHKIT_BASE_PATH"];
+    if (basePath !== undefined) opts.basePath = basePath;
     const token = env["SPEECHKIT_TOKEN"] ?? env["SPEECHKIT_SERVER_TOKEN"];
     if (token) opts.token = token;
     return new SpeechKitClient(opts);
@@ -374,16 +376,17 @@ export class SpeechKitClient {
       timeoutMs > 0
         ? setTimeout(() => controller.abort(new Error("speechkit timeout")), timeoutMs)
         : null;
-    if (overrides?.signal) {
-      overrides.signal.addEventListener("abort", () => controller.abort(overrides.signal?.reason));
-    }
+    const signal = overrides?.signal
+      ? AbortSignal.any([controller.signal, overrides.signal])
+      : controller.signal;
     const init: RequestInit = {
       method,
       headers,
-      signal: controller.signal,
+      signal,
     };
     if (body !== undefined) init.body = body;
     try {
+      signal.throwIfAborted();
       const response = await this.fetchImpl(this.resolve(path), init);
       const text = await response.text();
       if (!response.ok) {

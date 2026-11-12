@@ -168,6 +168,7 @@ func postgresMigrations() []storeMigration {
 		postgresSQLMigration("postgres:027_recording_session_exports", postgresMigration027),
 		postgresSQLMigration("postgres:028_notebooks", postgresMigration028),
 		postgresSQLMigration("postgres:029_notebook_site", postgresMigration029),
+		postgresTransactionalMigration("postgres:030_voice_execution_journal", postgresMigration030),
 	}
 }
 
@@ -225,4 +226,14 @@ func applyMigration(ctx context.Context, db *sql.DB, dialect string, migration s
 		_, err = db.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)`, migration.version)
 	}
 	return err
+}
+
+// postgresTransactionalMigration is for new optional SQL whose policies must
+// never be replayed separately from their ledger row, including self-hosted boot.
+func postgresTransactionalMigration(version, statement string) storeMigration {
+	migration := storeMigration{version: version, statement: statement}
+	migration.run = func(ctx context.Context, db *sql.DB) error {
+		return applyHostedPostgresMigration(ctx, db, migration, nil)
+	}
+	return migration
 }

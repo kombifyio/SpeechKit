@@ -203,7 +203,7 @@ func (h setupUIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeHTML(w, r, onboarding.SetupUIHTML())
+	writeHTML(w, r, onboarding.SetupUIHTML(r))
 }
 
 func serverAdminIdentity(r *http.Request) bool {

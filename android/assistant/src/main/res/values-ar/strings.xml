@@ -25,4 +25,24 @@
     <string name="speechkit_assistant_call_failed">تعذّر بدء المكالمة</string>
     <string name="speechkit_assistant_action_unsupported">الإجراء \'%1$s\' غير مدعوم</string>
     <string name="speechkit_assistant_unknown_error">خطأ غير معروف</string>
+    <string name="speechkit_assistant_no_speech">لم يُسمع أي كلام</string>
+    <string name="speechkit_assistant_mic_permission">رُفض إذن الميكروفون</string>
+    <string name="speechkit_assistant_mic_unavailable">الميكروفون غير متاح</string>
+    <string name="speechkit_assistant_timeout">لم يصل النص في الوقت المناسب</string>
+    <string name="speechkit_assistant_connection_closed">أُغلق الاتصال</string>
+    <string name="speechkit_assistant_stream_failed">فشل التعرّف على الكلام</string>
+    <string name="speechkit_assistant_stream_failed_detail">فشل التعرّف على الكلام (%1$s)</string>
+    <string name="speechkit_assistant_action_failed">فشل الإجراء</string>
+    <string name="speechkit_assistant_error">خطأ</string>
+    <string name="speechkit_assistant_timer_label">مؤقت SpeechKit</string>
+    <string name="speechkit_assistant_alarm_label">منبه SpeechKit</string>
+    <string name="speechkit_assistant_send_message">إرسال رسالة</string>
+    <string name="speechkit_assistant_server_required">أحتاج إلى خادم SpeechKit مقترن لذلك</string>
+    <string name="speechkit_assistant_intent_open_app">فتح التطبيق</string>
+    <string name="speechkit_assistant_intent_set_timer">ضبط مؤقت</string>
+    <string name="speechkit_assistant_intent_set_alarm">ضبط منبه</string>
+    <string name="speechkit_assistant_intent_quick_note">إنشاء ملاحظة</string>
+    <string name="speechkit_assistant_intent_search_web">البحث في الويب</string>
+    <string name="speechkit_assistant_intent_make_call">بدء مكالمة</string>
+    <string name="speechkit_assistant_intent_general_query">سؤال عام</string>
 </resources>

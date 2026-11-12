@@ -22,7 +22,7 @@ server, or drive it from the included CLI and MCP server.
 | `app/cmd/speechkit-server/` | Self-hosted Linux server with HTTP/WebSocket APIs (OpenAPI and AsyncAPI contracts in `docs/server/`) |
 | `app/cmd/speechkit-cli/` | CLI for diagnostics, scaffolding and quick actions against a server |
 | `app/cmd/speechkit-mcp/` | MCP server so coding agents can read the docs, validate payloads and operate a server |
-| `clients/typescript/` | TypeScript server client, realtime voice client and a web-component voice UI kit |
+| `clients/typescript/` | TypeScript server client with an optional Mastra voice adapter, realtime voice client and a web-component voice UI kit |
 | `android/` | Android library modules, keyboard (IME) and assistant app |
 | `examples/` | Small runnable programs, one per integration pattern |
 | `deploy/` | Dockerfile, Compose files and server configuration templates |

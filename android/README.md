@@ -10,11 +10,11 @@ its Go source of truth.
 
 | I want to… | Module | Coordinate |
 |---|---|---|
-| Resolve which SpeechKit Server to talk to (local, LAN, cloud) | `:domain` | `io.kombify.speechkit:domain` |
-| Capture microphone PCM, play PCM, run VAD / turn-taking, log with `sk.voice` | `:core` | `io.kombify.speechkit:core` |
-| Speak the Dictation and Voice Agent wire protocol (WebSocket + REST) | `:net` | `io.kombify.speechkit:net` |
-| Draw the voice orb in Compose | `:voice-ui-compose` | `io.kombify.speechkit:voice-ui-compose` |
-| Co-install with a companion app across the GPL boundary (AIDL contract only) | `:coinstall` | `io.kombify.speechkit:coinstall-contract` |
+| Resolve which SpeechKit Server to talk to (local, LAN, cloud) | `:domain` | `io.kombify.aiplatform.speechkit:domain` |
+| Capture microphone PCM, play PCM, run VAD / turn-taking, log with `sk.voice` | `:core` | `io.kombify.aiplatform.speechkit:core` |
+| Speak the Dictation and Voice Agent wire protocol (WebSocket + REST) | `:net` | `io.kombify.aiplatform.speechkit:net` |
+| Draw the voice orb in Compose | `:voice-ui-compose` | `io.kombify.aiplatform.speechkit:voice-ui-compose` |
+| Co-install with a companion app across the GPL boundary (AIDL contract only) | `:coinstall` | `io.kombify.aiplatform.speechkit:coinstall-contract` |
 | Ship a voice-only keyboard (IME) | `:ime` | in-repo host; not published |
 | Ship a system assistant (`VoiceInteractionService`, overlay, Assist) | `:assistant` | in-repo host; not published |
 

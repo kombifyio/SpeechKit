@@ -23,6 +23,8 @@ import (
 	localstt "github.com/kombifyio/SpeechKit/pkg/speechkit/x/stt/local"
 )
 
+var optionalVoiceAgentWiring []func(context.Context, *config.Config, *App, *vsserver.Handler, *vsserver.SessionManager)
+
 // Supported provider strings for cfg.VoiceAgent.Provider.
 const (
 	ProviderGemini       = "gemini"
@@ -155,27 +157,17 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 		WakeVerifier:                 buildWakeVerifier(ctx, cfg),
 		Vocabulary:                   buildVoiceAgentVocabulary(cfg, app),
 		PlainAgent:                   buildPlainVoiceAgent(app),
-		NativeCallbackHeaders:        nativeCallbackHeaders(app),
 	})
 	if err != nil {
 		return nil, status, err
 	}
+	for _, wire := range optionalVoiceAgentWiring {
+		wire(ctx, cfg, app, h, manager)
+	}
 	// The cleanup loop walks the provider-resource journal of every tenant
-	// once a minute; Early Access leaves that to Stable.
-	if !app.EarlyAccess() {
-		h.StartNativeCleanup(ctx)
-	}
+	// once a minute.
+	h.StartNativeCleanup(ctx)
 	return h, status, nil
-}
-
-// nativeCallbackHeaders routes a native vendor's think callback back to this service: a session
-// minted on the Early Access service exists only there, and the Gateway sends a request to the
-// Early Access service only when it carries the opt-in header.
-func nativeCallbackHeaders(app *App) map[string]string {
-	if !app.EarlyAccess() {
-		return nil
-	}
-	return map[string]string{"x-kombify-release-channel": releaseChannelEarlyAccess}
 }
 
 // buildPlainVoiceAgent is the plain voice model that answers a Companion turn the Companion cannot

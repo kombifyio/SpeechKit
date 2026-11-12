@@ -28,10 +28,10 @@ IPC through the `:coinstall` AIDL contract, never a Gradle dependency on
 | `:domain` | Connection algebra: `ConnectionProfile`, `ConnectionMode`, resolve/infer, `ConnectionProfileSource` | nothing else in `android/` |
 | `:core` | PCM capture/playback, engine, STT, VAD, `TurnEngine`, store, `AudioSession`, `VoiceLog` (`sk.voice`) | nothing else in `android/` |
 | `:net` | Dictation/VA WebSocket, REST, `StoredServerProfile`, `VoiceAgentUiState` | `:core`, `:domain` |
-| `:voice-ui-compose` | Aura orb drawing only. Published as `io.kombify.speechkit:voice-ui-compose` | Compose only — never `:net` |
+| `:voice-ui-compose` | Aura orb drawing only. Published as `io.kombify.aiplatform.speechkit:voice-ui-compose` | Compose only — never `:net` |
 | `:ime` | Keyboard FSM/UI and the one adapter `VoiceAgentUiState.Phase.toAuraState()` | `:core`, `:domain`, `:net`, `:voice-ui-compose` — never `:assistant` |
 | `:assistant` | Overlay, intent router, Assist `processAssist`, listen via `UtteranceTranscriber` + `DictationController` | `:core`, `:domain`, `:net`, `:voice-ui-compose` — never `:ime` |
-| `:coinstall` | AIDL `speechkit.coinstall.v1` and constants. Published as `io.kombify.speechkit:coinstall-contract` | nothing else in `android/` |
+| `:coinstall` | AIDL `speechkit.coinstall.v1` and constants. Published as `io.kombify.aiplatform.speechkit:coinstall-contract` | nothing else in `android/` |
 
 Interface mapping to Go lives in [android/CONTRACT.md](../../android/CONTRACT.md).
 This file owns the module cut and the dependency rules; CONTRACT maps types.
@@ -43,11 +43,11 @@ from `.kombify/VERSION` like every other release artifact:
 
 | Coordinate | Module | Why it is published |
 |---|---|---|
-| `io.kombify.speechkit:domain` | `:domain` | A host resolves which server to talk to with the same algebra the reference app uses |
-| `io.kombify.speechkit:core` | `:core` | One microphone capture, one PCM player, one turn engine — the parts every voice surface needs |
-| `io.kombify.speechkit:net` | `:net` | The dictation and Voice Agent wire clients, so a host does not re-implement the protocol |
-| `io.kombify.speechkit:voice-ui-compose` | `:voice-ui-compose` | One orb for every surface, including hosts outside this repository |
-| `io.kombify.speechkit:coinstall-contract` | `:coinstall` | Both apps must compile the same wire contract without linking each other across the GPL boundary |
+| `io.kombify.aiplatform.speechkit:domain` | `:domain` | A host resolves which server to talk to with the same algebra the reference app uses |
+| `io.kombify.aiplatform.speechkit:core` | `:core` | One microphone capture, one PCM player, one turn engine — the parts every voice surface needs |
+| `io.kombify.aiplatform.speechkit:net` | `:net` | The dictation and Voice Agent wire clients, so a host does not re-implement the protocol |
+| `io.kombify.aiplatform.speechkit:voice-ui-compose` | `:voice-ui-compose` | One orb for every surface, including hosts outside this repository |
+| `io.kombify.aiplatform.speechkit:coinstall-contract` | `:coinstall` | Both apps must compile the same wire contract without linking each other across the GPL boundary |
 
 ### Where a consumer gets them
 

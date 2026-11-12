@@ -98,7 +98,7 @@ class SetTimerExecutor : ActionExecutor {
 
         val timerIntent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
             putExtra(AlarmClock.EXTRA_LENGTH, seconds)
-            putExtra(AlarmClock.EXTRA_MESSAGE, "SpeechKit Timer")
+            putExtra(AlarmClock.EXTRA_MESSAGE, context.getString(R.string.speechkit_assistant_timer_label))
             putExtra(AlarmClock.EXTRA_SKIP_UI, true)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
@@ -127,7 +127,7 @@ class SetAlarmExecutor : ActionExecutor {
                 putExtra(AlarmClock.EXTRA_HOUR, number)
                 putExtra(AlarmClock.EXTRA_MINUTES, 0)
             }
-            putExtra(AlarmClock.EXTRA_MESSAGE, "SpeechKit alarm")
+            putExtra(AlarmClock.EXTRA_MESSAGE, context.getString(R.string.speechkit_assistant_alarm_label))
             putExtra(AlarmClock.EXTRA_SKIP_UI, false)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
@@ -218,7 +218,7 @@ class SendMessageExecutor : ActionExecutor {
         }
 
         return try {
-            context.startActivity(Intent.createChooser(sendIntent, "Send message").apply {
+            context.startActivity(Intent.createChooser(sendIntent, context.getString(R.string.speechkit_assistant_send_message)).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             })
             ActionResult(
@@ -272,7 +272,7 @@ class GeneralQueryExecutor(
         if (profile !is ConnectionProfile.Server) {
             return ActionResult(
                 success = true,
-                responseText = NO_SERVER_ASSIST_MESSAGE,
+                responseText = context.getString(R.string.speechkit_assistant_server_required),
                 keepOpen = true,
             )
         }
@@ -281,21 +281,16 @@ class GeneralQueryExecutor(
             val spoken = response.speakText.ifBlank { response.text }
             ActionResult(
                 success = spoken.isNotBlank(),
-                responseText = spoken.ifBlank { ACTION_FAILED_MESSAGE },
+                responseText = spoken.ifBlank { context.getString(R.string.speechkit_assistant_action_failed) },
             )
         } catch (e: Exception) {
             VoiceLog.e(VoiceLog.ASSIST, "processAssist failed", e)
             ActionResult(
                 success = false,
-                errorMessage = e.message ?: ACTION_FAILED_MESSAGE,
+                errorMessage = e.message ?: context.getString(R.string.speechkit_assistant_action_failed),
                 planDenial = (e as? SpeechKitApiException)?.denial,
             )
         }
     }
 
-    private companion object {
-        const val ACTION_FAILED_MESSAGE = "Action failed"
-        const val NO_SERVER_ASSIST_MESSAGE =
-            "I need a paired SpeechKit server for that"
-    }
 }

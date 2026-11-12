@@ -166,6 +166,7 @@ type Options struct {
 
 // SessionManager tracks active WebSocket sessions for one server surface.
 type SessionManager struct {
+	admissionBarrier  func() error
 	mu                sync.RWMutex
 	sessions          map[string]*ManagedSession
 	byDevice          map[string]int // Identity.admissionKey -> sessions
@@ -191,6 +192,8 @@ type SessionStats struct {
 // onto this struct at handshake time.
 type ManagedSession struct {
 	ID string
+	// External sessions retain occupancy until their durable authority releases it.
+	external bool
 	// AISessionID binds this voice transport session to the durable agent
 	// conversation that owns its turns. Empty preserves standalone sessions.
 	AISessionID string
@@ -397,35 +400,19 @@ func (m *SessionManager) createWithVoiceBudget(owner Identity, aiSessionID strin
 			m.finalizing++
 		}
 	}
-	if m.draining {
+	// The barrier may restore sessions, so it must run outside the manager lock.
+	m.mu.Unlock()
+	barrierErr := m.admissionReady()
+	m.mu.Lock()
+	if barrierErr != nil {
 		failedCreate()
 		return nil, "", ErrDraining
 	}
-
-	// With separate prepared-session admission the global ceiling counts
-	// running conversations only (StartConversation); a prepared or idle
-	// session never takes global capacity (D-2026-10-26-14).
-	if m.opts.MaxPreparedPerIdentitySessions <= 0 && len(m.sessions) >= m.opts.MaxGlobalSessions {
+	if err := m.admitPreparedLocked(owner); err != nil {
 		failedCreate()
-		return nil, "", ErrGlobalLimitExceeded
+		return nil, "", err
 	}
 	key := owner.admissionKey()
-	atLimit := m.byDevice[key] >= m.sessionCapLocked(owner)
-	// The restricted public-guide identity is not an account. Its verified
-	// anonymous role retains the existing total-session cap, even though the
-	// public and account routes share this manager.
-	if m.opts.MaxPreparedPerIdentitySessions > 0 && owner.Role != "anonymous" {
-		prepared, _ := m.conversationCountsLocked(key)
-		atLimit = prepared >= m.opts.MaxPreparedPerIdentitySessions
-	}
-	if atLimit {
-		failedCreate()
-		return nil, "", ErrIdentityLimitExceeded
-	}
-	if m.byDevice[key] == 0 && owner.Role != "anonymous" && m.devicesLocked(owner.UserID) >= m.opts.MaxDevicesPerAccount {
-		failedCreate()
-		return nil, "", ErrAccountDeviceLimitExceeded
-	}
 
 	m.sessions[session.ID] = session
 	m.byDevice[key]++
@@ -504,8 +491,15 @@ func (m *SessionManager) Stats(userID string) SessionStats {
 // before any paid provider connection. Attaching a standby socket alone does
 // not claim that slot. Removal releases it on every failure or disconnect.
 func (m *SessionManager) StartConversation(id string) error {
+	if err := m.admissionReady(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.startConversationLocked(id)
+}
+
+func (m *SessionManager) startConversationLocked(id string) error {
 	s := m.sessions[id]
 	if s == nil || s.State != StateActive || !s.HasWSClient || s.closing {
 		return ErrSessionNotFound
@@ -724,7 +718,7 @@ func (m *SessionManager) Settled() bool {
 		return false
 	}
 	for _, s := range m.sessions {
-		if s.VoiceBudget.ReservationID != "" {
+		if s.external || s.VoiceBudget.ReservationID != "" {
 			return false
 		}
 	}
@@ -773,7 +767,7 @@ func (m *SessionManager) sweepExpiredPendingLocked() []*ManagedSession {
 	var receipts []*ManagedSession
 	cutoff := m.opts.Clock().UTC().Add(-m.opts.TicketTTL)
 	for _, s := range m.sessions {
-		if s.State != StatePendingWS || !s.CreatedAt.Before(cutoff) {
+		if s.external || s.State != StatePendingWS || !s.CreatedAt.Before(cutoff) {
 			continue
 		}
 		if receipt := m.removeLocked(s); receipt != nil {
@@ -858,4 +852,152 @@ func (m *SessionManager) hmacTicket(buf []byte) []byte {
 	h := hmac.New(sha256.New, m.opts.TicketSecret)
 	h.Write(buf)
 	return h.Sum(nil)
+}
+
+func (m *SessionManager) admitPreparedLocked(owner Identity) error {
+	if m.draining {
+		return ErrDraining
+	}
+
+	// With separate prepared-session admission the global ceiling counts
+	// running conversations only (StartConversation); a prepared or idle
+	// session never takes global capacity (D-2026-10-26-14).
+	if m.opts.MaxPreparedPerIdentitySessions <= 0 && len(m.sessions) >= m.opts.MaxGlobalSessions {
+		return ErrGlobalLimitExceeded
+	}
+	key := owner.admissionKey()
+	atLimit := m.byDevice[key] >= m.sessionCapLocked(owner)
+	// The restricted public-guide identity is not an account. Its verified
+	// anonymous role retains the existing total-session cap, even though the
+	// public and account routes share this manager.
+	if m.opts.MaxPreparedPerIdentitySessions > 0 && owner.Role != "anonymous" {
+		prepared, _ := m.conversationCountsLocked(key)
+		atLimit = prepared >= m.opts.MaxPreparedPerIdentitySessions
+	}
+	if atLimit {
+		return ErrIdentityLimitExceeded
+	}
+	if m.byDevice[key] == 0 && owner.Role != "anonymous" && m.devicesLocked(owner.UserID) >= m.opts.MaxDevicesPerAccount {
+		return ErrAccountDeviceLimitExceeded
+	}
+
+	return nil
+}
+
+// SetAdmissionBarrier is installed at boot only when external occupancy cannot
+// yet be reconstructed. An absent optional schema installs no barrier.
+func (m *SessionManager) SetAdmissionBarrier(check func() error) {
+	m.mu.Lock()
+	m.admissionBarrier = check
+	m.mu.Unlock()
+}
+func (m *SessionManager) admissionReady() error {
+	m.mu.RLock()
+	check := m.admissionBarrier
+	m.mu.RUnlock()
+	if check != nil {
+		return check()
+	}
+	return nil
+}
+
+// ReserveExternal shares ordinary prepared/device/account caps and reservation
+// replay protection. The caller installs the durable deadline with SetExternalExpiry.
+func (m *SessionManager) ReserveExternal(id string, owner Identity, budget VoiceBudget, stop func()) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, exists := m.sessions[id]; exists {
+		return ErrSessionAlreadyActive
+	}
+	if err := m.admitPreparedLocked(owner); err != nil {
+		return err
+	}
+	if err := m.claimVoiceBudgetLocked(budget); err != nil {
+		return err
+	}
+	m.sessions[id] = &ManagedSession{ID: id, Owner: owner, CreatedAt: m.opts.Clock(), State: StatePendingWS, external: true, stopConversation: stop}
+	m.byDevice[owner.admissionKey()]++
+	return nil
+}
+func (m *SessionManager) StartExternal(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s := m.sessions[id]
+	if s == nil || !s.external {
+		return ErrSessionNotFound
+	}
+	s.State = StateActive
+	s.HasWSClient = true
+	return m.startConversationLocked(id)
+}
+
+// ClaimExternalBudget shares the ordinary renewal claim guard. A durable
+// journal reservation key additionally prevents replay across process restart.
+func (m *SessionManager) ClaimExternalBudget(budget VoiceBudget) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.claimVoiceBudgetLocked(budget)
+}
+
+// RestoreExternal installs a durable obligation even above today's caps. New
+// admissions see that occupancy and fail until reconciliation releases it.
+func (m *SessionManager) RestoreExternal(id string, owner Identity, active bool, budgets []VoiceBudget, stop func()) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if old := m.sessions[id]; old != nil {
+		if old.external {
+			return nil
+		}
+		return ErrSessionAlreadyActive
+	}
+	s := &ManagedSession{ID: id, Owner: owner, CreatedAt: m.opts.Clock(), State: StatePendingWS, external: true, stopConversation: stop}
+	if active {
+		s.State = StateActive
+		s.HasWSClient = true
+		s.conversationStarted = true
+	}
+	m.sessions[id] = s
+	m.byDevice[owner.admissionKey()]++
+	if m.voiceBudgetClaims == nil {
+		m.voiceBudgetClaims = map[string]int64{}
+	}
+	for _, b := range budgets {
+		m.voiceBudgetClaims[b.ReservationID] = b.ExpiresAt
+	}
+	return nil
+}
+func (m *SessionManager) ReleaseExternal(id string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if s := m.sessions[id]; s != nil && s.external {
+		m.removeLocked(s)
+	}
+}
+
+// SetExternalExpiry releases capacity at the hard deadline before invoking the
+// accounting callback. A slow ledger can never extend shared occupancy. Renewal
+// replaces the timer; a stale callback checks the exact generation under mu.
+func (m *SessionManager) SetExternalExpiry(id string, expiry time.Time, expired func()) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s := m.sessions[id]
+	if s == nil || !s.external {
+		return
+	}
+	if s.pendingTimer != nil {
+		s.pendingTimer.Stop()
+	}
+	var timer *time.Timer
+	timer = time.AfterFunc(time.Until(expiry), func() {
+		m.mu.Lock()
+		current := m.sessions[id]
+		if current != s || s.pendingTimer != timer {
+			m.mu.Unlock()
+			return
+		}
+		m.removeLocked(s)
+		m.mu.Unlock()
+		expired()
+	})
+	s.pendingTimer = timer
 }

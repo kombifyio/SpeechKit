@@ -78,7 +78,7 @@ class IntentRouter(
                 success = false,
                 errorMessage = context.getString(
                     R.string.speechkit_assistant_action_unsupported,
-                    intent.type.displayName,
+                    context.getString(intent.type.labelRes),
                 ),
             )
         }
@@ -166,15 +166,15 @@ data class AssistantIntent(
 )
 
 /** Available intent types. */
-enum class IntentType(val displayName: String) {
-    OPEN_APP("Open app"),
-    SET_TIMER("Set timer"),
-    SET_ALARM("Set alarm"),
-    QUICK_NOTE("Create note"),
-    SEARCH_WEB("Web search"),
-    SEND_MESSAGE("Send message"),
-    MAKE_CALL("Start call"),
-    GENERAL_QUERY("General question"),
+enum class IntentType(val labelRes: Int) {
+    OPEN_APP(R.string.speechkit_assistant_intent_open_app),
+    SET_TIMER(R.string.speechkit_assistant_intent_set_timer),
+    SET_ALARM(R.string.speechkit_assistant_intent_set_alarm),
+    QUICK_NOTE(R.string.speechkit_assistant_intent_quick_note),
+    SEARCH_WEB(R.string.speechkit_assistant_intent_search_web),
+    SEND_MESSAGE(R.string.speechkit_assistant_send_message),
+    MAKE_CALL(R.string.speechkit_assistant_intent_make_call),
+    GENERAL_QUERY(R.string.speechkit_assistant_intent_general_query),
 }
 
 /** Result of executing an intent action. */

@@ -25,4 +25,24 @@
     <string name="speechkit_assistant_call_failed">无法发起通话</string>
     <string name="speechkit_assistant_action_unsupported">不支持操作“%1$s”</string>
     <string name="speechkit_assistant_unknown_error">未知错误</string>
+    <string name="speechkit_assistant_no_speech">未听到语音</string>
+    <string name="speechkit_assistant_mic_permission">麦克风权限被拒绝</string>
+    <string name="speechkit_assistant_mic_unavailable">麦克风不可用</string>
+    <string name="speechkit_assistant_timeout">转录未及时到达</string>
+    <string name="speechkit_assistant_connection_closed">连接已关闭</string>
+    <string name="speechkit_assistant_stream_failed">语音识别失败</string>
+    <string name="speechkit_assistant_stream_failed_detail">语音识别失败（%1$s）</string>
+    <string name="speechkit_assistant_action_failed">操作失败</string>
+    <string name="speechkit_assistant_error">错误</string>
+    <string name="speechkit_assistant_timer_label">SpeechKit 计时器</string>
+    <string name="speechkit_assistant_alarm_label">SpeechKit 闹钟</string>
+    <string name="speechkit_assistant_send_message">发送消息</string>
+    <string name="speechkit_assistant_server_required">此操作需要已配对的 SpeechKit 服务器</string>
+    <string name="speechkit_assistant_intent_open_app">打开应用</string>
+    <string name="speechkit_assistant_intent_set_timer">设置计时器</string>
+    <string name="speechkit_assistant_intent_set_alarm">设置闹钟</string>
+    <string name="speechkit_assistant_intent_quick_note">创建笔记</string>
+    <string name="speechkit_assistant_intent_search_web">网页搜索</string>
+    <string name="speechkit_assistant_intent_make_call">拨打电话</string>
+    <string name="speechkit_assistant_intent_general_query">一般问题</string>
 </resources>

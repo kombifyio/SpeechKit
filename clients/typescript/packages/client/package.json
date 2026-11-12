@@ -1,6 +1,6 @@
 {
   "name": "@kombifyio/speechkit-client",
-  "version": "0.79.17",
+  "version": "0.80.2",
   "description": "TypeScript REST client for the SpeechKit Server v1 API (dictation transcribe, assist, voice agent sessions, TTS, catalog, transcripts) and for the SpeechKit desktop control plane (createDesktopClient).",
   "license": "Apache-2.0",
   "type": "module",
@@ -10,10 +10,15 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./mastra": {
+      "types": "./dist/mastra.d.ts",
+      "default": "./dist/mastra.js"
     }
   },
   "files": [
     "dist",
+    "examples",
     "README.md",
     "LICENSE"
   ],
@@ -49,10 +54,19 @@
     "gen:desktop-types": "openapi-typescript ../../../../docs/api/openapi.v1.yaml -o src/generated/desktop-openapi.ts"
   },
   "devDependencies": {
+    "@mastra/core": "1.82.0",
     "@types/node": "^26.6.5",
     "ajv": "^8.20.0",
     "openapi-typescript": "7.13.0",
     "typescript": "^6.0.3",
     "yaml": "^2.9.1"
+  },
+  "peerDependencies": {
+    "@mastra/core": ">=1.75.0 <2"
+  },
+  "peerDependenciesMeta": {
+    "@mastra/core": {
+      "optional": true
+    }
   }
 }

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,9 +12,61 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/kombifyio/SpeechKit/app/internal/safepath"
 	speechstorage "github.com/kombifyio/SpeechKit/pkg/speechkit/storage"
 )
+
+// SubjectRightsEffect is emitted only after an acknowledged store operation.
+type SubjectRightsEffect string
+
+const (
+	SubjectRightsLookup      SubjectRightsEffect = "subject_lookup"
+	SubjectRightsRead        SubjectRightsEffect = "export_inventory_read"
+	SubjectRightsDeleted     SubjectRightsEffect = "deleted"
+	SubjectRightsFileDeleted SubjectRightsEffect = "file_deleted"
+)
+
+type subjectRightsEffectsKey struct{}
+
+// WithSubjectRightsEffects attaches a request-local observer to store work.
+func WithSubjectRightsEffects(ctx context.Context, confirmed func(SubjectRightsEffect)) context.Context {
+	return context.WithValue(ctx, subjectRightsEffectsKey{}, confirmed)
+}
+func confirmSubjectRightsEffect(ctx context.Context, effect SubjectRightsEffect) {
+	if confirmed, ok := ctx.Value(subjectRightsEffectsKey{}).(func(SubjectRightsEffect)); ok {
+		confirmed(effect)
+	}
+}
+
+// SubjectRightsBinding reports the backend and every possible host from the live
+// driver's configuration. Pool fallbacks must agree on processor placement.
+func (s *sqlStore) SubjectRightsBinding(ctx context.Context) (string, []string, error) {
+	if s.dialect == dialectSQLite {
+		return "sqlite", nil, nil
+	}
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	defer conn.Close() //nolint:errcheck // returns the connection to its pool
+	var hosts []string
+	err = conn.Raw(func(raw any) error {
+		pg, ok := raw.(*stdlib.Conn)
+		if !ok {
+			return driver.ErrBadConn
+		}
+		cfg := pg.Conn().Config()
+		hosts = append(hosts, cfg.Host)
+		for _, fallback := range cfg.Fallbacks {
+			if fallback != nil {
+				hosts = append(hosts, fallback.Host)
+			}
+		}
+		return nil
+	})
+	return "postgres", hosts, err
+}
 
 // SubjectRightsStore is the optional extension a hosted deployment uses to
 // export and erase everything one account (identified by the subject string
@@ -110,6 +163,7 @@ func (s *sqlStore) SubjectIDs(ctx context.Context) ([]string, error) {
 			return nil, err
 		}
 		_ = rows.Close()
+		confirmSubjectRightsEffect(ctx, SubjectRightsLookup)
 	}
 	out := make([]string, 0, len(seen))
 	for id := range seen {
@@ -152,6 +206,7 @@ func (s *sqlStore) CountSubject(ctx context.Context, subject string) (map[string
 		if err := s.db.QueryRowContext(ctx, s.dialect.rebind(q), repeatArg(subject, countPlaceholders(t.where))...).Scan(&n); err != nil {
 			return nil, err
 		}
+		confirmSubjectRightsEffect(ctx, SubjectRightsRead)
 		counts[t.name] += n
 	}
 	scopes, err := s.subjectScopes(ctx, subject)
@@ -163,6 +218,7 @@ func (s *sqlStore) CountSubject(ctx context.Context, subject string) (map[string
 		if err != nil {
 			return nil, err
 		}
+		confirmSubjectRightsEffect(ctx, SubjectRightsRead)
 		counts["scoped_transcriptions"] += int64(len(export.Transcriptions))
 		counts["scoped_quick_notes"] += int64(len(export.QuickNotes))
 		counts["scoped_voice_agent_sessions"] += int64(len(export.VoiceAgentSessions))
@@ -231,6 +287,13 @@ func (s *sqlStore) DeleteSubject(ctx context.Context, subject string) (SubjectDe
 		return result, err
 	}
 
+	for _, n := range result.Rows {
+		if n > 0 {
+			confirmSubjectRightsEffect(ctx, SubjectRightsDeleted)
+			break
+		}
+	}
+
 	// Rows kept in a per-user storage scope.
 	scopes, err := s.subjectScopes(ctx, subject)
 	if err != nil {
@@ -241,14 +304,21 @@ func (s *sqlStore) DeleteSubject(ctx context.Context, subject string) (SubjectDe
 		if err != nil {
 			return result, err
 		}
+		if res.RowsDeleted > 0 {
+			confirmSubjectRightsEffect(ctx, SubjectRightsDeleted)
+		}
 		result.Rows["scoped_rows"] += int64(res.RowsDeleted)
 		filePaths = append(filePaths, res.AudioFilePaths...)
 		filePaths = append(filePaths, res.SnapshotFilePaths...)
 	}
 	// The scope rows carry the account id itself; drop them with their data.
 	if len(scopes) > 0 {
-		if _, err := s.db.ExecContext(ctx, s.dialect.rebind(`DELETE FROM storage_scopes WHERE user_id = ?`), subject); err != nil {
+		res, err := s.db.ExecContext(ctx, s.dialect.rebind(`DELETE FROM storage_scopes WHERE user_id = ?`), subject)
+		if err != nil {
 			return result, fmt.Errorf("delete storage scopes: %w", err)
+		}
+		if n, err := res.RowsAffected(); err == nil && n > 0 {
+			confirmSubjectRightsEffect(ctx, SubjectRightsDeleted)
 		}
 	}
 
@@ -267,6 +337,8 @@ func (s *sqlStore) DeleteSubject(ctx context.Context, subject string) (SubjectDe
 		}
 		if err := os.Remove(resolved); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			failed = append(failed, p)
+		} else {
+			confirmSubjectRightsEffect(ctx, SubjectRightsFileDeleted)
 		}
 	}
 	if len(failed) > 0 {

@@ -14,6 +14,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import dagger.hilt.android.AndroidEntryPoint
+import io.kombify.speechkit.assistant.R
 import io.kombify.speechkit.assistant.intent.ActionResult
 import io.kombify.speechkit.assistant.intent.CloudSessionRecovery
 import io.kombify.speechkit.assistant.intent.CompanionTurnExecutor
@@ -217,20 +218,20 @@ class SpeechKitVoiceSession(
                     AssistantTurnOutcome.EmptyFinal ->
                         _uiState.value = AssistantUiState.EmptyFinal
                     AssistantTurnOutcome.NoSpeech ->
-                        _uiState.value = AssistantUiState.Error(NO_SPEECH_MESSAGE)
+                        _uiState.value = AssistantUiState.Error(context.getString(R.string.speechkit_assistant_no_speech))
                     AssistantTurnOutcome.MicPermissionDenied ->
-                        _uiState.value = AssistantUiState.Error(MIC_PERMISSION_MESSAGE)
+                        _uiState.value = AssistantUiState.Error(context.getString(R.string.speechkit_assistant_mic_permission))
                     AssistantTurnOutcome.MicUnavailable ->
-                        _uiState.value = AssistantUiState.Error(MIC_UNAVAILABLE_MESSAGE)
+                        _uiState.value = AssistantUiState.Error(context.getString(R.string.speechkit_assistant_mic_unavailable))
                     AssistantTurnOutcome.Timeout ->
-                        _uiState.value = AssistantUiState.Error(TIMEOUT_MESSAGE)
+                        _uiState.value = AssistantUiState.Error(context.getString(R.string.speechkit_assistant_timeout))
                     is AssistantTurnOutcome.Closed ->
-                        _uiState.value = AssistantUiState.Error(CLOSED_MESSAGE)
+                        _uiState.value = AssistantUiState.Error(context.getString(R.string.speechkit_assistant_connection_closed))
                     is AssistantTurnOutcome.StreamFailed ->
                         _uiState.value = AssistantUiState.Error(
                             outcome.detail?.takeIf { it.isNotBlank() }
-                                ?.let { "$STREAM_FAILED_MESSAGE ($it)" }
-                                ?: STREAM_FAILED_MESSAGE,
+                                ?.let { context.getString(R.string.speechkit_assistant_stream_failed_detail, it) }
+                                ?: context.getString(R.string.speechkit_assistant_stream_failed),
                         )
                 }
             } catch (e: SpeechKitApiException) {
@@ -247,7 +248,7 @@ class SpeechKitVoiceSession(
                 }
             } catch (e: Exception) {
                 VoiceLog.e(VoiceLog.ASSIST, "listen failed", e)
-                _uiState.value = AssistantUiState.Error(e.message ?: GENERIC_ERROR_MESSAGE)
+                _uiState.value = AssistantUiState.Error(e.message ?: context.getString(R.string.speechkit_assistant_error))
             }
         }
     }
@@ -277,7 +278,7 @@ class SpeechKitVoiceSession(
             }
             else -> {
                 VoiceLog.w(VoiceLog.ASSIST, "assist failed")
-                AssistantUiState.Error(result.errorMessage ?: ACTION_FAILED_MESSAGE)
+                AssistantUiState.Error(result.errorMessage ?: context.getString(R.string.speechkit_assistant_action_failed))
             }
         }
 
@@ -315,15 +316,6 @@ class SpeechKitVoiceSession(
 
     private companion object {
         const val RESULT_LINGER_MILLIS = 2_000L
-
-        const val NO_SPEECH_MESSAGE = "No speech heard"
-        const val MIC_PERMISSION_MESSAGE = "Microphone permission denied"
-        const val MIC_UNAVAILABLE_MESSAGE = "Microphone unavailable"
-        const val TIMEOUT_MESSAGE = "Transcript did not arrive in time"
-        const val CLOSED_MESSAGE = "Connection closed"
-        const val STREAM_FAILED_MESSAGE = "Speech recognition failed"
-        const val ACTION_FAILED_MESSAGE = "Action failed"
-        const val GENERIC_ERROR_MESSAGE = "Error"
     }
 }
 

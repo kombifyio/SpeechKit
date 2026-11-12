@@ -6,27 +6,16 @@ status: active
 
 # Localization Review Evidence
 
-SpeechKit ships six message catalogs in `pkg/speechkit/localization/catalogs`
-(`en`, `de`, `es`, `zh-Hans`, `hi`, `ar`). This file is the release evidence
-the localization standard asks for: who reviewed which catalog, when, and the
-exact content that review covered. A catalog cannot change without its row
-changing with it.
+SpeechKit's shared catalog inventory below records historical normalized hashes.
+It is not release evidence. The workspace design standard sections 11.4, 11.8
+and 11.9 require automated second-model translation QA and a signed DSSE
+attestation binding the exact source, catalogs and checks. Only locales passing
+that evidence may be negotiated. Do not infer admission from a row here.
 
-## Rules
-
-- `sha256` is the SHA-256 of the catalog file with line endings normalized to
-  LF, so Windows and Linux checkouts agree. `go test ./pkg/speechkit/localization/`
-  fails when a catalog's digest differs from its row.
-- `review_state` is `human-reviewed` (a named person read every string in the
-  catalog in this exact version) or `proposal` (machine translation or an
-  unreviewed edit). A `human-reviewed` row needs `reviewer` and `reviewed_on`;
-  a `proposal` row needs `notes` saying what is outstanding.
-- Changing a catalog resets its row to `proposal`: run
-  `mise run localization:evidence:write` (or `go run ./tools/localizationevidence -write`)
-  to refresh the digest, then have the locale reviewed and upgrade the row by
-  hand. `mise run localization:evidence` only checks and prints the rows that
-  need attention.
-- The English catalog is the source locale; its review is the authoring review.
+The legacy `localization:evidence` tool maintains these proposal rows for the
+existing shared catalogs. A change to a catalog updates its normalized hash and
+leaves it as a proposal. The legacy `human-reviewed` state does not substitute
+for the current signed automated evidence.
 
 ## Catalogs
 
@@ -38,6 +27,7 @@ changing with it.
 | zh-Hans | catalogs/zh-Hans.json | 1a5f56560baea93d8f49d75ebff9775304773d880e9d076a6124cce18059785d | proposal | - | - | catalog changed 2026-10-14; re-review required |
 | hi | catalogs/hi.json | a70da8762683efb80d3f49ad9f00a8192e7a095773cb353a356e9d6e96f5eb9a | proposal | - | - | catalog changed 2026-10-14; re-review required |
 | ar | catalogs/ar.json | 6eb618785a7a255bd3af350135da5010947c08b163f4c0ea7a562bc15f5c6eb1 | proposal | - | - | catalog changed 2026-10-14; re-review required |
+| fr | catalogs/fr.json | ddccb20b4003d1893bcad59aa263ba3c5ffb73a4d76cbd86cef5be6725169a20 | proposal | - | - | prepared candidate, not admitted (not in supportedLocales); signed translation QA outstanding |
 
 ## Coverage beyond the catalogs
 

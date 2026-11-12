@@ -15,6 +15,7 @@
 //	speechkit-server --discovery-only --config /etc/speechkit/config.toml
 //	speechkit-server cloud-link start|status|unlink [--config path] [--json]
 //	speechkit-server migrate [-runtime-role speechkit_app]
+//	speechkit-server pairing list|approve <code>|deny <code>|revoke <id>
 //
 // `--discovery-only` binds nothing but mDNS and announces the server that
 // listens elsewhere (a host network sidecar of a bridge network container).
@@ -63,6 +64,9 @@ func main() {
 	if err := productid.Register(productid.Reference); err != nil {
 		fmt.Fprintln(os.Stderr, "speechkit-server:", err)
 		os.Exit(1)
+	}
+	if len(os.Args) > 1 && os.Args[1] == "pairing" {
+		os.Exit(runPairing(os.Args[2:]))
 	}
 	opts := cli.Options{
 		Banner:         "speechkit-server",

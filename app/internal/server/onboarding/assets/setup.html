@@ -807,6 +807,8 @@
   </main>
 
   <script>
+    const setupL10n = __SPEECHKIT_SETUP_MESSAGES__;
+    const setupText = setupL10n.messages;
     const defaultLocalLLMModel = "ggml-org/gemma-4-E2B-it-GGUF:Q8_0";
     const providerKinds = ["local_built_in", "local_provider", "cloud_provider", "direct_provider"];
     const setupSteps = ["welcome", "models", "credentials", "review"];
@@ -820,6 +822,28 @@
     function byId(id) {
       return document.getElementById(id);
     }
+
+    ["settingsSaveStatus", "setupStatus"].forEach(function (id) {
+      const element = byId(id);
+      element.lang = setupL10n.locale;
+      element.dir = setupL10n.locale === "ar" ? "rtl" : "ltr";
+    });
+
+    function applySetupText(selector, key) {
+      const element = document.querySelector(selector);
+      element.textContent = setupText[key];
+      element.lang = setupL10n.locale;
+      element.dir = setupL10n.locale === "ar" ? "rtl" : "ltr";
+    }
+    applySetupText("#setupHeading", "heading_setup");
+    applySetupText("#setupSubtitle", "subtitle_setup");
+    applySetupText(".step-panel[data-step-panel=welcome] .intro-copy", "intro");
+    applySetupText("#settingsPanel .settings-copy", "models_intro");
+    ["welcome", "models", "credentials", "review"].forEach(function (step, index) {
+      applySetupText(`[data-step-target=${step}]`, ["step_welcome", "step_models", "step_keys", "step_review"][index]);
+    });
+    byId("onboardingState").lang = setupL10n.locale;
+    byId("onboardingState").dir = setupL10n.locale === "ar" ? "rtl" : "ltr";
 
     function setSetupStatus(text, state) {
       const el = byId("setupStatus");
@@ -1075,12 +1099,12 @@
       const requiresOnboarding = onboarding.enabled !== false && Boolean(onboarding.required);
       setupMode = requiresOnboarding ? "onboarding" : "settings";
       byId("setupWizard").dataset.setupMode = setupMode;
-      byId("setupHeading").textContent = requiresOnboarding ? "SpeechKit Server Setup" : "SpeechKit Server Settings";
+      byId("setupHeading").textContent = requiresOnboarding ? setupText.heading_setup : setupText.heading_settings;
       byId("setupSubtitle").textContent = requiresOnboarding
-        ? "Guided onboarding for provider, model, and credential settings on this server instance."
-        : "Manage provider, model, and credential settings for this server instance.";
+        ? setupText.subtitle_setup
+        : setupText.subtitle_settings;
       document.querySelector(".stepper").style.display = requiresOnboarding ? "" : "none";
-      byId("onboardingState").textContent = requiresOnboarding ? "Onboarding required" : "Settings mode";
+      byId("onboardingState").textContent = requiresOnboarding ? setupText.onboarding_required : setupText.settings_mode;
       byId("onboardingState").className = "badge " + (requiresOnboarding ? "warn" : "ok");
       if (requiresOnboarding) {
         setStep(currentStep);
@@ -1224,10 +1248,10 @@
       const onboarding = lastSettings.onboarding || {};
       byId("saveModelSettings").disabled = !runtime.settings_write;
       const requiresOnboarding = onboarding.enabled !== false && Boolean(onboarding.required);
-      byId("onboardingState").textContent = requiresOnboarding ? "Onboarding required" : "Settings mode";
+      byId("onboardingState").textContent = requiresOnboarding ? setupText.onboarding_required : setupText.settings_mode;
       byId("onboardingState").className = "badge " + (requiresOnboarding ? "warn" : "ok");
       if (!options.preserveStatus || !runtime.settings_write) {
-        byId("settingsSaveStatus").textContent = runtime.settings_write ? "" : "Saving is disabled.";
+        byId("settingsSaveStatus").textContent = runtime.settings_write ? "" : setupText.saving_disabled;
       }
       updateRuntimePanel(lastSettings);
       renderSetupMode(lastSettings);
@@ -1270,7 +1294,7 @@
       byId("voiceAgentModel").value = defaultLocalLLMModel;
       renderAssistTools(defaultAssistToolIDs());
       populateVoiceAgentProfiles("default");
-      byId("settingsSaveStatus").textContent = "Local defaults selected.";
+      byId("settingsSaveStatus").textContent = setupText.local_defaults;
       updateReview();
     }
 
@@ -1352,7 +1376,7 @@
         event.preventDefault();
       }
       byId("saveModelSettings").disabled = true;
-      byId("settingsSaveStatus").textContent = "Saving...";
+      byId("settingsSaveStatus").textContent = setupText.saving;
       try {
         const payload = buildSettingsPayload();
         const result = await request("/v1/server/settings", {
@@ -1374,12 +1398,12 @@
         const generated = result.body && result.body.generated_token ? result.body.generated_token : null;
         const pairing = result.body && result.body.pairing ? result.body.pairing : null;
         const pairingQr = result.body && result.body.pairing_qr_svg ? result.body.pairing_qr_svg : "";
-        const message = result.body && result.body.message ? result.body.message : "Saved.";
+        const message = result.body && result.body.settings ? setupText.saved_restart : setupText.saved;
         await loadServerSettings({ preserveStatus: true });
         renderGeneratedServerToken(generated);
         renderPairingPayload(pairing, pairingQr);
         byId("settingsSaveStatus").textContent = message;
-        setSetupStatus("Saved", "ok");
+        setSetupStatus(setupText.saved, "ok");
       } catch (err) {
         byId("settingsSaveStatus").textContent = err && err.message ? err.message : String(err);
       } finally {
@@ -1525,18 +1549,18 @@
       if (!generatedServerToken) return;
       try {
         await navigator.clipboard.writeText(generatedServerToken);
-        byId("settingsSaveStatus").textContent = "Token copied.";
+        byId("settingsSaveStatus").textContent = setupText.token_copied;
       } catch (_) {
-        byId("settingsSaveStatus").textContent = "Copy failed; select the token manually.";
+        byId("settingsSaveStatus").textContent = setupText.token_copy_failed;
       }
     });
     byId("copyGeneratedPairingPayload").addEventListener("click", async function () {
       if (!generatedPairingPayload) return;
       try {
         await navigator.clipboard.writeText(generatedPairingPayload);
-        byId("settingsSaveStatus").textContent = "Pairing payload copied.";
+        byId("settingsSaveStatus").textContent = setupText.pairing_copied;
       } catch (_) {
-        byId("settingsSaveStatus").textContent = "Copy failed; select the pairing payload manually.";
+        byId("settingsSaveStatus").textContent = setupText.pairing_copy_failed;
       }
     });
 
