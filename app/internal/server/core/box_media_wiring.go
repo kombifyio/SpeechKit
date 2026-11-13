@@ -350,6 +350,7 @@ func wireBoxMediaListener(ctx context.Context, cfg *config.Config, app *App) (*b
 		Bridge:            app.DeviceAgentBridge,
 		LocalSTT:          &boxMediaLocalTranscriber{runtime: local},
 		MediaPairingToken: mediaToken,
+		HomeAudio:         boxMediaHomeAudioOptions(media.HomeAudio),
 		Mappings:          boxMediaMappingSetOptions(media),
 		OnIncompleteWrite: func(wrote, want int, _ error) {
 			app.Health.SetReadyWithOptions(boxMediaHealthComponent, StatusDegraded,
@@ -516,4 +517,11 @@ func readBoxMediaCertificates(path string) ([]*x509.Certificate, error) {
 		raw = remaining
 	}
 	return certificates, nil
+}
+
+func boxMediaHomeAudioOptions(cfg config.ServerHomeAudioConfig) *deviceagentserver.HomeAudioOptions {
+	if !cfg.Enabled {
+		return nil
+	}
+	return &deviceagentserver.HomeAudioOptions{GraphFile: cfg.GraphFile, SpaceID: cfg.SpaceID, IdentityKind: cfg.IdentityKind, TTSEntity: cfg.TTSEntity, AllowInterrupt: cfg.AllowInterrupt}
 }

@@ -40,6 +40,7 @@ type TurnRequest struct {
 // payload returned by the v1 TTS implementation (currently WAV); media
 // adapters remain responsible for their own final wire encoding.
 type TurnResult struct {
+	Language   string
 	Assist     wire.AssistResponse
 	Audio      []byte
 	Format     string
@@ -125,7 +126,12 @@ func (b *Bridge) ExecuteTurn(ctx context.Context, request TurnRequest) (*TurnRes
 	if len(audioBytes) == 0 || len(audioBytes) > maxTTSAudioBytes {
 		return nil, turnError(http.StatusBadGateway, "tts_response_invalid", "tts_audio_contract_invalid", "not_applicable", "Inspect the local TTS provider.")
 	}
+	decision, err := b.claims.Lookup(ctx, ClaimKey{PairingID: binding.pairingID, RequestID: request.RequestID}, b.now().UTC())
+	if err != nil || decision.Disposition != ClaimReplayCompleted || decision.Result == nil {
+		return nil, errors.New("home_audio_language_unavailable")
+	}
 	return &TurnResult{
+		Language:   decision.Result.Language,
 		Assist:     assist,
 		Audio:      audioBytes,
 		Format:     synthesized.Format,

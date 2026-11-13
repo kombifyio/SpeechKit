@@ -200,7 +200,8 @@ type ServerDeviceAgentConfig struct {
 // the Box, and PinnedCASHA256 is the lowercase SHA-256 of its DER certificate.
 // SpeechKit verifies this evidence but never creates or distributes a CA.
 type ServerDeviceAgentBoxMediaConfig struct {
-	Enabled bool `toml:"enabled"`
+	HomeAudio ServerHomeAudioConfig `toml:"home_audio"`
+	Enabled   bool                  `toml:"enabled"`
 
 	ListenAddr      string `toml:"listen_addr"`
 	CertificateFile string `toml:"certificate_file"`
@@ -605,4 +606,15 @@ type SequenceStepConfig struct {
 	ExitCriteria string   `toml:"exit_criteria"`
 	RequireTools []string `toml:"require_tools"`
 	MaxTurns     int      `toml:"max_turns"`
+}
+
+// ServerHomeAudioConfig consumes the Cloud graph on the trusted speech host.
+// Home Assistant credentials stay in assist.home_assistant, never on the Box.
+type ServerHomeAudioConfig struct {
+	Enabled        bool   `toml:"enabled"`
+	GraphFile      string `toml:"graph_file"`
+	SpaceID        string `toml:"space_id"`
+	IdentityKind   string `toml:"identity_kind"`
+	TTSEntity      string `toml:"tts_entity"`
+	AllowInterrupt bool   `toml:"allow_interrupt"`
 }

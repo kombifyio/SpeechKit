@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/audio"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/homegraph"
 	wire "github.com/kombifyio/SpeechKit/pkg/speechkit/x/deviceagent"
 )
 
@@ -100,6 +101,7 @@ type BoxMediaHandlerOptions struct {
 	STTTimeout        time.Duration
 	TurnTimeout       time.Duration
 	OnIncompleteWrite func(wrote, want int, err error)
+	HomeAudio         *HomeAudioOptions
 }
 
 type boxMediaRule struct {
@@ -121,6 +123,7 @@ type boxMediaMappingSet struct {
 // listener. It is intentionally not mounted by Bridge.Mount, keeping the
 // existing exactly-four speechkit.device_agent.v1 routes unchanged.
 type BoxMediaHandler struct {
+	homeAudio         *homeAudio
 	bridge            *Bridge
 	localSTT          BoxMediaLocalTranscriber
 	mediaToken        string
@@ -156,8 +159,13 @@ func NewBoxMediaHandler(opts BoxMediaHandlerOptions) (*BoxMediaHandler, error) {
 	if sttTimeout+turnTimeout > boxMediaWriteTimeout-boxMediaWriteHeadroom {
 		return nil, fmt.Errorf("%w: %s+%s", ErrBoxMediaTurnBudgetExceedsWriteTimeout, sttTimeout, turnTimeout)
 	}
+	homeAudio, err := newHomeAudio(opts.HomeAudio, opts.Bridge.ha)
+	if err != nil {
+		return nil, err
+	}
 	return &BoxMediaHandler{
-		bridge: opts.Bridge, localSTT: opts.LocalSTT, mediaToken: mediaToken, mappings: mappings,
+		homeAudio: homeAudio,
+		bridge:    opts.Bridge, localSTT: opts.LocalSTT, mediaToken: mediaToken, mappings: mappings,
 		sttTimeout: sttTimeout, turnTimeout: turnTimeout, onIncompleteWrite: opts.OnIncompleteWrite,
 	}, nil
 }
@@ -356,6 +364,21 @@ func (h *BoxMediaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var answerRoute homegraph.Route
+	if h.homeAudio != nil {
+		answerRoute, err = h.homeAudio.resolve(binding.deviceID, binding.roomID)
+		if err != nil {
+			writeBoxMediaError(w, http.StatusConflict, "home_audio_unavailable", err.Error(), false, "no", "Review the household device roles, placement and answer assignment on a trusted Companion surface.")
+			return
+		}
+		select {
+		case h.homeAudio.busy <- struct{}{}:
+			defer func() { <-h.homeAudio.busy }()
+		default:
+			writeBoxMediaError(w, http.StatusConflict, "home_audio_busy", "home_audio_busy", false, "no", "Wait until the room answer has finished.")
+			return
+		}
+	}
 	sttCtx, sttCancel := context.WithTimeout(r.Context(), h.sttTimeout)
 	transcript, err := h.localSTT.TranscribeLocal(sttCtx, audio.PCMToWAV(l16ToPCM16LE(body)), h.mappings.locale)
 	sttCancel()
@@ -385,7 +408,7 @@ func (h *BoxMediaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		RoomID: binding.roomID, PairingToken: binding.token, Text: rule.utterance,
 		Locale: rule.locale, InputSHA256: inputSHA,
 	})
-	turnCancel()
+	defer turnCancel()
 	if err != nil {
 		writeBoxMediaExecutionError(w, err)
 		return
@@ -394,6 +417,28 @@ func (h *BoxMediaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeBoxMediaError(w, http.StatusBadGateway, "tts_response_invalid", "tts_pcm_contract_invalid", false, "not_applicable", "Inspect the local TTS provider output.")
 		return
+	}
+	if h.homeAudio != nil && !answerRoute.Local {
+		// Recheck roles, placement and revocation after reasoning/TTS, before
+		// speaker dispatch; no role change is silently routed to a new room.
+		current, routeErr := h.homeAudio.resolve(binding.deviceID, binding.roomID)
+		if routeErr != nil || current != answerRoute {
+			writeBoxMediaError(w, http.StatusConflict, "home_audio_unavailable", "home_audio_route_changed", false, result.Assist.ActionExecuted, "Review the updated household answer assignment.")
+			return
+		}
+		if err := h.homeAudio.play(turnCtx, answerRoute, result); err != nil {
+			status := http.StatusBadGateway
+			if err.Error() == "home_audio_replay_suppressed" {
+				status = http.StatusConflict
+			}
+			writeBoxMediaError(w, status, "home_audio_unavailable", err.Error(), false, result.Assist.ActionExecuted, "Check the assigned Home Assistant speaker; the room answer is not retried automatically.")
+			return
+		}
+		// The finite existing L16 contract remains valid on the paired Box.
+		// The acoustic output was remote; return only a 300ms silent tail.
+		pcm = make([]byte, boxMediaOutputRate*boxMediaBytesPerSample*3/10)
+		w.Header().Set("X-SpeechKit-Answer-Device-ID", answerRoute.DeviceID)
+		w.Header().Set("X-SpeechKit-Answer-Route", answerRoute.Reason)
 	}
 	l16 := pcm16LEToL16(pcm)
 	outputSHA := sha256.Sum256(l16)

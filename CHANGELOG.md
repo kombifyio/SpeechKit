@@ -18,6 +18,10 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Added
 
+- Paired Box answers can follow household device assignments to a Sonos or
+  other Home Assistant speaker, with local TTS and announcement support checked
+  before playback.
+
 - Parakeet is a new built-in local transcription option next to Whisper.
   Parakeet Ultra (recommended) and Parakeet TDT 0.6B v3 transcribe 25 European
   languages, including mixed German and English in one recording, many times
@@ -98,6 +102,17 @@ Developers can use the stable SDK independently of experimental integrations.
 Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
+
+## 0.80.4 (2026-11-13)
+
+### Features
+
+* **speechkit:** route paired Box answers through the home graph to HA speakers
+
+### Bug Fixes
+
+* **speechkit:** make daily model freshness monitoring durable
+* **speechkit:** retain Windows version and icon resource proof
 
 ## 0.80.3 (2026-11-13)
 
