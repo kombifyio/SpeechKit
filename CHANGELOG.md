@@ -99,6 +99,16 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.80.3 (2026-11-13)
+
+### Features
+
+* **speechkit:** fresh-install local-only gate with a synthetic local Owner and explicit hosted refusals
+
+### Bug Fixes
+
+* **speechkit:** export device pairing and the standalone release channel, compile the exported tree in ci:fast
+
 ## 0.80.2 (2026-11-12)
 
 ### Bug Fixes
