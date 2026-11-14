@@ -11,6 +11,12 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ## Unreleased
 
+### Changed
+
+- Update the desktop framework and frontend runtime together to Wails 3.1.0
+  and refresh compatible desktop libraries. Preserve transparent overlay
+  decoration, startup visibility, and polling/animation suspension on hide.
+
 ### Fixed
 
 - AssemblyAI Sync transcription and warm-up use the current `/v1/transcribe`
@@ -102,6 +108,16 @@ Developers can use the stable SDK independently of experimental integrations.
 Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
+
+## 0.80.5 (2026-11-14)
+
+### Features
+
+* **speechkit:** stream dictation through ticket sessions
+
+### Bug Fixes
+
+* **speechkit:** changelog Highlights lint warns instead of stopping the release
 
 ## 0.80.4 (2026-11-13)
 
@@ -1332,7 +1348,7 @@ Notes cover changes after VERSION 0.70.0 (00b17c502201393702b34091f46c9b25a4df8c
   tray, updates, downloads and provider assembly) now form one tier with an
   API compatibility gate. A breaking change to it needs an explicit approval
   and a callout in this section naming the known managed consumers. The
-  tier builds on the Wails v3.0.0-beta.27 pin. It is not part of the
+  tier builds on the exact Wails v3.1.0 pin. It is not part of the
   open-source SDK and carries no SemVer promise for SDK users.
 * **The host kit no longer links Assist, the Voice Agent or text-to-speech.**
   A managed client that builds on the tier links only what it uses.

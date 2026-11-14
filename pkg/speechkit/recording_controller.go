@@ -117,6 +117,10 @@ type RecordingStartOptions struct {
 	// startup fails, the controller keeps using StreamSegments/full-capture
 	// fallback behavior.
 	ProviderStream bool
+	// ProviderStreamStartupTimeout bounds the provider handshake while the
+	// microphone captures into the pending buffer. Zero uses the controller
+	// default (800 ms); remote transports can choose a longer bounded budget.
+	ProviderStreamStartupTimeout time.Duration
 	// DictationStreamOptions are passed to the native provider stream. SessionID
 	// and Language are filled from the active recording when left empty.
 	DictationStreamOptions DictationStreamOptions

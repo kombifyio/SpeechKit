@@ -56,7 +56,10 @@ func (c *RecordingController) startNativeDictationStream(sessionID uint64, opts 
 	if !streamOpts.CompleteCapture {
 		streamOpts.InterimResults = true
 	}
-	dialTimeout := providerStreamDialTimeout
+	dialTimeout := opts.ProviderStreamStartupTimeout
+	if dialTimeout <= 0 {
+		dialTimeout = providerStreamDialTimeout
+	}
 	if dialTimeout <= 0 {
 		dialTimeout = 800 * time.Millisecond
 	}
