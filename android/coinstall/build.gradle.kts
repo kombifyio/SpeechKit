@@ -2,7 +2,6 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
     `maven-publish`
 }
 
@@ -21,7 +20,7 @@ plugins {
 // Specification: docs/architecture/android-coinstall-contract.md.
 android {
     namespace = "io.kombify.speechkit.coinstall.v1"
-    compileSdk = 36
+    compileSdk = 37
     defaultConfig { minSdk = 26 }
     buildFeatures { aidl = true }
     compileOptions {
@@ -34,7 +33,7 @@ android {
     // `import` these types from an `.aidl` of its own. A contract artifact that
     // withholds the contract source is half an artifact; every type is listed
     // because the contract is the whole module.
-    aidlPackagedList(
+    aidlPackagedList += listOf(
         "io/kombify/speechkit/coinstall/v1/CapabilityStatus.aidl",
         "io/kombify/speechkit/coinstall/v1/ICoinstallCallback.aidl",
         "io/kombify/speechkit/coinstall/v1/ICoinstallService.aidl",

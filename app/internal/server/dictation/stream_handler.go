@@ -154,6 +154,10 @@ type createStreamSessionResponse struct {
 	Ticket        string             `json:"ticket"`
 	ExpiresAt     string             `json:"expires_at"`
 	Capabilities  streamCapabilities `json:"capabilities"`
+	// BudgetExpiresAt is the deadline of the Voice quota the edge reserved
+	// for this recording. It is empty when the edge reserved nothing, which
+	// is the case for an unmetered local caller.
+	BudgetExpiresAt string `json:"budget_expires_at,omitempty"`
 }
 
 func (h *StreamHandler) collectionHandler(w http.ResponseWriter, r *http.Request) {
@@ -187,13 +191,53 @@ func (h *StreamHandler) itemHandler(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case subresource == "ws" && r.Method == http.MethodGet:
 		h.upgradeWS(w, r, sessionID)
+	case subresource == "renew" && r.Method == http.MethodPost:
+		h.renewSession(w, r, sessionID)
 	case subresource == "" && r.Method == http.MethodDelete:
 		h.deleteSession(w, r, sessionID)
 	default:
-		w.Header().Set("Allow", "GET (ws), DELETE")
+		w.Header().Set("Allow", "GET (ws), POST (renew), DELETE")
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed",
 			"unsupported method for this sub-resource")
 	}
+}
+
+// renewSession adopts a Gateway-reserved Voice budget for a live recording.
+// It mirrors the voice session's renewal: the middleware already verified the
+// edge identity and the budget HMAC over that identity's subject and org,
+// and the manager requires the same owner. A recording whose reservation has
+// been spent, or that was never reserved, is refused rather than extended.
+func (h *StreamHandler) renewSession(w http.ResponseWriter, r *http.Request, sessionID string) {
+	id := middleware.IdentityFromContext(r.Context())
+	if id.UserID == "" {
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthenticated", "identity not available on context")
+		return
+	}
+	budget := wssession.VoiceBudget(middleware.VoiceBudgetFromContext(r.Context()))
+	if id.Source != "edge_hmac" || id.UserID == "" || budget.ReservationID == "" {
+		httpx.WriteError(w, http.StatusForbidden, "voice_budget_required", "Reserve Voice quota through the edge before renewing a recording.")
+		return
+	}
+	if err := h.manager.RenewVoiceBudget(sessionID, wssession.Identity{UserID: id.UserID, OrgID: id.OrgID}, budget); err != nil {
+		switch {
+		case errors.Is(err, wssession.ErrVoiceBudgetUnavailable):
+			httpx.WriteError(w, http.StatusConflict, "voice_budget_unavailable", "This Voice reservation cannot renew a recording. Reserve new quota, then continue.")
+		case errors.Is(err, wssession.ErrVoiceBudgetNotRenewable):
+			httpx.WriteError(w, http.StatusConflict, "voice_budget_not_renewable", "This recording cannot be extended; start a new one.")
+		case errors.Is(err, wssession.ErrSessionOwnerMismatch):
+			httpx.WriteError(w, http.StatusForbidden, "forbidden", "you do not own this recording")
+		case errors.Is(err, wssession.ErrSessionNotFound):
+			httpx.WriteError(w, http.StatusNotFound, "session_not_found", "recording not found")
+		default:
+			httpx.WriteError(w, http.StatusInternalServerError, "renew_failed", err.Error())
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(createStreamSessionResponse{
+		SessionID:       sessionID,
+		BudgetExpiresAt: time.Unix(budget.ExpiresAt, 0).UTC().Format(time.RFC3339),
+	})
 }
 
 func (h *StreamHandler) createSession(w http.ResponseWriter, r *http.Request) {
@@ -202,14 +246,20 @@ func (h *StreamHandler) createSession(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusUnauthorized, "unauthenticated", "identity not available on context")
 		return
 	}
-	session, ticket, err := h.manager.Create(wssession.Identity{
+	// The edge may have reserved Voice quota for this recording. The
+	// reservation is claimed with the session, so a replayed grant admits no
+	// media, and it bounds the recording the same way it bounds a voice
+	// session. An unmetered local caller carries no reservation and is
+	// admitted as before.
+	budget := wssession.VoiceBudget(middleware.VoiceBudgetFromContext(r.Context()))
+	session, ticket, err := h.manager.CreateWithVoiceBudget(wssession.Identity{
 		UserID: id.UserID,
 		OrgID:  id.OrgID,
 		Plan:   id.Plan,
 		Role:   id.Role,
 		// Only a verified v3 edge envelope sets it; admission counts per device.
 		DeviceID: id.DeviceID,
-	})
+	}, "", budget, nil)
 	if err == nil {
 		// Capture the edge-resolved voice preferences at mint time: the WS
 		// upgrade authenticates via ticket and never sees the edge headers.
@@ -224,6 +274,9 @@ func (h *StreamHandler) createSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		switch {
+		case errors.Is(err, wssession.ErrVoiceBudgetUnavailable):
+			// The reservation was already spent, or its window has passed.
+			httpx.WriteError(w, http.StatusConflict, "voice_budget_unavailable", "This Voice reservation cannot start a recording. Reserve new quota, then start again.")
 		case errors.Is(err, wssession.ErrAccountDeviceLimitExceeded):
 			httpx.WriteError(w, http.StatusConflict, "account_device_limit_exceeded", "This account already holds streaming sessions on its maximum number of devices. End one, then start again.")
 		case errors.Is(err, wssession.ErrIdentityLimitExceeded):
@@ -239,12 +292,17 @@ func (h *StreamHandler) createSession(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
+	budgetExpiresAt := ""
+	if session.VoiceBudget.ReservationID != "" {
+		budgetExpiresAt = time.Unix(session.VoiceBudget.ExpiresAt, 0).UTC().Format(time.RFC3339)
+	}
 	_ = json.NewEncoder(w).Encode(createStreamSessionResponse{
-		SessionID:     session.ID,
-		WSURL:         h.webSocketURL(r, session.ID),
-		WSSubprotocol: wssession.TicketSubprotocol(ticket),
-		Ticket:        ticket,
-		ExpiresAt:     h.manager.TicketExpiresAt().Format(time.RFC3339),
+		SessionID:       session.ID,
+		WSURL:           h.webSocketURL(r, session.ID),
+		WSSubprotocol:   wssession.TicketSubprotocol(ticket),
+		Ticket:          ticket,
+		ExpiresAt:       h.manager.TicketExpiresAt().Format(time.RFC3339),
+		BudgetExpiresAt: budgetExpiresAt,
 		Capabilities: streamCapabilities{
 			Streaming: h.router.HasDictationStreaming(),
 			Emulation: "off",
@@ -350,6 +408,11 @@ func (h *StreamHandler) upgradeWS(w http.ResponseWriter, r *http.Request, sessio
 		IdleTimeout:    h.idleTimeout,
 		MaxDuration:    h.maxSessionDuration,
 		MaxStreamAudio: h.maxStreamAudio,
+		// The recording publishes the renewer of its reserved Voice window,
+		// so the edge can move the deadline forward while the recording runs.
+		SetVoiceBudgetRenewer: func(renew func(wssession.VoiceBudget) error) {
+			h.manager.SetVoiceBudgetRenewer(sessionID, renew)
+		},
 		OnClose: func() {
 			h.manager.Remove(sessionID)
 		},

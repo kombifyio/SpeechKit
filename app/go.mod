@@ -8,6 +8,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.24.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.15.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity/cache v0.4.0
+	github.com/Microsoft/go-winio v0.6.3
 	github.com/BurntSushi/toml v1.6.0
 	github.com/kombifyio/SpeechKit v0.76.1
 	github.com/chromedp/chromedp v0.23.0

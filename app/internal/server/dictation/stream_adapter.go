@@ -63,6 +63,18 @@ type StreamAdapter struct {
 	// OnClose runs after the read pump has returned. Typically removes the
 	// session from the manager.
 	OnClose func()
+	// SetVoiceBudgetRenewer publishes the live renewer of this recording's
+	// budget. The edge calls it when a fresh Voice reservation replaces the
+	// one the recording started with, so a long recording can continue under
+	// a later window. It mirrors the Voice Agent adapter's seam.
+	SetVoiceBudgetRenewer func(func(wssession.VoiceBudget) error)
+	// budgetMu guards the reserved Voice window below. The renewer runs on the
+	// HTTP request goroutine that answers POST .../renew, while the recording
+	// reads the deadline on its own goroutine, so the window is handed over
+	// under this lock rather than shared.
+	budgetMu sync.Mutex
+	// budgetTimer ends the current reserved window. A renewal replaces it.
+	budgetTimer *time.Timer
 
 	writeMu sync.Mutex
 	closed  bool
@@ -140,6 +152,68 @@ func (a *StreamAdapter) Run(parent context.Context) {
 		maxDuration = maxTimer.C
 	}
 
+	// The reserved Voice window bounds this recording. The renewer lets the
+	// edge move the deadline forward when a fresh reservation replaces it;
+	// without a renewal the recording ends when the window closes, so a
+	// recording never runs outside the quota the edge granted.
+	//
+	// The window is shared under budgetMu: the renewer runs on the HTTP
+	// request goroutine that answers POST .../renew, while the recording
+	// watches the deadline on its own goroutine. The recording watches a
+	// channel that only the timer closes, so a renewal can replace the
+	// deadline without the recording ever seeing a half-written state.
+	var budgetExpired <-chan struct{}
+	if a.Session != nil && a.Session.VoiceBudget.ReservationID != "" {
+		deadline := time.Unix(a.Session.VoiceBudget.ExpiresAt, 0)
+		if !deadline.After(time.Now()) {
+			// The window is already closed. End the recording before it
+			// admits any media.
+			a.sendJSON(ctx, StreamSessionEndFrame{Type: StreamMsgSessionEnd, Reason: StreamEndReasonVoiceBudget})
+			return
+		}
+		// expiry is closed by the timer that owns the current deadline.
+		expiry := make(chan struct{})
+		budgetExpired = expiry
+		// arm re-arms the timer for the current deadline. It runs on the
+		// renewer's goroutine, so it takes the same lock as the teardown.
+		// A timer that already fired cannot be stopped, so the channel is
+		// closed exactly once and never twice.
+		var expireOnce sync.Once
+		arm := func(until time.Duration) {
+			a.budgetMu.Lock()
+			defer a.budgetMu.Unlock()
+			if a.budgetTimer != nil {
+				a.budgetTimer.Stop()
+			}
+			a.budgetTimer = time.AfterFunc(until, func() { expireOnce.Do(func() { close(expiry) }) })
+		}
+		arm(time.Until(deadline))
+		defer func() {
+			a.budgetMu.Lock()
+			defer a.budgetMu.Unlock()
+			if a.budgetTimer != nil {
+				a.budgetTimer.Stop()
+				a.budgetTimer = nil
+			}
+		}()
+		if a.SetVoiceBudgetRenewer != nil {
+			a.SetVoiceBudgetRenewer(func(next wssession.VoiceBudget) error {
+				if next.ReservationID == "" {
+					return wssession.ErrVoiceBudgetNotRenewable
+				}
+				deadline := time.Unix(next.ExpiresAt, 0)
+				if !deadline.After(time.Now()) {
+					return wssession.ErrVoiceBudgetUnavailable
+				}
+				// The same expiry channel stays: the recording keeps waiting
+				// on it, and the new deadline simply re-arms the timer.
+				arm(time.Until(deadline))
+				return nil
+			})
+			defer a.SetVoiceBudgetRenewer(nil)
+		}
+	}
+
 	done := make(chan struct{}, 1)
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -161,6 +235,11 @@ func (a *StreamAdapter) Run(parent context.Context) {
 			"max_duration", a.MaxDuration,
 		)
 		a.sendJSON(ctx, StreamSessionEndFrame{Type: StreamMsgSessionEnd, Reason: StreamEndReasonMaxDuration})
+	case <-budgetExpired:
+		slog.Info("dictation stream: reserved Voice window closed; ending the recording",
+			"session_id", a.Session.ID,
+		)
+		a.sendJSON(ctx, StreamSessionEndFrame{Type: StreamMsgSessionEnd, Reason: StreamEndReasonVoiceBudget})
 	}
 	cancel()
 	wg.Wait()

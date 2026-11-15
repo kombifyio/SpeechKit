@@ -63,6 +63,9 @@ const (
 	StreamEndReasonMaxAudio    = "max_audio"
 	StreamEndReasonError       = "error"
 	StreamEndReasonShutdown    = "shutdown"
+	// StreamEndReasonVoiceBudget ends a recording whose reserved Voice
+	// window closed. The client renews the reservation and starts again.
+	StreamEndReasonVoiceBudget = "voice_budget"
 )
 
 // StreamStartFrame is the mandatory first client frame of every segment. It

@@ -15,6 +15,8 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/kombifyio/SpeechKit/app/internal/server/middleware"
+	"github.com/kombifyio/SpeechKit/app/internal/server/wssession"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/responses"
 )
 
 // ── fakes ───────────────────────────────────────────────────────────────────
@@ -157,6 +159,92 @@ type adapterTestEnv struct {
 	done          chan struct{}
 	usage         chan VoiceUsage
 	idle          time.Duration
+}
+
+// startDelegatedAdapterEnv runs the real adapter over a real socket for a
+// delegated session — a registered agent target or an own endpoint — and
+// reports the budget renewer the adapter publishes. A session that is
+// delegated still holds a reserved media window of its own, so the adapter
+// must publish the renewer; the origin's renewal route answers 409
+// `voice_budget_not_renewable` without it.
+//
+// The delegated session carries a live authorization (a lease and a delegated
+// credential that both expire later), so the adapter runs as the delegated
+// session it claims to be instead of failing its authorization first. An own
+// endpoint is authorized by its binding and signature over that credential.
+func startDelegatedAdapterEnv(
+	t *testing.T,
+	targetAgentID string,
+	directEndpoint *responses.Context,
+	endpointBinding string,
+	endpointSignature string,
+) (*adapterTestEnv, chan func(wssession.VoiceBudget) error) {
+	t.Helper()
+	env := &adapterTestEnv{
+		provider: newFakeProvider(),
+		resolver: &fakeResolver{},
+		done:     make(chan struct{}),
+		usage:    make(chan VoiceUsage, 1),
+		idle:     30 * time.Second,
+	}
+	published := make(chan func(wssession.VoiceBudget) error, 1)
+	expiry := time.Now().Add(time.Hour).Unix()
+	env.srv = httptest.NewServer(middleware.RequestID()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Errorf("server accept: %v", err)
+			return
+		}
+		conn.SetReadLimit(1 << 20)
+		adapter := &Adapter{
+			Session: &ManagedSession{
+				ID:    "test-session",
+				Owner: Identity{UserID: "u1"},
+				VoiceAgentBinding: wssession.VoiceAgentBinding{
+					TargetAgentID:  targetAgentID,
+					DirectEndpoint: directEndpoint,
+					Lease:          boundTestToken(expiry),
+					// An own endpoint is authorized by its own binding and
+					// signature over a delegated credential; a registered
+					// agent is authorized by its lease.
+					EndpointBinding:   endpointBinding,
+					EndpointSignature: endpointSignature,
+				},
+				DelegatedCredential: boundTestToken(expiry),
+				VoiceBudget: wssession.VoiceBudget{
+					ReservationID: "reservation-delegated",
+					ExpiresAt:     time.Now().Add(time.Minute).Unix(),
+				},
+			},
+			Conn:        conn,
+			Provider:    env.provider,
+			Persona:     env.resolver,
+			IdleTimeout: env.idle,
+			OnUsage:     func(usage VoiceUsage) { env.usage <- usage },
+			OnClose:     func() { close(env.done) },
+			SetVoiceBudgetRenewer: func(renew func(wssession.VoiceBudget) error) {
+				if renew != nil {
+					select {
+					case published <- renew:
+					default:
+					}
+				}
+			},
+		}
+		adapter.Run(r.Context())
+	})))
+	t.Cleanup(func() { env.srv.Close() })
+
+	wsURL := "ws" + strings.TrimPrefix(env.srv.URL, "http")
+	dialCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(dialCtx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("client dial: %v", err)
+	}
+	env.conn = conn
+	t.Cleanup(func() { _ = conn.CloseNow() })
+	return env, published
 }
 
 func startAdapterEnv(t *testing.T, idle time.Duration, provider LiveProviderAdapter, resolver *fakeResolver, reservation ...string) *adapterTestEnv {

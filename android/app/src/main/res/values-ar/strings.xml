@@ -68,8 +68,8 @@
     <string name="settings_connection_mode_cloud">الوضع: kombify Cloud</string>
     <string name="settings_connection_connect_cloud">ربط kombify Cloud</string>
     <string name="settings_connection_disconnect_cloud">فصل Cloud</string>
-    <string name="settings_connection_open_companion">فتح kombify Companion</string>
-    <string name="settings_connection_install_companion">تثبيت kombify Companion</string>
+    <string name="settings_connection_open_companion">فتح Companion</string>
+    <string name="settings_connection_install_companion">تثبيت Companion</string>
     <string name="settings_connection_cloud_connected">متصل بصفة مستخدم kombify المسجَّل دخوله.</string>
     <string name="settings_connection_cloud_signed_out">Companion مثبّت. سجّل الدخول هناك ثم اربط.</string>
     <string name="settings_connection_cloud_missing">Companion غير مثبّت. ثبّته للربط بحساب kombify الخاص بك.</string>

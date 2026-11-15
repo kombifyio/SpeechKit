@@ -109,6 +109,40 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.80.8 (2026-11-15)
+
+### Bug Fixes
+
+* **speechkit:** keep internal product names out of the public export
+
+## 0.80.7 (2026-11-15)
+
+### Features
+
+* **delivery:** package, mirror and store-build groups are side publications (R3c, )
+* **onboarding:** SpeechKit Setup completion as the speechkit owner fact
+* **speechkit:** kombify Companion desktop for Windows
+* **speechkit:** the Box setup offers its own local wake word
+
+### Bug Fixes
+
+* **speechkit:** a long spoken answer streams at the device's pace instead of ending in audio_downstream_failed
+* **speechkit:** keep tracker ids out of exported comments and complete go.work.sum for the OSS publish
+* **speechkit:** place and show windows only after Wails created them, in the reference client and the managed host
+
+## 0.80.6 (2026-11-14)
+
+### Features
+
+* **speechkit:** serve Companion Windows AppLink v1 from host kit
+
+### Bug Fixes
+
+* **speechkit:** a streaming capture session keeps no session-long PCM buffer (wake-word memory growth)
+* **speechkit:** a voice turn binds to its final despite Deepgram's speculative and joined think requests, a dropped callback no longer ends the session, and each session ends with one classified outcome
+* **speechkit:** pin the ONNX Runtime the wake-word sidecar needs and fail the release when it drifts
+* **speechkit:** reuse published production images on release retry
+
 ## 0.80.5 (2026-11-14)
 
 ### Features

@@ -3,13 +3,12 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     `maven-publish`
     alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.ksp)
 }
 
 android {
     namespace = "io.kombify.speechkit.net"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 26

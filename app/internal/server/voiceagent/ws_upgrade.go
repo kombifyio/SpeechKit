@@ -118,6 +118,8 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 		OnClose: func() {
 			h.manager.FinishConversation(sessionID)
 		},
+		OnOutcome: h.outcome,
+		NoticeTTS: h.noticeTTS,
 	}
 	// Run the pumps; returns only when session ends or the client
 	// disconnects. We intentionally do not run this in a goroutine: the

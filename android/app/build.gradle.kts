@@ -7,7 +7,6 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
@@ -26,14 +25,14 @@ fun speechKitBuildValue(property: String, environment: String): String =
 
 android {
     namespace = "io.kombify.speechkit"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "io.kombify.speechkit"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8005
-        versionName = "0.80.5"
+        versionCode = 8008
+        versionName = "0.80.8"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // An OSS installation has no admitted hosted media origin.
         buildConfigField("String", "HOSTED_VOICE_ORIGIN", "\"\"")
@@ -181,7 +180,7 @@ fun sha256Of(file: File): String {
     return digest.digest().joinToString("") { "%02x".format(it) }
 }
 
-val fetchSherpaOnnxAar by tasks.registering {
+val fetchSherpaOnnxAar = tasks.register("fetchSherpaOnnxAar") {
     description = "Downloads sherpa-onnx $sherpaOnnxVersion (static-link-onnxruntime AAR) and checks its SHA-256"
     val target = sherpaOnnxDir.map { it.file("upstream/sherpa-onnx-static-link-onnxruntime-$sherpaOnnxVersion.aar").asFile }
     val url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaOnnxVersion/" +
@@ -211,7 +210,7 @@ val fetchSherpaOnnxAar by tasks.registering {
     }
 }
 
-val trimSherpaOnnxAar by tasks.registering(Zip::class) {
+val trimSherpaOnnxAar = tasks.register<Zip>("trimSherpaOnnxAar") {
     description = "Repackages the sherpa-onnx AAR with only the ABIs the app ships"
     dependsOn(fetchSherpaOnnxAar)
     from(zipTree(sherpaOnnxDir.map { it.file("upstream/sherpa-onnx-static-link-onnxruntime-$sherpaOnnxVersion.aar") })) {

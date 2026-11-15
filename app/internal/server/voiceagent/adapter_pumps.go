@@ -5,6 +5,8 @@ package voiceagent
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"log/slog"
 	"strings"
 	"time"
@@ -28,6 +30,9 @@ func (a *Adapter) readPump(ctx context.Context, done chan<- struct{}) {
 		a.live.handling.Store(false)
 		typ, data, err := a.Conn.Read(context.WithoutCancel(ctx))
 		if err != nil {
+			if ctx.Err() == nil {
+				a.dialog.clientClosed.Store(true)
+			}
 			return
 		}
 		if ctx.Err() != nil {
@@ -90,6 +95,7 @@ func (a *Adapter) readPump(ctx context.Context, done chan<- struct{}) {
 			case MsgPing:
 				a.sendJSON(ctx, PongFrame{Type: MsgPong})
 			case MsgStop:
+				a.dialog.clientClosed.Store(true)
 				a.sendJSON(ctx, SessionEndFrame{
 					Type:             MsgSessionEnd,
 					EventFrameFields: a.eventFrameFields(nil, EventSessionEnd),
@@ -196,23 +202,38 @@ func (a *Adapter) writePump(ctx context.Context, done chan<- struct{}, results <
 		if ctx.Err() != nil {
 			return
 		}
-		// Prioritize an already-received control over another PCM fragment.
-		select {
-		case result := <-results:
-			if !a.admitProviderOutput(ctx, result, &pending) {
-				return
-			}
-			continue
-		default:
-		}
 		a.writeMu.Lock()
 		muted := a.mutedThrough
 		a.writeMu.Unlock()
 		if len(pending.items) > 0 && pending.items[0].epoch <= muted && len(pending.items[0].msg.Audio) > 0 {
 			pending.muteThrough(muted)
 		}
+		// Pace the provider instead of the queue: once the playhead has all the
+		// audio it needs, no further provider event is read, so a provider that
+		// synthesizes a long answer faster than a device plays it is held at
+		// the playhead. Its blocking Receive is the only backpressure its
+		// contract offers, and a held reader is still woken for control as soon
+		// as playback needs the next fragment.
+		ahead := pending.unplayedBytes() >= maxPendingOutputAheadBytes
+		if !ahead {
+			// Prioritize an already-received control over another PCM fragment.
+			select {
+			case result := <-results:
+				if !a.admitProviderOutput(ctx, result, &pending) {
+					return
+				}
+				continue
+			default:
+			}
+		}
 		var tick <-chan time.Time
 		var timer *time.Timer
+		// A held reader keeps the capacity-one handoff blocked, which holds the
+		// provider leg itself; only playback progress reopens it.
+		var incoming <-chan providerReceiveResult
+		if !ahead {
+			incoming = results
+		}
 		if len(pending.items) > 0 {
 			item := pending.items[0]
 			// A zero playhead is immediately writable. time.Until(zero)
@@ -238,7 +259,7 @@ func (a *Adapter) writePump(ctx context.Context, done chan<- struct{}, results <
 				timer.Stop()
 			}
 			return
-		case result := <-results:
+		case result := <-incoming:
 			if timer != nil {
 				timer.Stop()
 			}
@@ -254,6 +275,10 @@ func (a *Adapter) admitProviderOutput(ctx context.Context, result providerReceiv
 	msg := result.msg
 	if result.err != nil {
 		if ctx.Err() == nil {
+			if errors.Is(result.err, io.EOF) {
+				// The provider closed its leg (its own idle limit): an end, not a failure.
+				a.dialog.providerEnded.Store(true)
+			}
 			a.sendProviderError(ctx, "provider_receive_failed", result.err, true)
 		}
 		return false
@@ -314,6 +339,7 @@ func (a *Adapter) admitProviderOutput(ctx context.Context, result providerReceiv
 		a.suppressDownlink.set(false)
 		a.writeMu.Unlock()
 		code := cascaded.SafeFailureCode(msg.ErrorCode)
+		a.noteProviderFailure(code)
 		fatal := cascaded.IsTerminalFailure(code) || (a.Session != nil && a.Session.AnonymousGuide && code == "quota_exhausted")
 		a.sendErrorWithFatal(ctx, code, cascaded.FailureMessage(code), fatal)
 		if fatal {
@@ -346,8 +372,10 @@ func (a *Adapter) admitProviderOutput(ctx context.Context, result providerReceiv
 		return false
 	}
 	if !pending.append(msg, epoch) {
-		// Fail rather than block Receive behind output backpressure or silently
-		// discard PCM. The existing terminal fence seals all queued output.
+		// The pump already paces the provider at the playhead, so these caps are
+		// reached only by a provider that hands over more than the pull allowed
+		// (one oversized batch, or a flood of tiny messages). Fail rather than
+		// silently discard PCM; the existing terminal fence seals queued output.
 		a.sendFatalError(ctx, "audio_downstream_failed", "The voice provider exceeded the output buffer limit.")
 		return false
 	}
@@ -374,6 +402,7 @@ func (a *Adapter) forwardProviderOutput(ctx context.Context, msg *LiveMessage, s
 			SpeakerConfidence: msg.InputSpeakerConfidence,
 		})
 		if msg.InputTranscriptDone {
+			a.noteUserFinal()
 			a.recordUserTurn(ctx)
 			a.routeByTranscript(ctx, msg.InputTranscript)
 		}

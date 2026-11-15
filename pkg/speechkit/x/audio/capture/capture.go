@@ -135,6 +135,16 @@ type Config struct {
 	// initialised device that is not started holds no stream and uses no
 	// CPU. Ignored by backends that open nothing.
 	KeepDeviceWarm bool
+	// DropFullCapture keeps the session from retaining the whole recording
+	// for Stop to return. The device callback then feeds only the live
+	// frame handlers (SetPCMHandler / SetPooledPCMHandler), and Stop returns
+	// no PCM. Dictation leaves it false: it reads the recording that
+	// accumulated between Start and Stop. Always-on listeners (the
+	// wake-word sidecars, room transcription) set it, because their session
+	// never stops and the retained copy would hold every byte captured —
+	// 16 kHz mono S16 adds up to 1.83 MB a minute, about 7.7 GB in 72 hours.
+	// Ignored by backends that keep no such buffer.
+	DropFullCapture bool
 	// OnDeviceRebound, when set, is called after DeviceID was not found but
 	// the device was recovered via DeviceName (USB/UAC re-enumeration). The
 	// host can persist newID so the next start matches by ID again. It is
@@ -156,6 +166,9 @@ type Config struct {
 // Session records microphone PCM and exposes both level and live-audio callbacks.
 type Session interface {
 	Start() error
+	// Stop ends the recording and returns the PCM captured since Start.
+	// A session opened with Config.DropFullCapture returns none: its frames
+	// went to the live handlers only.
 	Stop() ([]byte, error)
 	IsRunning() bool
 	Events() <-chan Event

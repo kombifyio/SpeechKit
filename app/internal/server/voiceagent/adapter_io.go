@@ -13,6 +13,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/kombifyio/SpeechKit/app/internal/server/middleware"
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/tts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/cascaded"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 )
@@ -74,6 +75,13 @@ func (a *Adapter) sendProviderError(ctx context.Context, fallback string, err er
 	if errors.As(err, &coded) {
 		code = cascaded.SafeFailureCode(coded.Code())
 	}
+	if !a.dialog.providerEnded.Load() {
+		a.noteProviderFailure(code)
+		if fatal && (code == "audio_upstream_failed" || a.dialog.userTurns.Load() > a.dialog.answered.Load()) {
+			// The person is speaking or waiting for an answer: say why it stops.
+			a.speakFailureNotice(ctx)
+		}
+	}
 	a.sendErrorWithFatal(ctx, code, cascaded.FailureMessage(code), fatal)
 }
 
@@ -88,6 +96,62 @@ func (a *Adapter) settleDuplexReplyLocked(now time.Time) bool {
 	a.suppressDownlink.set(false)
 	a.receiveEpoch++
 	return true
+}
+
+// failureNoticeMaxPlay bounds how long a failure notice holds the session's
+// end while the client plays it.
+const failureNoticeMaxPlay = 6 * time.Second
+
+// speakFailureNotice speaks one short neutral line to the client before a
+// fatal provider failure ends a started conversation, so the person hears that
+// the answer will not come instead of silence. It waits while the client plays
+// the line, since the error frame that follows stops playback. Best effort and
+// once per session: without a notice voice (Handler NoticeTTS), on a LiveKit
+// transport or when synthesis fails, nothing is spoken.
+func (a *Adapter) speakFailureNotice(ctx context.Context) {
+	if a.NoticeTTS == nil || a.mediaBridge != nil || !a.dialog.startAccepted.Load() || !a.noticeSpoken.CompareAndSwap(false, true) {
+		return
+	}
+	ctx = context.WithoutCancel(ctx)
+	synthCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	result, err := a.NoticeTTS.Synthesize(synthCtx, failureNoticeFor(a.locale), tts.SynthesizeOpts{Locale: a.locale})
+	cancel()
+	if err != nil || result == nil || len(result.Audio) == 0 || len(result.Audio)%2 != 0 {
+		return
+	}
+	started := time.Now()
+	const frame = DownlinkSampleRate * 2 / 10 // 100 ms of 24 kHz S16LE mono
+	for off := 0; off < len(result.Audio); off += frame {
+		a.writeMu.Lock()
+		if a.closed.get() || a.terminal {
+			a.writeMu.Unlock()
+			return
+		}
+		writeCtx, cancelWrite := context.WithTimeout(ctx, transportWriteTimeout)
+		err := a.connWrite(writeCtx, websocket.MessageBinary, result.Audio[off:min(off+frame, len(result.Audio))])
+		cancelWrite()
+		a.writeMu.Unlock()
+		if err != nil {
+			return
+		}
+	}
+	playing := time.Duration(len(result.Audio)) * time.Second / (DownlinkSampleRate * 2)
+	timer := time.NewTimer(min(time.Until(started.Add(playing)), failureNoticeMaxPlay))
+	defer timer.Stop()
+	<-timer.C
+}
+
+// failureNoticeFor is the neutral line a failure notice speaks, in the
+// session's language (de, es, otherwise English).
+func failureNoticeFor(locale string) string {
+	switch primaryLanguage(locale) {
+	case "de":
+		return "Die Sprachverbindung ist gerade abgebrochen. Bitte versuch es gleich noch einmal."
+	case "es":
+		return "La conexión de voz se ha interrumpido. Inténtalo de nuevo en un momento."
+	default:
+		return "The voice connection just dropped. Please try again in a moment."
+	}
 }
 
 func (a *Adapter) sendSessionEnd(ctx context.Context, reason string) {

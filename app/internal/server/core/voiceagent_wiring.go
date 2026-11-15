@@ -157,6 +157,7 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 		WakeVerifier:                 buildWakeVerifier(ctx, cfg),
 		Vocabulary:                   buildVoiceAgentVocabulary(cfg, app),
 		PlainAgent:                   buildPlainVoiceAgent(app),
+		NoticeTTS:                    buildVoiceNoticeTTS(app),
 	})
 	if err != nil {
 		return nil, status, err
@@ -168,6 +169,15 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 	// once a minute.
 	h.StartNativeCleanup(ctx)
 	return h, status, nil
+}
+
+// buildVoiceNoticeTTS is the server's speech output, which says in one short line that a conversation's
+// provider failed instead of leaving the person in silence. Without TTS no notice is spoken.
+func buildVoiceNoticeTTS(app *App) vsserver.CascadedTTS {
+	if app == nil || !app.TTSEnabled || app.TTSRouter == nil {
+		return nil
+	}
+	return vsserver.NewDownlinkTTS(app.TTSRouter)
 }
 
 // buildPlainVoiceAgent is the plain voice model that answers a Companion turn the Companion cannot

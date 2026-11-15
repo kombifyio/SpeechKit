@@ -82,6 +82,10 @@ type HandlerOptions struct {
 	WakeVerifier WakeVerifier
 	// Vocabulary resolves each session's recognition keyterms. Nil sends none.
 	Vocabulary VocabularyResolver
+	// NoticeTTS speaks a short neutral line when a provider failure ends a
+	// started conversation; it must return 24 kHz S16LE mono PCM
+	// (NewDownlinkTTS). Nil speaks none.
+	NoticeTTS CascadedTTS
 }
 
 // Handler exposes both the HTTP session-creation endpoint and the WS
@@ -107,6 +111,8 @@ type Handler struct {
 	native             *nativeVoiceSessions
 	wakeVerifier       WakeVerifier
 	vocabulary         VocabularyResolver
+	outcome            func(SessionOutcome)
+	noticeTTS          CascadedTTS
 	anonymous          bool
 }
 
@@ -183,6 +189,7 @@ func New(opts HandlerOptions) (*Handler, error) {
 		native:             newNativeVoiceSessions(opts.PublicURL, opts.Store, opts.AssemblyAIKey, opts.RegisteredAgentSigningSecret, opts.NativeConsentReader, opts.PlainAgent, opts.NativeCallbackHeaders),
 		wakeVerifier:       opts.WakeVerifier,
 		vocabulary:         opts.Vocabulary,
+		noticeTTS:          opts.NoticeTTS,
 	}, nil
 }
 
@@ -195,6 +202,13 @@ func New(opts HandlerOptions) (*Handler, error) {
 func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/voiceagent/sessions", h.collectionHandler)
 	mux.HandleFunc("/v1/voiceagent/sessions/", h.itemHandler)
+}
+
+// SetOutcome receives each session's classified outcome once at its end
+// (SessionOutcome); without one the outcome is only in the session-end log.
+// Call it before the handler serves.
+func (h *Handler) SetOutcome(outcome func(SessionOutcome)) {
+	h.outcome = outcome
 }
 
 // MountAnonymous shares the existing media pipeline and ticket manager while

@@ -34,19 +34,26 @@ type OpenAIHandler struct {
 	Context context.Context
 	// BindTurn resolves a callback against a host-observed native final
 	// transcript. When set, vendor history cannot create a new turn identity.
+	// It may wait for the final; the handler holds no turn admission meanwhile.
 	BindTurn func(context.Context, string) (string, error)
-	// Revalidate checks current host authority on every authenticated callback,
-	// before parsing, correlation or replay admission. Denial must revoke media.
+	// Revalidate checks current host authority on every bound callback, before
+	// turn admission consumes its identity and before any agent execution.
+	// Denial must revoke media; a callback whose own request ended is refused
+	// without implying a denial.
 	Revalidate func(context.Context) error
 	// FirstResponsePrefix is trusted host disclosure, spoken once before the
 	// first successful answer starts. It is never supplied by the vendor.
 	FirstResponsePrefix string
 	disclosed           atomic.Bool
 	// admit serializes turns without allowing an unbounded callback queue.
-	admit      chan struct{}
+	admit chan struct{}
+	// seen holds every consumed turn identity; seenMu guards it.
+	seenMu     sync.Mutex
 	seen       map[[32]byte]struct{}
 	turnMu     sync.Mutex
 	turnCancel context.CancelFunc
+	// turnID is the identity of the turn in flight ("" when none).
+	turnID string
 	// callbackTiming is the latest bound callback's own phases (CallbackTiming).
 	timingMu       sync.Mutex
 	callbackTiming CallbackTiming
@@ -121,28 +128,79 @@ func NewOpenAIHandler(ctx context.Context, agent TurnStreamer, token string, exp
 	return &OpenAIHandler{Agent: agent, Model: model, Token: token, ExpiresAt: expiresAt, Locale: locale, Context: ctx, admit: make(chan struct{}, 1), seen: make(map[[32]byte]struct{})}, nil
 }
 
+// admitWait bounds how long a bound callback waits for the turn in flight to
+// release its admission after it was superseded by a newer final.
+const admitWait = 2 * time.Second
+
 // ErrTurnRejected is returned by [OpenAIHandler.Answer] when the turn is not
 // admitted: expired or revoked authority, a turn already in flight, failed
 // revalidation, or an utterance that does not bind to a host-observed final.
 var ErrTurnRejected = errors.New("speechkit a2a: native turn rejected")
 
-// begin admits one turn under the handler's authority: deadline, single-flight
-// admission, session revocation and current-authority revalidation. A non-zero
-// status names the rejection; release must run when the turn ends.
-func (h *OpenAIHandler) begin(parent context.Context) (context.Context, func(), int) {
-	if !time.Now().Before(h.ExpiresAt) || h.Context.Err() != nil {
+// live reports whether the handler's authority still admits callbacks.
+func (h *OpenAIHandler) live() bool {
+	return time.Now().Before(h.ExpiresAt) && h.Context.Err() == nil
+}
+
+// bind resolves utterance against a host-observed native final without
+// admitting it. A callback can wait here for its final while another turn
+// runs: a vendor's speculative request on a draft transcript must never hold
+// the admission that the request on the final needs.
+func (h *OpenAIHandler) bind(parent context.Context, utterance string) (string, int) {
+	if !h.live() {
+		return "", http.StatusUnauthorized
+	}
+	if h.BindTurn == nil {
+		return "", http.StatusServiceUnavailable
+	}
+	ctx, cancel := context.WithDeadline(parent, h.ExpiresAt)
+	defer cancel()
+	stop := context.AfterFunc(h.Context, cancel) //nolint:contextcheck // Session revocation also ends the wait.
+	defer stop()
+	turnID, err := h.BindTurn(ctx, utterance)
+	if err != nil || turnID == "" || parent.Err() != nil {
+		return "", http.StatusConflict
+	}
+	return turnID, 0
+}
+
+// begin admits the bound turn turnID under the handler's authority: deadline,
+// single-flight admission, session revocation, current-authority revalidation
+// and replay admission, which consumes the identity before execution, including
+// uncertain failures, so vendor history or a retried event can never create or
+// replay a turn. A turn in flight for an older final is superseded and
+// cancelled: the vendor asks again because the caller spoke on, and it never
+// uses the older answer. A non-zero status names the rejection; release must
+// run when the turn ends.
+func (h *OpenAIHandler) begin(parent context.Context, turnID string) (context.Context, func(), int) {
+	if !h.live() {
 		return nil, nil, http.StatusUnauthorized
 	}
 	ctx, cancel := context.WithDeadline(parent, h.ExpiresAt)
 	h.turnMu.Lock()
+	if h.turnCancel != nil {
+		if h.turnID == turnID {
+			// The same final is already running: a retry, never a second execution.
+			h.turnMu.Unlock()
+			cancel()
+			return nil, nil, http.StatusConflict
+		}
+		h.turnCancel()
+	}
+	h.turnMu.Unlock()
+	wait := time.NewTimer(admitWait)
+	defer wait.Stop()
 	select {
 	case h.admit <- struct{}{}:
-		h.turnCancel = cancel
-	default:
-		h.turnMu.Unlock()
+	case <-wait.C:
+		cancel()
+		return nil, nil, http.StatusConflict
+	case <-ctx.Done():
 		cancel()
 		return nil, nil, http.StatusConflict
 	}
+	h.turnMu.Lock()
+	h.turnCancel, h.turnID = cancel, turnID
 	h.turnMu.Unlock()
 	// The owning voice lifetime supplements the caller's context.
 	stop := context.AfterFunc(h.Context, cancel) //nolint:contextcheck // Session revocation must also cancel this turn.
@@ -150,7 +208,7 @@ func (h *OpenAIHandler) begin(parent context.Context) (context.Context, func(), 
 		stop()
 		cancel()
 		h.turnMu.Lock()
-		h.turnCancel = nil
+		h.turnCancel, h.turnID = nil, ""
 		h.turnMu.Unlock()
 		<-h.admit
 	}
@@ -160,29 +218,23 @@ func (h *OpenAIHandler) begin(parent context.Context) (context.Context, func(), 
 			return nil, nil, http.StatusForbidden
 		}
 	}
+	if !h.consume(turnID) {
+		release()
+		return nil, nil, http.StatusConflict
+	}
 	return ctx, release, 0
 }
 
-// bind resolves utterance against a host-observed native final and consumes
-// its identity before execution, including uncertain failures, so vendor
-// history or a retried event can never create or replay a turn.
-func (h *OpenAIHandler) bind(ctx context.Context, utterance string) (string, int) {
-	if ctx.Err() != nil {
-		return "", http.StatusConflict
-	}
-	if h.BindTurn == nil {
-		return "", http.StatusServiceUnavailable
-	}
-	turnID, err := h.BindTurn(ctx, utterance)
-	if err != nil || turnID == "" {
-		return "", http.StatusConflict
-	}
+// consume admits turnID once per handler.
+func (h *OpenAIHandler) consume(turnID string) bool {
 	digest := sha256.Sum256([]byte(turnID))
+	h.seenMu.Lock()
+	defer h.seenMu.Unlock()
 	if _, replay := h.seen[digest]; replay || len(h.seen) >= 256 {
-		return "", http.StatusConflict
+		return false
 	}
 	h.seen[digest] = struct{}{}
-	return turnID, 0
+	return true
 }
 
 // stream runs the bound agent and emits the trusted disclosure once before
@@ -210,15 +262,15 @@ func (h *OpenAIHandler) Answer(ctx context.Context, utterance string) (string, e
 	if utterance == "" {
 		return "", ErrTurnRejected
 	}
-	turnCtx, release, status := h.begin(ctx)
+	turnID, status := h.bind(ctx, utterance)
+	if status != 0 {
+		return "", fmt.Errorf("%w: status %d", ErrTurnRejected, status)
+	}
+	turnCtx, release, status := h.begin(ctx, turnID)
 	if status != 0 {
 		return "", fmt.Errorf("%w: status %d", ErrTurnRejected, status)
 	}
 	defer release()
-	turnID, status := h.bind(turnCtx, utterance)
-	if status != 0 {
-		return "", fmt.Errorf("%w: status %d", ErrTurnRejected, status)
-	}
 	// Nothing reaches the vendor until the turn succeeds, so the disclosure
 	// is prepended (and marked spoken) only to an answer that is delivered.
 	var answer strings.Builder
@@ -249,15 +301,11 @@ func (h *OpenAIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	arrived := time.Now()
-	ctx, release, status := h.begin(r.Context())
-	admittedMs := time.Since(arrived).Milliseconds()
-	if status != 0 {
-		slog.Info("speechkit native callback timing", "result", "refused", "status", status, "admit_ms", admittedMs)
-		w.WriteHeader(status)
+	if !h.live() {
+		slog.Info("speechkit native callback timing", "result", "refused", "status", http.StatusUnauthorized, "admit_ms", 0)
+		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-	stopBody := context.AfterFunc(ctx, func() { _ = r.Body.Close() })
-	defer func() { stopBody(); release() }()
 	var input struct {
 		Stream   bool `json:"stream"`
 		Messages []struct {
@@ -285,12 +333,24 @@ func (h *OpenAIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	turnID, status := h.bind(ctx, utterance)
+	turnID, status := h.bind(r.Context(), utterance)
+	boundMs := time.Since(arrived).Milliseconds()
 	if status != 0 {
-		slog.Info("speechkit native callback timing", "result", "unbound", "status", status, "admit_ms", admittedMs)
+		// A speculative request on a draft transcript ends here once the final
+		// arrives; the vendor's request on the final binds on its own.
+		slog.Info("speechkit native callback timing", "result", "unbound", "status", status, "bind_ms", boundMs)
 		w.WriteHeader(status)
 		return
 	}
+	ctx, release, status := h.begin(r.Context(), turnID)
+	admittedMs := time.Since(arrived).Milliseconds() - boundMs
+	if status != 0 {
+		slog.Info("speechkit native callback timing", "result", "refused", "status", status, "bind_ms", boundMs, "admit_ms", admittedMs)
+		w.WriteHeader(status)
+		return
+	}
+	stopBody := context.AfterFunc(ctx, func() { _ = r.Body.Close() })
+	defer func() { stopBody(); release() }()
 	h.recordCallbackTiming(turnID, CallbackTiming{Arrived: arrived, AdmitMs: admittedMs, FirstAnswerMs: -1})
 	controller := http.NewResponseController(w)
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -328,7 +388,7 @@ func (h *OpenAIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// consent revalidation), the first spoken chunk (the disclosure on the first turn) and
 		// the agent's first answer text, from the moment the provider's request arrived.
 		slog.Info("speechkit native callback timing", "result", map[bool]string{true: "failed", false: "ok"}[err != nil],
-			"admit_ms", admittedMs, "first_chunk_ms", firstChunkMs, "first_answer_ms", firstAnswerMs, "total_ms", time.Since(arrived).Milliseconds())
+			"bind_ms", boundMs, "admit_ms", admittedMs, "first_chunk_ms", firstChunkMs, "first_answer_ms", firstAnswerMs, "total_ms", time.Since(arrived).Milliseconds())
 	}()
 	if err != nil {
 		// Never turn a failed/approval-blocked agent operation into spoken text.

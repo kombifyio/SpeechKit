@@ -99,10 +99,12 @@ task rather than a blanket `test`, which would also sweep the variants
 upstream expects to fail.
 
 Upstream moved to AGP 9 (built-in Kotlin, `compileSdk`/`targetSdk` 37, Kotlin
-plugins 2.4.0) in the rebase of 2026-10-21. SpeechKit is still on AGP 8.13, so
-the fork's `app/build.gradle.kts` keeps `kotlin("android")` and the explicit
-`jvmTarget` that upstream dropped; remove both when SpeechKit moves to AGP 9.
-`compileSdk`/`targetSdk` follow upstream (37) and build under AGP 8.13 from
+plugins 2.4.0) in the rebase of 2026-10-21. SpeechKit moved to AGP 9 in the
+same wave, so the fork's `app/build.gradle.kts` no longer keeps
+`kotlin("android")` and the explicit `jvmTarget` that upstream dropped:
+fork commit `50a74d23` ("Support AGP 9 in SpeechKit HeliBoard") removes both
+and moves the `runTests` host test behind `androidComponents.beforeVariants`.
+`compileSdk`/`targetSdk` follow upstream (37) and build under AGP 9.5 from
 this build. Rebased state: `:heliboard:assembleRelease`, `:app:assembleOssDebug`,
 `:app:assembleOssRelease` and `:app:testOssDebugUnitTest` pass;
 `:heliboard:testRunTestsUnitTest` fails 12 of 193 (`InputTest` 6, `ParserTest`

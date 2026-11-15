@@ -190,6 +190,12 @@ func (p *registeredNativeProvider) Connect(ctx context.Context, cfg LiveConfigFr
 	callback.BindTurn = p.turns.Resolve
 	callback.Revalidate = func(turnCtx context.Context) error {
 		if err := p.validateConsent(turnCtx, cfg); err != nil {
+			if turnCtx.Err() != nil && ctx.Err() == nil {
+				// The vendor dropped this callback (a speculative request it no longer needs, a
+				// barge-in) while its authority read ran: that refuses this callback only. It is no
+				// denial, so the session and its media stay up; watchConsent still revokes on one.
+				return err
+			}
 			cancel()
 			_ = p.closeFor(turnCtx)
 			return err

@@ -13,6 +13,7 @@ const (
 	StepInspect = "inspect"
 	StepInstall = "install"
 	StepWiFi    = "wifi"
+	StepWake    = "wake"
 	StepLink    = "link"
 )
 
@@ -44,6 +45,9 @@ type Status struct {
 	Identity Identity    `json:"identity"`
 	Plan     Plan        `json:"plan"`
 	WiFi     *WiFiStatus `json:"wifi,omitempty"`
+	// Wake is the device's local wake-word state; the setup offers the
+	// phrases the device itself lists.
+	Wake     *WakeStatus `json:"wake,omitempty"`
 	DeviceID string      `json:"device_id,omitempty"`
 	Busy     string      `json:"busy,omitempty"`
 	Progress int         `json:"progress"`
@@ -342,6 +346,50 @@ func (s *Setup) ReadWiFiState(ctx context.Context) (Status, error) {
 		s.mu.Unlock()
 	}
 	return s.Snapshot(), err
+}
+
+// ReadWake refreshes the device's wake-word state without changing it.
+func (s *Setup) ReadWake(ctx context.Context) (Status, error) {
+	st := s.Snapshot()
+	l, err := OpenLink(st.Port)
+	if err != nil {
+		return st, err
+	}
+	defer l.Close()
+	w, err := ReadWake(ctx, l)
+	if err == nil {
+		s.mu.Lock()
+		s.status.Wake = &w
+		s.mu.Unlock()
+	}
+	return s.Snapshot(), err
+}
+
+// SetWakePhrase selects the device's local wake word. The device must
+// already run the chosen phrase; the phrase id travels into a console line,
+// so the device refuses anything it does not recognize.
+func (s *Setup) SetWakePhrase(ctx context.Context, phrase string) (Status, error) {
+	if err := s.begin(StepWake); err != nil {
+		return s.Snapshot(), err
+	}
+	st := s.Snapshot()
+	err := func() error {
+		l, err := OpenLink(st.Port)
+		if err != nil {
+			return err
+		}
+		defer l.Close()
+		w, err := SetWakePhrase(ctx, l, phrase)
+		s.mu.Lock()
+		s.status.Wake = &w
+		s.mu.Unlock()
+		if err != nil {
+			return err
+		}
+		s.event(StepWake, "info", "Wake word set to %q.", phrase)
+		return nil
+	}()
+	return s.Snapshot(), s.end(StepWake, err)
 }
 
 // Link asks the Linker for a ticket and hands it to the device.

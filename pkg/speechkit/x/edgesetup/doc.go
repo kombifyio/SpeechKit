@@ -1,7 +1,8 @@
 // Package edgesetup sets up an ESP32 voice satellite that is plugged in over
 // USB: it finds the device, identifies its hardware, installs the matching
-// firmware image from a release manifest, hands over Wi-Fi and links the
-// device to an account with a single-use ticket.
+// firmware image from a release manifest, hands over Wi-Fi, lets the person
+// pick the local wake word and links the device to an account with a
+// single-use ticket.
 //
 // The package speaks the satellite's line protocol on the USB CDC console
 // (`KBX <command>` in, ESP log lines out; see the firmware's
@@ -14,6 +15,10 @@
 // A device is identified by its hardware, never by its port name, its USB
 // serial string or the board its running image was built for: the `KBX hw?`
 // report probes the board, and the factory MAC identifies the unit.
+//
+// The wake word is the device's own, not an assistant: the device reports the
+// closed set of phrases its firmware runs and the setup offers only those, so
+// a phrase id the device cannot recognize is never written.
 //
 // Credentials (Wi-Fi password, link ticket) are written to the device and
 // never logged; [Event] messages carry outcomes only.

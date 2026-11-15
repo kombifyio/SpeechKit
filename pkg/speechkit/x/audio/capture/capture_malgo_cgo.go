@@ -147,7 +147,11 @@ func newMalgoSession(cfg Config) (Session, error) {
 		ctx:    ctx,
 		events: make(chan Event, 8),
 	}
-	s.buffer.Grow(initialBufferSize)
+	if !cfg.DropFullCapture {
+		// Reserve room for a dictation recording only; a streaming session
+		// that keeps no recording starts from an empty buffer.
+		s.buffer.Grow(initialBufferSize)
+	}
 	if cfg.InputSource != InputSourceSystemLoopback && (cfg.KeepDeviceWarm || strings.TrimSpace(cfg.DeviceID) != "") {
 		go s.warmUp()
 	}

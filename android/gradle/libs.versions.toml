@@ -1,23 +1,30 @@
 [versions]
-agp = "8.13.2"
-# Kotlin stays on 2.3: Hilt 2.58 (last release for AGP 8) cannot read Kotlin 2.4 metadata.
-kotlin = "2.3.21"
+# AGP 9 compiles Kotlin itself (built-in Kotlin), so the Kotlin Android plugin
+# is gone and the toolchain moves as one piece: AGP 9.5 needs Gradle 9.6+ and
+# supports compileSdk 37.
+agp = "9.5.0"
+# Kotlin 2.4: the first line AGP 9's built-in Kotlin supports, and the line
+# Hilt 2.60.1 reads (it bundles metadata one minor version ahead).
+kotlin = "2.4.21"
 coroutines = "1.11.0"
-# Hilt stays: 2.60.1 requires AGP >= 9.0.0, we are on 8.13.0.
-hilt = "2.58"
-ksp = "2.3.12"
-# Compose BOM, Navigation and OkHttp stay: the newer lines require compileSdk 37,
-# AGP 8.13 supports at most 36. Raise them together with AGP.
-compose-bom = "2026.06.00"
+# Hilt 2.58 was the last release for AGP 8; 2.60.1 is the AGP 9 line.
+hilt = "2.60.1"
+# KSP 2.3.14, not 2.3.13: 2.3.13 dropped library symbols under concurrent
+# KSP executions (google/ksp#3286), which cost Hilt whole modules of
+# generated code in real parallel builds. 2.3.14 carries the fix.
+ksp = "2.3.14"
+# The Compose BOM, Navigation and OkHttp lines that were held back for
+# compileSdk 37. AGP 9.5 supports API 37, so they move with it.
+compose-bom = "2026.09.00"
 activity-compose = "1.13.0"
-lifecycle = "2.8.7"
-navigation = "2.8.5"
+lifecycle = "2.11.0"
+navigation = "2.10.2"
 room = "2.8.5"
 savedstate = "1.2.1"
 onnxruntime = "1.31.0"
 # bzip2 + tar for the neural voice archives (app module only).
 commons-compress = "1.28.0"
-okhttp = "5.4.0"
+okhttp = "5.5.1"
 retrofit = "3.0.0"
 moshi = "1.15.2"
 timber = "5.0.1"
@@ -102,7 +109,8 @@ androidx-test-rules = { group = "androidx.test", name = "rules", version.ref = "
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+# No kotlin-android plugin: AGP 9 compiles Kotlin itself. The Compose and
+# serialization compiler plugins still apply by their own ids.
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }

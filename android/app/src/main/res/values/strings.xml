@@ -87,8 +87,8 @@
     <string name="settings_connection_mode_cloud">Mode: kombify Cloud</string>
     <string name="settings_connection_connect_cloud">Connect kombify Cloud</string>
     <string name="settings_connection_disconnect_cloud">Disconnect Cloud</string>
-    <string name="settings_connection_open_companion">Open kombify Companion</string>
-    <string name="settings_connection_install_companion">Install kombify Companion</string>
+    <string name="settings_connection_open_companion">Open Companion</string>
+    <string name="settings_connection_install_companion">Install Companion</string>
     <string name="settings_connection_cloud_connected">Connected as the signed-in kombify user.</string>
     <string name="settings_connection_cloud_signed_out">Companion is installed. Sign in there, then connect.</string>
     <string name="settings_connection_cloud_missing">Companion is not installed. Install it to connect with your kombify account.</string>

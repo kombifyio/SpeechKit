@@ -68,8 +68,8 @@
     <string name="settings_connection_mode_cloud">模式：kombify Cloud</string>
     <string name="settings_connection_connect_cloud">连接 kombify Cloud</string>
     <string name="settings_connection_disconnect_cloud">断开 Cloud</string>
-    <string name="settings_connection_open_companion">打开 kombify Companion</string>
-    <string name="settings_connection_install_companion">安装 kombify Companion</string>
+    <string name="settings_connection_open_companion">打开 Companion</string>
+    <string name="settings_connection_install_companion">安装 Companion</string>
     <string name="settings_connection_cloud_connected">已以登录的 kombify 用户身份连接。</string>
     <string name="settings_connection_cloud_signed_out">Companion 已安装。请先在其中登录，然后再连接。</string>
     <string name="settings_connection_cloud_missing">未安装 Companion。安装后即可使用你的 kombify 账号连接。</string>

@@ -73,6 +73,12 @@ type Adapter struct {
 	// OnClose runs after both pumps have returned. Typically removes the
 	// session from the manager.
 	OnClose func()
+	// OnOutcome receives the session's classified outcome once, when the
+	// session ends (SessionOutcome). It must not block.
+	OnOutcome func(SessionOutcome)
+	// NoticeTTS speaks the failure notice (speakFailureNotice) as downlink
+	// PCM; nil speaks none.
+	NoticeTTS CascadedTTS
 	// OnStart claims active conversation capacity before provider admission.
 	// A pre-dialed socket waiting for start remains a prepared session.
 	OnStart func() error
@@ -91,6 +97,8 @@ type Adapter struct {
 	mediaClose       sync.Once
 	closed           atomicBool
 	terminal         bool               // guarded by writeMu; a terminal frame seals all downlink
+	noticeSpoken     atomic.Bool        // the failure notice is spoken at most once
+	locale           string             // the session's resolved locale; set before the pumps start
 	failureEndReason string             // guarded by writeMu; fatal error determines subsequent terminal reason
 	stopAdmission    context.CancelFunc // set before pumps start; fatal writes cancel upstream first
 	idle             *idleWatchdog
@@ -191,9 +199,17 @@ func (a *Adapter) Run(parent context.Context) {
 		ctx, expire = context.WithCancelCause(ctx)
 		budget = newVoiceBudgetLease(a.Session.VoiceBudget, func() { expire(errVoiceBudgetExpired) })
 		defer expire(nil)
-		// Registered-agent and own-endpoint sessions also end with their
-		// delegated authorization, which a budget renewal cannot extend.
-		if !a.Session.AnonymousGuide && a.SetVoiceBudgetRenewer != nil && a.Session.VoiceAgentBinding.TargetAgentID == "" && a.Session.VoiceAgentBinding.DirectEndpoint == nil {
+		// The budget reservation and the delegated authorization are two
+		// independent lifetimes. A registered-agent or own-endpoint session
+		// ends with its authorization (see authorizationExpiry below), but its
+		// reserved media window is renewable on its own terms: the renewal
+		// replaces the Cloud reservation and moves the budget deadline
+		// forward, and the authorization deadline is untouched by it. So the
+		// renewer is installed for every reserved, non-anonymous session.
+		// Withholding it here used to answer a legitimate renewal with 409
+		// `voice_budget_not_renewable`, even when the caller's fresh token
+		// had reserved a later budget window.
+		if !a.Session.AnonymousGuide && a.SetVoiceBudgetRenewer != nil {
 			a.SetVoiceBudgetRenewer(func(next wssession.VoiceBudget) error {
 				previous, err := budget.renew(next, a.now())
 				if err == nil && a.OnUsage != nil {
@@ -241,6 +257,7 @@ func (a *Adapter) Run(parent context.Context) {
 		}
 		return
 	}
+	a.dialog.startAccepted.Store(true)
 	// Fill provider/persona fields the client omitted from the user's
 	// edge-resolved voice preferences captured at session mint. Explicit
 	// start-frame values always win; unsatisfiable preferences fall back to
@@ -314,6 +331,7 @@ func (a *Adapter) Run(parent context.Context) {
 		return
 	}
 	cfg.TranscriptionMode = start.TranscriptionMode
+	a.locale = cfg.Locale
 	if a.Session != nil {
 		binding := a.Session.VoiceAgentBinding
 		cfg.AgentTargetID = binding.TargetAgentID
@@ -400,6 +418,7 @@ func (a *Adapter) Run(parent context.Context) {
 		return
 	}
 	if err := a.Provider.Connect(ctx, cfg); err != nil {
+		a.noteProviderFailure("provider_connect_failed")
 		cancel()
 		a.closeProvider()
 		if budgetEnded() {
@@ -416,6 +435,7 @@ func (a *Adapter) Run(parent context.Context) {
 		return
 	}
 	connectedAt = a.now()
+	a.dialog.providerConnected.Store(true)
 	if budget != nil {
 		budget.markConnected(connectedAt, normalizeProviderName(a.Provider.Name()))
 	}

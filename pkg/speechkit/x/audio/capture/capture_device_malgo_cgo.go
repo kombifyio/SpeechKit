@@ -233,12 +233,17 @@ func (s *MalgoSession) initDevice(deviceType malgo.DeviceType, deviceID malgo.De
 		// driver glitches audio at the hardware level. The authoritative
 		// full-capture write stays synchronous (a memcpy into a
 		// pre-grown buffer, contended only by Stop) so dictation audio
-		// can never be lost to a slow consumer; everything else moves to
-		// the drain goroutine. malgo reuses its chunk after the callback
-		// returns, so the pooled copy is mandatory either way.
-		s.mu.Lock()
-		s.buffer.Write(inputSamples)
-		s.mu.Unlock()
+		// can never be lost to a slow consumer; a streaming-only session
+		// (Config.DropFullCapture) skips it and leaves each frame to the
+		// drain goroutine, so an always-on listener retains no recording.
+		// Everything else moves to the drain goroutine. malgo reuses its
+		// chunk after the callback returns, so the pooled copy is
+		// mandatory either way.
+		if !s.cfg.DropFullCapture {
+			s.mu.Lock()
+			s.buffer.Write(inputSamples)
+			s.mu.Unlock()
+		}
 
 		if len(inputSamples) == 0 {
 			return
@@ -279,6 +284,8 @@ func (s *MalgoSession) initDevice(deviceType malgo.DeviceType, deviceID malgo.De
 }
 
 // Stop stops recording and returns the captured PCM data. Resets the buffer.
+// A session opened with Config.DropFullCapture retained no recording and
+// returns no PCM.
 func (s *MalgoSession) Stop() ([]byte, error) {
 	if !s.running.Load() {
 		return nil, nil
@@ -304,6 +311,11 @@ func (s *MalgoSession) Stop() ([]byte, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.cfg.DropFullCapture {
+		// Nothing was retained between Start and Stop; the frames went to
+		// the live handlers only (Config.DropFullCapture).
+		return nil, stopErr
+	}
 	pcm := make([]byte, s.buffer.Len())
 	copy(pcm, s.buffer.Bytes())
 	s.buffer.Reset()

@@ -3,14 +3,13 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     `maven-publish`
     alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
 }
 
 android {
     namespace = "io.kombify.speechkit.core"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 26
@@ -20,8 +19,6 @@ android {
 
     // The NDK's clang compiles the Phonon engine (buildPhononNative below); same version as the app module's.
     ndkVersion = "28.0.13004108"
-
-    sourceSets["main"].jniLibs.srcDir(layout.buildDirectory.dir("phonon-jni"))
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -40,7 +37,7 @@ android {
 // (app/cmd/speechkit-phonon-jni), built with Go and the NDK's clang for the 64-bit ABIs the engine supports. A
 // machine without Go builds the module without it; PhononNative.available() is then false and the app offers no
 // Phonon model. SPEECHKIT_GO names the go binary when it is not on PATH.
-val buildPhononNative by tasks.registering {
+val buildPhononNative = tasks.register("buildPhononNative") {
     description = "Builds libspeechkit_phonon.so for arm64-v8a and x86_64 with Go and the NDK"
     val abis = mapOf("arm64-v8a" to ("arm64" to "aarch64-linux-android"), "x86_64" to ("amd64" to "x86_64-linux-android"))
     val repoRoot = rootProject.projectDir.parentFile
@@ -65,7 +62,9 @@ val buildPhononNative by tasks.registering {
             logger.warn("Go not found: building without the Phonon engine (libspeechkit_phonon.so)")
             return@doLast
         }
-        val ndkDir = android.ndkDirectory
+        // AGP 9 hides android.ndkDirectory behind the new DSL; sdkComponents is
+        // its public replacement and resolves the same NDK installation.
+        val ndkDir = androidComponents.sdkComponents.ndkDirectory.get().asFile
         val toolchain = ndkDir.resolve("toolchains/llvm/prebuilt").listFiles()?.firstOrNull()
             ?: throw GradleException("NDK toolchain not found under $ndkDir")
         for ((abi, target) in abis) {
@@ -93,6 +92,17 @@ val buildPhononNative by tasks.registering {
     }
 }
 tasks.named("preBuild") { dependsOn(buildPhononNative) }
+
+// AGP 9 no longer lets a module add a directory to android.sourceSets: the
+// jniLibs source set is registered through the public Sources API, so the
+// Phonon engine directory is wired per variant instead of once per source set.
+// The Sources API resolves a relative name against the module directory, so
+// the build directory is named by its path relative to the module.
+androidComponents {
+    onVariants { variant ->
+        variant.sources.jniLibs?.addStaticSourceDirectory(layout.buildDirectory.dir("phonon-jni").get().asFile.relativeTo(projectDir).path)
+    }
+}
 
 // Published because docs/architecture/android-sdk-surface-boundary.md names
 // this module part of the Android embedder boundary. A module a host is told

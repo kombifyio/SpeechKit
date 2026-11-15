@@ -14,9 +14,18 @@ const (
 	outputPCMBytesPerSecond = 24_000 * 2
 	outputPCMFragmentBytes  = outputPCMBytesPerSecond / 10 // 100 ms
 	outputPCMLead           = 200 * time.Millisecond
-	maxPendingOutputBytes   = 4 << 20
-	maxPendingControlBytes  = 128 << 10
-	maxPendingOutputItems   = 512
+	// maxPendingOutputAhead is how much audio the pump may hold ahead of the
+	// playhead before it reads no further provider event. Providers synthesize
+	// faster than a device plays and their contract carries no flow-control
+	// event, only a blocking Receive, so the pull sets the pace: a long answer
+	// streams at the playhead instead of waiting whole in this process. The
+	// caps below stay as the contract guard for a provider that hands over
+	// more than one admitted message can hold.
+	maxPendingOutputAhead      = 2 * time.Second
+	maxPendingOutputAheadBytes = int(maxPendingOutputAhead/time.Second) * outputPCMBytesPerSecond
+	maxPendingOutputBytes      = 4 << 20
+	maxPendingControlBytes     = 128 << 10
+	maxPendingOutputItems      = 512
 )
 
 type queuedProviderOutput struct {
@@ -30,14 +39,28 @@ type queuedProviderOutput struct {
 	standalone string
 }
 
-// Only writePump owns this queue. It retains native batches without pacing
-// the provider reader, and bounds both retained bytes and small-message count.
+// Only writePump owns this queue. It retains native batches while the pump
+// paces them to the playhead, pulling another provider event only while the
+// queue is under maxPendingOutputAheadBytes, and bounds both retained bytes
+// and small-message count as a contract guard.
 type providerOutputQueue struct {
 	items               []*queuedProviderOutput
 	bytes               int
 	controls            int
 	head                time.Time
 	receivedReplyActive bool
+}
+
+// unplayedBytes is the audio the client has not been sent yet: the write pump
+// pulls no further provider event while it holds the playback lead.
+func (q *providerOutputQueue) unplayedBytes() int {
+	unplayed := q.bytes
+	if len(q.items) > 0 {
+		// The head item's bytes count whole; only its already-relayed prefix
+		// has reached the client.
+		unplayed -= q.items[0].offset
+	}
+	return unplayed
 }
 
 func (q *providerOutputQueue) append(msg *LiveMessage, epoch uint64) bool {
@@ -117,6 +140,7 @@ func (a *Adapter) writeOutputAudio(ctx context.Context, data []byte, epoch uint6
 	if err := a.connWrite(writeCtx, websocket.MessageBinary, data); err != nil {
 		return false, false
 	}
+	a.noteReplyAudio()
 	if a.continuousDuplex {
 		a.replyActivityAt = time.Now()
 	}
@@ -162,7 +186,12 @@ func (a *Adapter) relayQueuedOutput(ctx context.Context, q *providerOutputQueue)
 		if sent {
 			a.idle.Reset()
 			now := time.Now()
-			if q.head.Before(now) {
+			// The playhead advances by the audio's own duration, so a wake that
+			// came late catches up instead of slowing the answer below the
+			// device's pace. Only a debt past the lead the pump keeps for the
+			// device (a dry gap between pieces, or a stalled pump) starts the
+			// clock again from now, which bounds the catch-up burst.
+			if q.head.IsZero() || q.head.Before(now.Add(-outputPCMLead)) {
 				q.head = now
 			}
 			q.head = q.head.Add(time.Duration(end-item.offset) * time.Second / outputPCMBytesPerSecond)
