@@ -109,6 +109,12 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.80.9 (2026-11-15)
+
+### Bug Fixes
+
+* **speechkit:** accept the vendored migrationclass v0.10.1 in the hosted schema consumer
+
 ## 0.80.8 (2026-11-15)
 
 ### Bug Fixes
