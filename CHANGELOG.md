@@ -109,6 +109,8 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.80.10 (2026-11-16)
+
 ## 0.80.9 (2026-11-15)
 
 ### Bug Fixes
