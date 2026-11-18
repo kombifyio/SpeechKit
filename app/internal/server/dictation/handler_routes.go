@@ -196,18 +196,10 @@ func (h *Handler) resolveProviderProfile(ctx context.Context, explicit string) (
 		return normalized, nil
 	}
 	prefs := middleware.VoicePrefsFromContext(ctx)
-	// The v2 model (catalog profile id) wins over the v1 provider names.
+	// The account's dictation model (catalog profile id), when this server
+	// can serve it; otherwise the server's own selection.
 	if model := preferredSTTModel(ctx, prefs.STTModel); model != "" && h.providerAvailable(catalog.NormalizeProviderID(model)) {
 		return model, nil
-	}
-	for _, pref := range []string{prefs.STTPrimary, prefs.STTSecondary} {
-		provider := catalog.NormalizeProviderID(pref)
-		if provider == "" || strings.Contains(provider, ".") {
-			continue
-		}
-		if h.providerAvailable(provider) {
-			return provider, nil
-		}
 	}
 	return h.defaultProfileID, nil
 }

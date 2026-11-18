@@ -134,6 +134,13 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 		maxSessionDuration = 0
 	}
 
+	if cfg.Server.RequireVoiceBudget {
+		// A deployment that admits sessions through the Gateway runs their think turns in the owner's mode
+		// with a narrow Ed25519 service token: it does not start without the key.
+		if err := vsserver.ModeTurnSignerPreflight(); err != nil {
+			return nil, "unavailable: " + err.Error(), err
+		}
+	}
 	h, err := vsserver.New(vsserver.HandlerOptions{
 		Manager:            manager,
 		Providers:          factories,
@@ -156,7 +163,6 @@ func buildVoiceAgentHandler(ctx context.Context, cfg *config.Config, app *App) (
 		NativeConsentReader:          buildNativeVoiceConsentReader(),
 		WakeVerifier:                 buildWakeVerifier(ctx, cfg),
 		Vocabulary:                   buildVoiceAgentVocabulary(cfg, app),
-		PlainAgent:                   buildPlainVoiceAgent(app),
 		NoticeTTS:                    buildVoiceNoticeTTS(app),
 	})
 	if err != nil {
@@ -178,15 +184,6 @@ func buildVoiceNoticeTTS(app *App) vsserver.CascadedTTS {
 		return nil
 	}
 	return vsserver.NewDownlinkTTS(app.TTSRouter)
-}
-
-// buildPlainVoiceAgent is the plain voice model that answers a Companion turn the Companion cannot
-// serve, after a spoken notice. Without a configured model the turn keeps its typed error.
-func buildPlainVoiceAgent(app *App) vsserver.CascadedAgent {
-	if app == nil || app.AgentFlow == nil {
-		return nil
-	}
-	return vsserver.NewAgentFlowAdapter(app.AgentFlow)
 }
 
 // buildVoiceAgentVocabulary resolves a session's recognition keyterms (the
@@ -473,6 +470,17 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 		status := "ready (deepgram)"
 		if strings.TrimSpace(key) == "" {
 			status = "degraded: no Deepgram API key; Deepgram Voice Agent sessions will fail at upgrade"
+		} else if think := cfg.DeepgramThinkConfig(); think.Model == "" && think.EndpointURL == "" && !cfg.Server.RequireVoiceBudget {
+			// No model is compiled in: a standalone server names its think route, a Gateway-admitted one
+			// reasons per turn in the owner's mode. A standalone server that has its own configured reasoner
+			// (the agent flow of the cascaded pipeline) keeps serving its Deepgram sessions with it.
+			ensureSharedAIDeps(ctx, app)
+			if app.STTRouter != nil && app.AgentFlow != nil {
+				if factory, cascadedStatus, err := buildProviderFactory(ctx, cfg, app, ProviderCascaded); err == nil {
+					return factory, "ready (deepgram: no think route configured, so its sessions run the configured local cascaded reasoner; " + cascadedStatus + ")", nil
+				}
+			}
+			status = "degraded: no deepgram_think_model or deepgram_think_endpoint_url and no configured local reasoner; Deepgram Voice Agent sessions refuse to start (think_not_configured)"
 		}
 		return &deepgramProviderFactory{cfg: cfg}, status, nil
 
@@ -526,12 +534,8 @@ func buildProviderFactory(ctx context.Context, cfg *config.Config, app *App, pro
 			STT: app.STTRouter, SpeakerStreamer: app.STTRouter, TTS: vsserver.NewDownlinkTTS(ttsImpl),
 			Config: vsserver.CascadedConfig{TTSFormat: "wav", TTSSpeed: nonZeroFloat(cfg.TTS.Speed, 1.0)},
 		}
-		// The plain voice model answers a turn the Companion cannot serve (unavailable or failed), after a
-		// spoken notice; without a configured model the turn keeps its typed error.
-		if app.AgentFlow != nil {
-			deps.Agent = vsserver.NewAgentFlowAdapter(app.AgentFlow)
-			status += " + plain-model fallback"
-		}
+		// A turn the Companion cannot serve (unavailable or failed) is answered, after a spoken notice, by the
+		// session's own mode reasoner (its owner's default mode, per the Gateway-signed mode binding).
 		// Speech is recognised while the user speaks (the router's live recognition, by the same
 		// provider and endpoint configuration as streaming Dictation) whenever the router has a
 		// provider that streams; every turn it cannot serve is recognised from the buffered audio.

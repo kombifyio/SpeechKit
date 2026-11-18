@@ -455,54 +455,47 @@ and is no longer accepted; edge signers must send the envelope.
 
 ### Edge-resolved user voice preferences
 
-An edge that manages per-user voice preferences (contracts
-`speechkit.voice_prefs.v1` and `.v2`) may inject them on the requests it signs:
+An edge that manages per-user voice preferences (the Gateway's account voice
+settings document `speechkit.voice_prefs.v3`) may inject them on the requests
+it signs:
 
 | Header | Meaning |
 | --- | --- |
-| `x-speechkit-pref-stt-primary` | Preferred Dictation STT provider, e.g. `deepgram` |
-| `x-speechkit-pref-stt-secondary` | Second-choice Dictation STT provider, e.g. `assemblyai` |
-| `x-speechkit-pref-va-provider` | Default Voice Agent realtime backend |
 | `x-speechkit-pref-va-persona` | Default Voice Agent persona id |
+| `x-speechkit-pref-stt-model` | Dictation catalog profile id, e.g. `stt.deepgram.nova-3` |
+| `x-speechkit-pref-tts-model` | TTS catalog profile id |
+| `x-speechkit-pref-tts-voice` | voice name inside the TTS model |
+| `x-speechkit-pref-va-model` | Voice Agent catalog profile id, e.g. `realtime.builtin.pipeline` |
+| `x-speechkit-pref-vocabulary` | transcription vocabulary set ref: `operator-terms` or `customization.vocabulary_ref` keeps the operator vocabulary, another template id activates that template, `none` turns the operator vocabulary off, empty keeps the default (Dictation, Assist, Voice Agent listen leg) |
+| `x-speechkit-pref-scope` | `<category>:<device>` the edge resolved the settings for |
+| `x-speechkit-pref-language` | the account's language (`speech.language`, BCP-47; absent for `auto`), the session locale when `start.locale` is empty |
 | `x-speechkit-pref-ts` | Unix-seconds timestamp of the preference signature |
-| `x-speechkit-pref-signature` | `v1=<hex>` HMAC covering the preference set |
-| `x-speechkit-pref-stt-model` | v2: Dictation catalog profile id, e.g. `stt.deepgram.nova-3`; ahead of `stt-primary` |
-| `x-speechkit-pref-tts-model` | v2: TTS catalog profile id |
-| `x-speechkit-pref-tts-voice` | v2: voice name inside the TTS model |
-| `x-speechkit-pref-va-model` | v2: Voice Agent catalog profile id, e.g. `realtime.builtin.pipeline`; ahead of `va-provider` |
-| `x-speechkit-pref-vocabulary` | v2: transcription vocabulary set ref: `operator-terms` or `customization.vocabulary_ref` keeps the operator vocabulary, another template id activates that template, `none` turns the operator vocabulary off, empty keeps the default (Dictation, Assist, Voice Agent listen leg) |
-| `x-speechkit-pref-scope` | v2: `<category>:<device>` the edge resolved the settings for |
-| `x-speechkit-pref-va-locale` | v2: account Voice Agent locale (BCP-47), the session locale when `start.locale` is empty |
-| `x-speechkit-pref-v2-signature` | `v2=<hex>` HMAC covering the v1 and v2 values |
+| `x-speechkit-pref-v2-signature` | `v2=<hex>` HMAC covering the preference set |
 
 The preference headers carry their own versioned signature with the same
 shared secret, independent of the identity envelope. The edge signs
 
 ```
-v1 \n user_id \n org_id \n ts \n stt-primary \n stt-secondary \n va-provider \n va-persona
+v2 \n user_id \n org_id \n ts \n "" \n "" \n "" \n va-persona \n
+stt-model \n tts-model \n tts-voice \n va-model \n vocabulary \n scope \n language
 ```
 
-and, under `x-speechkit-pref-v2-signature` with the same secret and timestamp,
-
-```
-v2 \n user_id \n org_id \n ts \n stt-primary \n stt-secondary \n va-provider \n va-persona \n
-stt-model \n tts-model \n tts-voice \n va-model \n vocabulary \n scope \n va-locale
-```
-
-(absent values sign as empty strings; when the caller has no stored
-preferences, no pref header is sent at all). The server honours the
-preference headers only when the request's identity was established via a
-verified edge envelope (`edge_hmac`, or the edge half of `bearer_or_edge`)
-AND the signature of their version verifies against that identity (an
-invalid v2 signature drops only the v2 values) within the same 5-minute
-window as `X-Edge-Auth-Ts`. A missing or invalid preference signature
-degrades to "no preference" — it never fails the request, because
-preferences are an overlay, not an authorization input. Values are
-provider/persona names only — never keys or credentials.
+(lines 5 to 7 held the retired v1 provider headers and always sign as empty
+strings; absent values sign as empty strings; when the caller has no stored
+preferences, no pref header is sent at all). The v1 set
+(`x-speechkit-pref-stt-primary`, `-stt-secondary`, `-va-provider`,
+`-va-locale` and `x-speechkit-pref-signature`) is retired and ignored. The
+server honours the preference headers only when the request's identity was
+established via a verified edge envelope (`edge_hmac`, or the edge half of
+`bearer_or_edge`) AND the v2 signature verifies against that identity within
+the same 5-minute window as `X-Edge-Auth-Ts`. A missing or invalid preference
+signature degrades to "no preference" — it never fails the request, because
+preferences are an overlay, not an authorization input. Values are catalog
+ids, persona, voice and language names only — never keys or credentials.
 
 Server-side precedence per request: explicit request override (batch or
 streaming `provider_profile_id`, Voice Agent `start.provider` / `persona_id` /
-`locale`) → injected preference header (a v2 model before the v1 provider) → the server's `[model_selection]` primary →
+`locale`) → injected preference header → the server's `[model_selection]` primary →
 the routing fallback order. Preferences are best-effort: an unknown or
 unconfigured provider or persona falls back to the next step instead of
 failing the request, and responses report the provider actually used. For

@@ -13,6 +13,12 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Changed
 
+- The Windows Companion follows this device's kombify sign-in and opens its
+  settings in the kombify app that carries it. Its pill shares the Kubi drawing,
+  moves with pointer drags, and keeps SpeechKit's shortcuts available while
+  SpeechKit runs. Speech consent is bound to the account shown in settings;
+  an account change requires a fresh question.
+
 - Update the desktop framework and frontend runtime together to Wails 3.1.0
   and refresh compatible desktop libraries. Preserve transparent overlay
   decoration, startup visibility, and polling/animation suspension on hide.
@@ -108,6 +114,42 @@ Developers can use the stable SDK independently of experimental integrations.
 Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
+
+## 0.80.14 (2026-11-18)
+
+### Bug Fixes
+
+* **speechkit:** public export admits the signed wire value and drops two new coupling markers
+
+## 0.80.13 (2026-11-18)
+
+### Features
+
+* **speechkit:** host-kit wake-word listener over SpeechKit's openWakeWord sidecar, Companion packaging, the pinned ONNX Runtime from NuGet
+* **speechkit:** read and write the account voice settings document v3
+
+## 0.80.12 (2026-11-17)
+
+### Features
+
+* **speechkit:** local models as a host-kit package; the Companion runs Phonon, Bark and Parakeet on the device; the pill's menu button can be hidden
+
+### Bug Fixes
+
+* **speechkit:** AltGr-safe Ctrl+Alt chords in the host kit; the server's empty transcript is silence, not a failure
+* **speechkit:** port OIDC auth to go-jose v4 and remove v3
+* **speechkit:** the window picker's hover poll runs (thread timer id); the highlight follows the pointer
+
+## 0.80.11 (2026-11-17)
+
+### Features
+
+* **speechkit:** resolve hosted voice thinking through mode policy
+
+### Bug Fixes
+
+* **release:** restore release guards moved behind effects in
+* **release:** separate AI activation from report failures
 
 ## 0.80.10 (2026-11-16)
 

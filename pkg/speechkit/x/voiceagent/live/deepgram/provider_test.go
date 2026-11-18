@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 )
@@ -126,29 +125,17 @@ func TestDeepgramParseFunctionCall(t *testing.T) {
 
 func TestDeepgramBuildSettingsManagedThink(t *testing.T) {
 	t.Parallel()
-	// Default provider: managed Deepgram LLM — provider.{type,model} present,
-	// no endpoint block (Deepgram supplies the credential server-side).
-	think := deepgramThinkFromSettings(t, (&Provider{}).buildSettings(live.LiveConfig{}))
-	provider, ok := think["provider"].(map[string]any)
-	if !ok {
-		t.Fatalf("think.provider missing or wrong type: %#v", think["provider"])
+	// An explicit managed model: provider.{type,model} present, no endpoint
+	// block (Deepgram supplies the credential server-side). The package holds
+	// no default model, so a bare Provider has no route.
+	if _, err := (&Provider{}).thinkRoute(); err != ErrThinkNotConfigured {
+		t.Fatalf("bare provider route error = %v, want ErrThinkNotConfigured", err)
 	}
-	chain := catalog.VoiceAgentThinkChain(deepgramVoiceAgentProfileID)
-	if len(chain) < 2 {
-		t.Fatalf("catalog think chain needs a default and a fallback, got %#v", chain)
-	}
-	if provider["type"] != chain[0].Provider || provider["model"] != chain[0].Model {
-		t.Errorf("managed think provider mismatch: %#v", provider)
-	}
-	if _, hasEndpoint := think["endpoint"]; hasEndpoint {
-		t.Errorf("managed think must not emit an endpoint block, got %#v", think["endpoint"])
-	}
-
 	// Explicit provider/model override without an endpoint stays managed.
 	p := &Provider{}
 	p.ConfigureThink("anthropic", "claude-haiku", "", "")
-	think = deepgramThinkFromSettings(t, p.buildSettings(live.LiveConfig{}))
-	provider = think["provider"].(map[string]any)
+	think := deepgramThinkFromSettings(t, p.buildSettings(live.LiveConfig{}))
+	provider := think["provider"].(map[string]any)
 	if provider["type"] != "anthropic" || provider["model"] != "claude-haiku" {
 		t.Errorf("configured managed think mismatch: %#v", provider)
 	}
@@ -188,7 +175,7 @@ func TestDeepgramBuildSettingsBYOThink(t *testing.T) {
 	// Endpoint URL without a key still emits the endpoint (e.g. a credential-less
 	// internal gateway) but omits the headers block.
 	p = &Provider{}
-	p.ConfigureThink("", "", "https://internal.gw/llm", "")
+	p.ConfigureThink("", "internal-model", "https://internal.gw/llm", "")
 	think = deepgramThinkFromSettings(t, p.buildSettings(live.LiveConfig{}))
 	endpoint = think["endpoint"].(map[string]any)
 	if endpoint["url"] != "https://internal.gw/llm" {

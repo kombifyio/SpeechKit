@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	jose "github.com/go-jose/go-jose/v3"
-	"github.com/go-jose/go-jose/v3/jwt"
+	jose "github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 )
 
 type oidcFixture struct {
@@ -60,7 +60,7 @@ func (f *oidcFixture) sign(t *testing.T, alg jose.SignatureAlgorithm, key any, k
 	if err != nil {
 		t.Fatalf("NewSigner: %v", err)
 	}
-	raw, err := jwt.Signed(signer).Claims(claims).CompactSerialize()
+	raw, err := jwt.Signed(signer).Claims(claims).Serialize()
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}

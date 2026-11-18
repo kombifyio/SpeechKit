@@ -64,6 +64,10 @@ func authorizeNativeVoiceConsent(req *http.Request, cfg vsserver.LiveConfigFrame
 		claims["voice_endpoint_binding"], claims["voice_endpoint_signature"] = cfg.EndpointBinding, cfg.EndpointSignature
 		delete(claims, "target_agent_id")
 	}
+	if binding, signature, _, _ := cfg.ModeNow(); binding != "" && cfg.VoiceSessionID != "" && cfg.DirectEndpoint == nil {
+		// A Companion session that also holds a platform-mode binding: the Gateway checks it is the live session.
+		claims["session_id"], claims["voice_mode_binding"], claims["voice_mode_signature"] = cfg.VoiceSessionID, binding, signature
+	}
 	token, err := signer.Sign(claims)
 	if err != nil {
 		return errors.New("voiceagent: current consent service credential could not be issued")
@@ -481,8 +485,9 @@ func (f *cascadedProviderFactory) NewProvider() vsserver.LiveProviderAdapter {
 	return vsserver.NewCascadedProvider(vsserver.CascadedDeps{
 		STT:             f.stt,
 		SpeakerStreamer: f.speakerStreamer,
-		Agent:           f.agent,
-		TTS:             vsserver.NewDownlinkTTS(f.tts),
+		// One slot per session: a hosted session binds its own mode reasoner to it (mode_chat.go).
+		Agent: vsserver.NewModeAgentSlot(f.agent),
+		TTS:   vsserver.NewDownlinkTTS(f.tts),
 		Config: vsserver.CascadedConfig{
 			TTSFormat: "wav",
 			TTSSpeed:  nonZeroFloat(f.cfg.TTS.Speed, 1.0),
@@ -596,6 +601,9 @@ func (b *deepgramLiveBridge) SendText(text string) error     { return b.inner.Se
 func (b *deepgramLiveBridge) Close() error                   { return b.inner.Close() }
 func (b *deepgramLiveBridge) Name() string                   { return b.inner.Name() }
 func (b *deepgramLiveBridge) SupportsLiveKitTransport() bool { return true }
+
+// NoteThinkRefusal forwards a final denial of the think route to the provider (see deepgram.Provider.NoteThinkRefusal).
+func (b *deepgramLiveBridge) NoteThinkRefusal(code string) { b.inner.NoteThinkRefusal(code) }
 
 func (b *deepgramLiveBridge) UpdateInstructions(ctx context.Context, cfg vsserver.LiveConfigFrame) error {
 	return b.inner.UpdateInstructions(ctx, live.LiveConfig{

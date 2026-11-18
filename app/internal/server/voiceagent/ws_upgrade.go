@@ -115,6 +115,9 @@ func (h *Handler) upgradeWS(w http.ResponseWriter, r *http.Request, sessionID st
 		SetVoiceBudgetRenewer: func(renew func(wssession.VoiceBudget) error) {
 			h.manager.SetVoiceBudgetRenewer(sessionID, renew)
 		},
+		OnEnd: func(reason string) {
+			h.manager.SetEndReason(sessionID, modeEndReason(reason))
+		},
 		OnClose: func() {
 			h.manager.FinishConversation(sessionID)
 		},

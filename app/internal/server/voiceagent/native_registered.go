@@ -28,18 +28,15 @@ type nativeVoiceSessions struct {
 	agents        assemblyai.Agents
 	signingSecret func() string
 	consentReader NativeConsentReader
-	// plain answers a Companion turn the Companion cannot serve, after a spoken notice; nil keeps
-	// the typed error.
-	plain publiccascaded.Agent
 	// callbackHeaders ride on every vendor callback (NativeCallbackHeaders option).
 	callbackHeaders map[string]string
 	mu              sync.Mutex
 	callbacks       map[string]*a2a.OpenAIHandler
 }
 
-func newNativeVoiceSessions(publicURL string, storage store.Store, assemblyKey string, signingSecret func() string, consentReader NativeConsentReader, plain publiccascaded.Agent, callbackHeaders map[string]string) *nativeVoiceSessions {
+func newNativeVoiceSessions(publicURL string, storage store.Store, assemblyKey string, signingSecret func() string, consentReader NativeConsentReader, callbackHeaders map[string]string) *nativeVoiceSessions {
 	journal, _ := storage.(store.VoiceProviderResourceStore)
-	return &nativeVoiceSessions{publicURL: publicURL, journal: journal, agents: assemblyai.Agents{APIKey: assemblyKey}, signingSecret: signingSecret, consentReader: consentReader, plain: plain, callbackHeaders: callbackHeaders, callbacks: make(map[string]*a2a.OpenAIHandler)}
+	return &nativeVoiceSessions{publicURL: publicURL, journal: journal, agents: assemblyai.Agents{APIKey: assemblyKey}, signingSecret: signingSecret, consentReader: consentReader, callbackHeaders: callbackHeaders, callbacks: make(map[string]*a2a.OpenAIHandler)}
 }
 
 func (s *nativeVoiceSessions) serveCallback(w http.ResponseWriter, r *http.Request, id string) {
@@ -58,8 +55,11 @@ func (s *nativeVoiceSessions) serveCallback(w http.ResponseWriter, r *http.Reque
 // Provider tools never replace the agent's tools/approvals or durable history.
 type registeredNativeProvider struct {
 	LiveProviderAdapter
-	sessions          *nativeVoiceSessions
-	provider          string
+	sessions *nativeVoiceSessions
+	provider string
+	// mode marks a session whose only reasoner is its owner's default model mode.
+	mode              bool
+	modeAgent         *modeChatAgent
 	resource          store.VoiceProviderResource
 	sessionID         string
 	cancel            context.CancelFunc
@@ -99,7 +99,10 @@ type registeredNativeProvider struct {
 	createDispatched bool
 }
 
-func (p *registeredNativeProvider) HandlesOwnTools() bool { return true }
+// HandlesOwnTools is true for a registered agent, which runs its own governed tools. A session that
+// reasons in its owner's default mode keeps the server's tools instead: the mode reasoner executes
+// them (mode_chat.go), so the adapter merges them and the session context like any plain session.
+func (p *registeredNativeProvider) HandlesOwnTools() bool { return !p.mode }
 
 func (p *registeredNativeProvider) Connect(ctx context.Context, cfg LiveConfigFrame) error {
 	if mode := live.TranscriptionMode(cfg.TranscriptionMode); !mode.Valid() || (mode != "" && p.provider != "assemblyai") {
@@ -109,7 +112,13 @@ func (p *registeredNativeProvider) Connect(ctx context.Context, cfg LiveConfigFr
 	if p.sessions.signingSecret != nil {
 		secret = strings.TrimSpace(p.sessions.signingSecret())
 	}
-	if (cfg.DirectEndpoint == nil && (cfg.AgentTargetID == "" || cfg.CapabilityLease == "")) || cfg.AgentEndpoint == "" || cfg.OboSubjectToken == "" || secret == "" || cfg.VoiceSessionID == "" {
+	// A session with no registered agent and no own endpoint reasons in the owner's default mode.
+	mode := cfg.modeOnly()
+	if mode {
+		if cfg.VoiceSessionID == "" {
+			return errors.New("voiceagent: complete native mode binding is required")
+		}
+	} else if (cfg.DirectEndpoint == nil && (cfg.AgentTargetID == "" || cfg.CapabilityLease == "")) || cfg.AgentEndpoint == "" || cfg.OboSubjectToken == "" || secret == "" || cfg.VoiceSessionID == "" {
 		return errors.New("voiceagent: complete registered native binding is required")
 	}
 	delegated := delegatedNativeProvider(p.provider)
@@ -123,7 +132,18 @@ func (p *registeredNativeProvider) Connect(ctx context.Context, cfg LiveConfigFr
 	if err != nil || !time.Now().Before(expiresAt) {
 		return errAuthorizationExpired
 	}
-	ctx, cancel := context.WithDeadline(ctx, expiresAt)
+	var cancel context.CancelFunc
+	if mode && cfg.Mode != nil {
+		// Follows the session's renewable binding instead of freezing its mint expiry.
+		var cancelCause context.CancelCauseFunc
+		ctx, cancelCause = context.WithCancelCause(ctx)
+		stopWatch := cfg.Mode.WatchExpiry(func() { cancelCause(errAuthorizationExpired) })
+		cancel = func() { stopWatch(); cancelCause(context.Canceled) }
+		// The callback's own expiry is the binding's 4 h ceiling; the turn headers and the watch enforce the real one.
+		expiresAt = time.Now().Add(4*time.Hour + 5*time.Minute)
+	} else {
+		ctx, cancel = context.WithDeadline(ctx, expiresAt)
+	}
 	if err := p.validateConsent(ctx, cfg); err != nil {
 		cancel()
 		return err
@@ -138,7 +158,11 @@ func (p *registeredNativeProvider) Connect(ctx context.Context, cfg LiveConfigFr
 	p.binding = cfg
 	p.mu.Unlock()
 	var agent a2a.TurnStreamer
-	if cfg.DirectEndpoint != nil {
+	switch {
+	case mode:
+		// The session's own server tools stay with this reasoner: the vendor never owns a model or a tool.
+		agent, err = newModeChatAgent(cfg, cfg.Tools, cfg.ServerToolRunner)
+	case cfg.DirectEndpoint != nil:
 		headers, headerErr := endpointTurnHeaders(cfg, secret)
 		if headerErr != nil {
 			p.cancel()
@@ -146,7 +170,7 @@ func (p *registeredNativeProvider) Connect(ctx context.Context, cfg LiveConfigFr
 		}
 		agent, err = responses.New(responses.Config{URL: cfg.AgentEndpoint, Connection: cfg.DirectEndpoint.Connection,
 			Messages: cfg.DirectEndpoint.Messages, Surface: cfg.DirectEndpoint.Surface, Headers: headers})
-	} else {
+	default:
 		client := agentHTTPClient()
 		agent, err = a2a.New(a2a.Config{Endpoint: cfg.AgentEndpoint, TargetAgentID: cfg.AgentTargetID, SessionID: firstNonBlank(cfg.AISessionID, cfg.VoiceSessionID), HTTPClient: client, Headers: registeredAgentHeaders(cfg, secret), Conversation: cfg.Conversation})
 		// The Companion's turns go through the Gateway: warm its policy read and this session's connection to it now
@@ -163,13 +187,33 @@ func (p *registeredNativeProvider) Connect(ctx context.Context, cfg LiveConfigFr
 		go p.warm()
 	}
 	p.mu.Lock()
+	p.modeAgent, _ = agent.(*modeChatAgent)
+	if p.modeAgent != nil {
+		// A turn the platform denies for good is never re-asked by the vendor leg and reaches the person as a typed error.
+		p.modeAgent.SetRefusalNotifier(func(code string) {
+			if noter, ok := p.LiveProviderAdapter.(interface{ NoteThinkRefusal(code string) }); ok {
+				noter.NoteThinkRefusal(code)
+			}
+		})
+	}
 	if cfg.Conversation != nil {
 		p.conversationAgent, _ = agent.(*a2a.Agent)
 	}
 	p.timer, _ = agent.(nativeTurnTimer)
 	p.mu.Unlock()
-	if cfg.DirectEndpoint == nil {
-		agent = newNativeCompanionAgent(agent, p.sessions.plain, !delegated)
+	if cfg.DirectEndpoint == nil && !mode {
+		// A Companion turn the Companion cannot serve is answered by the session's mode reasoner
+		// after a spoken notice (nil keeps the typed error when no mode binding was signed).
+		var fallback publiccascaded.Agent
+		if cfg.hasMode() {
+			modeAgent, modeErr := newModeChatAgent(cfg, nil, nil)
+			if modeErr != nil {
+				p.cancel()
+				return modeErr
+			}
+			fallback = modeAgent
+		}
+		agent = newNativeCompanionAgent(agent, fallback, !delegated)
 	}
 	callbackToken := rand.Text() + rand.Text()
 	callback, err := a2a.NewOpenAIHandler(ctx, agent, callbackToken, expiresAt, cfg.Locale)
@@ -179,6 +223,9 @@ func (p *registeredNativeProvider) Connect(ctx context.Context, cfg LiveConfigFr
 	}
 	if cfg.DirectEndpoint != nil {
 		callback.Model = cfg.DirectEndpoint.Connection.Model
+	}
+	if mode {
+		callback.Model = modeThinkModelLabel
 	}
 	p.mu.Lock()
 	if p.closed {
@@ -230,6 +277,9 @@ func (p *registeredNativeProvider) Connect(ctx context.Context, cfg LiveConfigFr
 		if cfg.DirectEndpoint != nil {
 			cfg.NativeLLMModel = cfg.DirectEndpoint.Connection.Model
 		}
+		if mode {
+			cfg.NativeLLMModel = modeThinkModelLabel
+		}
 		cfg.Tools = nil
 	}
 	if p.provider == "assemblyai" {
@@ -275,6 +325,11 @@ var errNativeConsentDenied = errors.New("voiceagent: current native voice consen
 func (p *registeredNativeProvider) validateConsent(ctx context.Context, cfg LiveConfigFrame) error {
 	if ctx.Err() != nil {
 		return errNativeConsentDenied
+	}
+	if cfg.modeOnly() {
+		// A signed-in session with no agent has never required the stored cloud-processing consent; the
+		// Gateway re-checks the owner, the owner's access and the live session on every turn instead.
+		return nil
 	}
 	allowed := func(consent NativeVoiceConsent) bool {
 		return consent.Verified && consent.CloudProcessing && consent.ExpiresAt > time.Now().Unix() &&
@@ -380,7 +435,15 @@ func (p *registeredNativeProvider) SendText(string) error {
 
 // The stored/custom LLM binding is immutable for this voice session. Persona
 // changes must start a newly bound session instead of mutating vendor authority.
-func (p *registeredNativeProvider) UpdateInstructions(context.Context, LiveConfigFrame) error {
+func (p *registeredNativeProvider) UpdateInstructions(_ context.Context, cfg LiveConfigFrame) error {
+	p.mu.Lock()
+	agent := p.modeAgent
+	p.mu.Unlock()
+	if p.mode && agent != nil {
+		// The vendor only speaks; the persona lives in the session's mode reasoner.
+		agent.SetInstructions(cfg.SystemPrompt, cfg.RefinementPrompt)
+		return nil
+	}
 	return errors.New("voiceagent: native registered instructions are session-bound")
 }
 

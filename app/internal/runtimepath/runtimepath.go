@@ -293,3 +293,11 @@ func isSameOrChildPath(path, root string) bool {
 	}
 	return !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
+
+// InstalledConfigFilePath is where an installed product with the data
+// directory name dataDirName keeps its config.toml for this user. A product
+// that runs beside another (the Companion beside the SpeechKit desktop app)
+// reads the other's settings from here; it never writes there.
+func InstalledConfigFilePath(dataDirName string) string {
+	return filepath.Join(platformDataDir(dataDirName), "config.toml")
+}

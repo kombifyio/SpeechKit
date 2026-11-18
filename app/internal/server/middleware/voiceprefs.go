@@ -14,90 +14,73 @@ import (
 )
 
 // Voice-preference headers a fronting edge proxy injects on requests it
-// authenticates (contracts `speechkit.voice_prefs.v1` and `.v2`). The edge
-// resolves the caller's stored voice preferences at proxy time and forwards
-// them as plain headers; the values are provider, model, persona, voice,
-// vocabulary and locale NAMES only — never keys or credentials. When the
-// caller has no stored preferences the edge sends no pref headers at all and
-// the server's own configuration stays authoritative.
+// authenticates (the Gateway's account voice settings document
+// `speechkit.voice_prefs.v3`, workspace platform/standards/speechkit-settings.v1.md).
+// The edge resolves the caller's stored settings at proxy time and forwards
+// them as plain headers; the values are catalogue model ids, persona, voice,
+// vocabulary and language NAMES only — never keys or credentials. When the
+// caller has no stored settings the edge sends no pref headers at all and the
+// server's own configuration stays authoritative.
 //
 // Trust model (mirrors the Gateway resolver, speechkit-prefs.ts): the
 // identity envelope (auth_edge_envelope.go) signs only the identity fields,
-// so the preference headers carry their OWN versioned HMACs over the same
+// so the preference headers carry their OWN versioned HMAC over the same
 // shared edge secret, bound to the verified caller identity and one
-// timestamp. Two signatures travel side by side:
+// timestamp. One signature travels (x-speechkit-pref-v2-signature: v2=<hex>)
+// over 15 lines joined with "\n":
 //
-//	v1 (x-speechkit-pref-signature: v1=<hex>):
-//	v1 \n sub \n orgId \n ts \n stt-primary \n stt-secondary \n va-provider \n va-persona
+//	v2 \n sub \n orgId \n ts \n "" \n "" \n "" \n va-persona \n stt-model \n
+//	tts-model \n tts-voice \n va-model \n vocabulary \n scope \n language
 //
-//	v2 (x-speechkit-pref-v2-signature: v2=<hex>): the v1 lines, then
-//	stt-model \n tts-model \n tts-voice \n va-model \n vocabulary \n scope \n va-locale
-//
-// (absent values sign as ""; the first line is the version). Both use
-// `x-speechkit-pref-ts` (Unix seconds, same replay window as the identity
-// HMAC). The headers are honoured ONLY when (a) the request's identity was
-// established via edge-HMAC AND (b) the signature of their version verifies
-// against that identity: v1 fields need v1, v2 fields need v2. Preferences
-// are an overlay, not an authorization input: a missing or invalid signature
-// degrades to "no preference" for that version (debug log) — it never fails
-// the request.
+// Lines 5 to 7 held the retired v1 provider headers and always sign as "";
+// `language` is x-speechkit-pref-language (`speech.language`, absent for
+// `auto`). Absent values sign as "". The signature uses `x-speechkit-pref-ts`
+// (Unix seconds, same replay window as the identity HMAC). The headers are
+// honoured ONLY when (a) the request's identity was established via edge-HMAC
+// AND (b) the v2 signature verifies against that identity. Preferences are an
+// overlay, not an authorization input: a missing or invalid signature
+// degrades to "no preference" (debug log) — it never fails the request.
 const (
-	VoicePrefHeaderSTTPrimary   = "x-speechkit-pref-stt-primary"
-	VoicePrefHeaderSTTSecondary = "x-speechkit-pref-stt-secondary"
-	VoicePrefHeaderVAProvider   = "x-speechkit-pref-va-provider"
-	VoicePrefHeaderVAPersona    = "x-speechkit-pref-va-persona"
-	VoicePrefHeaderTimestamp    = "x-speechkit-pref-ts"
-	VoicePrefHeaderSignature    = "x-speechkit-pref-signature"
-
+	VoicePrefHeaderVAPersona   = "x-speechkit-pref-va-persona"
+	VoicePrefHeaderTimestamp   = "x-speechkit-pref-ts"
 	VoicePrefHeaderSTTModel    = "x-speechkit-pref-stt-model"
 	VoicePrefHeaderTTSModel    = "x-speechkit-pref-tts-model"
 	VoicePrefHeaderTTSVoice    = "x-speechkit-pref-tts-voice"
 	VoicePrefHeaderVAModel     = "x-speechkit-pref-va-model"
 	VoicePrefHeaderVocabulary  = "x-speechkit-pref-vocabulary"
 	VoicePrefHeaderScope       = "x-speechkit-pref-scope"
-	VoicePrefHeaderVALocale    = "x-speechkit-pref-va-locale"
+	VoicePrefHeaderLanguage    = "x-speechkit-pref-language"
 	VoicePrefHeaderV2Signature = "x-speechkit-pref-v2-signature"
 )
 
-// voicePrefSignatureVersion and voicePrefV2SignatureVersion are the accepted
-// pref-signature scheme versions (the `vN=` prefix on their signature header
-// and the first payload line).
-const (
-	voicePrefSignatureVersion   = "v1"
-	voicePrefV2SignatureVersion = "v2"
-)
+// voicePrefV2SignatureVersion is the accepted pref-signature scheme version
+// (the `v2=` prefix on its signature header and the first payload line).
+const voicePrefV2SignatureVersion = "v2"
 
-// VoicePrefs carries the edge-resolved user voice preferences for one
+// voicePrefRetiredLines are the payload lines of the retired v1 provider
+// headers (stt-primary, stt-secondary, va-provider); they sign as "".
+const voicePrefRetiredLines = 3
+
+// VoicePrefs carries the edge-resolved account voice settings for one
 // request. All fields are optional; empty means "no preference" and leaves
 // the server's own defaults in charge. Preferences are best-effort hints:
 // mode handlers fall back to their configured routing instead of failing a
 // request whose preference cannot be satisfied.
 type VoicePrefs struct {
-	// STTPrimary and STTSecondary name the preferred Dictation STT providers
-	// (e.g. "deepgram", "assemblyai"), tried in that order.
-	STTPrimary   string
-	STTSecondary string
-	// VAProvider names the preferred Voice Agent realtime backend used when a
-	// session's start frame omits an explicit provider.
-	VAProvider string
 	// VAPersona names the persona applied when a Voice Agent start frame
-	// omits persona_id.
+	// omits persona_id (`assistant.persona`).
 	VAPersona string
-
-	// v2 (central voice settings). Model ids are catalog profile ids
-	// (pkg/speechkit/catalog), resolved by the edge along device > category >
-	// global > account. A v2 model takes precedence over the matching v1
-	// provider (the Gateway's "a scoped model replaces the account's v1
-	// provider").
-	STTModel   string // e.g. "stt.deepgram.nova-3"; ahead of STTPrimary
-	TTSModel   string // e.g. "tts.local.kokoro-82m"
-	TTSVoice   string // voice name inside TTSModel
-	VAModel    string // e.g. "realtime.builtin.pipeline"; ahead of VAProvider
-	Vocabulary string // transcription vocabulary set ref, e.g. "kombify.product"; "none" = off, "" = default
+	// Model ids are catalogue profile ids (pkg/speechkit/catalog), resolved
+	// by the edge along device > category > global.
+	STTModel   string // `dictation.model`, e.g. "stt.deepgram.nova-3"
+	TTSModel   string // `speech.model`, e.g. "tts.local.kokoro-82m"
+	TTSVoice   string // `speech.voice`, the voice name inside TTSModel
+	VAModel    string // `assistant.model`, e.g. "realtime.builtin.pipeline"
+	Vocabulary string // `vocabulary.set` ref, e.g. "kombify.product"; "none" = off, "" = default
 	Scope      string // "<category>:<device>" the edge resolved; "" = unscoped
-	// VALocale is the account's voice_agent.locale (BCP-47), the Voice Agent
-	// locale when a start frame names none.
-	VALocale string
+	// Language is the account's `speech.language` (BCP-47; absent for
+	// `auto`), the Voice Agent locale when a start frame names none.
+	Language string
 }
 
 // IsZero reports whether no preference was forwarded.
@@ -128,29 +111,22 @@ func InjectVoicePrefsForTest(ctx context.Context, prefs VoicePrefs) context.Cont
 // verifiedVoicePrefsFromRequest validates the edge preference overlay for a
 // request whose identity was already proven via edge-HMAC. Returns the zero
 // value (never an error — prefs are an overlay, not authz) when no pref
-// header is present or no versioned signature verifies against the caller's
-// identity within the replay window. The v1 and v2 sets are verified
-// independently: an invalid v2 signature drops only the v2 fields.
+// header is present or the v2 signature does not verify against the caller's
+// identity within the replay window.
 func verifiedVoicePrefsFromRequest(r *http.Request, id Identity, secret string, now time.Time) VoicePrefs {
 	// Raw values participate in the signature base exactly as injected;
 	// trimming happens only after verification.
-	v1Lines := []string{
-		r.Header.Get(VoicePrefHeaderSTTPrimary),
-		r.Header.Get(VoicePrefHeaderSTTSecondary),
-		r.Header.Get(VoicePrefHeaderVAProvider),
+	values := []string{
 		r.Header.Get(VoicePrefHeaderVAPersona),
-	}
-	v2Lines := []string{
 		r.Header.Get(VoicePrefHeaderSTTModel),
 		r.Header.Get(VoicePrefHeaderTTSModel),
 		r.Header.Get(VoicePrefHeaderTTSVoice),
 		r.Header.Get(VoicePrefHeaderVAModel),
 		r.Header.Get(VoicePrefHeaderVocabulary),
 		r.Header.Get(VoicePrefHeaderScope),
-		r.Header.Get(VoicePrefHeaderVALocale),
+		r.Header.Get(VoicePrefHeaderLanguage),
 	}
-	hasV1, hasV2 := anyNonEmpty(v1Lines), anyNonEmpty(v2Lines)
-	if !hasV1 && !hasV2 {
+	if !anyNonEmpty(values) {
 		return VoicePrefs{}
 	}
 	if secret == "" {
@@ -162,27 +138,24 @@ func verifiedVoicePrefsFromRequest(r *http.Request, id Identity, secret string, 
 		slog.Debug("voice prefs: ignoring pref headers, missing or stale timestamp")
 		return VoicePrefs{}
 	}
-	var prefs VoicePrefs
-	// Signature bases per the Gateway contract (DEPLOYMENT_CONTRACT.md
-	// §"SpeechKit User Voice Preferences" / buildSpeechKitPrefSignaturePayload
-	// and buildSpeechKitPrefV2SignaturePayload): bound to the VERIFIED
-	// identity, so a captured pref set cannot be replayed onto another caller.
-	if hasV1 && voicePrefSignatureValid(r.Header.Get(VoicePrefHeaderSignature), voicePrefSignatureVersion, id, ts, secret, v1Lines) {
-		prefs.STTPrimary = strings.TrimSpace(v1Lines[0])
-		prefs.STTSecondary = strings.TrimSpace(v1Lines[1])
-		prefs.VAProvider = strings.TrimSpace(v1Lines[2])
-		prefs.VAPersona = strings.TrimSpace(v1Lines[3])
+	// Signature base per the Gateway contract (DEPLOYMENT_CONTRACT.md
+	// §"SpeechKit User Voice Preferences" / buildSpeechKitPrefV2SignaturePayload):
+	// bound to the VERIFIED identity, so a captured pref set cannot be
+	// replayed onto another caller.
+	lines := append(make([]string, voicePrefRetiredLines), values...)
+	if !voicePrefSignatureValid(r.Header.Get(VoicePrefHeaderV2Signature), voicePrefV2SignatureVersion, id, ts, secret, lines) {
+		return VoicePrefs{}
 	}
-	if hasV2 && voicePrefSignatureValid(r.Header.Get(VoicePrefHeaderV2Signature), voicePrefV2SignatureVersion, id, ts, secret, append(append([]string(nil), v1Lines...), v2Lines...)) {
-		prefs.STTModel = strings.TrimSpace(v2Lines[0])
-		prefs.TTSModel = strings.TrimSpace(v2Lines[1])
-		prefs.TTSVoice = strings.TrimSpace(v2Lines[2])
-		prefs.VAModel = strings.TrimSpace(v2Lines[3])
-		prefs.Vocabulary = strings.TrimSpace(v2Lines[4])
-		prefs.Scope = strings.TrimSpace(v2Lines[5])
-		prefs.VALocale = strings.TrimSpace(v2Lines[6])
+	return VoicePrefs{
+		VAPersona:  strings.TrimSpace(values[0]),
+		STTModel:   strings.TrimSpace(values[1]),
+		TTSModel:   strings.TrimSpace(values[2]),
+		TTSVoice:   strings.TrimSpace(values[3]),
+		VAModel:    strings.TrimSpace(values[4]),
+		Vocabulary: strings.TrimSpace(values[5]),
+		Scope:      strings.TrimSpace(values[6]),
+		Language:   strings.TrimSpace(values[7]),
 	}
-	return prefs
 }
 
 // voicePrefSignatureValid checks one `<version>=<hex>` signature header over

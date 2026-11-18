@@ -29,14 +29,17 @@ type VoiceAgentConfig struct {
 	Model         string `toml:"model"`          // Real-time model ID (e.g. "gemini-3.8-live")
 	FallbackModel string `toml:"fallback_model"` // Fallback real-time model
 	Voice         string `toml:"voice"`          // Voice name for real-time model
-	// Deepgram Voice Agent think-LLM overrides. The think leg reasons over the
-	// transcript; listen and speak stay Deepgram. When unset, the catalog
-	// default think chain (catalog.VoiceAgentThinkChain, Deepgram-managed)
-	// applies, with its fallback serving a failing turn. Setting
-	// DeepgramThinkEndpointURL + DeepgramThinkAPIKeyEnv switches the think leg to
-	// a bring-your-own LLM deployment, with the credential resolved from the
-	// named env var (env -> Doppler). Read by the Server- and Device-Target
-	// Deepgram Voice Agent wiring; ignored by the Gemini/cascaded backends.
+	// Deepgram Voice Agent think-LLM selection. The think leg reasons over the
+	// transcript; listen and speak stay Deepgram. The think route is always
+	// explicit: a Deepgram-managed model (deepgram_think_provider/_model), or
+	// DeepgramThinkEndpointURL + DeepgramThinkAPIKeyEnv for a bring-your-own
+	// LLM deployment, with the credential resolved from the named env var
+	// (env -> Doppler). No model is compiled in: with none set, a standalone
+	// Deepgram session refuses to start (think_not_configured). A hosted
+	// deployment behind the Gateway resolves thinking per turn through the
+	// person's default mode instead (docs/server/voice-agent-think.md). Read by
+	// the Server- and Device-Target Deepgram Voice Agent wiring; ignored by the
+	// Gemini/cascaded backends.
 	DeepgramThinkProvider    string `toml:"deepgram_think_provider"`
 	DeepgramThinkModel       string `toml:"deepgram_think_model"`
 	DeepgramThinkEndpointURL string `toml:"deepgram_think_endpoint_url"`

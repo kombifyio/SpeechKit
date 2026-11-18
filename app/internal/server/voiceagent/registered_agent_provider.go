@@ -76,9 +76,19 @@ func (p *RegisteredAgentProvider) Connect(ctx context.Context, cfg LiveConfigFra
 		return err
 	}
 	deps := p.deps
-	// p.deps.Agent, when the host wired one, is the plain voice-agent model: it answers a turn the Companion
-	// cannot serve (unavailable, failed), with a spoken notice that the Companion did not answer.
-	deps.Agent = &disclosingAgent{inner: agent, fallback: p.deps.Agent, ack: companionAckEnabled()}
+	// The session's mode reasoner (its owner's default model mode, signed by the Gateway) answers a turn the
+	// Companion cannot serve (unavailable, failed), with a spoken notice that the Companion did not answer. A
+	// session without a signed mode binding keeps the typed error.
+	var fallback publiccascaded.Agent
+	if cfg.hasMode() {
+		modeAgent, modeErr := newModeChatAgent(cfg, nil, nil)
+		if modeErr != nil {
+			cancel()
+			return modeErr
+		}
+		fallback = modeAgent
+	}
+	deps.Agent = &disclosingAgent{inner: agent, fallback: fallback, ack: companionAckEnabled()}
 	if warm := gatewayPolicyWarmer(cfg.AgentEndpoint, client); warm != nil {
 		// The Gateway reads the agent plugin policy before every turn; asking for that read when the session opens and
 		// when the user starts speaking has it under way (and the agent host awake) by the time the turn arrives.
@@ -260,6 +270,7 @@ func (a *disclosingAgent) Run(ctx context.Context, input publiccascaded.AgentInp
 			return output, err
 		}
 	}
+	a.observe(input.Utterance, output.Text)
 	if a.takeFirst() {
 		output.Text = disclosureFor(input.Locale) + output.Text
 	}
@@ -360,8 +371,17 @@ func (a *disclosingAgent) streamTurn(ctx context.Context, input publiccascaded.A
 	if err != nil {
 		return output, err
 	}
+	a.observe(input.Utterance, output.Text)
 	output.Text = prefix + output.Text
 	return output, nil
+}
+
+// observe hands a turn the Companion answered to the fallback reasoner, so the conversation it takes over
+// when the Companion is unreachable is the one the person has been having.
+func (a *disclosingAgent) observe(utterance, answer string) {
+	if observer, ok := a.fallback.(turnObserver); ok {
+		observer.Observe(utterance, answer)
+	}
 }
 
 // nativeCompanionAgent is the Companion behind a native media callback (the Box's Deepgram route):

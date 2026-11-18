@@ -49,6 +49,22 @@ type VoiceAgentBinding struct {
 	EndpointSignature            string
 	RequestDigest                string
 	DirectEndpoint               *responses.Context
+	// Mode* is the verified platform-mode binding: the Gateway signed that this
+	// session's owner opened it and consented to cloud processing, so every
+	// think turn may run in the owner's default model mode. It is carried next
+	// to a registered agent binding (the plain fallback answers through it) or
+	// alone (a plain session). It never selects a model and is never a client field.
+	ModeBinding   string
+	ModeSignature string
+	ModeEndpoint  string
+	ModeExpiresAt int64
+	// ModeAdmission is how the Gateway admitted the session: "plain" (a signed-in session with no agent, which
+	// has never required the stored cloud-processing consent) or "registered" (a Companion session whose
+	// stored consent was read and true; its plain fallback uses the mode). It selects the consent boundary the session keeps; it is never a client field.
+	ModeAdmission string
+	// ModeReservationID is the Cloud budget reservation the binding was minted for; the handler requires it to
+	// equal the reservation of the same request.
+	ModeReservationID string
 }
 
 type voiceAgentBindingCtxKey struct{}
@@ -64,7 +80,95 @@ func InjectVoiceAgentBindingForTest(ctx context.Context, binding VoiceAgentBindi
 	return context.WithValue(ctx, voiceAgentBindingCtxKey{}, binding)
 }
 
+// ModeVoiceBindingHeader and ModeVoiceHMACHeader carry the Gateway-signed
+// platform-mode binding (speechkit-mode-binding.ts).
+const (
+	ModeVoiceBindingHeader = "X-Edge-Voice-Mode-Binding"
+	ModeVoiceHMACHeader    = "X-Edge-Voice-Mode-Hmac"
+)
+
+// verifiedVoiceAgentBindingFromRequest returns the registered-agent or own-endpoint
+// binding of the request, carrying the verified platform-mode binding when the
+// Gateway signed one.
 func verifiedVoiceAgentBindingFromRequest(r *http.Request, id Identity, secret string) (VoiceAgentBinding, bool, error) {
+	binding, present, err := verifiedAgentOrEndpointBinding(r, id, secret)
+	if err != nil {
+		return VoiceAgentBinding{}, true, err
+	}
+	encoded, signature := r.Header.Get(ModeVoiceBindingHeader), r.Header.Get(ModeVoiceHMACHeader)
+	if encoded == "" && signature == "" {
+		return binding, present, nil
+	}
+	mode, err := verifiedModeVoiceBinding(encoded, signature, id, secret)
+	if err != nil || binding.DirectEndpoint != nil {
+		// An own-endpoint session runs on its own endpoint; a mode binding beside it is never valid.
+		return VoiceAgentBinding{}, true, errors.New("invalid platform mode voice binding")
+	}
+	// The admission kind and the session shape must agree: a plain session has no agent, a registered one has.
+	if (mode.Admission == "plain") != (!present || binding.TargetAgentID == "") {
+		return VoiceAgentBinding{}, true, errors.New("invalid platform mode voice binding")
+	}
+	binding.ModeBinding, binding.ModeSignature, binding.ModeEndpoint, binding.ModeExpiresAt = encoded, signature, mode.Endpoint, mode.ExpiresAt
+	binding.ModeAdmission, binding.ModeReservationID = mode.Admission, mode.ReservationID
+	if !present {
+		binding.CredentialExpiresAt = mode.ExpiresAt
+	}
+	return binding, true, nil
+}
+
+type modeVoiceProof struct {
+	Version       int    `json:"version"`
+	Kind          string `json:"kind"`
+	Admission     string `json:"admission"`
+	ReservationID string `json:"reservationId"`
+	Subject       string `json:"subject"`
+	OrgID         string `json:"orgId"`
+	SessionNonce  string `json:"sessionNonce"`
+	ExpiresAt     int64  `json:"expiresAt"`
+	Endpoint      string `json:"endpoint"`
+	Consent       struct {
+		CloudProcessing bool   `json:"cloud_processing"`
+		Recording       bool   `json:"voice_agent_recording"`
+		Stamp           string `json:"voice_agent_recording_updated_at"`
+	} `json:"consent"`
+}
+
+// verifiedModeVoiceBinding checks the Gateway's signature, the owner and the
+// expiry. The binding is a proof of an admitted session, not a model choice.
+func verifiedModeVoiceBinding(encoded, signature string, id Identity, secret string) (modeVoiceProof, error) {
+	deny := errors.New("invalid platform mode voice binding")
+	if secret == "" || encoded == "" || len(encoded) > 8192 || signature == "" {
+		return modeVoiceProof{}, deny
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte("speechkit-voice-mode-v1\n" + encoded))
+	if !hmacEqual([]byte(signature), []byte(hex.EncodeToString(mac.Sum(nil)))) {
+		return modeVoiceProof{}, deny
+	}
+	body, err := base64.StdEncoding.DecodeString(encoded)
+	var proof modeVoiceProof
+	if err != nil || json.Unmarshal(body, &proof) != nil || proof.Version != 1 || proof.Kind != "platform-mode" ||
+		proof.Subject != id.UserID || proof.OrgID != id.OrgID || proof.SessionNonce == "" || proof.ExpiresAt <= time.Now().Unix() ||
+		(proof.Admission != "plain" && proof.Admission != "registered") || proof.ReservationID == "" || (proof.Admission == "registered" && !proof.Consent.CloudProcessing) {
+		return modeVoiceProof{}, deny
+	}
+	endpoint, err := url.Parse(proof.Endpoint)
+	// The binding is only a proof of the Gateway's route: the turn tokens, the consent read and the end report
+	// of the session are sent to this host, so it is pinned to the Gateway origin exactly as a registered
+	// agent's endpoint is (a signed proof never redirects a service token to another host).
+	if err != nil || endpoint.Scheme != "https" || endpoint.Host != "api.kombify.io" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.Path != "/v1/ai/responses" {
+		return modeVoiceProof{}, deny
+	}
+	if proof.Consent.Recording {
+		stamp, err := time.Parse(time.RFC3339Nano, proof.Consent.Stamp)
+		if err != nil || stamp.After(time.Now()) {
+			return modeVoiceProof{}, deny
+		}
+	}
+	return proof, nil
+}
+
+func verifiedAgentOrEndpointBinding(r *http.Request, id Identity, secret string) (VoiceAgentBinding, bool, error) {
 	if r.Header.Get("X-Edge-Voice-Endpoint-Binding") != "" || r.Header.Get("X-Edge-Voice-Endpoint-Hmac") != "" {
 		return verifiedEndpointVoiceBinding(r, id, secret)
 	}

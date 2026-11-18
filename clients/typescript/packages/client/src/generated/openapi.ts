@@ -637,8 +637,8 @@ export interface paths {
          *
          *     Provider precedence per request: explicit `provider_profile_id`
          *     override → edge-injected user voice-preference headers
-         *     (`x-speechkit-pref-stt-primary` / `-secondary`, honoured only under a
-         *     verified edge HMAC plus a valid `x-speechkit-pref-signature`) → the
+         *     (`x-speechkit-pref-stt-model`, a dictation catalog profile id, honoured
+         *     only under a verified edge HMAC plus a valid `x-speechkit-pref-v2-signature`) → the
          *     server's configured `[model_selection]` primary → the router's
          *     fallback order. Unsatisfiable preferences fall back instead of
          *     erroring; the response's `provider` field reports the provider
@@ -799,10 +799,10 @@ export interface paths {
          *     value is held memory-only for the session's registered-agent turns
          *     and usage report and never appears in any response, ticket, or log.
          *
-         *     Edge-injected user voice preferences (`x-speechkit-pref-va-provider`,
-         *     `x-speechkit-pref-va-persona`) are likewise captured at this
+         *     Edge-injected user voice preferences (`x-speechkit-pref-va-model`,
+         *     `x-speechkit-pref-va-persona`, `x-speechkit-pref-language`) are likewise captured at this
          *     session-mint request. When the WebSocket `start` frame omits
-         *     `provider` or `persona_id`, the captured preference fills the gap; an
+         *     `provider`, `persona_id` or `locale`, the captured preference fills the gap; an
          *     unconfigured preferred provider or unresolvable preferred persona
          *     falls back to the server default instead of failing the session.
          *

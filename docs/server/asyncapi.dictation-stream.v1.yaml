@@ -252,8 +252,8 @@ components:
             Catalog profile to prioritize, e.g. `stt.deepgram.nova-3`. When
             omitted, the server defaults from the edge-resolved user voice
             preference captured at session-mint time
-            (`x-speechkit-pref-stt-primary`, then `-secondary`); without
-            either, the router's configured order applies. Unknown or
+            (`x-speechkit-pref-stt-model`); without it, the router's
+            configured order applies. Unknown or
             unconfigured values never fail the segment — routing falls back.
         interim_results:
           type: boolean

@@ -34,11 +34,15 @@ type (
 // LiveMessage types so the result satisfies LiveProviderAdapter.
 type CascadedProvider struct {
 	inner *cascaded.Provider
+	// slot is the pipeline's agent slot when the host wired one: a hosted session binds its
+	// mode reasoner to it (mode_chat.go).
+	slot *ModeAgentSlot
 }
 
 // NewCascadedProvider preserves the historical constructor name.
 func NewCascadedProvider(deps CascadedDeps) *CascadedProvider {
-	return &CascadedProvider{inner: cascaded.NewProvider(deps)}
+	slot, _ := deps.Agent.(*ModeAgentSlot)
+	return &CascadedProvider{inner: cascaded.NewProvider(deps), slot: slot}
 }
 
 // NewAgentFlowAdapter bridges the server's agent flow to cascaded.Agent for

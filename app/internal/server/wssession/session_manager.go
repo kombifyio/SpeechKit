@@ -83,22 +83,19 @@ func (id Identity) admissionKey() string {
 // convert directly) without importing the linux-only middleware package —
 // this package stays build-tag-free and natively testable, the same reason
 // Identity above duplicates the middleware's Identity fields. The values are
-// non-secret provider/model/persona/locale names the fronting edge resolved
-// for the user; they are captured at session-mint time because the WebSocket
-// upgrade authenticates via ticket and never sees the edge headers. The v2
-// fields (STTModel onward) take precedence over the matching v1 field.
+// non-secret catalogue model ids, persona, voice and language names the
+// fronting edge resolved for the user (account voice settings v3); they are
+// captured at session-mint time because the WebSocket upgrade authenticates
+// via ticket and never sees the edge headers.
 type VoicePrefs struct {
-	STTPrimary   string
-	STTSecondary string
-	VAProvider   string
-	VAPersona    string
-	STTModel     string
-	TTSModel     string
-	TTSVoice     string
-	VAModel      string
-	Vocabulary   string
-	Scope        string
-	VALocale     string
+	VAPersona  string
+	STTModel   string
+	TTSModel   string
+	TTSVoice   string
+	VAModel    string
+	Vocabulary string
+	Scope      string
+	Language   string
 }
 
 // VoiceAgentBinding carries a Gateway-authorized registered-agent target from
@@ -118,6 +115,15 @@ type VoiceAgentBinding struct {
 	EndpointSignature            string
 	RequestDigest                string
 	DirectEndpoint               *responses.Context
+	// Mode* is the Gateway-signed binding of this session to its owner's
+	// default model mode (middleware.ModeVoiceHeader). Every hosted think turn
+	// of the session runs through it; it names no model and no credential.
+	ModeBinding       string
+	ModeSignature     string
+	ModeEndpoint      string
+	ModeExpiresAt     int64
+	ModeAdmission     string
+	ModeReservationID string
 }
 
 // VoiceBudget is retained from the authenticated edge decision, never a
@@ -174,6 +180,56 @@ type SessionManager struct {
 	voiceBudgetClaims map[string]int64
 	draining          bool
 	finalizing        int // pending receipts handed out and not yet finished
+	// modeEnd reports the end of a session that holds a platform-mode binding (SetModeEndHook).
+	modeEnd func(sessionID string, owner Identity, authority *ModeAuthority, reason string)
+}
+
+// SetModeEndHook installs the best-effort report of a platform-mode session's end: it runs once per
+// such session, on every way a session ends (client delete, socket close, provider failure, budget or
+// authorization expiry, drain, an unattached ticket lapsing), on its own goroutine, never under the lock.
+func (m *SessionManager) SetModeEndHook(hook func(sessionID string, owner Identity, authority *ModeAuthority, reason string)) {
+	m.mu.Lock()
+	m.modeEnd = hook
+	m.mu.Unlock()
+}
+
+// AttachModeAuthority binds a session's platform-mode binding under the manager lock, so a close that
+// races the mint always sees it and reports the end. If the session is already gone, no one else will
+// report it: the end is reported here and false is returned (the caller refuses the mint).
+func (m *SessionManager) AttachModeAuthority(id string, owner Identity, authority *ModeAuthority) bool {
+	m.mu.Lock()
+	s, ok := m.sessions[id]
+	if ok && s.State != StateClosed {
+		s.ModeAuthority = authority
+		m.mu.Unlock()
+		return true
+	}
+	hook := m.modeEnd
+	m.mu.Unlock()
+	if hook != nil && authority != nil {
+		go hook(id, owner, authority, "socket_closed")
+	}
+	return false
+}
+
+// ModeAuthorityOf returns the live session's platform-mode binding authority, or nil.
+func (m *SessionManager) ModeAuthorityOf(id string) *ModeAuthority {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if s, ok := m.sessions[id]; ok {
+		return s.ModeAuthority
+	}
+	return nil
+}
+
+// SetEndReason records why a live session is ending (one of the Gateway lifecycle reasons) unless a
+// reason is already set; the first reason wins. An unknown session is ignored.
+func (m *SessionManager) SetEndReason(id, reason string) {
+	m.mu.Lock()
+	if s, ok := m.sessions[id]; ok && s.endReason == "" {
+		s.endReason = reason
+	}
+	m.mu.Unlock()
 }
 
 // SessionStats reports current session occupancy and configured capacity.
@@ -231,7 +287,14 @@ type ManagedSession struct {
 	DataProfile *dataprofile.Profile
 
 	VoiceAgentBinding VoiceAgentBinding
-	VoiceBudget       VoiceBudget
+	// ModeAuthority is the renewable platform-mode binding of a session with no agent
+	// (nil otherwise); VoiceAgentBinding.Mode* is its immutable mint snapshot.
+	ModeAuthority *ModeAuthority
+	// endReason is the first recorded reason this session ended (SetEndReason); modeEnded marks that the
+	// end of a mode session was reported.
+	endReason   string
+	modeEnded   bool
+	VoiceBudget VoiceBudget
 	// voiceBudgetRenewer is installed by the running session adapter; it
 	// owns the live deadline, so only it may adopt a renewed reservation.
 	voiceBudgetRenewer func(VoiceBudget) error
@@ -646,6 +709,9 @@ func (m *SessionManager) Remove(id string) {
 		m.mu.Unlock()
 		return
 	}
+	if s.endReason == "" {
+		s.endReason = "client_ended"
+	}
 	if stop := s.stopConversation; stop != nil {
 		s.closing = true
 		m.mu.Unlock()
@@ -672,6 +738,9 @@ func (m *SessionManager) Drain() []func() {
 	var receipts []*ManagedSession
 	var stops []func()
 	for _, s := range m.sessions {
+		if s.endReason == "" {
+			s.endReason = "server_closed"
+		}
 		if stop := s.stopConversation; stop != nil {
 			s.closing = true
 			stops = append(stops, stop)
@@ -750,6 +819,14 @@ func (m *SessionManager) removeLocked(s *ManagedSession) *ManagedSession {
 	s.pendingFinalizer = nil
 	if s.pendingTimer != nil {
 		s.pendingTimer.Stop()
+	}
+	if s.ModeAuthority != nil && !s.modeEnded && m.modeEnd != nil {
+		s.modeEnded = true
+		reason := s.endReason
+		if reason == "" {
+			reason = "socket_closed"
+		}
+		go m.modeEnd(s.ID, s.Owner, s.ModeAuthority, reason)
 	}
 	s.State = StateClosed
 	delete(m.sessions, s.ID)

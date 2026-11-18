@@ -5,7 +5,9 @@ package middleware
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -234,4 +236,111 @@ func TestAuthVoiceConsentSnapshotRequiresBoundSignature(t *testing.T) {
 			}
 		})
 	}
+}
+
+// modeBindingPair signs a platform-mode binding the way the Gateway does.
+func modeBindingPair(t *testing.T, secret string, mutate func(map[string]any)) (string, string) {
+	t.Helper()
+	proof := map[string]any{"version": 1, "kind": "platform-mode", "admission": "plain", "subject": "auth0|owner", "orgId": "org_test", "sessionNonce": "nonce-1",
+		"reservationId": "res-1", "expiresAt": time.Now().Add(time.Hour).Unix(), "endpoint": "https://api.kombify.io/v1/ai/responses"}
+	if mutate != nil {
+		mutate(proof)
+	}
+	raw, err := json.Marshal(proof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded := base64.StdEncoding.EncodeToString(raw)
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte("speechkit-voice-mode-v1\n" + encoded))
+	return encoded, hex.EncodeToString(mac.Sum(nil))
+}
+
+// The platform-mode binding proves a Gateway-admitted session of exactly this owner: a forged signature,
+// another owner or org, an expired or route-shifted proof, withdrawn consent and a binding beside an own
+// endpoint are all refused, and a valid one is accepted without selecting any model.
+func TestVerifiedModeVoiceBindingRefusesForgedOrMismatchedProofs(t *testing.T) {
+	id := Identity{UserID: "auth0|owner", OrgID: "org_test"}
+	cases := map[string]func(map[string]any){
+		"owner":       func(p map[string]any) { p["subject"] = "auth0|other" },
+		"org":         func(p map[string]any) { p["orgId"] = "org_other" },
+		"expired":     func(p map[string]any) { p["expiresAt"] = time.Now().Add(-time.Minute).Unix() },
+		"kind":        func(p map[string]any) { p["kind"] = "direct-endpoint" },
+		"nonce":       func(p map[string]any) { p["sessionNonce"] = "" },
+		"endpoint":    func(p map[string]any) { p["endpoint"] = "https://api.kombify.io/v1/ai/models" },
+		"foreign":     func(p map[string]any) { p["endpoint"] = "https://foreign.example/v1/ai/responses" },
+		"query":       func(p map[string]any) { p["endpoint"] = "https://api.kombify.io/v1/ai/responses?model=x" },
+		"admission":   func(p map[string]any) { p["admission"] = "anything" },
+		"reservation": func(p map[string]any) { p["reservationId"] = "" },
+		"registered without agent": func(p map[string]any) {
+			p["admission"], p["consent"] = "registered", map[string]any{"cloud_processing": true}
+		},
+		"recording": func(p map[string]any) {
+			p["consent"] = map[string]any{"cloud_processing": false, "voice_agent_recording": true, "voice_agent_recording_updated_at": "2999-01-01T00:00:00Z"}
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			encoded, signature := modeBindingPair(t, "edge-secret", mutate)
+			request := httptest.NewRequest(http.MethodPost, "/v1/voiceagent/sessions", nil)
+			request.Header.Set(ModeVoiceBindingHeader, encoded)
+			request.Header.Set(ModeVoiceHMACHeader, signature)
+			if _, present, err := verifiedVoiceAgentBindingFromRequest(request, id, "edge-secret"); err == nil || !present {
+				t.Fatalf("%s binding must fail closed: present=%v err=%v", name, present, err)
+			}
+		})
+	}
+	encoded, signature := modeBindingPair(t, "edge-secret", nil)
+	for name, secret := range map[string]string{"forged": "other-secret"} {
+		t.Run(name, func(t *testing.T) {
+			forged, forgedSignature := modeBindingPair(t, secret, nil)
+			request := httptest.NewRequest(http.MethodPost, "/v1/voiceagent/sessions", nil)
+			request.Header.Set(ModeVoiceBindingHeader, forged)
+			request.Header.Set(ModeVoiceHMACHeader, forgedSignature)
+			if _, _, err := verifiedVoiceAgentBindingFromRequest(request, id, "edge-secret"); err == nil {
+				t.Fatal("a binding signed with another secret must be refused")
+			}
+		})
+	}
+	t.Run("unsigned", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodPost, "/v1/voiceagent/sessions", nil)
+		request.Header.Set(ModeVoiceBindingHeader, encoded)
+		if _, _, err := verifiedVoiceAgentBindingFromRequest(request, id, "edge-secret"); err == nil {
+			t.Fatal("a binding without its signature must be refused")
+		}
+	})
+	t.Run("beside own endpoint", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodPost, "/v1/voiceagent/sessions", nil)
+		request.Header.Set("X-Edge-Voice-Endpoint-Binding", "x")
+		request.Header.Set("X-Edge-Voice-Endpoint-Hmac", "x")
+		request.Header.Set(ModeVoiceBindingHeader, encoded)
+		request.Header.Set(ModeVoiceHMACHeader, signature)
+		if _, _, err := verifiedVoiceAgentBindingFromRequest(request, id, "edge-secret"); err == nil {
+			t.Fatal("a mode binding must never accompany an own-endpoint binding")
+		}
+	})
+	t.Run("plain beside an agent binding", func(t *testing.T) {
+		target, agentEndpoint := "workbench-orchestrator", "https://api.kombify.io/a2a/agents/kombify-ai"
+		request := httptest.NewRequest(http.MethodPost, "/v1/voiceagent/sessions", nil)
+		request.Header.Set(VoiceAgentTargetHeader, target)
+		request.Header.Set(VoiceAgentEndpointHeader, agentEndpoint)
+		request.Header.Set(VoiceAgentLeaseHeader, "lease-token")
+		request.Header.Set(VoiceAgentHMACHeader, bindingHMAC("edge-secret", id, target, agentEndpoint, "lease-token"))
+		request.Header.Set(ModeVoiceBindingHeader, encoded)
+		request.Header.Set(ModeVoiceHMACHeader, signature)
+		if _, _, err := verifiedVoiceAgentBindingFromRequest(request, id, "edge-secret"); err == nil {
+			t.Fatal("a plain admission must not accompany a registered agent binding")
+		}
+	})
+	t.Run("valid", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodPost, "/v1/voiceagent/sessions", nil)
+		request.Header.Set(ModeVoiceBindingHeader, encoded)
+		request.Header.Set(ModeVoiceHMACHeader, signature)
+		binding, present, err := verifiedVoiceAgentBindingFromRequest(request, id, "edge-secret")
+		if err != nil || !present || binding.ModeBinding != encoded || binding.ModeSignature != signature || binding.TargetAgentID != "" ||
+			binding.ModeEndpoint != "https://api.kombify.io/v1/ai/responses" || binding.ModeAdmission != "plain" || binding.ModeReservationID != "res-1" ||
+			binding.CredentialExpiresAt != binding.ModeExpiresAt {
+			t.Fatalf("valid mode binding rejected or mis-read: %+v present=%v err=%v", binding, present, err)
+		}
+	})
 }

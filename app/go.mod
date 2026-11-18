@@ -17,7 +17,6 @@ require (
 	github.com/gen2brain/malgo v0.11.27
 	github.com/getkin/kin-openapi v0.153.0
 	github.com/github/copilot-sdk/go v1.0.25
-	github.com/go-jose/go-jose/v3 v3.0.5
 	github.com/go-jose/go-jose/v4 v4.1.9
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0

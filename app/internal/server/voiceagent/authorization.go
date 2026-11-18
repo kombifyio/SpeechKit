@@ -20,6 +20,11 @@ var errAuthorizationExpired error = authorizationExpired{}
 var errVoiceBudgetExpired = errors.New("voiceagent: reserved Voice quota expired")
 
 func voiceAuthorizationExpiry(cfg LiveConfigFrame) (time.Time, error) {
+	if cfg.modeOnly() {
+		// No registered agent: the Gateway-signed mode binding bounds the session.
+		_, _, _, expiresAt := cfg.ModeNow()
+		return time.Unix(expiresAt, 0), nil
+	}
 	if cfg.DirectEndpoint == nil {
 		return registeredAuthorizationExpiry(cfg.CapabilityLease, cfg.OboSubjectToken, cfg.CredentialExpiresAt)
 	}

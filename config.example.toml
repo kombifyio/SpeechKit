@@ -542,7 +542,15 @@ vad_silence_duration_ms = 700
 
 # Deepgram Voice Agent legs (provider = "deepgram"). Listen and speak are
 # selected here or through the "listen+speak" composite in [voice_agent].model;
-# the think LLM is configured with the deepgram_think_* keys.
+# the think LLM is configured with the deepgram_think_* keys. The think route is
+# always explicit: no model is compiled in, so a standalone Deepgram Voice Agent
+# without a think model or endpoint refuses to start with think_not_configured.
+# (A server behind the kombify Gateway resolves thinking per turn through the
+# person's default mode instead and needs none of these keys.)
+# deepgram_think_provider = "open_ai"            # a Deepgram-managed think provider type
+# deepgram_think_model = "gpt-4o-mini"           # ... and its model, or
+# deepgram_think_endpoint_url = "https://llm.example/v1/chat/completions"   # a bring-your-own LLM
+# deepgram_think_api_key_env = "MY_LLM_API_KEY"  # env var holding that endpoint's credential
 # deepgram_listen_model = "flux-general-multi"   # flux-general-multi (default, 10 languages with mid-call switching), flux-general-en, or nova-3 for the legacy listen leg
 # deepgram_speak_model = "aura-2-thalia-en"      # Aura-2 voice, or a Flux TTS voice such as "flux-kit-en".
                                                  # Flux TTS is English-only: it applies to English-pinned sessions and any

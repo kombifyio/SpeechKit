@@ -36,22 +36,18 @@ func (a *Adapter) applyVoicePrefDefaults(start *StartFrame) (personaFromPref boo
 	}
 	// Provider default only matters when production provider selection runs
 	// (a.Provider == nil); tests that pre-inject a provider keep their frame.
-	// The v2 model (catalog profile id) wins over the v1 provider name; a
-	// model this server cannot serve falls through to the v1 value, then to
-	// the server default.
+	// The account's assistant model (catalog profile id); a model this
+	// server cannot serve falls through to the server default.
 	if a.Provider == nil && strings.TrimSpace(start.Provider) == "" {
-		for _, pref := range []string{voiceAgentProviderForModel(prefs.VAModel), normalizeProviderName(prefs.VAProvider)} {
-			if pref == "" {
-				continue
-			}
+		if pref := voiceAgentProviderForModel(prefs.VAModel); pref != "" {
 			if _, ok := a.Providers[pref]; ok {
 				start.Provider = pref
-				break
+			} else {
+				slog.Info("voiceagent: preferred provider not configured on this server; using default",
+					"preferred_provider", pref,
+					"session_id", a.Session.ID,
+				)
 			}
-			slog.Info("voiceagent: preferred provider not configured on this server; using default",
-				"preferred_provider", pref,
-				"session_id", a.Session.ID,
-			)
 		}
 	}
 	if strings.TrimSpace(start.PersonaID) == "" {
@@ -60,11 +56,11 @@ func (a *Adapter) applyVoicePrefDefaults(start *StartFrame) (personaFromPref boo
 			personaFromPref = true
 		}
 	}
-	// The account's voice_agent.locale (v2) is the session locale when the
-	// client named none, so STT, the agent and TTS run in the person's
-	// language without every client sending it.
+	// The account's speech.language is the session locale when the client
+	// named none, so STT, the agent and TTS run in the person's language
+	// without every client sending it.
 	if strings.TrimSpace(start.Locale) == "" {
-		if locale := strings.TrimSpace(prefs.VALocale); validPrefLocale(locale) {
+		if locale := strings.TrimSpace(prefs.Language); validPrefLocale(locale) {
 			start.Locale = locale
 		}
 	}

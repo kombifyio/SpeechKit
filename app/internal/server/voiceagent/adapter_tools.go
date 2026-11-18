@@ -123,3 +123,37 @@ func (a *Adapter) sendServerToolResponse(ctx context.Context, call ToolCall, res
 	}
 	a.sendJSON(ctx, EventFrame{Type: MsgEvent, EventFrameFields: fields})
 }
+
+// runModeServerTool executes one server tool a mode turn asked for. The client
+// sees the same transparency frames as for a provider-requested server tool
+// (the tool_call frame tagged execution=server and the tool_result_ack event);
+// the result goes back to the model through the mode reasoner, not to the
+// provider. A tool this session does not own is not handled.
+func (a *Adapter) runModeServerTool(ctx context.Context, call ToolCall) (map[string]any, bool) {
+	if _, claimed := a.serverTools[call.Name]; !claimed {
+		return nil, false
+	}
+	fields := a.eventFrameFields(nil, EventToolCall)
+	fields.ProviderMetadata = map[string]any{"execution": "server"}
+	a.sendJSON(ctx, ToolCallFrame{Type: MsgToolCall, EventFrameFields: fields, ID: call.ID, Name: call.Name, Args: call.Args})
+	select {
+	case a.toolSem <- struct{}{}:
+		defer func() { <-a.toolSem }()
+	default:
+		return map[string]any{"error": map[string]any{
+			"code":    "tool_concurrency_exceeded",
+			"message": "too many concurrent server-side tool calls in this session; try again",
+		}}, true
+	}
+	response, handled := a.executeServerTool(ctx, call)
+	status := "ok"
+	if !handled || response == nil {
+		status = "error"
+	} else if _, hasError := response["error"]; hasError {
+		status = "error"
+	}
+	ack := a.eventFrameFields(nil, EventToolResultAck)
+	ack.ProviderMetadata = map[string]any{"id": call.ID, "name": call.Name, "status": status, "execution": "server"}
+	a.sendJSON(ctx, EventFrame{Type: MsgEvent, EventFrameFields: ack})
+	return response, handled
+}

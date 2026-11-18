@@ -4,7 +4,6 @@ import (
 	"math"
 	"strings"
 
-	"github.com/kombifyio/SpeechKit/pkg/speechkit/catalog"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/provideropts"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 )
@@ -14,10 +13,7 @@ import (
 // It is pure (no I/O) so the listen/think/speak wiring can be unit-tested.
 func (p *Provider) buildSettings(cfg live.LiveConfig) map[string]any {
 	resolved := live.ResolveLiveOptions("deepgram", deepgramVoiceAgentProfileID, cfg, nil, nil)
-	p.turnMu.Lock()
-	index := p.thinkIndex
-	p.turnMu.Unlock()
-	think := p.buildThink(cfg, index)
+	think := p.buildThink(cfg)
 
 	listenModel := dgFirst(p.ListenModel, deepgramListenModelDefault)
 	listenProvider := map[string]any{
@@ -78,17 +74,44 @@ func (p *Provider) buildSettings(cfg live.LiveConfig) map[string]any {
 	}
 }
 
-// buildThink assembles agent.think for the think model at index of
-// thinkCandidates. The Settings message and an in-turn UpdateThink share it,
-// so a fallback keeps the session's prompt, endpoint and functions.
-func (p *Provider) buildThink(cfg live.LiveConfig, index int) map[string]any {
+// thinkModel is the Deepgram think provider type and model id of a session.
+type thinkModel struct{ provider, model string }
+
+// ErrThinkNotConfigured is returned by Connect when the provider has neither
+// an explicit think model nor a think endpoint. The package holds no default
+// model: a hosted deployment resolves thinking per turn through the person's
+// mode behind a think endpoint, a standalone one names its own model or
+// endpoint.
+var ErrThinkNotConfigured error = thinkNotConfiguredError{}
+
+type thinkNotConfiguredError struct{}
+
+func (thinkNotConfiguredError) Error() string {
+	return "think route not configured: set a think model or a think endpoint"
+}
+
+// Code is the public wire code of the refusal.
+func (thinkNotConfiguredError) Code() string { return "think_not_configured" }
+
+// thinkRoute is this session's think model: the explicit ThinkProvider and
+// ThinkModel. A bring-your-own endpoint (the host's own callback or a user's
+// LLM) names the model it expects; Deepgram forwards it unchanged.
+func (p *Provider) thinkRoute() (thinkModel, error) {
+	model := strings.TrimSpace(p.ThinkModel)
+	if model == "" {
+		return thinkModel{}, ErrThinkNotConfigured
+	}
+	return thinkModel{provider: dgFirst(p.ThinkProvider, deepgramThinkProviderDefault), model: model}, nil
+}
+
+// buildThink assembles agent.think for the session's think route.
+func (p *Provider) buildThink(cfg live.LiveConfig) map[string]any {
 	resolved := live.ResolveLiveOptions("deepgram", deepgramVoiceAgentProfileID, cfg, nil, nil)
-	candidates := p.thinkCandidates()
-	selected := candidates[min(max(index, 0), len(candidates)-1)]
+	selected, _ := p.thinkRoute() // Connect refused a session without a route.
 	think := map[string]any{
 		"provider": map[string]any{
-			"type":  selected.Provider,
-			"model": selected.Model,
+			"type":  selected.provider,
+			"model": selected.model,
 		},
 	}
 	if endpoint := p.thinkEndpoint(); endpoint != nil {
@@ -101,37 +124,6 @@ func (p *Provider) buildThink(cfg live.LiveConfig, index int) map[string]any {
 		think["functions"] = funcs
 	}
 	return think
-}
-
-// thinkCandidates is this session's think chain: an explicit ThinkModel
-// leads, followed by the catalog default chain. A bring-your-own endpoint has
-// exactly one candidate: its turns are retried on that endpoint and never
-// moved to a Deepgram-managed model, which would answer outside the endpoint
-// owner's agent and policy.
-func (p *Provider) thinkCandidates() []catalog.ThinkModel {
-	chain := catalog.VoiceAgentThinkChain(deepgramVoiceAgentProfileID)
-	out := make([]catalog.ThinkModel, 0, len(chain)+1)
-	provider := strings.TrimSpace(p.ThinkProvider)
-	model := strings.TrimSpace(p.ThinkModel)
-	defaultThink := catalog.ThinkModel{}
-	if len(chain) > 0 {
-		defaultThink = chain[0]
-	}
-	explicit := catalog.ThinkModel{Provider: dgFirst(provider, defaultThink.Provider), Model: dgFirst(model, defaultThink.Model)}
-	if p.thinkEndpoint() != nil {
-		// deepgram_think_endpoint_url set: that endpoint is the whole chain.
-		return []catalog.ThinkModel{explicit}
-	}
-	if provider != "" || model != "" {
-		out = append(out, explicit)
-	}
-	for _, candidate := range chain {
-		if len(out) > 0 && candidate == out[0] {
-			continue
-		}
-		out = append(out, candidate)
-	}
-	return out
 }
 
 // thinkEndpoint returns the agent.think.endpoint block for a bring-your-own

@@ -219,6 +219,11 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusForbidden, "voice_budget_required", "Reserve Voice quota before starting a voice session.")
 		return
 	}
+	if binding.ModeBinding != "" && !h.anonymous && binding.ModeReservationID != budget.ReservationID {
+		// The Gateway signed the binding for the reservation it made in this same request.
+		httpx.WriteError(w, http.StatusForbidden, "voice_mode_binding_invalid", "The voice session's model mode binding is not valid.")
+		return
+	}
 	session, ticket, err := h.manager.CreateWithVoiceBudget(Identity{
 		UserID: id.UserID,
 		OrgID:  id.OrgID,
@@ -246,6 +251,21 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		// defaults when the start frame omits provider or persona_id.
 		session.VoicePrefs = wssession.VoicePrefs(middleware.VoicePrefsFromContext(r.Context()))
 		session.VoiceAgentBinding = wssession.VoiceAgentBinding(binding)
+		if binding.ModeBinding != "" && !h.anonymous {
+			// The renewable platform-mode binding of this session: renewals keep its nonce and only move it forward.
+			if authority, modeErr := wssession.NewModeAuthority(binding.ModeBinding, binding.ModeSignature, binding.ModeEndpoint, binding.ModeExpiresAt); modeErr != nil {
+				err = modeErr
+			} else if !h.manager.AttachModeAuthority(session.ID, Identity{UserID: id.UserID, OrgID: id.OrgID}, authority) {
+				// The session ended while it was being minted; the end was reported with its binding.
+				httpx.WriteError(w, http.StatusServiceUnavailable, "server_restarting", "The voice service is restarting. Try again in a moment.")
+				return
+			}
+		}
+		if err != nil {
+			h.manager.Remove(session.ID)
+			httpx.WriteError(w, http.StatusForbidden, "voice_mode_binding_invalid", "The voice session's model mode binding is not valid.")
+			return
+		}
 		if h.anonymous {
 			session.DelegatedCredential = ""
 			session.VoicePrefs = wssession.VoicePrefs{}
@@ -325,7 +345,29 @@ func (h *Handler) renewSession(w http.ResponseWriter, r *http.Request, sessionID
 		httpx.WriteError(w, http.StatusForbidden, "voice_budget_required", "Reserve Voice quota through the edge before renewing a voice session.")
 		return
 	}
+	// A session reasoning in its owner's default mode renews its Gateway-signed binding with its budget:
+	// the same session nonce and route, a later expiry. Without a valid renewed pair it is not renewable.
+	var renewMode func() error
+	if authority := h.manager.ModeAuthorityOf(sessionID); authority != nil {
+		binding := middleware.VoiceAgentBindingFromContext(r.Context())
+		if binding.ModeBinding == "" || binding.ModeReservationID != budget.ReservationID || authority.CheckRenewal(binding.ModeBinding, binding.ModeSignature, binding.ModeEndpoint, binding.ModeExpiresAt) != nil {
+			//nolint:contextcheck // Settlement must outlive the request; the reporter uses a bounded service context.
+			h.reportVoiceUsage("", VoiceUsage{SessionID: "renewal-" + budget.ReservationID, ReservationID: budget.ReservationID,
+				ReceiptToken: budget.ReceiptToken,
+				OwnerUserID:  id.UserID, OwnerOrgID: id.OrgID})
+			httpx.WriteError(w, http.StatusConflict, "voice_budget_not_renewable", "This voice session cannot be extended; start a new session.")
+			return
+		}
+		renewMode = func() error {
+			return authority.Renew(binding.ModeBinding, binding.ModeSignature, binding.ModeEndpoint, binding.ModeExpiresAt)
+		}
+	}
 	err := h.manager.RenewVoiceBudget(sessionID, Identity{UserID: id.UserID, OrgID: id.OrgID}, budget)
+	if err == nil && renewMode != nil {
+		if modeErr := renewMode(); modeErr != nil {
+			err = wssession.ErrVoiceBudgetNotRenewable
+		}
+	}
 	if err == nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")

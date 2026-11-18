@@ -364,6 +364,9 @@ voice   = "nova"
 
 [voice_agent]
 enabled = true
+# A Deepgram Voice Agent holds no model: name its think route
+# (deepgram_think_provider / deepgram_think_model, or deepgram_think_endpoint_url) or, on a standalone
+# server with a configured agent model, its sessions run the local cascaded reasoner instead.
 # provider selects the backend:
 #   "gemini"   — opt-in Google Gemini Live with your own GOOGLE_AI_API_KEY
 #                (needs [providers.google] enabled; never a default)

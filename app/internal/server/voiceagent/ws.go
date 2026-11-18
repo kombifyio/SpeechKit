@@ -70,10 +70,6 @@ type HandlerOptions struct {
 	RegisteredAgentSigningSecret func() string
 	// NativeConsentReader checks current owner consent through trusted authority.
 	NativeConsentReader NativeConsentReader
-	// PlainAgent is the plain voice model: it answers a Companion turn the
-	// Companion cannot serve (unreachable or failed), after a spoken notice.
-	// Nil keeps the typed error.
-	PlainAgent CascadedAgent
 	// NativeCallbackHeaders ride on every native vendor's callback to this
 	// server (for example the release channel the fronting proxy routes by).
 	NativeCallbackHeaders map[string]string
@@ -168,6 +164,8 @@ func New(opts HandlerOptions) (*Handler, error) {
 		readLimit = defaultWSReadLimitBytes
 	}
 	trustedProxies, _ := httpx.NewTrustedProxies(opts.TrustedProxyCIDRs)
+	// Every end of a session that holds a platform-mode binding is reported to the Gateway's live registry.
+	opts.Manager.SetModeEndHook(reportModeSessionEnd)
 	return &Handler{
 		manager:            opts.Manager,
 		providers:          providers,
@@ -186,7 +184,7 @@ func New(opts HandlerOptions) (*Handler, error) {
 		trustedProxies:     trustedProxies,
 		usage:              opts.Usage,
 		settlement:         newUsageSettlement(),
-		native:             newNativeVoiceSessions(opts.PublicURL, opts.Store, opts.AssemblyAIKey, opts.RegisteredAgentSigningSecret, opts.NativeConsentReader, opts.PlainAgent, opts.NativeCallbackHeaders),
+		native:             newNativeVoiceSessions(opts.PublicURL, opts.Store, opts.AssemblyAIKey, opts.RegisteredAgentSigningSecret, opts.NativeConsentReader, opts.NativeCallbackHeaders),
 		wakeVerifier:       opts.WakeVerifier,
 		vocabulary:         opts.Vocabulary,
 		noticeTTS:          opts.NoticeTTS,

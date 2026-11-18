@@ -593,21 +593,14 @@ func (a *StreamAdapter) finishSegment(ctx context.Context, seg *streamSegment, c
 }
 
 // sessionPreferredProfile returns the STT preference captured on this
-// session at mint time: the v2 STT model (a dictation catalog profile id)
-// first, then the v1 primary, then the secondary provider name. The router's
-// profile prioritization accepts both forms and keeps every other configured
-// provider as fallback.
+// session at mint time: the account's dictation model (a dictation catalog
+// profile id), or "" for the server's own selection. The router's profile
+// prioritization keeps every other configured provider as fallback.
 func (a *StreamAdapter) sessionPreferredProfile(ctx context.Context) string {
 	if a.Session == nil {
 		return ""
 	}
-	if model := preferredSTTModel(ctx, a.Session.VoicePrefs.STTModel); model != "" {
-		return model
-	}
-	if primary := strings.TrimSpace(a.Session.VoicePrefs.STTPrimary); primary != "" {
-		return primary
-	}
-	return strings.TrimSpace(a.Session.VoicePrefs.STTSecondary)
+	return preferredSTTModel(ctx, a.Session.VoicePrefs.STTModel)
 }
 
 // exceedsAudioBudget accumulates uploaded PCM bytes and reports whether the

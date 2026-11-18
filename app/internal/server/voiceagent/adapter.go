@@ -73,6 +73,8 @@ type Adapter struct {
 	// OnClose runs after both pumps have returned. Typically removes the
 	// session from the manager.
 	OnClose func()
+	// OnEnd receives the reason the conversation ended, just before OnClose runs.
+	OnEnd func(reason string)
 	// OnOutcome receives the session's classified outcome once, when the
 	// session ends (SessionOutcome). It must not block.
 	OnOutcome func(SessionOutcome)
@@ -131,6 +133,9 @@ type Adapter struct {
 	// session, keyed by name. Written once before the pumps start; read-only
 	// afterwards, so no lock is needed.
 	serverTools map[string]ToolDefinitionFrame
+	// modeSlot is the cascaded agent slot of a session reasoning in its owner's
+	// default mode; it is bound to the session's mode reasoner before Connect.
+	modeSlot *ModeAgentSlot
 	// toolSem bounds concurrent server-side tool executions; toolWG lets Run
 	// wait for in-flight executions before tearing the provider down.
 	toolSem chan struct{}
@@ -187,6 +192,9 @@ func (a *Adapter) Run(parent context.Context) {
 		a.OnUsage(a.voiceSegmentUsage(voiceBudgetSegment{budget: a.Session.VoiceBudget, provider: provider, duration: duration}))
 	}()
 	defer func() {
+		if a.OnEnd != nil {
+			a.OnEnd(endReason)
+		}
 		a.sendSessionEnd(context.WithoutCancel(parent), endReason)
 	}()
 	if a.Session != nil && a.Session.VoiceBudget.ReservationID != "" {
@@ -222,9 +230,11 @@ func (a *Adapter) Run(parent context.Context) {
 	}
 	budgetEnded := budget.ended
 	var authorizationExpiry time.Time
-	if a.Session != nil && (a.Session.VoiceAgentBinding.TargetAgentID != "" || a.Session.VoiceAgentBinding.DirectEndpoint != nil) {
+	var modeEnded func() bool
+	if a.Session != nil && (a.Session.VoiceAgentBinding.TargetAgentID != "" || a.Session.VoiceAgentBinding.DirectEndpoint != nil || a.Session.VoiceAgentBinding.ModeBinding != "") {
 		var err error
-		authorizationExpiry, err = voiceAuthorizationExpiry(LiveConfigFrame{CapabilityLease: a.Session.VoiceAgentBinding.Lease, OboSubjectToken: a.Session.DelegatedCredential,
+		binding := a.Session.VoiceAgentBinding
+		authorizationExpiry, err = voiceAuthorizationExpiry(LiveConfigFrame{AgentTargetID: binding.TargetAgentID, ModeBinding: binding.ModeBinding, ModeSignature: binding.ModeSignature, ModeEndpoint: binding.ModeEndpoint, ModeExpiresAt: binding.ModeExpiresAt, CapabilityLease: a.Session.VoiceAgentBinding.Lease, OboSubjectToken: a.Session.DelegatedCredential,
 			CredentialExpiresAt: a.Session.VoiceAgentBinding.CredentialExpiresAt, DirectEndpoint: a.Session.VoiceAgentBinding.DirectEndpoint,
 			EndpointBinding: a.Session.VoiceAgentBinding.EndpointBinding, EndpointSignature: a.Session.VoiceAgentBinding.EndpointSignature})
 		if err != nil || !time.Now().Before(authorizationExpiry) {
@@ -232,11 +242,28 @@ func (a *Adapter) Run(parent context.Context) {
 			endReason = "authorization_expired"
 			return
 		}
-		var deadlineCancel context.CancelFunc
-		ctx, deadlineCancel = context.WithDeadlineCause(ctx, authorizationExpiry, errAuthorizationExpired)
-		defer deadlineCancel()
+		if modeAuthority := a.Session.ModeAuthority; modeAuthority != nil && binding.TargetAgentID == "" && binding.DirectEndpoint == nil {
+			// A session reasoning in its owner's mode lives as long as its renewable binding: the watch follows
+			// every Gateway renewal instead of cutting the session at the mint expiry.
+			var cancelCause context.CancelCauseFunc
+			ctx, cancelCause = context.WithCancelCause(ctx)
+			defer cancelCause(nil)
+			stop := modeAuthority.WatchExpiry(func() { cancelCause(errAuthorizationExpired) })
+			defer stop()
+			modeEnded = func() bool {
+				_, _, _, expiresAt := modeAuthority.Current()
+				return !time.Now().Before(time.Unix(expiresAt, 0))
+			}
+		} else {
+			var deadlineCancel context.CancelFunc
+			ctx, deadlineCancel = context.WithDeadlineCause(ctx, authorizationExpiry, errAuthorizationExpired)
+			defer deadlineCancel()
+		}
 	}
 	authorizationEnded := func() bool {
+		if modeEnded != nil {
+			return errors.Is(context.Cause(ctx), errAuthorizationExpired) || modeEnded()
+		}
 		return !authorizationExpiry.IsZero() &&
 			(errors.Is(context.Cause(ctx), errAuthorizationExpired) || !time.Now().Before(authorizationExpiry))
 	}
@@ -291,12 +318,46 @@ func (a *Adapter) Run(parent context.Context) {
 			a.sendFatalError(ctx, "native_voice_binding_required", "Own endpoint Voice requires the selected native speech provider.")
 			return
 		}
+		// A session with no registered agent and no own endpoint reasons in its owner's default model mode
+		// (mode_chat.go): whichever media provider it runs on, the provider carries speech and turn
+		// detection and never a model of its own. Providers that cannot delegate their thinking are refused.
+		var modeBinding wssession.VoiceAgentBinding
+		if a.Session != nil {
+			modeBinding = a.Session.VoiceAgentBinding
+		}
+		modeOnly := a.Session != nil && mediaProvider == "" && modeBinding.ModeBinding != "" && modeBinding.TargetAgentID == "" && modeBinding.DirectEndpoint == nil
+		modeMedia := ""
+		if modeOnly {
+			effective := normalizeProviderName(requested)
+			if effective == "" {
+				effective = normalizeProviderName(a.DefaultProvider)
+			}
+			if effective == "openai" {
+				effective = "gpt-live" // The Realtime model would reason on its own.
+			}
+			switch {
+			case effective == "cascaded":
+			case (effective == "deepgram" || effective == "assemblyai" || delegatedNativeProvider(effective)) && a.native != nil:
+				modeMedia, requested = effective, effective
+			default:
+				a.sendFatalError(ctx, "provider_unavailable", "The selected voice provider cannot reason in your model mode.")
+				return
+			}
+		}
 		provider, resolved, err := a.selectProvider(requested)
 		if err != nil {
 			a.sendFatalError(ctx, "provider_unavailable", "The selected voice provider is unavailable.")
 			return
 		}
 		a.Provider = provider
+		if modeMedia != "" {
+			a.Provider = &registeredNativeProvider{LiveProviderAdapter: provider, sessions: a.native, provider: modeMedia, mode: true}
+		} else if cascadedMode, ok := provider.(*CascadedProvider); ok && modeOnly && cascadedMode.slot != nil {
+			a.modeSlot = cascadedMode.slot
+		} else if modeOnly {
+			a.sendFatalError(ctx, "provider_unavailable", "The selected voice provider cannot reason in your model mode.")
+			return
+		}
 		if mediaProvider != "" {
 			a.Provider = &registeredNativeProvider{LiveProviderAdapter: provider, sessions: a.native, provider: mediaProvider}
 		}
@@ -349,6 +410,9 @@ func (a *Adapter) Run(parent context.Context) {
 		cfg.AnonymousGrant = a.Session.AnonymousGrant
 		cfg.DirectEndpoint = binding.DirectEndpoint
 		cfg.EndpointBinding, cfg.EndpointSignature = binding.EndpointBinding, binding.EndpointSignature
+		cfg.ModeBinding, cfg.ModeSignature, cfg.ModeEndpoint, cfg.ModeExpiresAt = binding.ModeBinding, binding.ModeSignature, binding.ModeEndpoint, binding.ModeExpiresAt
+		cfg.Mode = a.Session.ModeAuthority
+		cfg.ModeAdmission = binding.ModeAdmission
 		if cfg.DirectEndpoint != nil {
 			cfg.SystemPrompt, cfg.RefinementPrompt = "", ""
 		}
@@ -398,6 +462,18 @@ func (a *Adapter) Run(parent context.Context) {
 	// providers that bring their own prompt and tools keep theirs untouched.
 	if self, ok := a.Provider.(LiveSelfToolProvider); cfg.DirectEndpoint == nil && cfg.AgentTargetID == "" && (!ok || !self.HandlesOwnTools()) {
 		cfg.SystemPrompt = appendSessionContext(cfg.SystemPrompt, a.now(), start.Timezone, cfg.Locale, toolsExcludingHandoff(cfg.Tools) > 0)
+	}
+	if a.Session != nil && cfg.modeOnly() {
+		cfg.ServerToolRunner = a.runModeServerTool
+		if a.modeSlot != nil {
+			// The cascaded pipeline has no tool support: its mode reasoner offers none.
+			agent, modeErr := newModeChatAgent(cfg, nil, nil)
+			if modeErr != nil {
+				a.sendFatalError(ctx, "provider_unavailable", "The selected voice provider cannot reason in your model mode.")
+				return
+			}
+			a.modeSlot.Bind(agent)
+		}
 	}
 	connectTimeout := a.ConnectTimeout
 	if connectTimeout <= 0 {

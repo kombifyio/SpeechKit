@@ -5,6 +5,7 @@ package voiceagent
 import (
 	"context"
 
+	"github.com/kombifyio/SpeechKit/app/internal/server/wssession"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/a2a"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/responses"
@@ -151,7 +152,23 @@ type LiveConfigFrame struct {
 	DirectEndpoint    *responses.Context
 	EndpointBinding   string
 	EndpointSignature string
-	Conversation      *a2a.ConversationSession
+	// ModeBinding/ModeSignature/ModeEndpoint/ModeExpiresAt carry the verified
+	// platform-mode binding (middleware.VoiceAgentBinding): the proof that this
+	// session may run its think turns in its owner's default model mode.
+	ModeBinding   string
+	ModeSignature string
+	ModeEndpoint  string
+	ModeExpiresAt int64
+	// ModeAdmission is "plain" or "consented" (middleware.VoiceAgentBinding.ModeAdmission).
+	ModeAdmission string
+	// ServerToolRunner executes one server tool (the front door's hand-over) a
+	// mode turn asked for, in-process. It is set only for a session reasoning
+	// in its owner's default mode; handled is false for a tool it does not own.
+	ServerToolRunner func(context.Context, ToolCall) (response map[string]any, handled bool) `json:"-"`
+	// Mode is the session's renewable platform-mode binding; ModeBinding and its siblings are the
+	// mint snapshot. Read the current pair through ModeNow.
+	Mode         *wssession.ModeAuthority `json:"-"`
+	Conversation *a2a.ConversationSession
 }
 
 // LiveMessage is the subset of pkg/speechkit/voiceagent/live.LiveMessage the

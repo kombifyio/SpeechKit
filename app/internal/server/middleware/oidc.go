@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	jose "github.com/go-jose/go-jose/v3"
-	"github.com/go-jose/go-jose/v3/jwt"
+	jose "github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
 )
@@ -26,11 +26,12 @@ const oidcJWKSCacheTTL = 5 * time.Minute
 // oidcAllowedAlgorithms restricts accepted signature algorithms to asymmetric
 // schemes. JWKS publishes public keys, so permitting a symmetric alg (e.g.
 // HS256) would invite an algorithm-confusion attack where the public key is
-// abused as an HMAC secret.
-var oidcAllowedAlgorithms = map[string]struct{}{
-	"RS256": {}, "RS384": {}, "RS512": {},
-	"PS256": {}, "PS384": {}, "PS512": {},
-	"ES256": {}, "ES384": {}, "ES512": {},
+// abused as an HMAC secret. go-jose v4 requires the permitted list at parse
+// time, so a token with any other alg is rejected before its key is read.
+var oidcAllowedAlgorithms = []jose.SignatureAlgorithm{
+	jose.RS256, jose.RS384, jose.RS512,
+	jose.PS256, jose.PS384, jose.PS512,
+	jose.ES256, jose.ES384, jose.ES512,
 }
 
 // OIDCConfig configures Bearer-JWT validation against an external identity
@@ -120,11 +121,8 @@ func (v *OIDCValidator) Verify(r *http.Request) (Identity, bool) {
 	if raw == "" {
 		return Identity{}, false
 	}
-	tok, err := jwt.ParseSigned(raw)
+	tok, err := jwt.ParseSigned(raw, oidcAllowedAlgorithms)
 	if err != nil || len(tok.Headers) == 0 {
-		return Identity{}, false
-	}
-	if _, ok := oidcAllowedAlgorithms[tok.Headers[0].Algorithm]; !ok {
 		return Identity{}, false
 	}
 
@@ -145,9 +143,9 @@ func (v *OIDCValidator) Verify(r *http.Request) (Identity, bool) {
 		return Identity{}, false
 	}
 	if err := registered.ValidateWithLeeway(jwt.Expected{
-		Issuer:   expectedIssuer,
-		Audience: jwt.Audience{v.cfg.Audience},
-		Time:     v.now(),
+		Issuer:      expectedIssuer,
+		AnyAudience: jwt.Audience{v.cfg.Audience},
+		Time:        v.now(),
 	}, v.leeway); err != nil {
 		return Identity{}, false
 	}

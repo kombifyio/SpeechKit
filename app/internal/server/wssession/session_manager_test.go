@@ -3,6 +3,7 @@ package wssession
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
@@ -420,5 +421,161 @@ func TestSessionManager_AccountDeviceBound(t *testing.T) {
 	m.Remove(first.ID)
 	if _, _, err := m.Create(Identity{UserID: "u", DeviceID: "c"}); err != nil {
 		t.Fatalf("device bound not released: %v", err)
+	}
+}
+
+func testModeBinding(t *testing.T, nonce, admission, reservation string, expiresAt int64) string {
+	t.Helper()
+	raw, err := json.Marshal(map[string]any{"version": 1, "kind": "platform-mode", "admission": admission, "sessionNonce": nonce, "reservationId": reservation, "expiresAt": expiresAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base64.StdEncoding.EncodeToString(raw)
+}
+
+// A renewal keeps the session's own nonce, admission kind and route and only moves the expiry forward;
+// anything else (another session's binding, a later-looking binding of another kind, an older or equal expiry,
+// another route, no signature) is refused and leaves the live binding untouched.
+func TestModeAuthorityRenewsOnlyTheSameSessionForward(t *testing.T) {
+	now := time.Now().Unix()
+	endpoint := "https://gateway.example/v1/ai/responses"
+	first := testModeBinding(t, "nonce-1", "plain", "res-1", now+600)
+	authority, err := NewModeAuthority(first, "sig-1", endpoint, now+600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refused := map[string]struct {
+		binding, signature, endpoint string
+		expiresAt                    int64
+	}{
+		"other session": {testModeBinding(t, "nonce-2", "plain", "res-2", now+1200), "sig", endpoint, now + 1200},
+		"other kind":    {testModeBinding(t, "nonce-1", "registered", "res-2", now+1200), "sig", endpoint, now + 1200},
+		"same expiry":   {testModeBinding(t, "nonce-1", "plain", "res-2", now+600), "sig", endpoint, now + 600},
+		"earlier":       {testModeBinding(t, "nonce-1", "plain", "res-2", now+300), "sig", endpoint, now + 300},
+		"other route":   {testModeBinding(t, "nonce-1", "plain", "res-2", now+1200), "sig", "https://gateway.example/v1/ai/models", now + 1200},
+		"unsigned":      {testModeBinding(t, "nonce-1", "plain", "res-2", now+1200), "", endpoint, now + 1200},
+		"no nonce":      {testModeBinding(t, "", "plain", "res-2", now+1200), "sig", endpoint, now + 1200},
+	}
+	for name, renewal := range refused {
+		if authority.Renew(renewal.binding, renewal.signature, renewal.endpoint, renewal.expiresAt) == nil {
+			t.Fatalf("%s: renewal must be refused", name)
+		}
+	}
+	if binding, signature, _, expiresAt := authority.Current(); binding != first || signature != "sig-1" || expiresAt != now+600 {
+		t.Fatal("a refused renewal must leave the live binding untouched")
+	}
+	later := testModeBinding(t, "nonce-1", "plain", "res-2", now+1200)
+	if err := authority.Renew(later, "sig-2", endpoint, now+1200); err != nil {
+		t.Fatalf("the same session's later binding must renew: %v", err)
+	}
+	if binding, signature, _, expiresAt := authority.Current(); binding != later || signature != "sig-2" || expiresAt != now+1200 || authority.ReservationID() != "res-2" {
+		t.Fatal("a renewal must replace the pair, the expiry and the reservation together")
+	}
+	if _, err := NewModeAuthority(testModeBinding(t, "nonce-1", "plain", "", now+600), "sig", endpoint, now+600); err == nil {
+		t.Fatal("a binding without its reservation must not start an authority")
+	}
+}
+
+// A session that holds a platform-mode binding reports its end to the Gateway's live registry exactly once, on every
+// way it ends (client delete, a finished conversation with the adapter's reason, a drain), with the first recorded
+// reason; a session without a binding reports nothing.
+func TestModeSessionEndIsReportedOncePerEnd(t *testing.T) {
+	type ended struct{ id, reason string }
+	reports := make(chan ended, 8)
+	m := mustManager(t, Options{})
+	m.SetModeEndHook(func(id string, _ Identity, _ *ModeAuthority, reason string) { reports <- ended{id, reason} })
+	now := time.Now().Unix()
+	endpoint := "https://gateway.example/v1/ai/responses"
+	newSession := func(withMode bool) *ManagedSession {
+		t.Helper()
+		session, _, err := m.Create(Identity{UserID: "u1", OrgID: "o1"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if withMode {
+			if session.ModeAuthority, err = NewModeAuthority(testModeBinding(t, "nonce-"+session.ID, "plain", "res-1", now+600), "sig", endpoint, now+600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return session
+	}
+	wait := func(want ended) {
+		t.Helper()
+		select {
+		case got := <-reports:
+			if got != want {
+				t.Fatalf("report = %+v, want %+v", got, want)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("no end report for %+v", want)
+		}
+	}
+	none := func() {
+		t.Helper()
+		select {
+		case got := <-reports:
+			t.Fatalf("unexpected report %+v", got)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+
+	deleted := newSession(true)
+	m.Remove(deleted.ID)
+	m.Remove(deleted.ID)
+	wait(ended{deleted.ID, "client_ended"})
+	none()
+
+	finished := newSession(true)
+	if err := m.Attach(finished.ID); err != nil {
+		t.Fatal(err)
+	}
+	m.SetEndReason(finished.ID, "provider_failed")
+	m.SetEndReason(finished.ID, "socket_closed") // the first reason wins
+	m.FinishConversation(finished.ID)
+	wait(ended{finished.ID, "provider_failed"})
+
+	plain := newSession(false)
+	m.Remove(plain.ID)
+	none()
+
+	drained := newSession(true)
+	m.Drain()
+	wait(ended{drained.ID, "server_closed"})
+}
+
+// A binding attached to a session that closed while it was being minted is never lost: the attach reports the
+// end itself and tells the caller to refuse the mint, while a live session keeps its binding under the lock.
+func TestAttachModeAuthorityNeverMissesAnEndThatRacesTheMint(t *testing.T) {
+	reports := make(chan string, 4)
+	m := mustManager(t, Options{})
+	m.SetModeEndHook(func(id string, _ Identity, _ *ModeAuthority, reason string) { reports <- id + ":" + reason })
+	now := time.Now().Unix()
+	authority, err := NewModeAuthority(testModeBinding(t, "nonce-1", "plain", "res-1", now+600), "sig", "https://gateway.example/v1/ai/responses", now+600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := Identity{UserID: "u1", OrgID: "o1"}
+	live, _, err := m.Create(owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.AttachModeAuthority(live.ID, owner, authority) || m.ModeAuthorityOf(live.ID) != authority {
+		t.Fatal("a live session must keep the attached binding")
+	}
+	gone, _, err := m.Create(owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Remove(gone.ID) // closes while the mint is still filling the session in
+	if m.AttachModeAuthority(gone.ID, owner, authority) {
+		t.Fatal("a closed session must refuse the attach")
+	}
+	select {
+	case got := <-reports:
+		if got != gone.ID+":socket_closed" {
+			t.Fatalf("report = %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the end that raced the mint was never reported")
 	}
 }
