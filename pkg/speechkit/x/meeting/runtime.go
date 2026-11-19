@@ -29,6 +29,7 @@ type Runtime struct {
 	now          func() time.Time
 	drainTimeout time.Duration
 	drainPoll    time.Duration
+	drainStall   time.Duration
 	onEnded      func(int64)
 
 	mu          sync.Mutex
@@ -70,6 +71,7 @@ func New(opts Options) *Runtime {
 		now:          opts.Now,
 		drainTimeout: opts.DrainTimeout,
 		drainPoll:    opts.DrainPoll,
+		drainStall:   opts.DrainStall,
 		onEnded:      opts.OnEnded,
 		subscribers:  map[int]chan Snapshot{},
 	}

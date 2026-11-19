@@ -170,6 +170,7 @@ func (h *Handler) handleJSON(w http.ResponseWriter, r *http.Request) {
 		WindowTitle: body.WindowTitle,
 		SessionKey:  sessionKeyFromRequest(r),
 	}
+	opts.TranscribeOnly = body.TranscribeOnly
 
 	text := strings.TrimSpace(body.Text)
 	switch {

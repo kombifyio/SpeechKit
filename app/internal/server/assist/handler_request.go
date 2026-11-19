@@ -26,10 +26,14 @@ type processJSONRequest struct {
 	WindowTitle string `json:"window_title"`
 	// TTS overrides — the Pipeline already knows whether TTS is globally
 	// enabled; these fields let the caller opt out per-request.
-	TTS            *bool           `json:"tts,omitempty"`
-	TTSFormat      string          `json:"tts_format,omitempty"`
-	TTSVoice       string          `json:"tts_voice,omitempty"`
-	TTSSpeed       float64         `json:"tts_speed,omitempty"`
+	TTS       *bool   `json:"tts,omitempty"`
+	TTSFormat string  `json:"tts_format,omitempty"`
+	TTSVoice  string  `json:"tts_voice,omitempty"`
+	TTSSpeed  float64 `json:"tts_speed,omitempty"`
+	// TranscribeOnly asks for the transcript of the spoken instruction and nothing else: the caller runs the
+	// instruction itself (the Companion's Assist Mode hands it to the person's agent harness), so no Assist
+	// model call is made and no result text is produced.
+	TranscribeOnly bool            `json:"transcribe_only,omitempty"`
 	Speaker        speaker.Options `json:"speaker,omitempty"`
 	SpeakerOptions speaker.Options `json:"speaker_options,omitempty"`
 }

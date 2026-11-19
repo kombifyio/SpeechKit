@@ -3420,6 +3420,9 @@ components:
         tts_speed:
           type: number
           format: double
+        transcribe_only:
+          type: boolean
+          description: With `audio_base64`, answer the transcript only (`transcript`; no Assist model call, empty `text`). The caller runs the instruction itself, for example through an agent harness.
         speaker:
           $ref: '#/components/schemas/SpeakerOptions'
         speaker_options:
@@ -3429,7 +3432,7 @@ components:
       type: object
       required: [text, action, latency_ms]
       properties:
-        text: { type: string, minLength: 1 }
+        text: { type: string, description: Empty only for a transcribe_only request. }
         speak_text: { type: string }
         action:
           type: string

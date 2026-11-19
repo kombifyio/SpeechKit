@@ -139,6 +139,10 @@ type Options struct {
 	DrainTimeout time.Duration
 	// DrainPoll is how often the drain wait re-checks. Tests shorten it.
 	DrainPoll time.Duration
+	// DrainStall is how long the end of a meeting waits with nothing landing before it accepts that the
+	// outstanding segments are not coming. Zero is eight seconds; a host whose speech engine runs on the
+	// device and takes longer for a long passage sets it higher.
+	DrainStall time.Duration
 	// OnEnded fires once a meeting has finished and its transcript drain has
 	// either settled or been marked degraded.
 	//

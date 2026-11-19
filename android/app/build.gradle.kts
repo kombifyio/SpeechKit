@@ -31,8 +31,8 @@ android {
         applicationId = "io.kombify.speechkit"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8015
-        versionName = "0.80.15"
+        versionCode = 8016
+        versionName = "0.80.16"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // An OSS installation has no admitted hosted media origin.
         buildConfigField("String", "HOSTED_VOICE_ORIGIN", "\"\"")

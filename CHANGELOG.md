@@ -115,6 +115,17 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.80.16 (2026-11-19)
+
+### Features
+
+* **speechkit:** report the shadow quality-gate Worker to Sentry
+* **speechkit:** transcribe_only on the Assist route, for the agent turn of Assist Mode
+
+### Bug Fixes
+
+* **speechkit:** /healthz reports the commit the server was built from
+
 ## 0.80.15 (2026-11-19)
 
 ### Features

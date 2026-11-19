@@ -180,7 +180,7 @@ func registerHealth(app *App) {
 		body := map[string]any{
 			"status":          "ok",
 			"version":         app.Version,
-			"revision":        serverRevision(),
+			"revision":        serverRevision(app.SourceRevision),
 			"release_channel": releaseChannelStable,
 		}
 		// The Postgres store reports its schema floor, its newest migration
@@ -224,14 +224,15 @@ func registerHealth(app *App) {
 	})
 }
 
-// serverRevision is the source revision /healthz reports:
-// KOMBIFY_SPEECHKIT_REVISION, else the native Render build's commit, else
-// empty for a process that is not revision-bound.
-func serverRevision() string {
-	for _, name := range []string{"KOMBIFY_SPEECHKIT_REVISION", "RENDER_GIT_COMMIT"} {
-		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
-			return value
-		}
+// serverRevision is the source revision /healthz reports: the commit the
+// binary was built from (the image build's SOURCE_SHA, linked in as
+// main.sourceSHA), else the native Render build's commit, else empty for a
+// process that is not revision-bound. The image-backed production service has
+// no RENDER_GIT_COMMIT, so only the built-in commit lets a release read back
+// what it activated.
+func serverRevision(built string) string {
+	if value := strings.TrimSpace(built); value != "" {
+		return value
 	}
-	return ""
+	return strings.TrimSpace(os.Getenv("RENDER_GIT_COMMIT"))
 }

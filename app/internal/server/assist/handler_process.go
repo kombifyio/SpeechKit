@@ -36,6 +36,8 @@ type processOptions struct {
 	WindowTitle    string
 	VocabularyHint string
 	SessionKey     string
+	// TranscribeOnly ends the request after the transcript (processJSONRequest.TranscribeOnly).
+	TranscribeOnly bool
 }
 
 func (o processOptions) request(text string) speechkit.AssistRequest {
@@ -125,7 +127,34 @@ func (h *Handler) processAudioBytes(ctx context.Context, w http.ResponseWriter, 
 		Channels:   decoded.SourceCh,
 		DurationMs: decoded.DurationMs,
 	}
+	if opts.TranscribeOnly {
+		h.writeTranscriptOnly(ctx, w, sttResult.Text, source, sttResult.Speakers, opts)
+		return
+	}
 	h.processTranscript(ctx, w, sttResult.Text, source, sttResult.Speakers, opts, ttsOverride, ttsFormat, ttsVoice)
+}
+
+// writeTranscriptOnly answers a transcribe_only request: the transcript with the person's Words/Replacements
+// applied, as processTranscript would hand it to the model, and no model call. The caller (the Companion's
+// Assist Mode) runs the instruction through the person's agent harness.
+func (h *Handler) writeTranscriptOnly(ctx context.Context, w http.ResponseWriter, transcript string, source *sourceMeta, speakers *speaker.DiarizationResult, opts processOptions) {
+	var customizationActions []speechkit.CustomizationAction
+	if resolved, err := h.resolveAssistCustomization(ctx, opts.Locale); err != nil {
+		slog.Debug("assist: resolve customization failed", "err", err)
+	} else {
+		transcript, customizationActions = h.applyResolvedTranscriptCustomization(ctx, resolved, transcript, opts.Locale)
+	}
+	resp := processResponse{
+		Action:               "silent",
+		Locale:               opts.Locale,
+		Transcript:           transcript,
+		SourceInfo:           source,
+		Speakers:             speakers,
+		CustomizationActions: customizationActions,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (h *Handler) processTranscript(ctx context.Context, w http.ResponseWriter, transcript string, source *sourceMeta, speakers *speaker.DiarizationResult, opts processOptions, ttsOverride *bool, ttsFormat, ttsVoice string) {

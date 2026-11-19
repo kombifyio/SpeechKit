@@ -68,7 +68,11 @@ func (r *Runtime) waitForDrain(ctx context.Context, capture *meetingCapture) {
 			previous = pending
 			lastProgress = now
 		}
-		stalled := now.Sub(lastProgress) >= drainStallWindow
+		stall := r.drainStall
+		if stall <= 0 {
+			stall = drainStallWindow
+		}
+		stalled := now.Sub(lastProgress) >= stall
 		if stalled || !now.Before(deadline) {
 			reason := "still transcribing when the meeting ended"
 			if stalled {
