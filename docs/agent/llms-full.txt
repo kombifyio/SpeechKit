@@ -134,8 +134,8 @@ Core server surfaces:
 - Deepgram Voice Agent: Flux listen models (`flux-general-multi` or
   `flux-general-en`) for conversational turn events; Nova-3 remains the general
   dictation/diarization baseline.
-- AssemblyAI realtime STT: `speech_model=universal-3-5-pro` primary;
-  `u3-rt-pro` legacy fallback.
+- AssemblyAI realtime STT: `speech_model=assemblyai-stt-3-7-realtime` primary (voice agents:
+  `assemblyai-stt-3-7-realtime-agent`); `universal-3-6-pro` legacy fallback.
 - AssemblyAI Voice Agent: native `wss://agents.assemblyai.com/v1/ws` adapter
   with `session.update`, `session.ready`, `input.audio`, `reply.audio`,
   user/agent transcripts, tool calls/results, interruptions, and `session.end`.

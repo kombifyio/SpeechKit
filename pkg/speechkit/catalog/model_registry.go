@@ -25,6 +25,16 @@ const (
 	// stopped accepting around 2026-09-25. Retired: configs carrying it are
 	// upgraded to modelAssemblyAIUniversal36ProRealtime on load.
 	modelAssemblyAIU3RTPro = "u3-rt-pro"
+	// modelAssemblyAISTT37 is AssemblyAI-STT-3.7 (GA 2026-11-17), the
+	// pre-recorded flagship; it replaces Universal-3.5 Pro.
+	modelAssemblyAISTT37 = "assemblyai-stt-3-7"
+	// modelAssemblyAISTT37Realtime is AssemblyAI-STT-3.7-Realtime, the
+	// streaming model for live conversation and dictation; it replaces
+	// Universal-Streaming and Universal-3.6 Pro Realtime.
+	modelAssemblyAISTT37Realtime = "assemblyai-stt-3-7-realtime"
+	// modelAssemblyAISTT37RealtimeAgent is AssemblyAI-STT-3.7-Realtime-Agent,
+	// the streaming model for voice agents built on AssemblyAI speech in.
+	modelAssemblyAISTT37RealtimeAgent = "assemblyai-stt-3-7-realtime-agent"
 	// modelAssemblyAIVoiceAgent is SpeechKit's own id for the AssemblyAI Voice
 	// Agent API, which has no vendor model name.
 	modelAssemblyAIVoiceAgent = "assemblyai-voice-agent"
@@ -260,15 +270,15 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 	return []ProviderModelDescriptor{
 		{
 			Provider:             "assemblyai",
-			ModelID:              modelAssemblyAIUniversal35ProRealtime,
+			ModelID:              modelAssemblyAISTT37,
 			ProfileID:            "stt.assemblyai.universal",
 			Mode:                 speechkit.ModeDictation,
-			Name:                 "Universal-3.5 Pro",
+			Name:                 "AssemblyAI-STT-3.7",
 			Lifecycle:            speechkit.ModelLifecycleGA,
 			Default:              true,
 			Recommended:          true,
-			SourceURL:            "https://www.assemblyai.com/docs/getting-started/models",
-			ReleasedAt:           "2026-03-03",
+			SourceURL:            "https://www.assemblyai.com/blog/introducing-assemblyai-stt-3-7",
+			ReleasedAt:           "2026-11-17",
 			LastVerifiedAt:       modelRegistryVerifiedAt,
 			MultilanguageCapable: true,
 		},
@@ -277,14 +287,14 @@ func DefaultModelRegistry() []ProviderModelDescriptor {
 			// is the realtime dictation default while Universal-3.5 Pro stays
 			// the batch model.
 			Provider:             "assemblyai",
-			ModelID:              modelAssemblyAIUniversal36ProRealtime,
+			ModelID:              modelAssemblyAISTT37Realtime,
 			ProfileID:            "stt.assemblyai.universal",
 			Mode:                 speechkit.ModeDictation,
-			Name:                 "Universal-3.6 Pro Realtime",
+			Name:                 "AssemblyAI-STT-3.7-Realtime",
 			Lifecycle:            speechkit.ModelLifecycleGA,
 			Recommended:          true,
-			SourceURL:            "https://www.assemblyai.com/blog/universal-3-6-pro-realtime",
-			ReleasedAt:           "2026-09-29",
+			SourceURL:            "https://www.assemblyai.com/docs/streaming/select-the-speech-model",
+			ReleasedAt:           "2026-11-17",
 			LastVerifiedAt:       modelRegistryVerifiedAt,
 			MultilanguageCapable: true,
 		},

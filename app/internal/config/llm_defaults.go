@@ -3,11 +3,12 @@ package config
 import "strings"
 
 const (
-	DefaultAssemblyAISTTModels = "universal-3-5-pro,universal-2"
-	// DefaultAssemblyAIStreamingModel is Universal-3.6 Pro Realtime
-	// (2026-09-29, 32 languages); it is streaming-only, so the pre-recorded
-	// chain above stays on Universal-3.5 Pro.
-	DefaultAssemblyAIStreamingModel         = "universal-3-6-pro"
+	DefaultAssemblyAISTTModels = "assemblyai-stt-3-7,universal-2"
+	// DefaultAssemblyAIStreamingModel is AssemblyAI-STT-3.7-Realtime
+	// (2026-11-17, 32 languages); it is streaming-only, so the pre-recorded
+	// chain above stays on AssemblyAI-STT-3.7. Voice agents built on
+	// AssemblyAI streaming use assemblyai-stt-3-7-realtime-agent instead.
+	DefaultAssemblyAIStreamingModel         = "assemblyai-stt-3-7-realtime"
 	DefaultAssemblyAILLMGatewayBaseURL      = "https://llm-gateway.assemblyai.com/v1"
 	DefaultAssemblyAILLMGatewayUtilityModel = "qwen3.5-4b-32k-fast"
 	DefaultAssemblyAILLMGatewayAssistModel  = "qwen3-32B"
@@ -35,7 +36,7 @@ const (
 	DefaultXAITTSVoice = "eve"
 )
 
-// ApplyAssemblyAILLMDefaults fills Universal-3.5 Pro and LLM Gateway slots
+// ApplyAssemblyAILLMDefaults fills AssemblyAI-STT-3.7 and LLM Gateway slots
 // whenever AssemblyAI is enabled — as the STT provider or as the Voice Agent
 // backend — and keeps streaming LLM on so Assist / summaries never start
 // without a native model.
@@ -82,10 +83,12 @@ func assemblyAINeedsFlagshipUpgrade(models string) bool {
 	if trimmed == "" {
 		return true
 	}
-	if strings.Contains(trimmed, "universal-3-5-pro") {
+	if strings.Contains(trimmed, "assemblyai-stt-3-7") {
 		return false
 	}
-	return strings.Contains(trimmed, "universal-3-pro") || strings.Contains(trimmed, "u3-rt-pro")
+	// Universal-3.5 Pro is deprecated (AssemblyAI routes it to 3.7 after its
+	// retirement); older Universal-3 ids already stopped working.
+	return strings.Contains(trimmed, "universal-3-5-pro") || strings.Contains(trimmed, "universal-3-pro") || strings.Contains(trimmed, "u3-rt-pro")
 }
 
 func streamingNeedsFlagshipUpgrade(model string) bool {
@@ -94,9 +97,9 @@ func streamingNeedsFlagshipUpgrade(model string) bool {
 		return true
 	}
 	switch trimmed {
-	case "universal-3-pro", "u3-rt-pro", "u3-pro", "universal-3-5-pro":
-		// universal-3-5-pro streams too, but 3.6 Pro Realtime covers 32
-		// languages instead of 18 at the same price.
+	case "universal-3-pro", "u3-rt-pro", "u3-pro", "universal-3-5-pro", "universal-3-6-pro":
+		// 3.7 Realtime replaces Universal-Streaming and 3.6 Pro Realtime
+		// (32 languages, GA 2026-11-17).
 		return true
 	default:
 		return false

@@ -328,7 +328,7 @@ func defaults() *Config {
 			},
 			AssemblyAI: AssemblyAIProviderConfig{
 				APIKeyEnv:              AssemblyAIAPIKeyEnv, //nolint:gosec // not a credential, field name triggers false positive
-				STTModels:              "universal-3-5-pro,universal-2",
+				STTModels:              "assemblyai-stt-3-7,universal-2",
 				StreamingModel:         DefaultAssemblyAIStreamingModel,
 				StreamingBaseURL:       "wss://streaming.assemblyai.com",
 				LLMGatewayBaseURL:      "https://llm-gateway.assemblyai.com/v1",

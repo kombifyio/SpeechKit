@@ -115,6 +115,12 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.80.15 (2026-11-19)
+
+### Features
+
+* **speechkit:** AssemblyAI-STT-3.7 models for dictation, Sync and agent calls
+
 ## 0.80.14 (2026-11-18)
 
 ### Bug Fixes

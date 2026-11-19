@@ -235,7 +235,7 @@ func (p *Provider) assemblyAIStreamingURL() (*url.URL, error) {
 }
 
 // assemblyAIStreamingSpeechModel picks a single v3 realtime speech_model.
-// Catalog ModelIDs are comma lists ("universal-3-5-pro,universal-2") that
+// Catalog ModelIDs are comma lists ("assemblyai-stt-3-7,universal-2") that
 // describe the pre-recorded fallback chain; the streaming handshake rejects
 // that as one token, and the chain's lead is the batch flagship, not the
 // realtime one. So only a single requested token overrides the configured

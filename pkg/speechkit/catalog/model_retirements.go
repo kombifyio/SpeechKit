@@ -100,9 +100,15 @@ func retiredModelRows() []ModelRetirement {
 
 		// AssemblyAI stopped accepting the Universal-3 Pro streaming ids around
 		// 2026-09-25; the pre-recorded Universal-3 Pro id errors as well.
-		{Provider: "assemblyai", ModelID: modelAssemblyAIU3RTPro, Replacement: modelAssemblyAIUniversal36ProRealtime, VendorSunsetAt: "2026-09-25", Reason: retiredReasonShutDown, SourceURL: "https://www.assemblyai.com/docs/streaming/select-the-speech-model"},
-		{Provider: "assemblyai", ModelID: "u3-pro", Replacement: modelAssemblyAIUniversal36ProRealtime, VendorSunsetAt: "2026-09-25", Reason: retiredReasonShutDown, SourceURL: "https://www.assemblyai.com/docs/streaming/select-the-speech-model"},
-		{Provider: "assemblyai", ModelID: "universal-3-pro", Replacement: modelAssemblyAIUniversal35ProRealtime, Reason: retiredReasonShutDown, SourceURL: "https://www.assemblyai.com/docs/getting-started/models"},
+		{Provider: "assemblyai", ModelID: modelAssemblyAIU3RTPro, Replacement: modelAssemblyAISTT37Realtime, VendorSunsetAt: "2026-09-25", Reason: retiredReasonShutDown, SourceURL: "https://www.assemblyai.com/docs/streaming/select-the-speech-model"},
+		{Provider: "assemblyai", ModelID: "u3-pro", Replacement: modelAssemblyAISTT37Realtime, VendorSunsetAt: "2026-09-25", Reason: retiredReasonShutDown, SourceURL: "https://www.assemblyai.com/docs/streaming/select-the-speech-model"},
+		{Provider: "assemblyai", ModelID: "universal-3-pro", Replacement: modelAssemblyAISTT37, Reason: retiredReasonShutDown, SourceURL: "https://www.assemblyai.com/docs/getting-started/models"},
+		// 2026-11-17: the 3.7 family replaces the Universal family. Universal-3.5
+		// Pro (pre-recorded) is deprecated, its retirement date is not yet
+		// announced; Universal-3.6 Pro Realtime stays accepted but is replaced by
+		// 3.7 Realtime (conversation) and 3.7 Realtime-Agent (voice agents).
+		{Provider: "assemblyai", ModelID: modelAssemblyAIUniversal35ProRealtime, Replacement: modelAssemblyAISTT37, Reason: retiredReasonDeprecated, SourceURL: "https://www.assemblyai.com/blog/introducing-assemblyai-stt-3-7"},
+		{Provider: "assemblyai", ModelID: modelAssemblyAIUniversal36ProRealtime, Replacement: modelAssemblyAISTT37Realtime, Reason: retiredReasonSuperseded, SourceURL: "https://www.assemblyai.com/docs/streaming/select-the-speech-model"},
 
 		// AssemblyAI LLM Gateway: move the agent tier off Gemini 2.5.
 		{Provider: "assemblyai-llm-gateway", ModelID: "gemini-2.5-flash", Replacement: modelAssemblyAIGatewayGemini37Flash, Reason: retiredReasonSuperseded, SourceURL: "https://www.assemblyai.com/docs/llm-gateway/available-models"},

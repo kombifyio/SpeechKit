@@ -281,8 +281,8 @@ diarization_model = "latest"
 [providers.assemblyai]
 enabled    = false
 api_key_env = "ASSEMBLYAI_API_KEY"
-stt_models  = "universal-3-5-pro,universal-2"
-streaming_model = "universal-3-6-pro"
+stt_models  = "assemblyai-stt-3-7,universal-2"
+streaming_model = "assemblyai-stt-3-7-realtime"
 streaming_base_url = "wss://streaming.assemblyai.com"
 # Short clips (80ms–120s) use the synchronous Universal-3.5 Pro endpoint
 # (single request/response, ~134ms p50, prompt/keyterms/conversation-context

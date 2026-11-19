@@ -623,8 +623,8 @@ vad_silence_duration_ms = 700
 # [providers.assemblyai]
 # enabled = false
 # api_key_env = "ASSEMBLYAI_API_KEY"
-# stt_models = "universal-3-5-pro,universal-2"
-# streaming_model = "universal-3-6-pro"
+# stt_models = "assemblyai-stt-3-7,universal-2"
+# streaming_model = "assemblyai-stt-3-7-realtime"
 # streaming_base_url = "wss://streaming.assemblyai.com"
 # Short clips (80ms–120s) ride the synchronous Universal-3.5 Pro endpoint
 # (finished transcript in one request, ~134ms p50) with prompt steering,

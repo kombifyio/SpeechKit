@@ -29,12 +29,12 @@ const (
 	assemblyAIBaseURL          = "https://api.assemblyai.com"
 	assemblyAISyncBaseURL      = "https://sync.assemblyai.com"
 	assemblyAIStreamingBaseURL = "wss://streaming.assemblyai.com"
-	// assemblyAIFlagshipModel is Universal-3.5 Pro — AssemblyAI's
+	// assemblyAIFlagshipModel is AssemblyAI-STT-3.7 (GA 2026-11-17), AssemblyAI's
 	// pre-recorded flagship, shared by the async and sync products.
-	assemblyAIFlagshipModel = "universal-3-5-pro"
-	// assemblyAIStreamingModel is Universal-3.6 Pro Realtime (2026-09-29):
-	// streaming-only, 32 languages, the realtime default.
-	assemblyAIStreamingModel   = "universal-3-6-pro"
+	assemblyAIFlagshipModel = "assemblyai-stt-3-7"
+	// assemblyAIStreamingModel is AssemblyAI-STT-3.7-Realtime (2026-11-17):
+	// streaming-only, 32 languages, the realtime default (replaces universal-3-6-pro).
+	assemblyAIStreamingModel   = "assemblyai-stt-3-7-realtime"
 	assemblyAIMaxResponseBytes = 16 << 20
 	// Patient dictation turn detection (AssemblyAI "entity dictation /
 	// complex instructions"): tolerate mid-sentence pauses instead of
@@ -57,7 +57,7 @@ type Provider struct {
 	// the low-latency dictation path. Empty uses the global endpoint.
 	SyncBaseURL string
 	// SyncModel is the X-AAI-Model routing header value for sync requests.
-	// Empty uses universal-3-5-pro.
+	// Empty uses assemblyai-stt-3-7.
 	SyncModel string
 	// DisableSync forces every transcription through the classic async
 	// upload+poll flow, even for clips the Sync API could serve.

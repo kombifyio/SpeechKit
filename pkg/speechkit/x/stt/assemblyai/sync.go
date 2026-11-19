@@ -102,7 +102,8 @@ func (p *Provider) syncEligible(wav []byte, opts stt.TranscribeOpts, resolved st
 
 func assemblyAIModelsIncludeFlagship(models []string) bool {
 	for _, model := range models {
-		if strings.EqualFold(strings.TrimSpace(model), assemblyAIFlagshipModel) {
+		switch strings.ToLower(strings.TrimSpace(model)) {
+		case assemblyAIFlagshipModel, "universal-3-5-pro", "universal-3-6-pro":
 			return true
 		}
 	}
