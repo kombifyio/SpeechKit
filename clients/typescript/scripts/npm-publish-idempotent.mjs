@@ -42,6 +42,9 @@ export const reconcilePublishedPackage = async ({
   downloadPublished,
   publish,
   requireProvenance = false,
+  visibilityAttempts = 13,
+  visibilityDelayMs = 15_000,
+  sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms)),
 }) => {
   const verifyPublished = async (published) => {
     if (requireProvenance && !published.attestations?.provenance?.predicateType) {
@@ -59,6 +62,18 @@ export const reconcilePublishedPackage = async ({
     });
   };
 
+  // GitHub Packages accepts a publish before its read path serves the new
+  // version (run 44516703819 read 0.80.16 back within a second and missed it),
+  // so a version this run expects to exist is polled for a bounded time:
+  // 13 reads 15 s apart, about three minutes.
+  const awaitPublished = async () => {
+    for (let attempt = 1; ; attempt += 1) {
+      const published = await readPublished(candidate.spec);
+      if (published || attempt >= visibilityAttempts) return published;
+      await sleep(visibilityDelayMs);
+    }
+  };
+
   const existing = await readPublished(candidate.spec);
   if (existing) {
     await verifyPublished(existing);
@@ -68,21 +83,31 @@ export const reconcilePublishedPackage = async ({
   try {
     await publish(candidate);
   } catch (publishError) {
-    const raced = await readPublished(candidate.spec);
+    // A conflict means the version already exists, possibly from an earlier
+    // attempt the read path does not serve yet: wait for it and compare bytes.
+    // Any other failure gets one read for a concurrent publisher.
+    const raced = isPublishConflict(publishError)
+      ? await awaitPublished()
+      : await readPublished(candidate.spec);
     if (!raced) throw publishError;
     await verifyPublished(raced);
     return { result: "already-matched-after-race", integrity: candidate.integrity };
   }
 
-  const published = await readPublished(candidate.spec);
+  const published = await awaitPublished();
   if (!published) {
     throw new Error(
-      `${candidate.spec} was accepted by npm publish but is not visible in the registry.`,
+      `${candidate.spec} was accepted by npm publish but is not visible in the registry after ${visibilityAttempts} reads ${visibilityDelayMs / 1000} s apart.`,
     );
   }
   await verifyPublished(published);
   return { result: "published", integrity: candidate.integrity };
 };
+
+export const isPublishConflict = (error) =>
+  /(?:E409|EPUBLISHCONFLICT|409 Conflict|cannot publish over)/iu.test(
+    `${error?.stderr ?? ""}\n${error?.message ?? ""}`,
+  );
 
 const parseArgs = (argv) => {
   const values = new Map();
@@ -175,7 +200,7 @@ const main = async () => {
 
     const readPublished = async (spec) => {
       try {
-        const { stdout } = await runNpm(["view", spec, "dist", "--json", registryArgument], {
+        const { stdout } = await runNpm(["view", spec, "dist", "--json", "--prefer-online", registryArgument], {
           env: readEnv,
         });
         const dist = JSON.parse(stdout);

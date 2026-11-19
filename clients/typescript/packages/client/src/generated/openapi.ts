@@ -1979,10 +1979,13 @@ export interface components {
             tts_voice?: string;
             /** Format: double */
             tts_speed?: number;
+            /** @description With `audio_base64`, answer the transcript only (`transcript`; no Assist model call, empty `text`). The caller runs the instruction itself, for example through an agent harness. */
+            transcribe_only?: boolean;
             speaker?: components["schemas"]["SpeakerOptions"];
             speaker_options?: components["schemas"]["SpeakerOptions"];
         };
         AssistResponse: {
+            /** @description Empty only for a transcribe_only request. */
             text: string;
             speak_text?: string;
             /** @enum {string} */

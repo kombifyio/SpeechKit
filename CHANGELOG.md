@@ -115,6 +115,16 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.80.17 (2026-11-19)
+
+### Bug Fixes
+
+* **ci:** repair the client package-manager read, close the generated client drift, and publish the anchored local-control export link
+* **delivery:** bind the GitHub delivery auth to GITHUB_TOKEN, not the retired GH_PAT
+* **delivery:** wait for a just-published npm version and retry Wrangler's deploy on 100146
+* **l10n:** repair speechkit-client localization source findings
+* **speechkit:** the Website type check resolves esrap's exported types
+
 ## 0.80.16 (2026-11-19)
 
 ### Features
