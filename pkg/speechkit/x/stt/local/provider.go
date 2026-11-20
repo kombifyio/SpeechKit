@@ -65,10 +65,11 @@ type Provider struct {
 	GPU        string
 	Validation netsec.ValidationOptions
 	// LowerSubprocessPriority lowers the STT server's priority class when
-	// true. nil keeps it at normal priority whatever the process-wide
+	// true. nil runs it above normal priority whatever the process-wide
 	// SetSubprocessPriorityLowered default says: the user waits on every
-	// decode, and a below-normal decoder on a busy machine stalled dictation
-	// for tens of seconds. Ignored outside Windows.
+	// decode, and a normal or below-normal decoder on a busy machine stalled
+	// dictation for tens of seconds to minutes (its threads run in lock step,
+	// so one preempted thread holds the others). Ignored outside Windows.
 	LowerSubprocessPriority *bool
 	// WordTimestamps asks a Parakeet model for word times, which
 	// [Provider.Transcribe] returns in Result.Words (Text, StartMs, EndMs).

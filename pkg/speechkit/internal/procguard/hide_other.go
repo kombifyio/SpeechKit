@@ -10,3 +10,9 @@ import "os/exec"
 func ConfigureHiddenProcess(cmd *exec.Cmd, lowered bool) {
 	_, _ = cmd, lowered
 }
+
+// ConfigureHiddenProcessRaised is a no-op outside Windows (see the Windows
+// build for what it does there).
+func ConfigureHiddenProcessRaised(cmd *exec.Cmd) {
+	_ = cmd
+}

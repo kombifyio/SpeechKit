@@ -251,9 +251,10 @@ type PerformanceConfig struct {
 	// NORMAL-priority load; "normal" leaves the class untouched.
 	ProcessPriority string `toml:"process_priority"`
 	// SubprocessPriority: "below_normal" (default) spawns CPU-heavy
-	// children (whisper-server, local LLM, wake-word sidecars) at
-	// BELOW_NORMAL so they cannot starve live capture; "normal" spawns
-	// them unadjusted.
+	// children (local LLM, background sidecars) at BELOW_NORMAL so they
+	// cannot starve live capture; "normal" spawns them unadjusted. The
+	// local speech-to-text engine always runs ABOVE_NORMAL and the wake-word
+	// listener at NORMAL: both must keep up under load.
 	SubprocessPriority string `toml:"subprocess_priority"`
 	// CaptureThreadPriority: "realtime" (default) runs the WASAPI
 	// capture thread at TIME_CRITICAL; "highest" keeps malgo's default

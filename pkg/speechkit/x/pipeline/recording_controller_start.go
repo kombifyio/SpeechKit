@@ -49,6 +49,12 @@ func (c *RecordingController) Start(opts speechkit.RecordingStartOptions) error 
 	c.streamQueue.reset(sessionID)
 	c.capturedPCMBytes = 0
 	c.pendingStreamPCM = nil
+	c.chunks.discard()
+	c.chunks = nil
+	if opts.ChunkAhead && c.chunkTranscriber != nil && !opts.StreamSegments {
+		c.chunks = newChunkAhead(c.chunkTranscriber, opts.Language, c.onLog)
+	}
+	chunks := c.chunks
 
 	if c.segmenterFactory != nil {
 		collector = c.segmenterFactory()
@@ -61,7 +67,7 @@ func (c *RecordingController) Start(opts speechkit.RecordingStartOptions) error 
 	// delay capture: the hotkey loop dispatches Start synchronously, and a
 	// hung websocket used to swallow the matching KeyUp so later presses
 	// did nothing.
-	if collector != nil || opts.ProviderStream {
+	if collector != nil || opts.ProviderStream || chunks != nil {
 		handlePCM := func(pcm []byte) {
 			c.pcmMu.Lock()
 			c.mu.Lock()
@@ -81,6 +87,7 @@ func (c *RecordingController) Start(opts speechkit.RecordingStartOptions) error 
 			if nativeStream != nil {
 				nativeStream.enqueuePCM(pcm, c)
 			}
+			chunks.feed(pcm)
 			c.pcmMu.Unlock()
 			if activeCollector == nil {
 				return
@@ -124,6 +131,8 @@ func (c *RecordingController) Start(opts speechkit.RecordingStartOptions) error 
 			c.startedAt = time.Time{}
 			c.nativeStream = nil
 			c.pendingStreamPCM = nil
+			c.chunks.discard()
+			c.chunks = nil
 		}
 		c.mu.Unlock()
 		if nativeStream != nil {

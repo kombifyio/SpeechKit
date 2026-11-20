@@ -174,6 +174,13 @@ type Submission struct {
 	// the worker queue. Hosts can prefill it when replaying externally queued
 	// work, but ordinary callers should leave it zero.
 	QueuedAt time.Time
+	// Pretranscribed, when set on a segment of a job, delivers that segment's
+	// transcript instead of the worker sending its audio to the provider: the
+	// recording controller transcribes finished chunks of a long dictation
+	// while it is still recorded, and the segment waits for that result (or
+	// transcribes the chunk itself when the background attempt failed). The
+	// segment's PCM and WAV may then stay empty; DurationSecs is still set.
+	Pretranscribed func(ctx context.Context) (Transcript, error)
 }
 
 // Completion describes the outcome of a [TranscriptionRunner.Commit] call.

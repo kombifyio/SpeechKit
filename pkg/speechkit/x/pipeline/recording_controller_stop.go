@@ -80,12 +80,18 @@ func (c *RecordingController) Stop(opts speechkit.RecordingStopOptions) error {
 	streamedCount := c.streamQueue.streamedCount(sessionID)
 	nativeStream := c.nativeStream
 	capturedPCMBytes := c.capturedPCMBytes
+	chunks := c.chunks
+	c.chunks = nil
 	c.collector = nil
 	c.startedAt = time.Time{}
 	c.nativeStream = nil
 	c.pendingStreamPCM = nil
 	c.mu.Unlock()
 	c.pcmMu.Unlock()
+	// A recording whose job does not take the chunks (too short, stale, handled
+	// by a stream's finals) drops them; discard is a no-op once finish handed
+	// them to the job.
+	defer chunks.discard()
 	if stopErr != nil {
 		c.onLog(fmt.Sprintf("Capture stop warning: %v", stopErr), "warn")
 	}
@@ -180,6 +186,10 @@ func (c *RecordingController) Stop(opts speechkit.RecordingStopOptions) error {
 			nativeStream.replayFull.Store(true)
 			c.onLog("Provider-stream capture callbacks incomplete; recovering the full recording", "warn")
 		}
+		// The recording is transcribed after the stream whatever the stream's
+		// finish says when the stream only draws drafts: it has no use for a
+		// decode of the rest of the recording (stream_finish).
+		nativeStream.finishUnneeded.Store(len(pcm) >= c.minPCMBytes)
 		finals := c.finishNativeDictationStream(nativeStream, pcm)
 		switch {
 		case nativeStream.draftsOnly.Load():
@@ -260,6 +270,15 @@ func (c *RecordingController) Stop(opts speechkit.RecordingStopOptions) error {
 		}
 	}
 
+	// Chunk-ahead: the chunks transcribed while the recording ran, and only the
+	// audio after the last cut is left for the provider now.
+	if jobSegments == nil && tailOffsetMs == 0 && tailSessionID == 0 {
+		if chunkSegments, ok := chunks.finish(pcm, capturedPCMBytes, current.Language); ok {
+			jobSegments = chunkSegments
+			c.onLog(fmt.Sprintf("Chunk-ahead: %d chunk(s) transcribed while recording; transcribing the remaining %.1fs", chunks.chunkCount(), speechkit.PCMDurationSecs(pcm)-chunkedSecs(chunkSegments)), "info")
+		}
+	}
+
 	capturedStartMs := elapsedCaptureMs(captureEpoch(current, startedAt), startedAt) + tailOffsetMs
 	if err := c.submitter.Submit(speechkit.TranscriptionJob{
 		Submission: speechkit.Submission{
@@ -331,7 +350,10 @@ func (c *RecordingController) Cancel(opts speechkit.RecordingCancelOptions) erro
 	nativeStream := c.nativeStream
 	c.nativeStream = nil
 	c.pendingStreamPCM = nil
+	chunks := c.chunks
+	c.chunks = nil
 	c.mu.Unlock()
+	chunks.discard()
 	if nativeStream != nil {
 		c.stopNativeDictationStream(nativeStream, true)
 	}

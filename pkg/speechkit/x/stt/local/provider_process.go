@@ -78,7 +78,13 @@ func (p *Provider) StartServer(ctx context.Context) error {
 	}
 	cmd.Dir = workDir
 	cmd.Env = procguard.HostSidecarEnv()
-	procguard.ConfigureHiddenProcess(cmd, subprocessPriorityLowered(p.LowerSubprocessPriority))
+	if subprocessPriorityLowered(p.LowerSubprocessPriority) {
+		procguard.ConfigureHiddenProcess(cmd, true)
+	} else {
+		// The engine the dictation waits on runs above normal: see
+		// procguard.ConfigureHiddenProcessRaised. Idle it uses no CPU.
+		procguard.ConfigureHiddenProcessRaised(cmd)
+	}
 	// whisper-server prints every recognised segment to stdout, so stdout is
 	// left unset (the null device): transcripts must not reach a console or
 	// log. Its diagnostics (model load, backend, bind errors) go to stderr;

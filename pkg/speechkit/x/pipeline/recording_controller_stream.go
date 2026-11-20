@@ -283,6 +283,21 @@ func (c *RecordingController) stopNativeDictationStream(runtime *dictationStream
 		waitForChannel(runtime.receiverDone, time.Second)
 		return runtime.finalCount.Load()
 	}
+	if sessionHeld && !runtime.completeCapture && runtime.finishUnneeded.Load() && !runtime.recordingUnusable.Load() {
+		// stream_finish: a session commits once, from the complete recording
+		// Stop transcribes next, and live finals stay drafts. Finalizing would
+		// make the engine decode the recording's rest here and then again for
+		// that transcription (the second one queued behind the first: on a busy
+		// machine minutes for seconds of speech), so the stream is just closed.
+		runtime.closeInput()
+		runtime.cancel()
+		grouped.discard()
+		runtime.replayFull.Store(true)
+		runtime.draftsOnly.Store(true)
+		_ = runtime.stream.Close()
+		waitForChannel(runtime.receiverDone, time.Second)
+		return runtime.finalCount.Load()
+	}
 	runtime.closeInput()
 	if !waitForChannel(runtime.senderDone, 3*time.Second) {
 		c.onLog("Provider-stream sender did not drain before finalize; cancelling stream", "warn")

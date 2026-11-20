@@ -33,7 +33,14 @@ func listDevicesFromContext(cfg Config, deviceType malgo.DeviceType) ([]DeviceIn
 	if err != nil {
 		return nil, err
 	}
-	defer ctx.Free()
+	// Free only releases memory and "must only be called for an uninitialized
+	// context": without Uninit every enumeration kept the context's WASAPI
+	// notification thread and handles alive, a thread and some handles per call
+	// (the Companion polled this every 3 s and grew to over 1,600 threads).
+	defer func() {
+		_ = ctx.Uninit()
+		ctx.Free()
+	}()
 
 	devices, err := ctx.Devices(deviceType)
 	if err != nil {

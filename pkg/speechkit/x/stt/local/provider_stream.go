@@ -155,9 +155,12 @@ type localStream struct {
 	sequence int64
 	// heard are the texts of the completed segments, for drafts.
 	heard []string
-	// nextDraft holds the next draft back for twice as long as the last one
-	// took to decode, so drafts of a long dictation on a slow processor take
-	// at most a third of its time and rarely delay the final.
+	// nextDraft holds the next draft back for three times as long as the last
+	// one took to decode, so drafts of a long dictation take at most a quarter
+	// of the engine's time and rarely delay the chunks and the final. (A draft
+	// decodes everything since the last cut, up to 35 s, so a dictation's drafts
+	// cost most of the engine's CPU: 250 of 300 CPU seconds in a two-minute
+	// dictation measured 2026-11-18; with the preview off no stream runs.)
 	nextDraft time.Time
 
 	closeOnce sync.Once
@@ -294,7 +297,7 @@ func (s *localStream) flush(ctx context.Context, draft bool) error {
 			return err
 		}
 		if withDraft {
-			s.nextDraft = time.Now().Add(2 * time.Since(started))
+			s.nextDraft = time.Now().Add(3 * time.Since(started))
 		}
 		if answer.Partial != nil {
 			s.emitDraft(joinTranscript(append(append([]string(nil), s.heard...), *answer.Partial)...))

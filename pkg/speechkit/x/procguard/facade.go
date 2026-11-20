@@ -33,3 +33,4 @@ func SetSubprocessPriorityLowered(lowered bool)            { core.SetSubprocessP
 func SubprocessPriorityLowered() bool                      { return core.SubprocessPriorityLowered() }
 func BundleHelpersDir(exe string) string                   { return core.BundleHelpersDir(exe) }
 func ConfigureHiddenProcess(cmd *exec.Cmd, lowered bool)   { core.ConfigureHiddenProcess(cmd, lowered) }
+func ConfigureHiddenProcessRaised(cmd *exec.Cmd)           { core.ConfigureHiddenProcessRaised(cmd) }

@@ -33,7 +33,7 @@ func (w *TranscriptionWorker) transcribeJob(ctx context.Context, job speechkit.T
 		segment := inheritSegmentDefaults(job.Submission, segments[0])
 		normalizeElapsed := time.Since(normalizeStarted)
 		providerStarted := time.Now()
-		transcript, err := w.runner.transcriber.Transcribe(transcribeCtx, segment.WAV, segment.DurationSecs, segment.Language)
+		transcript, err := w.transcribeSegment(transcribeCtx, segment)
 		providerElapsed := time.Since(providerStarted)
 		if err != nil {
 			w.onLog(
@@ -67,6 +67,15 @@ func (w *TranscriptionWorker) transcribeJob(ctx context.Context, job speechkit.T
 	return w.transcribeSegmentsParallel(transcribeCtx, cancel, job, segments, started)
 }
 
+// transcribeSegment sends one segment to the provider, or takes the transcript
+// of a segment the recording controller transcribed ahead of Stop.
+func (w *TranscriptionWorker) transcribeSegment(ctx context.Context, segment speechkit.Submission) (speechkit.Transcript, error) {
+	if segment.Pretranscribed != nil {
+		return segment.Pretranscribed(ctx)
+	}
+	return w.runner.transcriber.Transcribe(ctx, segment.WAV, segment.DurationSecs, segment.Language)
+}
+
 func (w *TranscriptionWorker) transcribeSegmentsParallel(ctx context.Context, cancel context.CancelFunc, job speechkit.TranscriptionJob, segments []speechkit.Submission, started time.Time) (speechkit.Transcript, error) {
 	transcripts := make([]speechkit.Transcript, len(segments))
 	errs := make([]error, len(segments))
@@ -92,7 +101,7 @@ func (w *TranscriptionWorker) transcribeSegmentsParallel(ctx context.Context, ca
 			segment = inheritSegmentDefaults(job.Submission, segment)
 			normalizeElapsed := time.Since(normalizeStarted)
 			providerStarted := time.Now()
-			transcript, err := w.runner.transcriber.Transcribe(ctx, segment.WAV, segment.DurationSecs, segment.Language)
+			transcript, err := w.transcribeSegment(ctx, segment)
 			providerElapsed := time.Since(providerStarted)
 			if err != nil {
 				w.onLog(

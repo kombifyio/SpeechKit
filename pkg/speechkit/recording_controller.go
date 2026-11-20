@@ -124,6 +124,12 @@ type RecordingStartOptions struct {
 	// DictationStreamOptions are passed to the native provider stream. SessionID
 	// and Language are filled from the active recording when left empty.
 	DictationStreamOptions DictationStreamOptions
+	// ChunkAhead transcribes the finished, pause-bounded chunks of a long
+	// recording in the background while it is made (the pipeline's chunk-ahead),
+	// so Stop transcribes only the audio after the last chunk and stitches the
+	// cached texts. It needs a chunk transcriber on the controller and applies
+	// to the transcription Stop submits, not to provider finals.
+	ChunkAhead bool
 	// LiveCommitMode groups provider-finals before field injection.
 	// Empty keeps immediate commit (tests and hosts that do not opt in).
 	// Desktop dictation defaults to LiveCommitPassage; hold-to-talk uses

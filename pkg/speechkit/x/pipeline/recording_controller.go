@@ -81,6 +81,10 @@ type RecordingController struct {
 	// dispatch losses against the recorder's authoritative full buffer.
 	capturedPCMBytes int
 	pendingStreamPCM []byte
+	// chunkTranscriber and chunks are the chunk-ahead of a recording started
+	// with ChunkAhead (chunk_ahead.go).
+	chunkTranscriber speechkit.Transcriber
+	chunks           *chunkAhead
 }
 
 type dictationStreamRuntime struct {
@@ -110,6 +114,11 @@ type dictationStreamRuntime struct {
 	draftsOnly atomic.Bool
 	// queuedPCMBytes is the audio handed to the stream so far.
 	queuedPCMBytes atomic.Int64
+	// finishUnneeded is set by Stop when it transcribes the recording after the
+	// stream whatever the stream answers, so a stream that only draws drafts
+	// is closed instead of finishing: its finish decodes the rest of the
+	// recording a second time and the answer is thrown away.
+	finishUnneeded atomic.Bool
 	// recordingUnusable is set by Stop before it ends a stream whose
 	// recording it will not transcribe (stale device buffer).
 	recordingUnusable atomic.Bool
