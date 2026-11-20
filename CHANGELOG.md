@@ -115,6 +115,12 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.80.19 (2026-11-20)
+
+### Bug Fixes
+
+* **copy:** customers read Homelab, not Techstack, in Companion, Workbench and agents
+
 ## 0.80.18 (2026-11-20)
 
 ## 0.80.17 (2026-11-19)
