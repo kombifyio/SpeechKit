@@ -115,6 +115,64 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.81.0 (2026-11-20)
+
+### Features
+
+* **delivery:** package, mirror and store-build groups are side publications (R3c, )
+* **onboarding:** SpeechKit Setup completion as the speechkit owner fact
+* **rename:** Techstack becomes Homelab in Companion, Workbench, agents and API
+* **speechkit:** add gated authority transport and durable ticket primitives
+* **speechkit:** add revocable LAN device pairing
+* **speechkit:** AssemblyAI-STT-3.7 models for dictation, Sync and agent calls
+* **speechkit:** fresh-install local-only gate with a synthetic local Owner and explicit hosted refusals
+* **speechkit:** grant and reconcile hosted object sessions
+* **speechkit:** host-kit wake-word listener over SpeechKit's openWakeWord sidecar, Companion packaging, the pinned ONNX Runtime from NuGet
+* **speechkit:** kombify Companion desktop for Windows
+* **speechkit:** local models as a host-kit package; the Companion runs Phonon, Bark and Parakeet on the device; the pill's menu button can be hidden
+* **speechkit:** persist dormant remote execution accounting
+* **speechkit:** read and write the account voice settings document v3
+* **speechkit:** report the shadow quality-gate Worker to Sentry
+* **speechkit:** resolve hosted voice thinking through mode policy
+* **speechkit:** route paired Box answers through the home graph to HA speakers
+* **speechkit:** serve Companion Windows AppLink v1 from host kit
+* **speechkit:** stream dictation through ticket sessions
+* **speechkit:** the Box setup offers its own local wake word
+* **speechkit:** transcribe_only on the Assist route, for the agent turn of Assist Mode
+
+### Bug Fixes
+
+* **ci:** repair the client package-manager read, close the generated client drift, and publish the anchored local-control export link
+* **copy:** customers read Homelab, not Techstack, in Companion, Workbench and agents
+* **delivery:** bind the GitHub delivery auth to GITHUB_TOKEN, not the retired GH_PAT
+* **delivery:** wait for a just-published npm version and retry Wrangler's deploy on 100146
+* **l10n:** repair speechkit-client localization source findings
+* **release:** restore release guards moved behind effects in
+* **release:** separate AI activation from report failures
+* **speechkit:** /healthz reports the commit the server was built from
+* **speechkit:** a long spoken answer streams at the device's pace instead of ending in audio_downstream_failed
+* **speechkit:** a streaming capture session keeps no session-long PCM buffer (wake-word memory growth)
+* **speechkit:** a voice turn binds to its final despite Deepgram's speculative and joined think requests, a dropped callback no longer ends the session, and each session ends with one classified outcome
+* **speechkit:** accept the vendored migrationclass v0.10.1 in the hosted schema consumer
+* **speechkit:** add the 0.80.0 release highlights the publish lint requires
+* **speechkit:** AltGr-safe Ctrl+Alt chords in the host kit; the server's empty transcript is silence, not a failure
+* **speechkit:** changelog Highlights lint warns instead of stopping the release
+* **speechkit:** export device pairing and the standalone release channel, compile the exported tree in ci:fast
+* **speechkit:** harden object authority and sequence renewals
+* **speechkit:** keep internal product names out of the public export
+* **speechkit:** keep tracker ids out of exported comments and complete go.work.sum for the OSS publish
+* **speechkit:** make daily model freshness monitoring durable
+* **speechkit:** pin the ONNX Runtime the wake-word sidecar needs and fail the release when it drifts
+* **speechkit:** place and show windows only after Wails created them, in the reference client and the managed host
+* **speechkit:** port OIDC auth to go-jose v4 and remove v3
+* **speechkit:** public export admits the signed wire value and drops two new coupling markers
+* **speechkit:** publish the Voice UI Kit and the Android AARs under names this repository owns
+* **speechkit:** retain Windows version and icon resource proof
+* **speechkit:** reuse published production images on release retry
+* **speechkit:** the public export carries the pairing document it links to (slot repair)
+* **speechkit:** the Website type check resolves esrap's exported types
+* **speechkit:** the window picker's hover poll runs (thread timer id); the highlight follows the pointer
+
 ## 0.80.19 (2026-11-20)
 
 ### Bug Fixes
