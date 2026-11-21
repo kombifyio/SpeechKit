@@ -115,6 +115,16 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.81.2 (2026-11-21)
+
+### Features
+
+* **speechkit:** Kubi carries the AI setup (aiSetup) in panel and assist context
+
+### Bug Fixes
+
+* **speechkit:** an undecided account's aiSetup reads kombify, unknown only when unread
+
 ## 0.81.1 (2026-11-21)
 
 ## 0.81.0 (2026-11-20)
