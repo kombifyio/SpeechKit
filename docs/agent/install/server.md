@@ -6,6 +6,15 @@ Install stable:
 curl -fsSL https://speechkit.cc/install-server.sh | sh
 ```
 
+The canonical standalone script lives under `docs/agent/install-server/` in
+the public repository mirror (`kombifyio/SpeechKit`) once synced by
+`publish-oss.yml`; `Website/public/install-server.sh` stays aligned temporarily
+for zero-downtime release verification until the mirror raw URL serves 200:
+
+```text
+https://raw.githubusercontent.com/kombifyio/SpeechKit/main/docs/agent/install-server/install-server.sh
+```
+
 Options:
 
 ```text

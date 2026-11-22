@@ -115,6 +115,12 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.81.3 (2026-11-22)
+
+### Bug Fixes
+
+* **speechkit,workbench:** stage mirror installer export & add complete_at
+
 ## 0.81.2 (2026-11-21)
 
 ### Features
