@@ -14,6 +14,7 @@ require (
 	github.com/chromedp/chromedp v0.23.0
 	github.com/coder/websocket v1.8.15
 	github.com/ebitengine/oto/v3 v3.5.1
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/gen2brain/malgo v0.11.27
 	github.com/getkin/kin-openapi v0.153.0
 	github.com/github/copilot-sdk/go v1.0.25
@@ -80,7 +81,6 @@ require (
 	github.com/ebitengine/purego v0.11.3 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/frostbyte73/core v0.1.1 // indirect
-	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/gammazero/deque v1.2.2 // indirect
 	github.com/go-json-experiment/json v0.0.0-20260623181947-01eb4420fa68 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect

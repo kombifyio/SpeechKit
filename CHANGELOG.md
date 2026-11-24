@@ -115,6 +115,14 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.81.5 (2026-11-24)
+
+### Bug Fixes
+
+* **speechkit:** keep the internal local-ai doc link out of the exported docs README
+
+## 0.81.4 (2026-11-23)
+
 ## 0.81.3 (2026-11-22)
 
 ### Bug Fixes
