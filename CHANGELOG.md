@@ -25,6 +25,12 @@ IDs, source paths, and other maintainer-only vocabulary.
 
 ### Fixed
 
+- The first dictation after the PC was idle or woke from sleep no longer stops
+  after a second or two while the shortcut is still held. Windows sometimes
+  reports one key of a held shortcut as released right after a pause; a
+  dictation now ends only when every key of the shortcut is let go. This
+  applies to SpeechKit and the kombify Companion alike.
+
 - AssemblyAI Sync transcription and warm-up use the current `/v1/transcribe`
   and `/v1/warm` endpoints, including the EU data zone.
 
@@ -114,6 +120,12 @@ Developers can use the stable SDK independently of experimental integrations.
 Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
+
+## 0.81.6 (2026-11-25)
+
+### Bug Fixes
+
+* **speechkit:** a held shortcut ends a dictation only when every key is up
 
 ## 0.81.5 (2026-11-24)
 
