@@ -9,9 +9,18 @@ import (
 
 // StoreConfig holds configuration for store backend selection.
 type StoreConfig struct {
-	Backend     string `toml:"backend"` // "sqlite" | "postgres" | registered name
-	SQLitePath  string `toml:"sqlite_path"`
-	PostgresDSN string `toml:"postgres_dsn"`
+	Backend                     string              `toml:"backend"` // "sqlite" | "postgres" | registered name
+	SQLitePath                  string              `toml:"sqlite_path"`
+	PostgresDSN                 string              `toml:"postgres_dsn"`
+	VoiceTurnCustodyProof       string              `toml:"-"`
+	VoiceTurnAdmission          string              `toml:"-"`
+	VoiceTurnAdmissionPublicKey string              `toml:"-"`
+	VoiceTurnEnvironment        string              `toml:"-"`
+	VoiceTurnIssuer             string              `toml:"-"`
+	VoiceTurnAudience           string              `toml:"-"`
+	VoiceTurnParticipant        string              `toml:"-"`
+	VoiceTurnRoute              string              `toml:"-"`
+	VoiceTurnSubjectReference   func(string) string `toml:"-"`
 	// PostgresRuntimeRole is the runtime-role mode of the Postgres backend:
 	// the server connects as a runtime role, never migrates, refuses a schema
 	// below its floor (PostgresSchemaFloor) and refuses to start unless the role cannot escape row-level

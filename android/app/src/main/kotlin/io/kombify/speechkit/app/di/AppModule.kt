@@ -23,6 +23,12 @@ import io.kombify.speechkit.domain.ConnectionProfileSource
 import io.kombify.speechkit.net.VoiceRenewalProfileSource
 import io.kombify.speechkit.assistant.intent.CloudSessionRecovery
 import io.kombify.speechkit.assistant.intent.CompanionTurnExecutor
+import io.kombify.speechkit.assistant.intent.LocalTextExecutor
+import io.kombify.speechkit.assistant.intent.ActionResult
+import io.kombify.speechkit.app.hybrid.HybridActivity
+import io.kombify.speechkit.BuildConfig
+import io.kombify.speechkit.domain.ExecutionFailure
+import io.kombify.speechkit.domain.ExecutionFailureKind
 import io.kombify.speechkit.assistant.service.NeuralReplyVoice
 import io.kombify.speechkit.app.voice.NeuralVoiceEngine
 import io.kombify.speechkit.net.StoredServerProfile
@@ -49,7 +55,7 @@ object AppModule {
         @ApplicationContext context: Context,
         companion: CompanionProvisioner,
     ): CoinstallTurnClient = CoinstallTurnClient(
-        sessionPresent = { companion.currentSession() != null },
+        sessionPresent = { companionRouteAllowed(context) && companion.currentSession() != null },
         transport = BinderCoinstallTurnTransport(context),
     )
 
@@ -99,6 +105,14 @@ object AppModule {
     @Singleton
     fun provideNeuralReplyVoice(@ApplicationContext context: Context): NeuralReplyVoice =
         NeuralVoiceEngine.get(context)
+
+    @Provides
+    @Singleton
+    fun provideLocalTextExecutor(): LocalTextExecutor = LocalTextExecutor { context, text ->
+        if (!BuildConfig.HYBRID_ENABLED) throw ExecutionFailure(ExecutionFailureKind.UNAVAILABLE, "Local AI is disabled")
+        HybridActivity.open(context, text)
+        ActionResult(success = true, responseText = context.getString(io.kombify.speechkit.R.string.hybrid_continue), keepOpen = false)
+    }
 
     @Provides
     @Singleton

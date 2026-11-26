@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"os"
 	"strings"
 )
@@ -20,14 +19,6 @@ type queryRowContexter interface {
 type dbContexter interface {
 	execContexter
 	queryRowContexter
-}
-
-func recordAudioAsset(ctx context.Context, db execContexter, dialect, ownerKind string, ownerID int64, path string, durationMs int64) error {
-	dbq, ok := db.(dbContexter)
-	if !ok {
-		return fmt.Errorf("record audio asset: database handle does not support QueryRowContext")
-	}
-	return recordScopedAudioAsset(ctx, dbq, dialect, 1, ownerKind, ownerID, path, durationMs)
 }
 
 func recordScopedAudioAsset(ctx context.Context, db dbContexter, dialect string, scopeID int64, ownerKind string, ownerID int64, path string, durationMs int64) error {

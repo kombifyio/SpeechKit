@@ -17,6 +17,7 @@
   --sk-assistant-orb: 30px;
   --sk-assistant-orb-watch: 84px;
   --sk-assistant-orb-hero: 92px;
+  --sk-voice-orb-hero-size: clamp(216px, 42vw, 264px);
   --sk-assistant-mark-ratio: 34%;
   --sk-assistant-user-dot: #8fa9ff;
   --sk-assistant-agent-dot: #47e3c1;

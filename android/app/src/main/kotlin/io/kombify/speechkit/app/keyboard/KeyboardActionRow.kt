@@ -20,9 +20,11 @@ enum class KeyboardAction(
 ) {
     OnDeviceDictation,
     ServerDictation,
+    SelectedAgent,
     AgentDeepgram(agentProvider = "deepgram"),
     AgentAssemblyAi(agentProvider = "assemblyai"),
     AgentOpenAi(agentProvider = "openai"),
+    AgentGemini(agentProvider = "gemini"),
 
     /** Grok Voice. Reached through the strip key when Settings selects it. */
     AgentXai(agentProvider = "xai"),
@@ -45,14 +47,18 @@ fun keyboardActionRowItems(
     profile: ConnectionProfile,
     companionSession: Boolean = false,
 ): List<KeyboardActionItem> {
-    val server = if (profile is ConnectionProfile.Server) null else KeyboardActionBlocker.NoServer
+    val serverReady = profile is ConnectionProfile.Server && profile.credentialAvailable
+    val server = if (serverReady) null else KeyboardActionBlocker.NoServer
+    val gemini = if (serverReady || profile is ConnectionProfile.Firebase || (profile is ConnectionProfile.Byok && profile.hasUsableKey)) null else KeyboardActionBlocker.NoServer
     val companion = if (companionSession) null else KeyboardActionBlocker.NoCompanion
     return listOf(
         KeyboardActionItem(KeyboardAction.OnDeviceDictation),
         KeyboardActionItem(KeyboardAction.ServerDictation, server),
+        KeyboardActionItem(KeyboardAction.SelectedAgent, if (profile is ConnectionProfile.Firebase || profile is ConnectionProfile.Byok || serverReady) null else KeyboardActionBlocker.NoServer),
         KeyboardActionItem(KeyboardAction.AgentDeepgram, server),
         KeyboardActionItem(KeyboardAction.AgentAssemblyAi, server),
         KeyboardActionItem(KeyboardAction.AgentOpenAi, server),
+        KeyboardActionItem(KeyboardAction.AgentGemini, gemini),
         KeyboardActionItem(KeyboardAction.CompanionApp, companion),
     )
 }
@@ -61,7 +67,7 @@ fun keyboardActionRowBlocker(items: List<KeyboardActionItem>): KeyboardActionBlo
     items.mapNotNull { it.blocker }.minOrNull()
 
 /** True for strip/More Voice Agent keys: the IME panel, never ROLE_ASSISTANT. */
-fun KeyboardAction.opensVoiceAgentInIme(): Boolean = agentProvider != null
+fun KeyboardAction.opensVoiceAgentInIme(): Boolean = this == KeyboardAction.SelectedAgent || agentProvider != null
 
 /** The always-visible strip agent key. Settings chooses which backend it opens. */
 const val STRIP_AGENT_TOOLBAR_KEY: String = "SPEECHKIT_AGENT_DEEPGRAM"

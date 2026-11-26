@@ -4,6 +4,7 @@ import io.kombify.speechkit.stt.streaming.DictationSegmentOptions
 import io.kombify.speechkit.stt.streaming.StreamingSttSession
 import io.kombify.speechkit.stt.streaming.TranscriptEvent
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.takeWhile
 import java.io.ByteArrayOutputStream
@@ -133,7 +134,11 @@ class RetryingDictationSession(
 
     override suspend fun keepAlive(): Boolean = delegate.keepAlive()
 
-    override suspend fun close() = delegate.close()
+    override suspend fun close() {
+        segmentActive = false
+        synchronized(buffer) { buffer.reset() }
+        delegate.close()
+    }
 
     override fun toString(): String = "RetryingDictationSession($delegate)"
 
@@ -154,7 +159,7 @@ class RetryingDictationSession(
         }
         if (pcm.isEmpty()) return null
 
-        return runCatching {
+        return try { runCatching {
             val batch = batchSessionFactory()
             try {
                 batch.startSegment(options)
@@ -173,7 +178,8 @@ class RetryingDictationSession(
             } finally {
                 runCatching { batch.close() }
             }
-        }.getOrNull()
+        }.onFailure { if (it is CancellationException) throw it }.getOrNull()
+        } finally { pcm.fill(0) }
     }
 
     companion object {

@@ -41,24 +41,24 @@ normative) and replayed by `spec/fixtures/voice-ui-turns.v1.json`:
 
 ## Voice Assistant element (`speechkit-voice-assistant`)
 
-The default Voice Assistant surface — the "Aura Orb" visual language
-(decision 2026-08-10, promoted from the voice-ui lab). The Glass Waveform is
-the supported customization preset, promoted as `variant="waveform"`
-(decision 2026-08-13); the Ring variant remains a lab-only exploration.
-One element serves every kit frame; native implementations (Compose, LVGL)
-port this section plus the `assistant` block (and, for variants, the
-`assistant-variants` block) in `tokens.json` (SSOT for layers, per-status
-tones, timings, and level formulas).
+The Web Component uses the Opal visual by default. The separately registered
+`speechkit-voice-orb` exposes the same Opal, Resonance and Rosette visuals to
+hosts with their own controls. It accepts `variant`, `state`, `opal-core` and
+`setLevel(value, "input" | "output")`. The conversation surface additionally
+supports the existing Aura and Glass Waveform motifs.
 
 Attribute contract (all optional):
 
 | Attribute | Values | Meaning |
 | --- | --- | --- |
-| `size` | `orb` \| `compact` (default) \| `expanded` | `orb` renders the bare orb for hosts that own their chrome (Device-Target prompter, Android overlay, box); `compact` the pill/bar/watch face; `expanded` the hero orb + status pill + teleprompter turn list. |
+| `size` | `orb` \| `compact` (default) \| `expanded` | `orb` renders the bare orb for hosts that own their chrome (Device-Target prompter, Android overlay, box); `compact` the pill/bar/watch face; `expanded` the hero orb above the teleprompter, with a visually hidden status announcement. |
 | `frame` | `overlay` \| `keyboard` \| `watch` \| `phone` \| `panel` (default) | Host surface. Compact `keyboard` renders the full-width inline bar; compact `watch` the round watch face; other frames the pill. |
-| `transcript` | boolean attribute | Off = animation/status only. Compact shows at most the last sentence of the newest turn; expanded shows the full turn list. Ignored for `size="orb"`. |
-| `variant` | `aura` (default) \| `waveform` | Motif in the visual slot. `waveform` renders the dual-hue level history (radial rim in round slots, linear strip in the compact pill/keyboard bar) per `tokens.json → assistant-variants.waveform`; shells, status, transcript, and interaction (incl. barge-in tap) are identical across variants. |
-| `mark-src` | URL | Host-provided brand image rendered in the orb centre; absent = pure orb. The kit ships no brand asset — kombify hosts pass the AI-teal rosette (standard) or the k monogram, mapped from the semantic ids in the `./marks` subpath (`rosette \| k \| none`). The waveform variant has no mark slot. |
+| `transcript` | boolean attribute | Off = animation/status only. Compact shows at most the last sentence of the newest turn; expanded shows the configured recent context. Ignored for `size="orb"`. |
+| `transcript-turns` | `1` \| `2` (default) \| `3` | Expanded entry count including the current turn; invalid or absent values resolve to 2. The reflected property is `transcriptTurns`. |
+| `variant` | `opal` (default), `resonance`, `rosette`, `aura`, `waveform` | Visual used in the conversation window and compact surface. |
+| `opal-core` / `opalCore` | `original` (default), `small` | Core-to-mist ratio for Opal. |
+| `agent-name` / `agentName` | Text | Agent speaker label in the transcript and compact bar. A missing or blank name uses the localized **Agent** label. |
+| `mark-src` | URL | Host-provided brand image rendered in the orb centre; absent = pure orb. The kit accepts a host-provided brand mark — kombify hosts pass the AI-teal rosette (standard) or the k monogram, mapped from the semantic ids in the `./marks` subpath (`rosette \| k \| none`). The waveform variant has no mark slot. |
 | `aura-state` | one of the 8 orb states below | Host override for the orb visual. Absent = derived from the session status. |
 | `locale` | BCP 47 | Inherited catalog resolution (`sk.voice.*`). |
 
@@ -76,7 +76,7 @@ richer than the surface contract:
 | `settling` | host override only | yes |
 | `error` | `denied` | no |
 
-The layer stack, per-state colour pairs, timings, and level formulas are
+For the Aura variant, the layer stack, per-state colour pairs, timings, and level formulas are
 normative in `src/tokens/tokens.json` → `assistant` (the SSOT the Compose and
 LVGL ports implement): breathing glow, 9 s aurora sweep, counter-rotating 13 s
 inner sweep, level-reactive halo ring (`scale = 0.82 + level*0.3`,
@@ -94,9 +94,14 @@ Behavior:
   `level`/`setLevel`) exactly like the overlay's.
 - Orb tap while `speaking` = barge-in (`interrupt()`, emits
   `speechkit-interrupt`); inert otherwise.
-- The expanded turn list follows §Teleprompter turn rules including autoscroll
-  pinning and jump-to-live; interrupted turns render the
-  `sk.voice.agent.interrupted` flag.
+- The expanded transcript keeps the hero fixed above the context. It displays
+  the full current turn and up to the configured number of entries; historical
+  entries show their last sentence. One history slot prefers the most recent
+  other speaker even across adjacent same-role ASR segments; a second slot
+  takes the nearest remaining earlier turn. Entries remain chronological, and
+  the `turns` property retains full history. New turns move context upward;
+  reduced motion disables that animation. The visible area retains autoscroll
+  pinning and jump-to-live; interrupted turns retain their flag.
 - Reduced motion per §Motion & accessibility: per-state colours and the
   resting/active mark treatment remain, all animation and level transforms are
   disabled.

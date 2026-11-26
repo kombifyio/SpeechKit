@@ -47,4 +47,15 @@
     <string name="speechkit_ime_agent_class_right">Esta cuenta no puede usar la conversación por voz</string>
     <string name="speechkit_ime_agent_class_consent">Permite la voz en la nube en la app SpeechKit</string>
     <string name="speechkit_ime_agent_class_expired">La sesión de voz caducó. Inicia una nueva conversación</string>
+
+    <!-- Opal conversation controls: capture is toggled by tapping. -->
+    <string name="speechkit_ime_agent_expand">Ampliar conversación</string>
+    <string name="speechkit_ime_agent_collapse">Contraer conversación</string>
+    <string name="speechkit_ime_agent_talk">Toca para hablar</string>
+    <string name="speechkit_ime_agent_send">Enviar intervención</string>
+    <string name="speechkit_ime_agent_title">Agente de voz</string>
+    <string name="speechkit_ime_agent_setup_hint">Configurar agente de voz</string>
+    <string name="speechkit_ime_agent_setup">Configurar</string>
+    <string name="speechkit_ime_agent_attention">Ver detalles</string>
+    <string name="speechkit_ime_agent_setup_body">Conecta SpeechKit para iniciar una conversación de voz.</string>
 </resources>

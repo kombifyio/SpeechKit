@@ -68,19 +68,30 @@ type Config struct {
 // registered A2A agent and returning the text parts of its answer. Build it
 // with [New]; it holds no per-turn state and is safe for concurrent use.
 type Agent struct {
-	endpoint         string
-	targetAgentID    string
-	sessionID        string
-	client           *http.Client
-	headers          HeaderProvider
-	turnTimeout      time.Duration
-	conversation     *ConversationSession
-	conversationTurn chan struct{}
-	speechWaiter     chan struct{}
-	panelRequests    map[string]struct{}
-	timingMu         sync.Mutex
-	lastTiming       map[string]int64
-	lastTimingTurn   string
+	// OnDispatchAcknowledged reports successful HTTP response headers only.
+	OnDispatchAcknowledged func(string)
+	endpoint               string
+	targetAgentID          string
+	sessionID              string
+	client                 *http.Client
+	headers                HeaderProvider
+	turnTimeout            time.Duration
+	conversation           *ConversationSession
+	conversationTurn       chan struct{}
+	speechWaiter           chan struct{}
+	panelRequests          map[string]struct{}
+	timingMu               sync.Mutex
+	lastTiming             map[string]int64
+	lastTimingTurn         string
+	completionMu           sync.Mutex
+	completedTurn          string
+}
+
+// VerifiedCompletion is true only for a matching explicit completed A2A status.
+func (a *Agent) VerifiedCompletion(turnID string) bool {
+	a.completionMu.Lock()
+	defer a.completionMu.Unlock()
+	return turnID != "" && a.completedTurn == turnID
 }
 
 // New validates config and returns an [Agent]. It fails when Endpoint is
@@ -320,8 +331,12 @@ func (a *Agent) streamTurn(ctx context.Context, input cascaded.AgentInput, turnI
 		}
 		return cascaded.AgentOutput{}, &TurnError{code: code}
 	}
+	if turnID != "" && a.OnDispatchAcknowledged != nil {
+		a.OnDispatchAcknowledged(turnID)
+	}
 
 	var control func(any) error
+	terminalSeen := false
 	controlSeen := false
 	if a.conversation != nil {
 		control = func(envelope any) error {
@@ -356,6 +371,16 @@ func (a *Agent) streamTurn(ctx context.Context, input cascaded.AgentInput, turnI
 	// The agent reports its own per-hop spans (durations only) in a metadata-only result event.
 	innerControl := control
 	control = func(envelope any) error {
+		root, _ := envelope.(map[string]any)
+		result, _ := root["result"].(map[string]any)
+		status, _ := result["status"].(map[string]any)
+		responseID, idIsString := root["id"].(string)
+		state, _ := status["state"].(string)
+		// A stream belongs to this HTTP request even when an A2A event omits
+		// JSON-RPC id; an explicit but different id is never evidence for it.
+		if (root["id"] == nil || (idIsString && responseID == requestID)) && (state == "completed" || state == "TASK_STATE_COMPLETED") {
+			terminalSeen = true
+		}
 		captureRunTimings(envelope, orchestratorTimings)
 		if innerControl != nil {
 			return innerControl(envelope)
@@ -386,6 +411,11 @@ func (a *Agent) streamTurn(ctx context.Context, input cascaded.AgentInput, turnI
 	}
 	if err := ctx.Err(); err != nil {
 		return cascaded.AgentOutput{}, err
+	}
+	if terminalSeen && turnID != "" {
+		a.completionMu.Lock()
+		a.completedTurn = turnID
+		a.completionMu.Unlock()
 	}
 	return cascaded.AgentOutput{Text: text, Action: "display"}, nil
 }

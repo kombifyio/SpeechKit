@@ -4,6 +4,7 @@ import android.content.Context
 import io.kombify.speechkit.assistant.R
 import io.kombify.speechkit.log.VoiceLog
 import io.kombify.speechkit.net.PlanDenial
+import kotlinx.coroutines.CancellationException
 
 /**
  * Intent classification and routing for the voice assistant.
@@ -71,6 +72,11 @@ class IntentRouter(
 
     /** Execute a classified intent. */
     suspend fun execute(context: Context, intent: AssistantIntent): ActionResult {
+        val settings = io.kombify.speechkit.net.StoredExecutionPolicy(context)
+        val policy = settings.read(io.kombify.speechkit.domain.ConnectionProfile.SystemOnDevice())
+        if (settings.isConfigured() && (!policy.allowNetwork || policy.mode == io.kombify.speechkit.domain.ExecutionMode.DEVICE_ONLY) &&
+            intent.type != IntentType.QUICK_NOTE && intent.type != IntentType.GENERAL_QUERY
+        ) return ActionResult(success = false, errorMessage = context.getString(R.string.speechkit_assistant_server_required))
         val executor = actionExecutors[intent.type]
         if (executor == null) {
             VoiceLog.w(VoiceLog.ASSIST, "no executor for ${intent.type}")
@@ -85,6 +91,8 @@ class IntentRouter(
 
         return try {
             executor.execute(context, intent)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             VoiceLog.e(VoiceLog.ASSIST, "intent execution failed ${intent.type}", e)
             ActionResult(

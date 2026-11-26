@@ -124,6 +124,7 @@ export { SpeechKitVoiceOverlayElement } from "./elements/voice-overlay.js";
 export { SpeechKitVoiceNoticeElement, type VoiceNoticeTone } from "./elements/voice-notice.js";
 export { SpeechKitLiveTranscriptElement } from "./elements/live-transcript.js";
 export { SpeechKitVoicePillElement } from "./elements/voice-pill.js";
+export { SpeechKitVoiceOrbElement, registerSpeechKitVoiceOrb, type VoiceOrbCore, type VoiceOrbState, type VoiceOrbVariant } from "./elements/voice-orb.js";
 export { SpeechKitVoiceDialogElement, type VoiceDialogAnchor } from "./elements/voice-dialog.js";
 export {
   SpeechKitVoiceVisualizerElement,
@@ -134,6 +135,7 @@ export {
   SpeechKitVoiceAssistantElement,
   sessionStatusToAuraState,
   type VoiceAssistantSize,
+  type VoiceAssistantTranscriptTurns,
   type VoiceAssistantFrame,
   type VoiceAssistantVariant,
   type VoiceAssistantStatus,
@@ -158,6 +160,7 @@ import { SpeechKitVoiceAssistantElement } from "./elements/voice-assistant.js";
 import { SpeechKitVoiceNoticeElement } from "./elements/voice-notice.js";
 import { SpeechKitLiveTranscriptElement } from "./elements/live-transcript.js";
 import { SpeechKitVoicePillElement } from "./elements/voice-pill.js";
+import { SpeechKitVoiceOrbElement } from "./elements/voice-orb.js";
 import { SpeechKitVoiceDialogElement } from "./elements/voice-dialog.js";
 
 /** Registers all kit elements (idempotent). */
@@ -172,6 +175,7 @@ export function registerSpeechKitElements(): void {
     [SpeechKitVoiceButtonElement.tagName, SpeechKitVoiceButtonElement],
     [SpeechKitVoiceOverlayElement.tagName, SpeechKitVoiceOverlayElement],
     [SpeechKitVoiceDialogElement.tagName, SpeechKitVoiceDialogElement],
+    [SpeechKitVoiceOrbElement.tagName, SpeechKitVoiceOrbElement],
     [SpeechKitVoiceAssistantElement.tagName, SpeechKitVoiceAssistantElement],
   ];
   for (const [tag, ctor] of definitions) {

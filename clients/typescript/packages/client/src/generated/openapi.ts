@@ -902,6 +902,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/voiceagent/sessions/{id}/turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recover registered-agent turn identities and outcomes
+         * @description Lists at most 256 receipts for the authenticated session owner and
+         *     organization, including after session teardown. Unknown and dispatched
+         *     are uncertain and must never be replayed. Dispatched records A2A 2xx
+         *     headers, not completion. Completed records an explicit terminal agent
+         *     status, not proof of each downstream side effect.
+         *     PostgreSQL fails closed without a signed admission for the separately
+         *     registered and governed subject-rights participant.
+         */
+        get: operations["listVoiceTurnReceipts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/voiceagent/sessions/{id}/turns/{turn_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read one owner-bound registered-agent turn receipt */
+        get: operations["getVoiceTurnReceipt"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/voiceagent/sessions/{id}": {
         parameters: {
             query?: never;
@@ -1257,6 +1300,12 @@ export interface components {
                 /** @description What the person in the room should do about it. */
                 user_guidance: string;
             };
+        };
+        VoiceTurnReceipt: {
+            session_id: string;
+            turn_id: string;
+            /** @enum {string} */
+            status: "unknown" | "dispatched" | "completed";
         };
         Error: {
             error: {
@@ -3920,6 +3969,77 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Error"];
                 };
+            };
+        };
+    };
+    listVoiceTurnReceipts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["SessionID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All known receipts; an unknown session returns an empty list. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        session_id: string;
+                        turns: components["schemas"]["VoiceTurnReceipt"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            /** @description Storage unavailable or session receipt limit exceeded. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getVoiceTurnReceipt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["SessionID"];
+                turn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The recorded turn status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceTurnReceipt"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            /** @description Receipt absent or outside the caller's owner and organization. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Receipt storage unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

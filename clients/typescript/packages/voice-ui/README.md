@@ -11,7 +11,7 @@ Native surfaces (Compose) implement spec parity from the shipped
 
 | Element | Purpose |
 | --- | --- |
-| `<speechkit-voice-assistant>` | The standard Voice Assistant surface (Aura Orb). One element serves every frame: `size="orb"` (bare visual for hosts with their own chrome), `compact` (pill / keyboard bar / watch face), `expanded` (hero + status + teleprompter turn list). See below. |
+| `<speechkit-voice-assistant>` | The standard conversation surface with an Opal visual. One element serves every frame: `size="orb"` (bare visual for hosts with their own chrome), `compact` (pill / keyboard bar / watch face), `expanded` (hero orb above the teleprompter, with screen-reader status announcements). See below. |
 | `<speechkit-voice-button>` | The standard split button: primary segment starts/stops Dictation; the secondary segment (`agent` attribute; chevron click or long-press) starts the Voice Agent. Without the `voice_agent` capability it renders locked and shows the denial guidance instead of disappearing. |
 | `<speechkit-voice-overlay>` | Compact ephemeral glass voice-agent overlay: teleprompter turn list (drafts dimmed, finals solid), autoscroll + jump-to-live, tap-to-interrupt orb, consent gate, ended/reconnect stage, Escape exit. |
 | `<speechkit-voice-visualizer>` | Orb/pill/dot audio-state indicator (`state`, `level`), honoring `prefers-reduced-motion`. |
@@ -29,6 +29,41 @@ processing, speaking and error. Motion stays inside the control; under
 label keeps "being recorded" obvious. Any denial renders as a compact notice
 above the button (`no-notice` opts out, e.g. when a dialog shows it).
 
+## Embedding a voice agent
+
+Register the Web Components once on the client. The conversation surface accepts a SpeechKit controller or host-supplied session status, transcript turns and input/output levels.
+
+```html
+<script type="module">
+  import "@kombifyio/speechkit-voice-ui/define";
+</script>
+<speechkit-voice-assistant id="conversation" size="expanded" transcript></speechkit-voice-assistant>
+```
+
+Set `conversation.controller` to your existing voice controller. The default uses Opal and shows two contributions. Use `agent-name="Mira"` for your own speaker name. Use `size="compact" frame="keyboard"` to put the same conversation on a single line.
+
+For a product with its own composer or controls, embed the separate visual. The three motifs are Opal, LiveKit-inspired radial Resonance and the kombify braided Rosette. They share the same state and level inputs. Supply accessible status text through the surrounding controls.
+
+```html
+<speechkit-voice-orb id="visual" variant="resonance" state="listening" aria-hidden="true"></speechkit-voice-orb>
+```
+
+```ts
+import { registerSpeechKitVoiceOrb, type SpeechKitVoiceOrbElement } from "@kombifyio/speechkit-voice-ui/orb";
+
+registerSpeechKitVoiceOrb(); // Registers only the visual in the browser.
+
+const visual = document.querySelector<SpeechKitVoiceOrbElement>("#visual")!;
+visual.variant = "opal";
+visual.opalCore = "small";
+visual.state = "speaking";
+visual.setLevel(0.62, "output"); // Feed normalized levels from your playback meter.
+```
+
+Place an optional `<img slot="mark" src="/brand.svg" alt="">` inside a standalone visual to display your own logo.
+
+Set `--sk-voice-orb-size` on a standalone visual and `--sk-voice-orb-hero-size` on a conversation window to fit the available space.
+
 ## Voice Assistant (`<speechkit-voice-assistant>`)
 
 The canonical Voice Assistant UI module. Attach a controller (or use the
@@ -40,10 +75,22 @@ transcript, and tap-to-interrupt barge-in.
 | --- | --- | --- |
 | `size` | `orb` \| `compact` (default) \| `expanded` | Bare visual / pill–bar–watch face / hero + transcript. |
 | `frame` | `overlay` \| `keyboard` \| `watch` \| `phone` \| `panel` (default) | Host surface; `keyboard` renders the full-width inline bar, `watch` the round face. |
-| `variant` | `aura` (default) \| `waveform` | Visual motif: Aura Orb or the dual-hue Glass Waveform. Everything else is identical across variants. |
+| `variant` | `opal` (default), `resonance`, `rosette`, `aura`, `waveform` | Visual used in the conversation window and compact surface. |
+| `opal-core` / `opalCore` | `original` (default), `small` | Core-to-mist ratio for Opal. |
+| `agent-name` / `agentName` | Text | Agent speaker label in the transcript and compact bar. A missing or blank name uses the localized **Agent** label. |
 | `transcript` | boolean | Off = animation/status only; compact shows at most the last sentence. |
-| `mark-src` | URL | Host-provided brand image in the orb centre (the kit ships no brand asset; no mark slot in `waveform`). |
+| `transcript-turns` / `transcriptTurns` | `1` \| `2` (default) \| `3` | Expanded display depth, including the current turn; invalid values use 2. |
+| `mark-src` | URL | Host-provided brand image in the orb centre (optional for orb variants). |
 | `aura-state` | 8 orb states | Host FSM override for the orb visual. |
+
+In expanded mode the current turn is shown in full. Historical entries show
+only their last sentence, in chronological order. When history is available,
+one slot prefers the latest turn from the other speaker, even across adjacent
+same-role ASR segments; depth 3 fills its other slot with the nearest remaining
+earlier turn. The `turns` property retains the full input history. Changing
+`transcriptTurns` also updates the `transcript-turns` attribute; compact and
+keyboard displays are unaffected. New turns move the context upward, with
+motion disabled for reduced-motion preferences.
 
 Semantic mark ids (`rosette \| k \| none`) live in the `./marks` subpath:
 

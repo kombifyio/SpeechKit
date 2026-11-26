@@ -3,9 +3,66 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 )
+
+func TestVoiceTurnReceiptMigrationOwnerIsolationAndSubjectErase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "turns.db")
+	open := func() *SQLiteStore {
+		s, err := NewSQLiteStore(StoreConfig{SQLitePath: path})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	ctx := context.Background()
+	s := open()
+	r := VoiceTurnReceipt{SessionID: "voice-1", TurnID: "voice-1:1", Status: "unknown"}
+	if err := s.BeginVoiceTurn(ctx, "alice", "org-a", r); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.BeginVoiceTurn(ctx, "alice", "org-a", r); err == nil {
+		t.Fatal("duplicate turn admitted")
+	}
+	if err := s.BeginVoiceTurn(ctx, "alice", "org-b", r); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.BeginVoiceTurn(ctx, "bob", "org-b", r); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s = open()
+	defer s.Close()
+	list, err := s.ListVoiceTurns(ctx, "alice", "org-a", "voice-1")
+	if err != nil || len(list) != 1 || list[0].Status != "unknown" {
+		t.Fatalf("reopened receipts=%v err=%v", list, err)
+	}
+	if _, err := s.GetVoiceTurn(ctx, "bob", "org-a", "voice-1", "voice-1:1"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("cross-owner read: %v", err)
+	}
+	if err := s.MarkVoiceTurnDispatched(ctx, "alice", "org-a", r); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CompleteVoiceTurn(ctx, "alice", "org-a", r); err != nil {
+		t.Fatal(err)
+	}
+	if counts, err := s.CountSubject(ctx, "alice"); err != nil || counts["voice_turn_receipts"] != 2 {
+		t.Fatalf("count=%v err=%v", counts, err)
+	}
+	if _, err := s.DeleteSubject(ctx, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetVoiceTurn(ctx, "alice", "org-b", "voice-1", "voice-1:1"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("erasure: %v", err)
+	}
+	if _, err := s.GetVoiceTurn(ctx, "bob", "org-b", "voice-1", "voice-1:1"); err != nil {
+		t.Fatalf("unrelated owner lost: %v", err)
+	}
+}
 
 func TestNewAndMigrate(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")

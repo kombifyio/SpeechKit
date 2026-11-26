@@ -1,0 +1,31 @@
+<resources>
+    <string name="context_title">Analizar contenido</string>
+    <string name="context_share_label">Analizar con SpeechKit</string>
+    <string name="context_screen_action">Analizar pantalla</string>
+    <string name="context_preview_hint">Revisa el contenido antes de procesarlo.</string>
+    <string name="context_shared_text">Texto compartido · sin acceso al historial</string>
+    <string name="context_shared_image">Imagen compartida · solo el contenido seleccionado</string>
+    <string name="context_shared_audio">Audio compartido · un archivo adjunto</string>
+    <string name="context_visible_screen">Pantalla visible · no toda la conversación</string>
+    <string name="context_text_input">Texto compartido</string>
+    <string name="context_image_preview">Vista previa de la imagen</string>
+    <string name="context_audio_ready">Archivo de audio listo</string>
+    <string name="context_crop_hint">Solo se analizará el área resaltada. Selecciona un mensaje o conserva toda la imagen.</string>
+    <string name="context_crop_horizontal">Bordes izquierdo y derecho</string>
+    <string name="context_crop_vertical">Bordes superior e inferior</string>
+    <string name="context_summarize">Resumir</string>
+    <string name="context_transcribe">Transcribir</string>
+    <string name="context_result">Resultado</string>
+    <string name="context_cancel">Cancelar</string>
+    <string name="context_invalid_input">No se puede abrir este contenido. Comparte un texto, una imagen o un archivo de audio.</string>
+    <string name="context_failed">No se pudo analizar el contenido. Comprueba la conexión seleccionada y los modelos locales.</string>
+    <string name="context_local_only">Solo en este dispositivo</string>
+    <string name="context_cloud_only">Solo la conexión a la nube seleccionada</string>
+    <string name="context_local_first">Primero local · mantén pulsado para usar solo la nube</string>
+    <string name="context_cloud_first">Primero nube · mantén pulsado para usar solo el dispositivo</string>
+    <string name="context_audio_local">Transcripción: en el dispositivo</string>
+    <string name="context_audio_cloud">Transcripción: conexión a la nube seleccionada</string>
+    <string name="context_capture_title">Captura de pantalla</string>
+    <string name="context_capture_body">Capturando una imagen para que la revises</string>
+    <string name="context_capture_unavailable">La captura no está disponible. Inténtalo de nuevo o comparte una captura.</string>
+</resources>

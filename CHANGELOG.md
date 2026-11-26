@@ -121,6 +121,33 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.81.8 (2026-11-26)
+
+### Features
+
+* **speechkit:** add compact and expanded Opal keyboard modes
+* **speechkit:** analyze screen and shared media through hybrid AI
+* **speechkit:** integrate Firebase hybrid keyboard
+
+### Bug Fixes
+
+* **migrations:** align SpeechKit classifier pin, harden custody runners, and add pre-merge migration lint
+* **security:** clear the remaining Security findings on main
+* **speechkit:** align Android OkHttp and restore the public projection
+* **speechkit:** enable tested hybrid features in Android releases
+* **speechkit:** integrate Opal into the keyboard shortcut banner
+* **speechkit:** request permission for local audio analysis
+
+## 0.81.7 (2026-11-26)
+
+### Features
+
+* **speechkit:** add native hybrid execution and durable agent outcomes
+
+### Bug Fixes
+
+* **security:** bump vulnerable dependencies and clear Security scan findings
+
 ## 0.81.6 (2026-11-25)
 
 ### Bug Fixes

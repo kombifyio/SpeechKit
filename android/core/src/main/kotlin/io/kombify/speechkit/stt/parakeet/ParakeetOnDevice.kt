@@ -110,7 +110,7 @@ object ParakeetOnDevice {
      * The installed model this device can use now, the selected one first, then any other installed one: supported,
      * installed, and not known to fail loading. Null means a host should dictate with something else.
      */
-    fun usableFiles(context: Context): OnDeviceModelFiles? {
+    fun usableFiles(context: Context, language: String? = null): OnDeviceModelFiles? {
         val store = modelStore(context)
         // The file check first: without a model, the probe in [support] would load a native engine for nothing.
         val installed = store.installed()
@@ -126,6 +126,7 @@ object ParakeetOnDevice {
             val files = runCatching { OnDeviceModelFiles.resolve(store.directory(model)) }
                 .onFailure { VoiceLog.w(VoiceLog.DICTATION, "offline model ${model.id} files unusable", it) }
                 .getOrNull() ?: continue
+            if (language != null && !files.supports(language)) continue
             if (recognizers.loadFailed(files.dir)) {
                 VoiceLog.w(VoiceLog.DICTATION, "offline model ${model.id} skipped: earlier load failed")
                 continue

@@ -33,16 +33,6 @@ func replyIsPoliteCloser(sentence string) bool {
 	return false
 }
 
-// replyExpectsAnswer reports whether an assistant reply hands the turn back
-// for one more user turn: its last sentence is a question ("?", "？") or opens
-// with an invitation to answer. Rules only, so it adds no latency or cost to
-// the turn_end that carries it; statements, confirmations and ordinary
-// answers return false.
-func replyExpectsAnswer(text string) bool {
-	expects, _ := replyFollowUpDecision(text)
-	return expects
-}
-
 // Rules that decide expects_reply, named for the dialog log. A question mark
 // is the plain fallback; the phrase lists are the classifier proper.
 const (

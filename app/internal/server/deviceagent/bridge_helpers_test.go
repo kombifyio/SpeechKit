@@ -147,23 +147,6 @@ func (f fakeTTS) ReadyHealthCheck(context.Context) map[string]error {
 	return map[string]error{"fake-piper": f.healthErr}
 }
 
-type recordingTTS struct {
-	calls  int
-	text   string
-	locale string
-}
-
-func (r *recordingTTS) Synthesize(_ context.Context, text string, opts tts.SynthesizeOpts) (*tts.Result, error) {
-	r.calls++
-	r.text = text
-	r.locale = opts.Locale
-	return &tts.Result{Audio: make([]byte, 44), Format: "wav", SampleRate: 16000, Provider: "recording-tts"}, nil
-}
-
-func (*recordingTTS) ReadyHealthCheck(context.Context) map[string]error {
-	return map[string]error{"recording-tts": nil}
-}
-
 type fakeLedgerRecord struct {
 	digest        [32]byte
 	state         string

@@ -104,8 +104,10 @@ func NewClient(opts ClientOptions) *http.Client {
 			original := t
 			t = t.Clone()
 			t.DialTLSContext = nil
+			//lint:ignore SA1019 prevent a legacy TLS hook bypass
 			t.DialTLS = nil //nolint:staticcheck // prevent a legacy TLS hook bypass
-			t.Dial = nil    //nolint:staticcheck // prevent a legacy dial hook bypass
+			//lint:ignore SA1019 prevent a legacy dial hook bypass
+			t.Dial = nil //nolint:staticcheck // prevent a legacy dial hook bypass
 			// A caller's proxy/custom dial can emit packets before a peer check.
 			// Keep its TLS settings, but use only the admitted native dial in
 			// this Full Local clone. Standard still uses original unchanged.

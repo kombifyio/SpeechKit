@@ -9,6 +9,8 @@ import android.os.Bundle
 import android.service.voice.VoiceInteractionSession
 import android.service.voice.VoiceInteractionSessionService
 import android.speech.tts.TextToSpeech
+import io.kombify.speechkit.domain.ExecutionMode
+import io.kombify.speechkit.net.StoredExecutionPolicy
 import android.view.View
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -20,6 +22,7 @@ import io.kombify.speechkit.assistant.intent.CloudSessionRecovery
 import io.kombify.speechkit.assistant.intent.CompanionTurnExecutor
 import io.kombify.speechkit.assistant.intent.GeneralQueryExecutor
 import io.kombify.speechkit.assistant.intent.IntentRouter
+import io.kombify.speechkit.assistant.intent.LocalTextExecutor
 import io.kombify.speechkit.assistant.ui.AssistantOverlay
 import io.kombify.speechkit.audio.MicAudioCapture
 import io.kombify.speechkit.domain.ConnectionProfileSource
@@ -60,9 +63,10 @@ class SpeechKitAssistantSessionService : VoiceInteractionSessionService() {
     @Inject lateinit var companionTurns: CompanionTurnExecutor
     @Inject lateinit var cloudRecovery: CloudSessionRecovery
     @Inject lateinit var neuralVoice: NeuralReplyVoice
+    @Inject lateinit var localTextExecutor: LocalTextExecutor
 
     override fun onNewSession(args: Bundle?): VoiceInteractionSession =
-        SpeechKitVoiceSession(this, profileSource, companionTurns, cloudRecovery, neuralVoice)
+        SpeechKitVoiceSession(this, profileSource, companionTurns, cloudRecovery, neuralVoice, localTextExecutor)
 }
 
 /**
@@ -84,10 +88,11 @@ class SpeechKitVoiceSession(
     private val companionTurns: CompanionTurnExecutor? = null,
     private val cloudRecovery: CloudSessionRecovery? = null,
     private val neuralVoice: NeuralReplyVoice = NeuralReplyVoice.None,
+    localTextExecutor: LocalTextExecutor? = null,
 ) : VoiceInteractionSession(context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private val intentRouter = IntentRouter(GeneralQueryExecutor(profileSource))
+    private val intentRouter = IntentRouter(GeneralQueryExecutor(profileSource, localTextExecutor))
     private var listeningJob: Job? = null
     private var tts: TextToSpeech? = null
     private var speechJob: Job? = null
@@ -175,6 +180,10 @@ class SpeechKitVoiceSession(
         listeningJob = scope.launch {
             try {
                 val profile = profileSource.currentProfile()
+                if (profile is io.kombify.speechkit.domain.ConnectionProfile.Server) {
+                    val job = checkNotNull(kotlinx.coroutines.currentCoroutineContext()[Job])
+                    check(io.kombify.speechkit.net.StoredServerProfile.registerActiveJob(context, profile, job)) { "Account session changed" }
+                }
                 VoiceLog.i(VoiceLog.ASSIST, "listen ${profile.describe()}")
                 _uiState.value = AssistantUiState.Listening()
 
@@ -195,7 +204,12 @@ class SpeechKitVoiceSession(
                     audioCapture = MicAudioCapture(),
                     intentRouter = intentRouter,
                     executeIntent = { intent -> intentRouter.execute(context, intent) },
-                    companionTurn = companionTurns,
+                    companionTurn = companionTurns.takeIf {
+                        val settings = StoredExecutionPolicy(context)
+                        val policy = settings.read(profile)
+                        io.kombify.speechkit.net.StoredVoiceAgentTarget(context).read(profile) == null &&
+                            (policy.allowNetwork && policy.mode in setOf(ExecutionMode.PREFER_ENDPOINT, ExecutionMode.ENDPOINT_ONLY))
+                    },
                     onLevel = { level ->
                         _uiState.value = AssistantUiState.Listening(level)
                     },
@@ -234,6 +248,8 @@ class SpeechKitVoiceSession(
                                 ?: context.getString(R.string.speechkit_assistant_stream_failed),
                         )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: SpeechKitApiException) {
                 VoiceLog.e(
                     VoiceLog.ASSIST,
@@ -302,7 +318,10 @@ class SpeechKitVoiceSession(
         tts?.stop()
         speechJob = scope.launch {
             val locale = context.resources.configuration.locales[0]
-            val handled = try {
+            val settings = StoredExecutionPolicy(context)
+            val policy = settings.read(profileSource.currentProfile())
+            // A cloud-only selection must not fall back to local synthesis.
+            val handled = if (policy.mode == ExecutionMode.ENDPOINT_ONLY) false else try {
                 neuralVoice.speak(spoken, locale)
             } catch (e: CancellationException) {
                 throw e
@@ -310,7 +329,11 @@ class SpeechKitVoiceSession(
                 VoiceLog.w(VoiceLog.ASSIST, "neural voice failed, using the platform voice", e)
                 false
             }
-            if (!handled) tts?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "assist-reply")
+            // The platform engine is not guaranteed to be on-device; only the
+            // two fallback-capable modes may use it after neural synthesis.
+            if (!handled && policy.allowNetwork && policy.mode in setOf(ExecutionMode.PREFER_DEVICE, ExecutionMode.PREFER_ENDPOINT)) {
+                tts?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "assist-reply")
+            }
         }
     }
 

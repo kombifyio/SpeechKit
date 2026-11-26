@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity android:name="io.kombify.speechkit.app.context.SyntheticChatActivity" android:exported="true" />
+        <provider android:name="io.kombify.speechkit.app.context.SyntheticShareProvider"
+            android:authorities="${applicationId}.contextfixtures"
+            android:exported="false" android:grantUriPermissions="true" />
+    </application>
+</manifest>

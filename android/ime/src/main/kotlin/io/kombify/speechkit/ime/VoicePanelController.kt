@@ -15,12 +15,17 @@ import io.kombify.speechkit.stt.streaming.StreamingSttSession
 import io.kombify.speechkit.stt.streaming.TranscriptEvent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.withContext
 
 /** Panel FSM states. See [VoicePanelController] for the transition map. */
 sealed interface VoicePanelState {
@@ -85,7 +90,7 @@ interface MicPermissionGate {
  */
 class VoicePanelController(
     private val scope: CoroutineScope,
-    private val sessionFactory: suspend () -> StreamingSttSession,
+    private val sessionFactory: suspend (DictationSegmentOptions) -> StreamingSttSession,
     private val audioCapture: AudioCapture,
     private val micPermission: MicPermissionGate,
     initialLanguage: String = LANGUAGE_MULTI,
@@ -101,15 +106,25 @@ class VoicePanelController(
 
     private var inputConnection: InputConnection? = null
     private var session: StreamingSttSession? = null
+    private var sessionOptions: DictationSegmentOptions? = null
     private var eventsJob: Job? = null
     private var captureJob: Job? = null
+    private var openingJob: Job? = null
+    private var policyListener: java.io.Closeable? = null
 
     // ---- VoiceInputHost ----------------------------------------------------
 
     override fun showPanel(inputConnection: InputConnection, editorInfo: EditorInfo) {
+        policyListener?.close()
+        policyListener = io.kombify.speechkit.net.NetworkUseGuard.listen {
+            val jobs = listOfNotNull(captureJob, eventsJob)
+            hidePanel()
+            jobs
+        }
         // A focus change mid-dictation abandons the old field's segment; its
         // composing text must not leak into the new editor.
         abandonActiveSegment()
+        releaseSession()
         this.inputConnection = inputConnection
         _state.value = if (isDictationBlocked(editorInfo.inputType)) {
             VoicePanelState.Blocked
@@ -118,7 +133,11 @@ class VoicePanelController(
         }
     }
 
-    override fun hidePanel() {
+    override fun hidePanel() { cancelAndDiscard() }
+
+    /** Abandon a gesture without finalizing or transmitting the buffered segment. */
+    fun cancelAndDiscard() {
+        policyListener?.close(); policyListener = null
         abandonActiveSegment()
         inputConnection = null
         releaseSession()
@@ -159,6 +178,17 @@ class VoicePanelController(
     fun cycleLanguage() {
         val index = DICTATION_LANGUAGES.indexOf(_language.value)
         _language.value = DICTATION_LANGUAGES[(index + 1).mod(DICTATION_LANGUAGES.size)]
+        if (state.value !is VoicePanelState.Connecting &&
+            state.value !is VoicePanelState.Listening &&
+            state.value !is VoicePanelState.Finishing
+        ) {
+            // Recognition family selection can depend on language. A warm
+            // session keeps its capture family, so release it while idle and
+            // let the next mic press open with the newly selected language.
+            val committed = state.value is VoicePanelState.Committed
+            releaseSession()
+            if (committed) _state.value = VoicePanelState.Idle
+        }
     }
 
     /** Result relay from [MicPermissionTrampolineActivity] via the service. */
@@ -177,6 +207,7 @@ class VoicePanelController(
 
     /** Terminal teardown from the service's onDestroy. */
     fun shutdown() {
+        policyListener?.close(); policyListener = null
         captureJob?.cancel()
         captureJob = null
         eventsJob?.cancel()
@@ -199,10 +230,17 @@ class VoicePanelController(
 
     private fun startDictation() {
         _state.value = VoicePanelState.Connecting
-        scope.launch {
-            val open = session ?: runCatching { sessionFactory() }
+        openingJob = scope.launch {
+            val options = DictationSegmentOptions(language = _language.value)
+            if (session != null && sessionOptions != options) releaseSession()
+            val open = session ?: runCatching { sessionFactory(options) }
                 .onSuccess { opened ->
+                    if (!isActive) {
+                        withContext(kotlinx.coroutines.NonCancellable) { opened.close() }
+                        return@launch
+                    }
                     session = opened
+                    sessionOptions = options
                     eventsJob = scope.launch { collectEvents(opened) }
                 }
                 .getOrElse { error ->
@@ -230,9 +268,31 @@ class VoicePanelController(
             // Sequence startSegment -> capture in ONE coroutine: two racing
             // launches could enqueue PCM before the start frame (same rule as
             // the dev screen's pipeline).
-            open.startSegment(
-                DictationSegmentOptions(language = _language.value),
-            )
+            try {
+                open.startSegment(sessionOptions ?: options)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                VoiceLog.w(VoiceLog.DICTATION, "voice panel segment start failed", error)
+                if (session === open) releaseSession()
+                val planCode = planDenialCode(error)
+                val errorClass = (error as? SpeechKitApiException)?.errorClass
+                _state.value = VoicePanelState.Error(
+                    code = planCode
+                        ?: errorClass?.let(::classPanelCode)
+                        ?: (error as? SpeechKitApiException)?.code
+                        ?: ERROR_CONNECT_FAILED,
+                    message = error.message ?: "segment start failed",
+                    retryable = planCode == null && errorClass != VoiceErrorClass.RIGHT &&
+                        errorClass != VoiceErrorClass.CONSENT,
+                )
+                return@launch
+            }
+            currentCoroutineContext().ensureActive()
+            // A recognizer can report an open/start failure as an event before
+            // startSegment returns. Keep that host error instead of replacing
+            // it with Listening.
+            if (state.value !is VoicePanelState.Connecting) return@launch
             _state.value = VoicePanelState.Listening()
             if (open.capturesOwnAudio) {
                 // The session records the microphone itself (system
@@ -273,6 +333,7 @@ class VoicePanelController(
 
     private suspend fun collectEvents(open: StreamingSttSession) {
         open.events.collect { event ->
+            if (session !== open) return@collect
             when (event) {
                 is TranscriptEvent.SegmentReady -> Unit
 
@@ -302,6 +363,14 @@ class VoicePanelController(
                     ) {
                         _state.value = VoicePanelState.Idle
                     }
+                    if (state.value is VoicePanelState.Idle &&
+                        sessionOptions != DictationSegmentOptions(language = _language.value)
+                    ) {
+                        // A language change made during capture applies to the
+                        // next segment. Retire this session only after the
+                        // current segment has completed.
+                        releaseSession()
+                    }
                 }
 
                 is TranscriptEvent.Failure -> {
@@ -309,6 +378,13 @@ class VoicePanelController(
                     captureJob = null
                     abandonComposingText()
                     listener?.onError(event.code, event.message)
+                    if (open.capturesOwnAudio) {
+                        // The system recognizer owns the microphone and cannot
+                        // provide PCM for replay. A retry must create a fresh
+                        // recognizer session rather than pretending to fall
+                        // back seamlessly to another capture path.
+                        releaseSession()
+                    }
                     _state.value = VoicePanelState.Error(
                         code = event.code,
                         message = event.message,
@@ -318,6 +394,7 @@ class VoicePanelController(
 
                 is TranscriptEvent.Closed -> {
                     session = null
+                    sessionOptions = null
                     captureJob?.cancel()
                     captureJob = null
                     when (state.value) {
@@ -346,13 +423,11 @@ class VoicePanelController(
         val active = state.value is VoicePanelState.Connecting ||
             state.value is VoicePanelState.Listening ||
             state.value is VoicePanelState.Finishing
+        openingJob?.cancel()
+        openingJob = null
         captureJob?.cancel()
         captureJob = null
-        if (active) {
-            abandonComposingText()
-            val open = session
-            if (open != null) scope.launch { runCatching { open.finishSegment() } }
-        }
+        if (active) abandonComposingText()
     }
 
     /** A dead draft must not linger as composing text. */
@@ -363,9 +438,11 @@ class VoicePanelController(
     private fun releaseSession() {
         eventsJob?.cancel()
         eventsJob = null
-        val open = session ?: return
+        val open = session
         session = null
-        scope.launch { runCatching { open.close() } }
+        sessionOptions = null
+        open ?: return
+        scope.launch(kotlinx.coroutines.NonCancellable, start = CoroutineStart.UNDISPATCHED) { runCatching { open.close() } }
     }
 
     companion object {

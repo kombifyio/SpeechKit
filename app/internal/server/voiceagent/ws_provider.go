@@ -74,9 +74,12 @@ type LivePendingResponse interface {
 // test double doesn't need to depend on the kernel's concrete LiveConfig
 // (which may embed provider-specific types).
 type LiveConfigFrame struct {
-	AnonymousGrant string `json:"-"`
-	PersonaID      string
-	RoleID         string
+	TurnReceiptStart      func(context.Context, string) error `json:"-"`
+	TurnReceiptDispatched func(string)                        `json:"-"`
+	TurnReceiptDone       func(string)                        `json:"-"`
+	AnonymousGrant        string                              `json:"-"`
+	PersonaID             string
+	RoleID                string
 	// Sequence metadata is internal runtime state derived from the
 	// persona/role resolver. It lets the WebSocket adapter report and advance
 	// workflow steps without coupling to the persona package.

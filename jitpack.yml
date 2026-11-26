@@ -19,5 +19,6 @@ install:
       :domain:publishToMavenLocal
       :core:publishToMavenLocal
       :net:publishToMavenLocal
+      :hybrid:publishToMavenLocal
       :voice-ui-compose:publishToMavenLocal
       :coinstall:publishToMavenLocal

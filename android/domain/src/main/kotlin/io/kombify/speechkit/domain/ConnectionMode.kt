@@ -9,6 +9,8 @@ enum class ConnectionMode(val wire: String) {
     ON_DEVICE("on_device"),
     SPEECHKIT_ORIGIN("speechkit_origin"),
     SELF_HOST("self_host"),
+    BYOK("byok"),
+    FIREBASE("firebase"),
     KOMBIFY_CLOUD("kombify_cloud"),
     ;
 
@@ -55,6 +57,10 @@ fun resolveConnectionProfile(
         stored ?: ConnectionProfile.SystemOnDevice()
     ConnectionMode.SPEECHKIT_ORIGIN ->
         shipped ?: stored ?: ConnectionProfile.SystemOnDevice()
+    ConnectionMode.BYOK ->
+        throw IllegalStateException("Select a configured Gemini key in Settings")
+    ConnectionMode.FIREBASE ->
+        throw IllegalStateException("Resolve the selected Firebase project through connection settings")
     ConnectionMode.ON_DEVICE ->
         ConnectionProfile.SystemOnDevice()
 }
@@ -81,5 +87,5 @@ fun testSurfaceConnectProfile(
     ) {
         return resolved
     }
-    return ConnectionProfile.Server(url, typed)
+    return ConnectionProfile.Server(url, typed, selectionRevision = resolved?.selectionRevision)
 }

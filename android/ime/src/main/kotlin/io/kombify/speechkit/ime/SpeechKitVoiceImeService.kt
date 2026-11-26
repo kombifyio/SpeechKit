@@ -24,7 +24,8 @@ import io.kombify.speechkit.ime.ui.VoicePanelUi
 import io.kombify.speechkit.domain.ConnectionProfileSource
 import io.kombify.speechkit.net.DictationController
 import io.kombify.speechkit.net.VoiceAgentAudio
-import io.kombify.speechkit.net.VoiceAgentController
+import io.kombify.speechkit.net.voiceAgentDriver
+import io.kombify.speechkit.net.VoiceAgentSessionDriver
 import io.kombify.speechkit.net.VoiceRenewalProfileSource
 import io.kombify.speechkit.stt.LANGUAGE_MULTI
 import io.kombify.speechkit.stt.streaming.StreamingSttSession
@@ -84,10 +85,18 @@ class SpeechKitVoiceImeService : InputMethodService() {
             scope = serviceScope,
             controllerFactory = {
                 val profile = profileSource.currentProfile()
-                VoiceAgentController(
+                voiceAgentDriver(
                     profile,
                     renewalProfile = { voiceRenewalProfiles.profileForRenewal(profile) },
                     renewalClaimNamespace = voiceRenewalProfiles.claimNamespace,
+                    context = this@SpeechKitVoiceImeService,
+                    target = io.kombify.speechkit.net.StoredVoiceAgentTarget(this@SpeechKitVoiceImeService).read(profile),
+                    policyOverride = io.kombify.speechkit.net.StoredExecutionPolicy(this@SpeechKitVoiceImeService).read(profile),
+                    localHandoff = {
+                        val handoff = android.content.Intent().setClassName(this@SpeechKitVoiceImeService.packageName, "io.kombify.speechkit.app.hybrid.HybridActivity")
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        if (handoff.resolveActivity(this@SpeechKitVoiceImeService.packageManager) != null) this@SpeechKitVoiceImeService.startActivity(handoff)
+                    },
                 )
             },
             audioCapture = MicAudioCapture(),
@@ -241,11 +250,11 @@ class SpeechKitVoiceImeService : InputMethodService() {
      * the zero-config floor — so the former `not_configured` throw is gone.
      * The context enables the system tier; network tiers ignore it.
      */
-    private suspend fun openConfiguredSession(): StreamingSttSession =
+    private suspend fun openConfiguredSession(options: io.kombify.speechkit.stt.streaming.DictationSegmentOptions): StreamingSttSession =
         DictationController(
             profile = profileSource.currentProfile(),
             context = applicationContext,
-        ).openSession()
+        ).openSession(options)
 
     private fun switchBackToKeyboard() {
         val switched = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {

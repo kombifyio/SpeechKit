@@ -245,12 +245,6 @@ func RegisterBackend(name Backend, factory Factory) error {
 	return nil
 }
 
-func unregisterBackendForTest(name Backend) {
-	registryMu.Lock()
-	defer registryMu.Unlock()
-	delete(registry, name)
-}
-
 // Open normalises cfg (defaults for backend, source, 16 kHz mono, 32 ms
 // frames, realtime thread priority) and constructs a session from the
 // registered backend. It returns [ErrBackendUnavailable] when the build

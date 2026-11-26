@@ -110,6 +110,7 @@ const (
 // columns, children first so every delete respects foreign keys. Rows kept in
 // a per-user storage scope are handled through DeleteScope.
 var subjectTables = []subjectTable{
+	{"voice_turn_receipts", `owner_user_id = ?`},
 	{"transcription_audio_assets", `transcription_id IN ` + ownedTranscriptions},
 	{"audio_assets", `owner_kind = 'transcription' AND owner_id IN ` + ownedTranscriptions},
 	{"voice_agent_session_turns", `session_id IN ` + ownedVoiceSessions},
@@ -138,6 +139,9 @@ func repeatArg(subject string, n int) []any {
 }
 
 func (s *sqlStore) SubjectIDs(ctx context.Context) ([]string, error) {
+	if err := s.unhandledVoiceTurnSubjects(ctx); err != nil {
+		return nil, err
+	}
 	seen := map[string]struct{}{}
 	for _, q := range []string{
 		`SELECT DISTINCT owner_user_id FROM transcriptions WHERE owner_user_id <> ''`,
@@ -163,6 +167,26 @@ func (s *sqlStore) SubjectIDs(ctx context.Context) ([]string, error) {
 			return nil, err
 		}
 		_ = rows.Close()
+		confirmSubjectRightsEffect(ctx, SubjectRightsLookup)
+	}
+	if s.dialect == dialectSQLite {
+		rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT owner_user_id FROM voice_turn_receipts WHERE owner_user_id <> ''`)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			seen[id] = struct{}{}
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
 		confirmSubjectRightsEffect(ctx, SubjectRightsLookup)
 	}
 	out := make([]string, 0, len(seen))
@@ -199,8 +223,14 @@ func (s *sqlStore) subjectScopes(ctx context.Context, subject string) ([]speechs
 }
 
 func (s *sqlStore) CountSubject(ctx context.Context, subject string) (map[string]int64, error) {
+	if err := s.unhandledVoiceTurnSubjects(ctx); err != nil {
+		return nil, err
+	}
 	counts := map[string]int64{}
 	for _, t := range subjectTables {
+		if s.dialect == dialectPostgres && t.name == "voice_turn_receipts" {
+			continue
+		}
 		var n int64
 		q := `SELECT COUNT(*) FROM ` + t.name + ` WHERE ` + t.where
 		if err := s.db.QueryRowContext(ctx, s.dialect.rebind(q), repeatArg(subject, countPlaceholders(t.where))...).Scan(&n); err != nil {
@@ -231,6 +261,9 @@ func (s *sqlStore) CountSubject(ctx context.Context, subject string) (map[string
 
 func (s *sqlStore) DeleteSubject(ctx context.Context, subject string) (SubjectDeleteResult, error) {
 	result := SubjectDeleteResult{Rows: map[string]int64{}}
+	if err := s.unhandledVoiceTurnSubjects(ctx); err != nil {
+		return result, err
+	}
 	var filePaths []string
 
 	// Owner-attributed rows (shared scopes) in one transaction.
@@ -273,6 +306,9 @@ func (s *sqlStore) DeleteSubject(ctx context.Context, subject string) (SubjectDe
 	filePaths = append(append(filePaths, audio...), snaps...)
 
 	for _, t := range subjectTables {
+		if s.dialect == dialectPostgres && t.name == "voice_turn_receipts" {
+			continue
+		}
 		res, err := tx.ExecContext(ctx, s.dialect.rebind(`DELETE FROM `+t.name+` WHERE `+t.where), repeatArg(subject, countPlaceholders(t.where))...)
 		if err != nil {
 			return result, fmt.Errorf("delete %s: %w", t.name, err)

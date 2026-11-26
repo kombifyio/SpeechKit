@@ -156,7 +156,7 @@ fun VoiceAgentPanelUi(
  */
 
 @Composable
-private fun agentStatusLabel(state: VoiceAgentUiState, provider: String?): String {
+internal fun agentStatusLabel(state: VoiceAgentUiState, provider: String?): String {
     if (state.errorCode == ImeVoiceAgentController.ERROR_NO_SERVER) {
         return stringResource(R.string.speechkit_ime_agent_error_no_server)
     }
@@ -178,7 +178,7 @@ private fun VoiceAgentUiState.Phase.label(): Int = when (this) {
  * errors, known codes get specific labels and unknown codes use server prose.
  */
 @Composable
-private fun agentErrorLabel(code: String?, message: String?, errorClass: VoiceErrorClass?): String {
+internal fun agentErrorLabel(code: String?, message: String?, errorClass: VoiceErrorClass?): String {
     when (errorClass) {
         VoiceErrorClass.LIMIT -> return stringResource(R.string.speechkit_ime_agent_class_limit)
         VoiceErrorClass.OUTAGE -> return stringResource(R.string.speechkit_ime_agent_class_outage)

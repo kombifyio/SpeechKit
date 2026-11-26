@@ -22,11 +22,12 @@ class SpeechKitRecognitionService : RecognitionService() {
 
     override fun onStartListening(recognizerIntent: Intent, listener: Callback) {
         runCatching { recognizer?.destroy() }
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+        // A third-party recognizer must not choose its own cloud behind the selected route.
+        if (android.os.Build.VERSION.SDK_INT < 31 || !SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
             listener.error(SpeechRecognizer.ERROR_CLIENT)
             return
         }
-        val sr = SpeechRecognizer.createSpeechRecognizer(this)
+        val sr = SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
         recognizer = sr
         sr.setRecognitionListener(ForwardingListener(listener))
         sr.startListening(recognizerIntent)

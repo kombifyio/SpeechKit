@@ -47,4 +47,15 @@
     <string name="speechkit_ime_agent_class_right">此账户无法使用语音对话</string>
     <string name="speechkit_ime_agent_class_consent">请在 SpeechKit 应用中允许云端语音</string>
     <string name="speechkit_ime_agent_class_expired">语音会话已过期，请开始新的对话</string>
+
+    <!-- Opal conversation controls: capture is toggled by tapping. -->
+    <string name="speechkit_ime_agent_expand">展开对话</string>
+    <string name="speechkit_ime_agent_collapse">收起对话</string>
+    <string name="speechkit_ime_agent_talk">点按说话</string>
+    <string name="speechkit_ime_agent_send">发送发言</string>
+    <string name="speechkit_ime_agent_title">语音助手</string>
+    <string name="speechkit_ime_agent_setup_hint">设置语音助手</string>
+    <string name="speechkit_ime_agent_setup">设置</string>
+    <string name="speechkit_ime_agent_attention">查看详情</string>
+    <string name="speechkit_ime_agent_setup_body">连接 SpeechKit，即可开始语音对话。</string>
 </resources>

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
+        <activity android:name=".app.hybrid.KeyboardJourneyActivity" android:exported="false" />
         <!-- Development builds only: the Android journey's Companion-turn probe. DUMP is held by the shell and the
              system, never by an installed app, so no other app can trigger a turn through it. -->
         <receiver

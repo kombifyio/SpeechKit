@@ -353,11 +353,6 @@ func dopplerConfigs() []string {
 	return nil
 }
 
-func resetDopplerHooksForTests() {
-	dopplerLookPath = exec.LookPath
-	dopplerSecretLookup = secrets.DefaultDopplerSecretLookup
-}
-
 func ApplyManagedIntegrationDefaults(cfg *Config) bool {
 	if cfg == nil {
 		return false

@@ -86,15 +86,3 @@ func lookupEngine(name string) (EngineFactory, error) {
 	}
 	return factory, nil
 }
-
-func unregisterEngineForTest(name string) {
-	engineMu.Lock()
-	defer engineMu.Unlock()
-	delete(engines, name)
-	for i, n := range engineOrder {
-		if n == name {
-			engineOrder = append(engineOrder[:i], engineOrder[i+1:]...)
-			break
-		}
-	}
-}

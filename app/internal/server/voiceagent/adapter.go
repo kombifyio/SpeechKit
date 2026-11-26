@@ -14,6 +14,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/kombifyio/SpeechKit/app/internal/server/wssession"
+	"github.com/kombifyio/SpeechKit/app/internal/store"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/voiceagent/live"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/a2a"
 )
@@ -418,6 +419,42 @@ func (a *Adapter) Run(parent context.Context) {
 		}
 		if a.Vocabulary != nil {
 			cfg.Keyterms = a.Vocabulary(ctx, a.Session.Owner.UserID, a.Session.Owner.OrgID, a.Session.VoicePrefs, cfg.Locale)
+		}
+	}
+	if start.TurnReceipts {
+		_, native := a.Provider.(*registeredNativeProvider)
+		_, cascaded := a.Provider.(*RegisteredAgentProvider)
+		if (!native && !cascaded) || a.Session == nil || a.Session.Owner.UserID == "" || cfg.AnonymousGrant != "" || cfg.AgentTargetID == "" || cfg.DirectEndpoint != nil || cfg.modeOnly() || a.native == nil || a.native.turnReceipts == nil {
+			a.sendFatalError(ctx, "turn_receipts_unavailable", "Turn receipts are unavailable for this session.")
+			return
+		}
+		user, org, session := a.Session.Owner.UserID, a.Session.Owner.OrgID, a.Session.ID
+		if err := a.native.turnReceipts.VoiceTurnAdmissionReady(ctx); err != nil {
+			a.sendFatalError(ctx, "turn_receipts_unavailable", "Turn receipt storage is unavailable for this session.")
+			return
+		}
+		cfg.TurnReceiptStart = func(turnCtx context.Context, turnID string) error {
+			receipt := store.VoiceTurnReceipt{SessionID: session, TurnID: turnID, Status: "unknown"}
+			if err := a.native.turnReceipts.BeginVoiceTurn(turnCtx, user, org, receipt); err != nil {
+				return err
+			}
+			return a.writeFrameChecked(turnCtx, EventFrame{Type: MsgEvent, EventFrameFields: EventFrameFields{EventType: "turn_receipt"}, Turn: &receipt})
+		}
+		cfg.TurnReceiptDone = func(turnID string) {
+			finishCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			receipt := store.VoiceTurnReceipt{SessionID: session, TurnID: turnID, Status: "completed"}
+			if err := a.native.turnReceipts.CompleteVoiceTurn(finishCtx, user, org, receipt); err == nil {
+				a.sendJSON(finishCtx, EventFrame{Type: MsgEvent, EventFrameFields: EventFrameFields{EventType: "turn_receipt"}, Turn: &receipt})
+			}
+		}
+		cfg.TurnReceiptDispatched = func(turnID string) {
+			updateCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			receipt := store.VoiceTurnReceipt{SessionID: session, TurnID: turnID, Status: "dispatched"}
+			if err := a.native.turnReceipts.MarkVoiceTurnDispatched(updateCtx, user, org, receipt); err == nil {
+				a.sendJSON(updateCtx, EventFrame{Type: MsgEvent, EventFrameFields: EventFrameFields{EventType: "turn_receipt"}, Turn: &receipt})
+			}
 		}
 	}
 	a.configureFrontDoor(start, &cfg)

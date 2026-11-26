@@ -26,7 +26,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -42,13 +45,20 @@ import io.kombify.speechkit.BuildConfig
 import io.kombify.speechkit.R
 import io.kombify.speechkit.domain.ConnectionProfile
 import io.kombify.speechkit.domain.ConnectionProfileSource
-import io.kombify.speechkit.net.DictationController
+import io.kombify.speechkit.net.SpeechKitServerApi
+import io.kombify.speechkit.net.VoiceAgentCatalog
+import io.kombify.speechkit.net.VoiceAgentProfile
+import io.kombify.speechkit.net.testFirebaseLiveConnection
 import io.kombify.speechkit.net.LanServer
 import io.kombify.speechkit.net.NsdLanFinder
 import io.kombify.speechkit.net.PairingRecords
 import io.kombify.speechkit.net.StoredServerProfile
+import io.kombify.speechkit.net.StoredConnectionSelection
+import io.kombify.speechkit.net.testGeminiLiveConnection
+import io.kombify.speechkit.domain.ExecutionMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.FilterChip
@@ -87,12 +97,14 @@ class MainActivity : ComponentActivity() {
     ) { granted -> Timber.d("RECORD_AUDIO permission: $granted") }
 
     private var pendingConnectCloud by mutableStateOf(false)
+    private var connectionSettingsRequest by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        requestMicPermissionIfNeeded()
+        if (!intent.getBooleanExtra(EXTRA_OPEN_CONNECTION, false)) requestMicPermissionIfNeeded()
         pendingConnectCloud = ConnectCloudIntent.matches(intent)
+        if (intent.getBooleanExtra(EXTRA_OPEN_CONNECTION, false)) connectionSettingsRequest++
         setContent {
             SpeechKitTheme {
                 SpeechKitApp(
@@ -100,6 +112,7 @@ class MainActivity : ComponentActivity() {
                     profileSource = profileSource,
                     connectCloudRequested = pendingConnectCloud,
                     onConnectCloudConsumed = { pendingConnectCloud = false },
+                    connectionSettingsRequest = connectionSettingsRequest,
                 )
             }
         }
@@ -108,9 +121,14 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_OPEN_CONNECTION, false)) connectionSettingsRequest++
         if (ConnectCloudIntent.matches(intent)) {
             pendingConnectCloud = true
         }
+    }
+
+    companion object {
+        const val EXTRA_OPEN_CONNECTION = "io.kombify.speechkit.OPEN_CONNECTION"
     }
 
     private fun requestMicPermissionIfNeeded() {
@@ -131,6 +149,7 @@ private fun SpeechKitApp(
     profileSource: ConnectionProfileSource,
     connectCloudRequested: Boolean = false,
     onConnectCloudConsumed: () -> Unit = {},
+    connectionSettingsRequest: Int = 0,
 ) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("speechkit_app", Context.MODE_PRIVATE) }
@@ -138,6 +157,9 @@ private fun SpeechKitApp(
     var selectedTab by remember { mutableIntStateOf(0) }
     LaunchedEffect(connectCloudRequested) {
         if (connectCloudRequested) selectedTab = 2
+    }
+    LaunchedEffect(connectionSettingsRequest) {
+        if (connectionSettingsRequest > 0) selectedTab = 2
     }
 
     // Live-refresh keyboard status on resume from system settings.
@@ -541,13 +563,18 @@ private fun SettingsTab(
             onConnectAbandoned = onConnectAbandoned,
         )
 
+        if (io.kombify.speechkit.BuildConfig.HYBRID_ENABLED) {
+            val hybridContext = LocalContext.current
+            Button(onClick = { io.kombify.speechkit.app.hybrid.HybridActivity.open(hybridContext) }) {
+                Text(stringResource(R.string.hybrid_title))
+            }
+        }
         OnDeviceModelCard(onModeChanged = { modeVersion += 1 })
 
         NeuralVoiceCard()
 
         VocabularyCard()
 
-        VoiceAgentProviderCard()
 
         KeyboardIconsCard()
 
@@ -632,12 +659,25 @@ private fun ServerConnectionCard(
     var url by remember {
         mutableStateOf(prefs.getString(StoredServerProfile.KEY_SERVER_URL, "") ?: "")
     }
-    var token by remember {
-        mutableStateOf(prefs.getString(StoredServerProfile.KEY_SERVER_TOKEN, "") ?: "")
+    var token by remember { mutableStateOf("") }
+    var apiKey by remember { mutableStateOf("") }
+    var model by remember { mutableStateOf(KeyboardAgentPreferences.model(context).ifBlank { "gemini-3.8-live" }) }
+    var voice by remember { mutableStateOf("Kore") }
+    var remoteKind by remember { mutableIntStateOf(-1) }
+    val bundledProfiles = remember { VoiceAgentCatalog.bundled().filter { it.isNativeRealtimeEndpoint } }
+    var selectedProfileId by remember {
+        mutableStateOf(KeyboardAgentPreferences.profileId(context).takeIf { id -> bundledProfiles.any { it.id == id } }
+            ?: bundledProfiles.firstOrNull { it.adapterKind == "gemini_live" }?.id.orEmpty())
     }
+    var serverProfiles by remember { mutableStateOf<List<VoiceAgentProfile>>(emptyList()) }
+    var readyProfileIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val selection = remember { StoredConnectionSelection(context) }
+    var choice by remember { mutableIntStateOf(-1) }
+    var generation by remember { mutableIntStateOf(0) }
     var pairingPayload by remember { mutableStateOf("") }
     var status by remember { mutableStateOf<String?>(null) }
     var connecting by remember { mutableStateOf(false) }
+    var connectJob by remember { mutableStateOf<Job?>(null) }
     var showSelfHost by remember { mutableStateOf(!ShippedDefaults.cloudConnectSupported) }
     var testing by remember { mutableStateOf(false) }
     var finding by remember { mutableStateOf(false) }
@@ -673,15 +713,87 @@ private fun ServerConnectionCard(
     val shippedUrl = remember { ShippedDefaults.serverUrl }
     val shippedProfile = remember { ShippedDefaults.shippedProfile() }
     val cloudConnectSupported = remember { ShippedDefaults.cloudConnectSupported }
-    val mode = remember(modeTick, saved, shippedProfile) {
-        StoredServerProfile.resolvedMode(context, saved, shippedProfile)
+    val snapshot = remember(modeTick, saved, shippedProfile) { selection.snapshot(shippedProfile) }
+    val mode = snapshot.mode
+    val byokProfile = snapshot.profile as? ConnectionProfile.Byok
+    var restoredByokDetails by remember { mutableStateOf(false) }
+    if (!restoredByokDetails && byokProfile != null) {
+        model = byokProfile.model
+        voice = byokProfile.voice
+        restoredByokDetails = true
+    }
+    val firebaseConfigured = BuildConfig.HYBRID_ENABLED && BuildConfig.FIREBASE_CLOUD_ENABLED &&
+        BuildConfig.FIREBASE_APPLICATION_ID.isNotBlank() && BuildConfig.FIREBASE_PROJECT_ID.isNotBlank() && BuildConfig.FIREBASE_API_KEY.isNotBlank()
+    if (remoteKind < 0) remoteKind = when (mode) {
+        ConnectionMode.SELF_HOST, ConnectionMode.SPEECHKIT_ORIGIN -> 1
+        ConnectionMode.FIREBASE -> 2
+        ConnectionMode.BYOK -> 0
+        else -> if (firebaseConfigured) 2 else 0
+    }
+    val selectedProfile = (serverProfiles + bundledProfiles).firstOrNull { it.id == selectedProfileId }
+    LaunchedEffect(modeTick, mode, snapshot.revision) {
+        serverProfiles = emptyList()
+        readyProfileIds = emptySet()
+        val active = snapshot.profile as? ConnectionProfile.Server
+        if (active != null && (mode == ConnectionMode.SELF_HOST || mode == ConnectionMode.KOMBIFY_CLOUD || mode == ConnectionMode.SPEECHKIT_ORIGIN) && active.credentialAvailable && snapshot.policy.allowNetwork) {
+            try {
+                val api = SpeechKitServerApi(active, context = context)
+                val profiles = api.voiceAgentProfiles()
+                val readiness = api.voiceAgentReadiness()
+                serverProfiles = VoiceAgentCatalog.eligibleEndpointProfiles(profiles, readiness)
+                readyProfileIds = serverProfiles.map { it.id }.toSet()
+            } catch (e: CancellationException) { throw e }
+              catch (_: Exception) { /* An unavailable endpoint is not ready. */ }
+        }
+    }
+    if (choice < 0) choice = when (mode) {
+        ConnectionMode.ON_DEVICE -> 0
+        ConnectionMode.KOMBIFY_CLOUD -> 2
+        else -> 1
     }
     val cloudSession = remember(modeTick) {
         StoredServerProfile.loadCloud(context)
     }
 
-    fun persistMode(next: ConnectionMode) {
-        StoredServerProfile.saveMode(context, next)
+    suspend fun saveSelection(action: suspend () -> Unit): Boolean = try {
+        action()
+        modeTick += 1
+        status = context.getString(R.string.settings_connection_saved)
+        true
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        status = context.getString(R.string.connection_setup_save_failed)
+        false
+    }
+
+    fun persistKnownReadyProfile(profile: VoiceAgentProfile, chosenModel: String) {
+        if (snapshot.mode != ConnectionMode.KOMBIFY_CLOUD) return
+        val activeServer = snapshot.profile as? ConnectionProfile.Server
+        val admitted = serverProfiles.firstOrNull { it.id == profile.id &&
+            (it.modelId == chosenModel || it.variants.any { variant -> variant.modelId == chosenModel }) }
+        if (admitted != null && activeServer != null && selection.isCurrent(activeServer)) KeyboardAgentPreferences.setProfile(context, admitted, chosenModel, activeServer)
+        else status = context.getString(R.string.connection_setup_not_ready)
+    }
+
+    suspend fun persistReadyEndpointProfile(profile: VoiceAgentProfile?, chosenModel: String, endpoint: String) {
+        if (profile == null) return
+        try {
+            val active = selection.snapshot(shippedProfile)
+            val server = active.profile as? ConnectionProfile.Server ?: return
+            if (active.mode != ConnectionMode.SELF_HOST || server.normalizedBaseUrl != endpoint.trim().trimEnd('/')) return
+            val api = SpeechKitServerApi(server, context = context)
+            val available = VoiceAgentCatalog.eligibleEndpointProfiles(api.voiceAgentProfiles(), api.voiceAgentReadiness())
+            val admitted = available.firstOrNull { it.id == profile.id &&
+                (it.modelId == chosenModel || it.variants.any { variant -> variant.modelId == chosenModel }) }
+            if (admitted != null && selection.isCurrent(server)) KeyboardAgentPreferences.setProfile(context, admitted, chosenModel, server)
+            else status = context.getString(R.string.connection_setup_not_ready)
+        } catch (e: CancellationException) { throw e }
+          catch (_: Exception) { status = context.getString(R.string.connection_setup_not_ready) }
+    }
+
+    suspend fun persistMode(next: ConnectionMode) {
+        selection.selectMode(next)
         modeTick += 1
     }
 
@@ -710,32 +822,36 @@ private fun ServerConnectionCard(
 
     fun connectCloud() {
         if (connecting) return
-        if (StoredServerProfile.hasOwnCloudSession(context)) {
-            persistMode(ConnectionMode.KOMBIFY_CLOUD)
-            onConnectSucceeded()
-            status = null
-            return
-        }
+        val requestGeneration = generation
+        val revision = selection.revision()
         connecting = true
         status = context.getString(R.string.settings_connection_testing)
-        scope.launch {
-            val outcome = runCatching {
+        connectJob = scope.launch {
+            if (StoredServerProfile.hasOwnCloudSession(context)) {
+                if (requestGeneration == generation && selection.selectCloud(revision)) {
+                    modeTick += 1
+                    onConnectSucceeded()
+                    status = null
+                }
+                connecting = false
+                return@launch
+            }
+            val outcome = try {
                 withContext(Dispatchers.IO) { provisioner.provisionNow() }
-            }.getOrDefault(CompanionProvision.Unavailable)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                CompanionProvision.Unavailable
+            }
             val fromCompanion = companionCloudProfile(outcome)
             if (fromCompanion != null) {
-                val savedCompanion = StoredServerProfile.saveCompanionCloud(
-                    context,
-                    fromCompanion.baseUrl,
-                    fromCompanion.bearerToken.orEmpty(),
+                val connected = requestGeneration == generation && selection.connectCompanionCloud(
+                    fromCompanion.baseUrl, fromCompanion.bearerToken.orEmpty(), expectedRevision = revision,
                 )
-                if (!savedCompanion && !StoredServerProfile.hasOwnCloudSession(context)) {
-                    status = context.getString(R.string.settings_connection_cloud_network)
-                    connecting = false
-                    return@launch
+                if (connected) {
+                    modeTick += 1
+                    onConnectSucceeded()
                 }
-                persistMode(ConnectionMode.KOMBIFY_CLOUD)
-                onConnectSucceeded()
                 // The state line above already says Connected; a stale success
                 // message here would outlive a later sign-out.
                 status = null
@@ -784,15 +900,16 @@ private fun ServerConnectionCard(
             status = when (signIn) {
                 is KombifyCloudAuth.SignIn.Done -> {
                     val tokens = signIn.tokens
-                    StoredServerProfile.saveKombifyCloud(
-                        context,
+                    if (requestGeneration == generation && selection.connectOwnedCloud(
                         KombifyCloudAuth.DEFAULT_SERVER_URL,
                         tokens.accessToken,
                         tokens.refreshToken,
                         System.currentTimeMillis() + tokens.expiresInSec * 1000L,
-                    )
-                    persistMode(ConnectionMode.KOMBIFY_CLOUD)
-                    onConnectSucceeded()
+                        expectedRevision = revision,
+                    )) {
+                        modeTick += 1
+                        onConnectSucceeded()
+                    }
                     null
                 }
                 KombifyCloudAuth.SignIn.Declined ->
@@ -808,8 +925,10 @@ private fun ServerConnectionCard(
 
     LaunchedEffect(connectCloudRequested) {
         if (!connectCloudRequested) return@LaunchedEffect
+        if (BuildConfig.CONNECTION_SETUP_ENABLED) choice = 2
         connectCloud()
     }
+    DisposableEffect(Unit) { onDispose { connectJob?.cancel() } }
     val connectLifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current
     DisposableEffect(connectCloudRequested, connectLifecycle) {
         val observer = LifecycleEventObserver { _, event ->
@@ -840,12 +959,31 @@ private fun ServerConnectionCard(
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium,
             )
+            if (BuildConfig.CONNECTION_SETUP_ENABLED) {
+                listOf(R.string.connection_setup_local, R.string.connection_setup_own, R.string.connection_setup_account).forEachIndexed { index, label ->
+                    FilterChip(selected = choice == index, onClick = {
+                        if (choice != index) {
+                            generation += 1
+                            connectJob?.cancel()
+                            connecting = false
+                            choice = index
+                            status = null
+                            if (index != 2) scope.launch { selection.selectLocal(); modeTick += 1 }
+                        } else if (index == 0) {
+                            scope.launch { selection.selectLocal(); modeTick += 1 }
+                        }
+                    }, label = { Text(stringResource(label)) })
+                }
+                if (choice == 0) Text(stringResource(R.string.connection_setup_local_detail), style = MaterialTheme.typography.bodySmall)
+            }
             Text(
                 when (mode) {
                     ConnectionMode.KOMBIFY_CLOUD -> stringResource(R.string.settings_connection_mode_cloud)
                     ConnectionMode.SELF_HOST -> stringResource(R.string.settings_connection_mode_self_host)
                     ConnectionMode.SPEECHKIT_ORIGIN -> stringResource(R.string.settings_connection_mode_origin)
                     ConnectionMode.ON_DEVICE -> stringResource(R.string.settings_connection_mode_on_device)
+                    ConnectionMode.BYOK -> stringResource(R.string.connection_setup_gemini)
+                    ConnectionMode.FIREBASE -> stringResource(R.string.connection_setup_firebase)
                 },
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.Medium,
@@ -856,28 +994,37 @@ private fun ServerConnectionCard(
                         stringResource(R.string.settings_connection_cloud_connected)
                     mode == ConnectionMode.KOMBIFY_CLOUD ->
                         stringResource(R.string.settings_connection_cloud_session_ended)
-                    saved != null -> stringResource(R.string.settings_connection_state_server)
-                    shippedUrl != null && shippedProfile != null ->
+                    mode == ConnectionMode.BYOK && byokProfile?.hasUsableKey == true -> stringResource(R.string.connection_setup_key_saved)
+                    mode == ConnectionMode.BYOK -> stringResource(R.string.connection_setup_key_required)
+                    mode == ConnectionMode.FIREBASE -> stringResource(R.string.connection_setup_firebase)
+                    mode == ConnectionMode.SELF_HOST && saved != null -> stringResource(R.string.settings_connection_state_server)
+                    mode == ConnectionMode.SPEECHKIT_ORIGIN && shippedUrl != null && shippedProfile != null ->
                         stringResource(R.string.settings_connection_state_shipped, shippedUrl)
                     shippedUrl != null -> stringResource(R.string.settings_connection_state_on_device)
                     else -> stringResource(R.string.settings_connection_state_on_device)
                 },
                 style = MaterialTheme.typography.bodySmall,
             )
-            if (cloudConnectSupported && mode == ConnectionMode.KOMBIFY_CLOUD && cloudSession != null) {
+            if ((!BuildConfig.CONNECTION_SETUP_ENABLED || choice == 2) && mode == ConnectionMode.KOMBIFY_CLOUD && cloudSession != null) {
                 CloudAccountSection(
                     provisioner = provisioner,
                     onSessionChanged = { modeTick += 1 },
                 )
             }
-            if (cloudConnectSupported) {
+            if ((!BuildConfig.CONNECTION_SETUP_ENABLED && cloudConnectSupported) || (BuildConfig.CONNECTION_SETUP_ENABLED && choice == 2)) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     if (mode == ConnectionMode.KOMBIFY_CLOUD && cloudSession != null) {
                         TextButton(
                             onClick = {
-                                provisioner.forgetSession()
-                                StoredServerProfile.clearCloud(context)
-                                persistMode(fallbackModeAfterDisconnect(shippedProfile))
+                                connecting = true
+                                scope.launch {
+                                    try {
+                                        io.kombify.speechkit.app.hybrid.HybridRuntime.cancelActive()
+                                        provisioner.forgetSession()
+                                        StoredServerProfile.clearCloud(context)
+                                        persistMode(fallbackModeAfterDisconnect(shippedProfile))
+                                    } finally { connecting = false }
+                                }
                             },
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text(stringResource(R.string.settings_connection_disconnect_cloud)) }
@@ -912,7 +1059,152 @@ private fun ServerConnectionCard(
                     status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 }
             }
-            TextButton(onClick = { showSelfHost = !showSelfHost }) {
+            if (BuildConfig.CONNECTION_SETUP_ENABLED && choice == 2) {
+                val profiles = (bundledProfiles + serverProfiles).distinctBy { it.id }
+                SetupDropdown(label = stringResource(R.string.connection_setup_profile), selected = selectedProfileId,
+                    options = profiles.map { it.id to it.name }, onSelect = { id ->
+                        selectedProfileId = id
+                        val profile = profiles.first { it.id == id }
+                        model = profile.variants.firstOrNull { it.recommended }?.modelId
+                            ?: profile.variants.firstOrNull()?.modelId ?: profile.modelId.orEmpty()
+                        persistKnownReadyProfile(profile, model)
+                    })
+                selectedProfile?.let { profile ->
+                    val variants = profile.variants.map { it.modelId to it.name }.ifEmpty { listOf(profile.modelId.orEmpty() to profile.modelId.orEmpty()) }
+                    if (model !in variants.map { it.first }) model = variants.first().first
+                    SetupDropdown(label = stringResource(R.string.connection_setup_variant), selected = model,
+                        options = variants, onSelect = { model = it; persistKnownReadyProfile(profile, it) })
+                    if (mode == ConnectionMode.KOMBIFY_CLOUD && cloudSession != null) {
+                        Text(stringResource(if (profile.id in readyProfileIds) R.string.connection_setup_available else R.string.connection_setup_not_ready), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+            if (BuildConfig.CONNECTION_SETUP_ENABLED && choice == 1) {
+                val profiles = (bundledProfiles + serverProfiles).distinctBy { it.id }
+                SetupDropdown(
+                    label = stringResource(R.string.connection_setup_profile),
+                    selected = selectedProfileId,
+                    options = profiles.map { it.id to it.name },
+                    onSelect = { id ->
+                        selectedProfileId = id
+                        val profile = profiles.first { it.id == id }
+                        model = profile.variants.firstOrNull { it.recommended }?.modelId
+                            ?: profile.variants.firstOrNull()?.modelId ?: profile.modelId.orEmpty()
+                        remoteKind = if (profile.adapterKind == "gemini_live") { if (firebaseConfigured) 2 else 0 } else 1
+                        status = null
+                    },
+                )
+                selectedProfile?.let { profile ->
+                    val variants = profile.variants.map { it.modelId to it.name }.ifEmpty {
+                        listOf(profile.modelId.orEmpty() to profile.modelId.orEmpty())
+                    }
+                    if (model !in variants.map { it.first }) model = variants.first().first
+                    SetupDropdown(
+                        label = stringResource(R.string.connection_setup_variant),
+                        selected = model,
+                        options = variants,
+                        onSelect = { variant -> model = variant },
+                    )
+                    val methods = buildList {
+                        if (profile.adapterKind == "gemini_live") {
+                            add(2 to context.getString(R.string.connection_setup_firebase))
+                            add(0 to context.getString(R.string.connection_setup_own_key))
+                        }
+                        add(1 to context.getString(R.string.connection_setup_server_method))
+                    }
+                    if (methods.none { it.first == remoteKind }) remoteKind = 1
+                    SetupDropdown(label = stringResource(R.string.connection_setup_method), selected = remoteKind,
+                        options = methods, onSelect = { remoteKind = it; status = null })
+                    if (remoteKind == 1 && mode == ConnectionMode.SELF_HOST) {
+                        Text(stringResource(if (profile.id in readyProfileIds) R.string.connection_setup_available else R.string.connection_setup_not_ready), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                if (remoteKind == 0) {
+                    Text(stringResource(R.string.connection_setup_gemini_detail), style = MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(value = apiKey, onValueChange = { apiKey = it }, label = { Text(stringResource(R.string.connection_setup_key)) }, visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = voice, onValueChange = { voice = it }, label = { Text(stringResource(R.string.connection_setup_voice)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    if (mode != ConnectionMode.BYOK && selection.hasSavedByok()) {
+                        OutlinedButton(onClick = { scope.launch {
+                            if (saveSelection { check(selection.restoreByok()) }) {
+                                val restored = selection.snapshot(shippedProfile).profile as? ConnectionProfile.Byok
+                                val catalogProfile = bundledProfiles.firstOrNull { it.adapterKind == "gemini_live" &&
+                                    restored != null && (it.modelId == restored.model || it.variants.any { variant -> variant.modelId == restored.model }) }
+                                if (restored != null && catalogProfile != null) {
+                                    selectedProfileId = catalogProfile.id
+                                    model = restored.model
+                                    voice = restored.voice
+                                    KeyboardAgentPreferences.setProfile(context, catalogProfile, restored.model, restored)
+                                } else status = context.getString(R.string.connection_setup_not_ready)
+                            }
+                        } }) {
+                            Text(stringResource(R.string.connection_setup_use_saved))
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(enabled = apiKey.isNotBlank() && model.isNotBlank() && voice.isNotBlank(), onClick = {
+                            val replacement = apiKey
+                            val selectedModel = model.trim()
+                            val selectedVoice = voice.trim()
+                            val chosenProfile = selectedProfile
+                            scope.launch {
+                                if (saveSelection { selection.selectByok(replacement, selectedModel, selectedVoice) }) {
+                                    val active = selection.snapshot(shippedProfile).profile as? ConnectionProfile.Byok
+                                    if (active != null && active.model == selectedModel && active.voice == selectedVoice && active.apiKey == replacement.trim()) {
+                                        chosenProfile?.let { KeyboardAgentPreferences.setProfile(context, it, selectedModel, active) }
+                                    }
+                                    apiKey = ""
+                                }
+                            }
+                        }) { Text(stringResource(R.string.settings_connection_save)) }
+                        OutlinedButton(enabled = !testing && mode == ConnectionMode.BYOK && byokProfile?.hasUsableKey == true, onClick = {
+                            val profile = byokProfile ?: return@OutlinedButton
+                            testing = true
+                            scope.launch {
+                                status = try { testGeminiLiveConnection(profile, context); context.getString(R.string.settings_connection_ok) }
+                                    catch (e: CancellationException) { throw e }
+                                    catch (e: Exception) { context.getString(R.string.connection_setup_test_failed) }
+                                testing = false
+                            }
+                        }) { Text(stringResource(R.string.settings_connection_test)) }
+                    }
+                    status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                } else if (remoteKind == 2) {
+                    val configured = firebaseConfigured
+                    if (!configured) Text(stringResource(R.string.connection_setup_firebase_unavailable), style = MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(value = voice, onValueChange = { voice = it }, label = { Text(stringResource(R.string.connection_setup_voice)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Button(enabled = configured && model.isNotBlank() && voice.isNotBlank(), onClick = {
+                        val firebase = ConnectionProfile.Firebase(
+                            applicationId = BuildConfig.FIREBASE_APPLICATION_ID,
+                            projectId = BuildConfig.FIREBASE_PROJECT_ID,
+                            apiKey = BuildConfig.FIREBASE_API_KEY,
+                            cloudModel = BuildConfig.FIREBASE_CLOUD_MODEL.ifBlank { "gemini-3.5-flash-lite" },
+                            liveModel = model, voice = voice.trim(), debugAppCheck = BuildConfig.DEBUG,
+                        )
+                        val chosenProfile = selectedProfile
+                        scope.launch {
+                            if (saveSelection { selection.selectFirebase(firebase) }) {
+                                val active = selection.snapshot(shippedProfile).profile as? ConnectionProfile.Firebase
+                                if (active != null && active.copy(selectionRevision = null) == firebase) {
+                                    chosenProfile?.let { KeyboardAgentPreferences.setProfile(context, it, firebase.liveModel, active) }
+                                }
+                            }
+                        }
+                    }) { Text(stringResource(R.string.connection_setup_firebase_activate)) }
+                    val firebaseProfile = snapshot.profile as? ConnectionProfile.Firebase
+                    OutlinedButton(enabled = !testing && mode == ConnectionMode.FIREBASE && firebaseProfile != null, onClick = {
+                        val active = firebaseProfile ?: return@OutlinedButton
+                        testing = true
+                        scope.launch {
+                            status = try { testFirebaseLiveConnection(active, context); context.getString(R.string.settings_connection_ok) }
+                                catch (e: CancellationException) { throw e }
+                                catch (_: Exception) { context.getString(R.string.connection_setup_test_failed) }
+                            testing = false
+                        }
+                    }) { Text(stringResource(R.string.settings_connection_test)) }
+                    status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                } else Text(stringResource(R.string.connection_setup_server_detail), style = MaterialTheme.typography.bodySmall)
+            }
+            if (!BuildConfig.CONNECTION_SETUP_ENABLED) TextButton(onClick = { showSelfHost = !showSelfHost }) {
                 Text(
                     stringResource(
                         if (showSelfHost) R.string.settings_connection_self_host_hide
@@ -920,7 +1212,23 @@ private fun ServerConnectionCard(
                     ),
                 )
             }
-            if (showSelfHost) {
+            if ((!BuildConfig.CONNECTION_SETUP_ENABLED && showSelfHost) || (BuildConfig.CONNECTION_SETUP_ENABLED && choice == 1 && remoteKind == 1)) {
+            if (!BuildConfig.CONNECTION_SETUP_ENABLED) {
+                val profiles = (bundledProfiles + serverProfiles).distinctBy { it.id }
+                SetupDropdown(label = stringResource(R.string.connection_setup_profile), selected = selectedProfileId,
+                    options = profiles.map { it.id to it.name }, onSelect = { id ->
+                        selectedProfileId = id
+                        val profile = profiles.first { it.id == id }
+                        model = profile.variants.firstOrNull { it.recommended }?.modelId
+                            ?: profile.variants.firstOrNull()?.modelId ?: profile.modelId.orEmpty()
+                    })
+                selectedProfile?.let { profile ->
+                    val variants = profile.variants.map { it.modelId to it.name }.ifEmpty { listOf(profile.modelId.orEmpty() to profile.modelId.orEmpty()) }
+                    if (model !in variants.map { it.first }) model = variants.first().first
+                    SetupDropdown(label = stringResource(R.string.connection_setup_variant), selected = model,
+                        options = variants, onSelect = { model = it })
+                }
+            }
             OutlinedTextField(
                 value = url,
                 onValueChange = { url = it },
@@ -932,13 +1240,17 @@ private fun ServerConnectionCard(
                 value = token,
                 onValueChange = { token = it },
                 label = { Text(stringResource(R.string.settings_connection_token)) },
+                visualTransformation = PasswordVisualTransformation(),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (saved?.credentialAvailable == false) Text(stringResource(R.string.connection_setup_server_key_required), style = MaterialTheme.typography.bodySmall)
+            else if (!saved?.bearerToken.isNullOrBlank()) Text(stringResource(R.string.connection_setup_key_saved), style = MaterialTheme.typography.bodySmall)
             OutlinedTextField(
                 value = pairingPayload,
                 onValueChange = { pairingPayload = it },
                 label = { Text(stringResource(R.string.settings_connection_pairing)) },
+                visualTransformation = PasswordVisualTransformation(),
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 2,
             )
@@ -949,16 +1261,16 @@ private fun ServerConnectionCard(
                         status = context.getString(R.string.settings_connection_pairing_invalid)
                         return@OutlinedButton
                     }
-                    StoredServerProfile.saveSelfHost(
-                        context,
-                        selected.profile.baseUrl,
-                        selected.profile.bearerToken,
-                    )
-                    persistMode(ConnectionMode.SELF_HOST)
-                    url = selected.profile.baseUrl
-                    token = selected.profile.bearerToken.orEmpty()
-                    pairingPayload = ""
-                    status = context.getString(R.string.settings_connection_saved)
+                    val chosenProfile = selectedProfile
+                    val chosenModel = model
+                    scope.launch {
+                        if (saveSelection { selection.selectServer(selected.profile.baseUrl, selected.profile.bearerToken) }) {
+                            persistReadyEndpointProfile(chosenProfile, chosenModel, selected.profile.baseUrl)
+                            url = selected.profile.baseUrl
+                            token = ""
+                            pairingPayload = ""
+                        }
+                    }
                 },
                 enabled = pairingPayload.isNotBlank(),
             ) {
@@ -994,14 +1306,21 @@ private fun ServerConnectionCard(
                         FilterChip(
                             selected = url == server.url,
                             onClick = {
-                                url = server.url
-                                StoredServerProfile.saveSelfHost(
-                                    context,
-                                    server.url,
-                                    token.trim().ifEmpty { null },
-                                )
-                                persistMode(ConnectionMode.SELF_HOST)
-                                status = context.getString(R.string.settings_connection_saved)
+                                val sameEndpoint = saved?.normalizedBaseUrl == server.url.trim().trimEnd('/')
+                                val replacement = token.trim().ifEmpty { saved?.bearerToken?.takeIf { sameEndpoint } }
+                                if (sameEndpoint && saved?.credentialAvailable == false && replacement.isNullOrEmpty()) {
+                                    status = context.getString(R.string.connection_setup_server_key_required)
+                                } else {
+                                    val chosenProfile = selectedProfile
+                                    val chosenModel = model
+                                    scope.launch {
+                                    if (saveSelection { selection.selectServer(server.url, replacement) }) {
+                                        persistReadyEndpointProfile(chosenProfile, chosenModel, server.url)
+                                        url = server.url
+                                        token = ""
+                                    }
+                                    }
+                                }
                             },
                             label = { Text(server.instanceName) },
                         )
@@ -1011,13 +1330,21 @@ private fun ServerConnectionCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = {
-                        StoredServerProfile.saveSelfHost(
-                            context,
-                            url.trim(),
-                            token.trim().ifEmpty { null },
-                        )
-                        persistMode(ConnectionMode.SELF_HOST)
-                        status = context.getString(R.string.settings_connection_saved)
+                        val endpoint = url.trim()
+                        val sameEndpoint = saved?.normalizedBaseUrl == endpoint.trimEnd('/')
+                        val replacement = token.trim().ifEmpty { saved?.bearerToken?.takeIf { sameEndpoint } }
+                        if (sameEndpoint && saved?.credentialAvailable == false && replacement.isNullOrEmpty()) {
+                            status = context.getString(R.string.connection_setup_server_key_required)
+                        } else {
+                            val chosenProfile = selectedProfile
+                            val chosenModel = model
+                            scope.launch {
+                                if (saveSelection { selection.selectServer(endpoint, replacement) }) {
+                                    persistReadyEndpointProfile(chosenProfile, chosenModel, endpoint)
+                                    token = ""
+                                }
+                            }
+                        }
                     },
                 ) { Text(stringResource(R.string.settings_connection_save)) }
                 OutlinedButton(
@@ -1026,50 +1353,57 @@ private fun ServerConnectionCard(
                         testing = true
                         status = context.getString(R.string.settings_connection_testing)
                         scope.launch {
-                            // Opening a real session is the only honest test: a
-                            // reachable host that rejects the token looks exactly
-                            // like a working one until a session is minted.
-                            val result = runCatching {
-                                val session = DictationController(
-                                    profile = ConnectionProfile.Server(
-                                        url.trim(),
-                                        token.trim().ifEmpty { null },
-                                    ),
-                                    context = context,
-                                ).openSession()
-                                runCatching { session.close() }
+                            val active = selection.snapshot(shippedProfile)
+                            val profile = active.profile as? ConnectionProfile.Server
+                            status = try {
+                                if (active.mode != ConnectionMode.SELF_HOST || profile == null ||
+                                    profile.normalizedBaseUrl != url.trim().trimEnd('/') || token.isNotBlank()) {
+                                    context.getString(R.string.connection_setup_save_before_test)
+                                } else if (!profile.credentialAvailable) {
+                                    context.getString(R.string.connection_setup_server_key_required)
+                                } else if (SpeechKitServerApi(profile, context = context).healthy()) {
+                                    context.getString(R.string.connection_setup_server_reachable)
+                                } else context.getString(R.string.connection_setup_test_failed)
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                context.getString(R.string.connection_setup_test_failed)
                             }
-                            status = result.fold(
-                                onSuccess = { context.getString(R.string.settings_connection_ok) },
-                                onFailure = { failure ->
-                                    context.getString(
-                                        R.string.settings_connection_failed,
-                                        failure.message ?: failure.javaClass.simpleName,
-                                    )
-                                },
-                            )
                             testing = false
                         }
                     },
                 ) { Text(stringResource(R.string.settings_connection_test)) }
                 if (saved != null) {
-                    TextButton(
-                        onClick = {
-                            prefs.edit()
-                                .remove(StoredServerProfile.KEY_SERVER_URL)
-                                .remove(StoredServerProfile.KEY_SERVER_TOKEN)
-                                .apply()
-                            url = ""
-                            token = ""
-                            persistMode(fallbackModeAfterDisconnect(shippedProfile))
-                            status = context.getString(R.string.settings_connection_cleared)
-                        },
-                    ) { Text(stringResource(R.string.settings_connection_clear)) }
+                    TextButton(onClick = {
+                        scope.launch {
+                            if (saveSelection { selection.clearServer() }) {
+                                url = ""
+                                token = ""
+                                status = context.getString(R.string.settings_connection_cleared)
+                            }
+                        }
+                    }) { Text(stringResource(R.string.settings_connection_clear)) }
                 }
             }
-            if (!cloudConnectSupported) {
-                status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
+            if (BuildConfig.CONNECTION_SETUP_ENABLED && choice != 0 && mode != ConnectionMode.ON_DEVICE &&
+                ((choice == 2 && mode == ConnectionMode.KOMBIFY_CLOUD && cloudSession != null) ||
+                 (choice == 1 && ((remoteKind == 0 && mode == ConnectionMode.BYOK) ||
+                  (remoteKind == 1 && (mode == ConnectionMode.SELF_HOST || mode == ConnectionMode.SPEECHKIT_ORIGIN)) ||
+                  (remoteKind == 2 && mode == ConnectionMode.FIREBASE))))) {
+                val preferences = listOf(
+                    ExecutionMode.PREFER_ENDPOINT to stringResource(R.string.connection_setup_remote_first),
+                    ExecutionMode.PREFER_DEVICE to stringResource(R.string.connection_setup_local_first),
+                    ExecutionMode.DEVICE_ONLY to stringResource(R.string.connection_setup_local_only),
+                    ExecutionMode.ENDPOINT_ONLY to stringResource(R.string.connection_setup_cloud_only),
+                )
+                SetupDropdown(
+                    label = stringResource(R.string.connection_setup_preference),
+                    selected = snapshot.policy.mode,
+                    options = preferences,
+                    onSelect = { preference -> scope.launch { saveSelection { selection.updatePreference(preference) } } },
+                )
             }
         }
     }
@@ -1085,36 +1419,19 @@ private fun ServerConnectionCard(
  * keyboard APK is GPL-3.0 as a whole.
  */
 @Composable
-private fun VoiceAgentProviderCard() {
-    val context = LocalContext.current
-    var selected by remember { mutableStateOf(KeyboardAgentPreferences.provider(context)) }
-    val options = listOf(
-        KeyboardAgentPreferences.PROVIDER_DEEPGRAM to "Deepgram",
-        KeyboardAgentPreferences.PROVIDER_ASSEMBLYAI to "AssemblyAI",
-        KeyboardAgentPreferences.PROVIDER_OPENAI to "GPT",
-        KeyboardAgentPreferences.PROVIDER_XAI to "Grok",
-    )
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(stringResource(R.string.settings_agent_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
-            Text(
-                stringResource(R.string.settings_agent_subtitle),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                options.forEach { (value, label) ->
-                    FilterChip(
-                        selected = selected == value,
-                        onClick = {
-                            selected = value
-                            KeyboardAgentPreferences.setProvider(context, value)
-                        },
-                        label = { Text(label) },
-                    )
+@OptIn(ExperimentalMaterial3Api::class)
+private fun <T> SetupDropdown(label: String, selected: T, options: List<Pair<T, String>>, onSelect: (T) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(label, style = MaterialTheme.typography.bodySmall)
+        Box {
+            OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth().semantics { contentDescription = label }) {
+                Text(options.firstOrNull { it.first == selected }?.second.orEmpty(), modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
+                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                options.forEach { (value, title) ->
+                    DropdownMenuItem(text = { Text(title) }, onClick = { expanded = false; onSelect(value) })
                 }
             }
         }

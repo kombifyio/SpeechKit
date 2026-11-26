@@ -65,11 +65,22 @@ class SpeechKitApplication : App() {
             })
         }
         VoiceLog.i(VoiceLog.NET, "app start debug=${BuildConfig.DEBUG}")
+        io.kombify.speechkit.net.LocalSpeechAdapters.install(
+            if (BuildConfig.CONNECTION_SETUP_ENABLED && BuildConfig.HYBRID_ENABLED)
+                ({ context -> listOf(io.kombify.speechkit.hybrid.MlKitLocalSpeechAdapter(context)) }) else null,
+        )
+        io.kombify.speechkit.net.StoredConnectionSelection.configureLegacyFirebase(
+            !BuildConfig.CONNECTION_SETUP_ENABLED && BuildConfig.FIREBASE_CLOUD_ENABLED,
+        )
+        io.kombify.speechkit.net.StoredConnectionSelection.configureFirebase(
+            BuildConfig.CONNECTION_SETUP_ENABLED && BuildConfig.HYBRID_ENABLED && BuildConfig.FIREBASE_CLOUD_ENABLED,
+        )
+        io.kombify.speechkit.net.StoredConnectionSelection(this).snapshot(ShippedDefaults.shippedProfile())
         installCloudSessionLifecycle()
         // The signed-in account's vocabulary: last synced pack first, so an
         // offline start keeps it, then a fresh one.
         AccountVocabulary.restore(this)
-        AccountVocabulary.syncInBackground(this)
+        if (io.kombify.speechkit.net.StoredServerProfile.cloudSelected(this)) AccountVocabulary.syncInBackground(this)
         SpeechKitStripLayout.apply(this)
         // Answer the keyboard's voice key in place. Registered once, for the
         // process lifetime: the panel itself is built per activation and takes

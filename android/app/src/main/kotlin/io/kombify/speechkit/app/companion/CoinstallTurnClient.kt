@@ -53,8 +53,11 @@ class CoinstallTurnClient(
      * Runs off the main thread (package resolution, bind); [onPartial] receives the answer so far on a
      * binder thread.
      */
-    suspend fun startTurnResult(text: String, onPartial: (String) -> Unit = {}): CoinstallTurnResult =
-        withContext(Dispatchers.IO) {
+    suspend fun startTurnResult(text: String, onPartial: (String) -> Unit = {}): CoinstallTurnResult {
+        val job = checkNotNull(kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job])
+        val listener = io.kombify.speechkit.net.NetworkUseGuard.listenIfAllowed { job.cancel(); listOf(job) }
+            ?: return CoinstallTurnResult.Unavailable
+        try { return withContext(Dispatchers.IO) {
             if (!sessionPresent()) return@withContext CoinstallTurnResult.NoSession
             val live = transport ?: return@withContext CoinstallTurnResult.Unavailable
             val turnId = UUID.randomUUID().toString()
@@ -97,7 +100,8 @@ class CoinstallTurnClient(
                     "within_budget=${result is CoinstallTurnResult.Complete && withinBudget(firstPartialMs, totalMs)}",
             )
             result
-        }
+        } } finally { listener.close() }
+    }
 
     /** The Companion's answer, or null when it did not take the turn so local Assist answers instead. */
     override suspend fun startTurn(text: String, onPartial: (String) -> Unit): ActionResult? =

@@ -102,6 +102,10 @@ func (h *Handler) itemHandler(w http.ResponseWriter, r *http.Request) {
 		h.upgradeWS(w, r, sessionID)
 	case subresource == "livekit-token" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
 		h.liveKitToken(w, r, sessionID)
+	case subresource == "turns" && r.Method == http.MethodGet:
+		h.listTurnReceipts(w, r, sessionID)
+	case strings.HasPrefix(subresource, "turns/") && r.Method == http.MethodGet:
+		h.turnReceipt(w, r, sessionID, strings.TrimPrefix(subresource, "turns/"))
 	case subresource == "" && r.Method == http.MethodDelete:
 		h.deleteSession(w, r, sessionID)
 	case (subresource == "transcript" || subresource == "summary") && r.Method == http.MethodGet:
@@ -111,6 +115,56 @@ func (h *Handler) itemHandler(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed",
 			"unsupported method for this sub-resource")
 	}
+}
+
+func (h *Handler) listTurnReceipts(w http.ResponseWriter, r *http.Request, sessionID string) {
+	id := middleware.IdentityFromContext(r.Context())
+	if id.UserID == "" || id.Source == "" || id.Source == "none" {
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "authentication is required")
+		return
+	}
+	ledger, ok := h.store.(store.VoiceTurnReceiptStore)
+	if !ok || ledger == nil {
+		httpx.WriteError(w, http.StatusServiceUnavailable, "turn_receipts_unavailable", "turn receipt storage is unavailable")
+		return
+	}
+	receipts, err := ledger.ListVoiceTurns(r.Context(), id.UserID, id.OrgID, sessionID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusServiceUnavailable, "turn_receipts_unavailable", "turn receipts could not be read")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string]any{"session_id": sessionID, "turns": receipts})
+}
+
+func (h *Handler) turnReceipt(w http.ResponseWriter, r *http.Request, sessionID, turnID string) {
+	id := middleware.IdentityFromContext(r.Context())
+	if id.UserID == "" || id.Source == "" || id.Source == "none" {
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "authentication is required")
+		return
+	}
+	if turnID == "" || strings.Contains(turnID, "/") || len(turnID) > 256 || !strings.HasPrefix(turnID, sessionID+":") {
+		http.NotFound(w, r)
+		return
+	}
+	ledger, ok := h.store.(store.VoiceTurnReceiptStore)
+	if !ok || ledger == nil {
+		httpx.WriteError(w, http.StatusServiceUnavailable, "turn_receipts_unavailable", "turn receipt storage is unavailable")
+		return
+	}
+	receipt, err := ledger.GetVoiceTurn(r.Context(), id.UserID, id.OrgID, sessionID, turnID)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		httpx.WriteError(w, http.StatusServiceUnavailable, "turn_receipts_unavailable", "turn receipt could not be read")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(receipt)
 }
 
 func (h *Handler) persistedSessionSubresource(w http.ResponseWriter, r *http.Request, sessionID, subresource string) {

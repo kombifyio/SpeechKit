@@ -49,7 +49,8 @@ fun recoverCloudSession(
 ): ConnectionProfile.Server? {
     val server = failed as? ConnectionProfile.Server ?: return null
     val rejected = server.bearerToken ?: return null
-    return recoverCloudSession(
+    StoredServerProfile.currentCloudIfCaptured(context, server) ?: return null
+    val recovered = recoverCloudSession(
         hasOwnSession = StoredServerProfile.hasOwnCloudSession(context),
         recoverOwn = {
             val renewed = runBlocking { CloudBearer.recoverRejected(rejected, server.cloudSessionGeneration) }
@@ -67,15 +68,19 @@ fun recoverCloudSession(
             }
         },
         saveCompanion = { session ->
-            StoredServerProfile.saveCompanionCloud(
+            if (!io.kombify.speechkit.net.sameVoiceRenewalAccount(rejected, session.profile.bearerToken, io.kombify.speechkit.app.build.ShippedDefaults.tokenClaimNamespace)) false
+            else StoredServerProfile.saveCompanionCloud(
                 context,
                 session.profile.baseUrl,
                 session.profile.bearerToken.orEmpty(),
                 session.expiresAtEpochMs,
                 expectedAccessToken = rejected,
+                expectedCustodyId = server.custodyId,
             )
         },
     )
+    if (recovered == null) return null
+    return StoredServerProfile.currentCloudIfCaptured(context, server)
 }
 
 internal fun recoverCloudSession(

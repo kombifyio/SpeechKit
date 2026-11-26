@@ -8,7 +8,13 @@ import android.provider.AlarmClock
 import io.kombify.speechkit.assistant.R
 import io.kombify.speechkit.domain.ConnectionProfile
 import io.kombify.speechkit.domain.ConnectionProfileSource
+import io.kombify.speechkit.domain.ExecutionMode
+import io.kombify.speechkit.domain.ExecutionFailure
+import io.kombify.speechkit.domain.ExecutionFailureKind
+import io.kombify.speechkit.net.StoredExecutionPolicy
+import kotlinx.coroutines.CancellationException
 import io.kombify.speechkit.log.VoiceLog
+import io.kombify.speechkit.store.RoomStore
 import io.kombify.speechkit.net.SpeechKitApiException
 import io.kombify.speechkit.net.SpeechKitServerApi
 
@@ -155,14 +161,19 @@ class QuickNoteExecutor : ActionExecutor {
     override suspend fun execute(context: Context, intent: AssistantIntent): ActionResult {
         val content = intent.parameters["content"] ?: intent.rawText
 
-        // Save via Store (would be injected in production)
-        VoiceLog.i(VoiceLog.ASSIST, "quick note saved chars=${content.length}")
+        if (content.isBlank()) return ActionResult(success = false, errorMessage = context.getString(R.string.speechkit_assistant_action_failed))
+        val store = RoomStore(context)
+        val note = try {
+            store.saveQuickNoteOnce("device", java.util.UUID.randomUUID().toString(), content, java.util.Locale.getDefault().toLanguageTag())
+        } finally {
+            store.close()
+        }
 
         return ActionResult(
             success = true,
             responseText = context.getString(
                 R.string.speechkit_assistant_note_saved,
-                "${content.take(50)}${if (content.length > 50) "..." else ""}",
+                "${note.text.take(50)}${if (note.text.length > 50) "..." else ""} (#${note.id})",
             ),
         )
     }
@@ -171,6 +182,11 @@ class QuickNoteExecutor : ActionExecutor {
 class SearchWebExecutor : ActionExecutor {
     override suspend fun execute(context: Context, intent: AssistantIntent): ActionResult {
         val query = intent.parameters["query"] ?: intent.rawText
+        val settings = StoredExecutionPolicy(context)
+        val policy = settings.read(ConnectionProfile.SystemOnDevice())
+        if (settings.isConfigured() && (!policy.allowNetwork || policy.mode == ExecutionMode.DEVICE_ONLY)) {
+            return ActionResult(success = false, errorMessage = context.getString(R.string.speechkit_assistant_server_required))
+        }
 
         val searchIntent = Intent(Intent.ACTION_WEB_SEARCH).apply {
             putExtra(SearchManager.QUERY, query)
@@ -263,13 +279,39 @@ class MakeCallExecutor : ActionExecutor {
     }
 }
 
+/** Host starts an admitted foreground activity; it must not run AICore in the service. */
+fun interface LocalTextExecutor {
+    suspend fun execute(context: Context, text: String): ActionResult
+}
+
 class GeneralQueryExecutor(
     private val profiles: ConnectionProfileSource,
+    private val local: LocalTextExecutor? = null,
 ) : ActionExecutor {
     override suspend fun execute(context: Context, intent: AssistantIntent): ActionResult {
         val query = intent.parameters["query"] ?: intent.rawText
         val profile = profiles.currentProfile()
-        if (profile !is ConnectionProfile.Server) {
+        val policy = StoredExecutionPolicy(context).read(profile)
+        val selectedAgent = io.kombify.speechkit.net.StoredVoiceAgentTarget(context).read(profile)
+        if (selectedAgent != null && local != null) return local.execute(context, query)
+        val canRemote = profile is ConnectionProfile.Server &&
+            policy.allowNetwork && policy.mode in setOf(ExecutionMode.PREFER_DEVICE, ExecutionMode.PREFER_ENDPOINT, ExecutionMode.ENDPOINT_ONLY)
+
+        // BYOK and Firebase inference is hosted by HybridActivity, which applies
+        // this same stored policy through HybridRuntime. A Server profile can
+        // call /process-assist directly below, so preserve its explicit order.
+        if (profile !is ConnectionProfile.Server && local != null) {
+            return local.execute(context, query)
+        }
+
+        if (local != null && policy.mode in setOf(ExecutionMode.DEVICE_ONLY, ExecutionMode.PREFER_DEVICE)) {
+            try {
+                return local.execute(context, query)
+            } catch (failure: ExecutionFailure) {
+                if (!canRemote || failure.kind !in setOf(ExecutionFailureKind.UNAVAILABLE, ExecutionFailureKind.TRANSIENT)) throw failure
+            }
+        }
+        if (profile !is ConnectionProfile.Server || !canRemote) {
             return ActionResult(
                 success = true,
                 responseText = context.getString(R.string.speechkit_assistant_server_required),
@@ -277,14 +319,16 @@ class GeneralQueryExecutor(
             )
         }
         return try {
-            val response = SpeechKitServerApi(profile).processAssist(query)
+            val response = SpeechKitServerApi(profile, context = context).processAssist(query)
             val spoken = response.speakText.ifBlank { response.text }
             ActionResult(
                 success = spoken.isNotBlank(),
                 responseText = spoken.ifBlank { context.getString(R.string.speechkit_assistant_action_failed) },
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            VoiceLog.e(VoiceLog.ASSIST, "processAssist failed", e)
+            VoiceLog.e(VoiceLog.ASSIST, "processAssist failed")
             ActionResult(
                 success = false,
                 errorMessage = e.message ?: context.getString(R.string.speechkit_assistant_action_failed),

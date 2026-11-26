@@ -50,4 +50,15 @@
     <string name="speechkit_ime_agent_class_right">Dieses Konto kann die Sprachunterhaltung nicht nutzen</string>
     <string name="speechkit_ime_agent_class_consent">Cloud-Sprache in der SpeechKit-App erlauben</string>
     <string name="speechkit_ime_agent_class_expired">Sprachsitzung abgelaufen. Starte eine neue Unterhaltung</string>
+
+    <!-- Opal conversation controls: capture is toggled by tapping. -->
+    <string name="speechkit_ime_agent_expand">Gespräch aufklappen</string>
+    <string name="speechkit_ime_agent_collapse">Gespräch einklappen</string>
+    <string name="speechkit_ime_agent_talk">Zum Sprechen tippen</string>
+    <string name="speechkit_ime_agent_send">Beitrag senden</string>
+    <string name="speechkit_ime_agent_title">Voice Agent</string>
+    <string name="speechkit_ime_agent_setup_hint">Voice Agent einrichten</string>
+    <string name="speechkit_ime_agent_setup">Einrichten</string>
+    <string name="speechkit_ime_agent_attention">Details ansehen</string>
+    <string name="speechkit_ime_agent_setup_body">Verbinde SpeechKit, um ein Sprachgespräch zu starten.</string>
 </resources>

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 
 	"github.com/kombifyio/SpeechKit/app/internal/config"
@@ -30,13 +31,22 @@ func ensureStore(cfg *config.Config, app *App) error {
 		backend = "sqlite"
 	}
 	storeCfg := store.StoreConfig{
-		Backend:             backend,
-		SQLitePath:          cfg.Store.SQLitePath,
-		PostgresDSN:         cfg.Store.PostgresDSN,
-		PostgresRuntimeRole: cfg.Store.PostgresRuntimeRole,
-		SaveAudio:           cfg.Store.SaveAudio,
-		AudioRetentionDays:  cfg.Store.AudioRetentionDays,
-		MaxAudioStorageMB:   cfg.Store.MaxAudioStorageMB,
+		Backend:                     backend,
+		SQLitePath:                  cfg.Store.SQLitePath,
+		PostgresDSN:                 cfg.Store.PostgresDSN,
+		VoiceTurnCustodyProof:       os.Getenv("SPEECHKIT_VOICE_TURN_CUSTODY_PROOF"),
+		VoiceTurnAdmission:          os.Getenv("SPEECHKIT_VOICE_TURN_ADMISSION"),
+		VoiceTurnAdmissionPublicKey: os.Getenv("SPEECHKIT_VOICE_TURN_ADMISSION_PUBLIC_KEY"),
+		VoiceTurnEnvironment:        os.Getenv("SPEECHKIT_VOICE_TURN_ENVIRONMENT"),
+		VoiceTurnIssuer:             os.Getenv("SPEECHKIT_VOICE_TURN_ADMISSION_ISSUER"),
+		VoiceTurnAudience:           os.Getenv("SPEECHKIT_VOICE_TURN_ADMISSION_AUDIENCE"),
+		VoiceTurnParticipant:        os.Getenv("SPEECHKIT_VOICE_TURN_PARTICIPANT"),
+		VoiceTurnRoute:              os.Getenv("SPEECHKIT_VOICE_TURN_PARTICIPANT_ROUTE"),
+		VoiceTurnSubjectReference:   store.SubjectReference,
+		PostgresRuntimeRole:         cfg.Store.PostgresRuntimeRole,
+		SaveAudio:                   cfg.Store.SaveAudio,
+		AudioRetentionDays:          cfg.Store.AudioRetentionDays,
+		MaxAudioStorageMB:           cfg.Store.MaxAudioStorageMB,
 	}
 	s, err := store.New(storeCfg)
 	if err != nil {

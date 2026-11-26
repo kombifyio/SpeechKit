@@ -154,6 +154,7 @@ data class VoiceAgentSpeakerOptions(
 @JsonClass(generateAdapter = true)
 data class VoiceAgentStartFrame(
     val type: String = VoiceAgentMsg.START,
+    @Json(name = "turn_receipts") val turnReceipts: Boolean = false,
     @Json(name = "persona_id") val personaId: String? = null,
     @Json(name = "role_id") val roleId: String? = null,
     @Json(name = "sequence_id") val sequenceId: String? = null,
@@ -290,10 +291,24 @@ data class VoiceAgentSequenceStepFrame(
     val reason: String? = null,
 ) : VoiceAgentServerFrame
 
+@JsonClass(generateAdapter = true)
+data class VoiceTurnReceipt(
+    @Json(name = "session_id") val sessionId: String,
+    @Json(name = "turn_id") val turnId: String,
+    val status: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class VoiceTurnReceiptList(
+    @Json(name = "session_id") val sessionId: String,
+    val turns: List<VoiceTurnReceipt>,
+)
+
 /** Provider event without a more specific v1 mapping. */
 @JsonClass(generateAdapter = true)
 data class VoiceAgentEventFrame(
     val type: String = VoiceAgentMsg.EVENT,
+    val turn: VoiceTurnReceipt? = null,
     @Json(name = "event_type") override val eventType: String? = null,
     @Json(name = "event_types") override val eventTypes: List<String>? = null,
     @Json(name = "provider_metadata") override val providerMetadata: Map<String, Any?>? = null,

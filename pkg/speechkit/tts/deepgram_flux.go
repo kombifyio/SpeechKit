@@ -166,10 +166,6 @@ func (d *DeepgramFluxTTS) Open(ctx context.Context, opts FluxSpeechOptions) (*Fl
 	return &FluxSpeechStream{conn: conn, voice: voice, sampleRateHz: sampleRate}, nil
 }
 
-func (d *DeepgramFluxTTS) endpoint(voice string, sampleRateHz int, speed float64) (string, error) {
-	return d.endpointWithExpressivity(voice, sampleRateHz, speed, 0)
-}
-
 func (d *DeepgramFluxTTS) endpointWithExpressivity(voice string, sampleRateHz int, speed float64, expressivity int) (string, error) {
 	base, err := netsec.BuildEndpoint(firstNonEmptyTTS(d.BaseURL, deepgramTTSBaseURL), deepgramFluxTTSPath, d.Validation)
 	if err != nil {

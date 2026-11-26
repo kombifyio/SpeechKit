@@ -28,10 +28,20 @@
     <div class="field">
       <span class="field-label">Animation</span>
       <div class="chip-row" id="variant-chips">
+        <button type="button" data-variant="opal">Opal</button>
         <button type="button" data-variant="aura">Aura Orb</button>
         <button type="button" data-variant="waveform">Waveform</button>
+        <button type="button" data-variant="resonance">Resonance</button>
+        <button type="button" data-variant="rosette">Rosette</button>
       </div>
     </div>
+    <label class="field">
+      <span class="field-label">Opal core</span>
+      <select id="opal-core">
+        <option value="original">Original</option>
+        <option value="small">Small</option>
+      </select>
+    </label>
     <div class="field">
       <span class="field-label">Logo</span>
       <div class="chip-row" id="mark-chips">
@@ -43,6 +53,14 @@
     <label class="field field-inline">
       <input type="checkbox" id="transcript-toggle" />
       <span>Show live transcript</span>
+    </label>
+    <label class="field field-inline">
+      <span>Visible turns</span>
+      <select id="transcript-depth">
+        <option value="1">Current turn</option>
+        <option value="2" selected>2 turns</option>
+        <option value="3">3 turns</option>
+      </select>
     </label>
     <button type="button" id="appearance-reset" class="subtle">Use server defaults</button>
   </section>

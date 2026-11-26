@@ -382,47 +382,6 @@ func readJSONFrame(t *testing.T, conn *websocket.Conn, dst any) {
 	}
 }
 
-// readBinaryFrame blocks on a single binary frame.
-func readBinaryFrame(t *testing.T, conn *websocket.Conn) []byte {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	typ, data, err := conn.Read(ctx)
-	if err != nil {
-		t.Fatalf("read binary: %v", err)
-	}
-	if typ != websocket.MessageBinary {
-		t.Fatalf("expected binary frame, got %v", typ)
-	}
-	return data
-}
-
-// readEnvelope blocks on a single text frame and returns its envelope type.
-func readEnvelope(t *testing.T, conn *websocket.Conn) (string, []byte) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	typ, data, err := conn.Read(ctx)
-	if err != nil {
-		t.Fatalf("read frame: %v", err)
-	}
-	if typ != websocket.MessageText {
-		t.Fatalf("expected text frame, got %v", typ)
-	}
-	var env envelope
-	_ = json.Unmarshal(data, &env)
-	return env.Type, data
-}
-
-func eventTypesContain(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
-}
-
 type staticProviderFactory struct {
 	provider LiveProviderAdapter
 }

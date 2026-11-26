@@ -1,7 +1,5 @@
 package capture
 
-import "strings"
-
 // DeviceInfo describes a capture device that can be presented to the user.
 type DeviceInfo struct {
 	ID        string `json:"deviceId"`
@@ -25,39 +23,4 @@ func ListCaptureDevices(cfg Config) ([]DeviceInfo, error) {
 // ListOutputDevices returns the available speaker devices for the selected backend.
 func ListOutputDevices(cfg Config) ([]DeviceInfo, error) {
 	return outputDeviceLister(normalizeConfig(cfg))
-}
-
-func selectCaptureDeviceID(requestedID, requestedName string, devices []DeviceInfo) string {
-	return selectDeviceID(requestedID, requestedName, devices)
-}
-
-func selectOutputDeviceID(requested string, devices []DeviceInfo) string {
-	return selectDeviceID(requested, "", devices)
-}
-
-// selectDeviceID resolves the persisted device selection against the current
-// enumeration. It prefers an exact ID match; if the ID is gone (USB/UAC
-// devices re-enumerate with new endpoint IDs), it falls back to a
-// case-insensitive name match and returns that device's new ID.
-func selectDeviceID(requestedID, requestedName string, devices []DeviceInfo) string {
-	requestedID = strings.TrimSpace(requestedID)
-	requestedName = strings.TrimSpace(requestedName)
-
-	if requestedID != "" {
-		for _, device := range devices {
-			if strings.EqualFold(strings.TrimSpace(device.ID), requestedID) {
-				return device.ID
-			}
-		}
-	}
-
-	if requestedName != "" {
-		for _, device := range devices {
-			if strings.EqualFold(strings.TrimSpace(device.Name), requestedName) {
-				return device.ID
-			}
-		}
-	}
-
-	return ""
 }

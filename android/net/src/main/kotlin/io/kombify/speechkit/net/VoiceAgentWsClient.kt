@@ -1,6 +1,7 @@
 package io.kombify.speechkit.net
 
 import io.kombify.speechkit.log.VoiceLog
+import io.kombify.speechkit.domain.ConnectionProfile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
@@ -50,6 +51,9 @@ sealed interface VoiceAgentEvent {
 
         override fun hashCode(): Int = pcm.contentHashCode()
     }
+
+    /** Durable server receipt, keyed by the actual dispatched turn identity. */
+    data class TurnReceipt(val turn: VoiceTurnReceipt) : VoiceAgentEvent
 
     /** The user spoke over the agent; its answer was cut. */
     data object Interrupted : VoiceAgentEvent
@@ -153,7 +157,12 @@ class VoiceAgentWsClient(
      * [VoiceAgentEvent.Failure] + [VoiceAgentEvent.Closed] on the event flow,
      * not as exceptions — a dropped conversation is a UI state, not a crash.
      */
-    fun connect(session: CreateVoiceAgentSessionResponse): VoiceAgentSession {
+    fun connect(
+        session: CreateVoiceAgentSessionResponse,
+        selection: StoredConnectionSelection? = null,
+        profile: ConnectionProfile.Server? = null,
+    ): VoiceAgentSession {
+        require((selection == null) == (profile == null)) { "Selection and captured profile must be supplied together" }
         val events = VoiceAgentEventQueue()
         val ready = CompletableDeferred<Unit>()
         val providerReady = AtomicBoolean(false)
@@ -245,8 +254,11 @@ class VoiceAgentWsClient(
 
                     // Sequence progress, provider events, keepalive answers and
                     // forward-compatible unknowns carry no host-visible state.
+                    is VoiceAgentEventFrame -> {
+                        val turn = frame.turn
+                        if (frame.eventType == "turn_receipt" && turn != null) emit(webSocket, VoiceAgentEvent.TurnReceipt(turn))
+                    }
                     is VoiceAgentSequenceStepFrame,
-                    is VoiceAgentEventFrame,
                     is VoiceAgentPongFrame,
                     is VoiceAgentUnknownFrame,
                     -> Unit
@@ -264,6 +276,7 @@ class VoiceAgentWsClient(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                NetworkUseGuard.untrack(webSocket)
                 // Throwable messages may contain request URLs, credentials or provider bodies.
                 VoiceLog.e(VoiceLog.AGENT, "ws_failure http=${response?.code ?: "-"}")
                 failSetup(FAILURE_CODE)
@@ -285,12 +298,19 @@ class VoiceAgentWsClient(
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                NetworkUseGuard.untrack(webSocket)
                 failSetup(SETUP_FAILURE_CODE)
                 events.finish(safeVoiceAgentCode(reason, VoiceAgentEndReasons.CLIENT))
             }
         }
 
-        val webSocket = client.newWebSocket(requestBuilder.build(), listener)
+        val openSocket = {
+            NetworkUseGuard.create(
+                { client.newWebSocket(requestBuilder.build(), listener) },
+                { it.cancel() },
+            )
+        }
+        val webSocket = if (selection != null && profile != null) selection.withCurrent(profile, openSocket) else openSocket()
         return WsVoiceAgentSession(webSocket, codec, events, ready, providerReady)
     }
 

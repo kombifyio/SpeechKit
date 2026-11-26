@@ -1,5 +1,6 @@
 package io.kombify.speechkit.net
 
+import android.content.Context
 import io.kombify.speechkit.domain.ConnectionProfile
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
@@ -35,9 +36,49 @@ data class CreateStreamSessionResponse(
  * the dictation stream, plus the optional LiveKit room for hosts that move
  * audio off the WebSocket (this client keeps audio on the socket).
  */
+/** Registered target and its authorized conversation. */
+data class RegisteredAgentTarget(
+    val agentId: String,
+    val aiSessionId: String,
+    val harnessId: String,
+    val composerSurface: String,
+) {
+    init {
+        require(agentId.isNotBlank() && aiSessionId.isNotBlank() && harnessId.isNotBlank() && composerSurface.isNotBlank())
+    }
+}
+
+@JsonClass(generateAdapter = true)
+data class VoiceAgentSessionRequest(
+    val provider: String? = null,
+    @Json(name = "target_agent_id") val targetAgentId: String? = null,
+    @Json(name = "ai_session_id") val aiSessionId: String? = null,
+    @Json(name = "harness_id") val harnessId: String? = null,
+    @Json(name = "composer_surface") val composerSurface: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class CreateAgentChatMetadata(val harnessId: String, val agentId: String)
+@JsonClass(generateAdapter = true)
+data class CreateAgentChatRequest(val title: String, val metadata: CreateAgentChatMetadata)
+@JsonClass(generateAdapter = true)
+data class AgentChatResponse(val id: String = "")
+
+@JsonClass(generateAdapter = true)
+data class VoiceHarnessDispatch(val agentId: String = "")
+@JsonClass(generateAdapter = true)
+data class VoiceHarnessAvailability(val allowed: Boolean = false, val state: String = "")
+@JsonClass(generateAdapter = true)
+data class VoiceHarnessVoice(val voiceAgentEntry: String = "unavailable")
+@JsonClass(generateAdapter = true)
+data class VoiceHarness(val id: String = "", val dispatch: VoiceHarnessDispatch = VoiceHarnessDispatch(), val availability: VoiceHarnessAvailability = VoiceHarnessAvailability(), val voice: VoiceHarnessVoice = VoiceHarnessVoice())
+@JsonClass(generateAdapter = true)
+data class VoiceHarnessCatalog(val harnesses: List<VoiceHarness> = emptyList())
+
 @JsonClass(generateAdapter = true)
 data class CreateVoiceAgentSessionResponse(
     @Json(name = "session_id") val sessionId: String,
+    @Json(name = "ai_session_id") val aiSessionId: String? = null,
     @Json(name = "ws_url") val wsUrl: String,
     @Json(name = "ws_subprotocol") val wsSubprotocol: String? = null,
     val ticket: String = "",
@@ -115,8 +156,21 @@ class SpeechKitServerApi(
     private val profile: ConnectionProfile.Server,
     private val client: OkHttpClient = defaultOkHttpClient(),
     moshi: Moshi = DictationStreamCodec.defaultMoshi(),
+    context: Context? = null,
 ) {
+    private val selection = context?.let { StoredConnectionSelection(it) }
+    init {
+        require(profile.credentialAvailable) { "Endpoint credentials are unavailable. Open connection settings." }
+    }
     private val sessionAdapter = moshi.adapter(CreateStreamSessionResponse::class.java)
+    private val createAgentChatAdapter = moshi.adapter(CreateAgentChatRequest::class.java)
+    private val agentChatResponseAdapter = moshi.adapter(AgentChatResponse::class.java)
+    private val voiceTurnReceiptListAdapter = moshi.adapter(VoiceTurnReceiptList::class.java)
+    private val voiceTurnReceiptAdapter = moshi.adapter(VoiceTurnReceipt::class.java)
+    private val voiceHarnessCatalogAdapter = moshi.adapter(VoiceHarnessCatalog::class.java)
+    private val voiceAgentProfileCatalogAdapter = moshi.adapter(VoiceAgentProfileCatalog::class.java)
+    private val voiceAgentReadinessCatalogAdapter = moshi.adapter(VoiceAgentReadinessCatalog::class.java)
+    private val voiceAgentRequestAdapter = moshi.adapter(VoiceAgentSessionRequest::class.java)
     private val voiceAgentSessionAdapter =
         moshi.adapter(CreateVoiceAgentSessionResponse::class.java)
     private val renewVoiceAgentSessionAdapter =
@@ -134,23 +188,108 @@ class SpeechKitServerApi(
                     .post(EMPTY_JSON.toRequestBody(JSON_MEDIA_TYPE)),
                 mintsSession = true,
             ).build()
-            client.newCall(request).execute().use { response ->
+            awaitParsed(client.newCall(request)) { response ->
                 val body = requireSuccess(response)
                 sessionAdapter.fromJson(body)
                     ?: throw SpeechKitApiException(response.code, "invalid_response", "empty session response")
             }
         }
 
+    /** Discover available voice harnesses through the same authenticated Gateway origin. */
+    suspend fun discoverVoiceHarnesses(surface: String): List<VoiceHarness> = withContext(Dispatchers.IO) {
+        require(Regex("[a-z0-9_-]{1,32}").matches(surface))
+        require(profile.normalizedBaseUrl.endsWith("/v1/speechkit")) { "Agent discovery requires a Gateway profile" }
+        val origin = profile.normalizedBaseUrl.removeSuffix("/v1/speechkit")
+        val request = authorized(Request.Builder().url("$origin/v1/agents/harnesses?surface=$surface").get()).build()
+        awaitParsed(client.newCall(request)) { response ->
+            val catalog = voiceHarnessCatalogAdapter.fromJson(requireSuccess(response))
+                ?: throw SpeechKitApiException(response.code, "invalid_response", "empty agent catalog")
+            catalog.harnesses.filter { it.availability.allowed && it.availability.state == "available" && it.voice.voiceAgentEntry != "unavailable" && it.dispatch.agentId.isNotBlank() }
+        }
+    }
+
+    /** Read the canonical Voice Agent profile catalog from this endpoint. */
+    suspend fun voiceAgentProfiles(): List<VoiceAgentProfile> = withContext(Dispatchers.IO) {
+        val request = authorized(
+            Request.Builder().url(profile.endpoint("/v1/catalog/profiles?mode=voice_agent")).get(),
+        ).build()
+        awaitParsed(client.newCall(request)) { response ->
+            val catalog = voiceAgentProfileCatalogAdapter.fromJson(requireSuccess(response))
+                ?: throw SpeechKitApiException(response.code, "invalid_response", "empty Voice Agent profile catalog")
+            catalog.profiles.filter { it.mode == "voice_agent" }
+        }
+    }
+
+    /** Read endpoint-specific runtime readiness for profiles from the catalog. */
+    suspend fun voiceAgentReadiness(): List<VoiceAgentReadiness> = withContext(Dispatchers.IO) {
+        val request = authorized(
+            Request.Builder().url(profile.endpoint("/v1/catalog/readiness")).get(),
+        ).build()
+        awaitParsed(client.newCall(request)) { response ->
+            val catalog = voiceAgentReadinessCatalogAdapter.fromJson(requireSuccess(response))
+                ?: throw SpeechKitApiException(response.code, "invalid_response", "empty Voice Agent readiness catalog")
+            catalog.readiness.filter { it.mode == "voice_agent" }
+        }
+    }
+
+    /** Create the selected harness's durable chat. An uncertain create is never replayed. */
+    suspend fun createVoiceAgentChat(harness: VoiceHarness, surface: String): RegisteredAgentTarget = withContext(Dispatchers.IO) {
+        require(harness.availability.allowed && harness.availability.state == "available" && harness.voice.voiceAgentEntry != "unavailable")
+        require(Regex("[a-z0-9][a-z0-9-]{0,127}").matches(harness.id))
+        require(harness.dispatch.agentId.isNotBlank())
+        require(profile.normalizedBaseUrl.endsWith("/v1/speechkit")) { "Agent chat requires a Gateway profile" }
+        val origin = profile.normalizedBaseUrl.removeSuffix("/v1/speechkit")
+        val json = createAgentChatAdapter.toJson(CreateAgentChatRequest("SpeechKit", CreateAgentChatMetadata(harness.id, harness.dispatch.agentId)))
+        val builder = Request.Builder().url("$origin/v1/ai/sessions").post(json.toRequestBody(JSON_MEDIA_TYPE))
+            .header("Idempotency-Key", java.util.UUID.randomUUID().toString())
+        val request = authorized(builder, mintsSession = true).build()
+        val chatClient = client.newBuilder().retryOnConnectionFailure(false).followRedirects(false).followSslRedirects(false).build()
+        awaitParsed(chatClient.newCall(request)) { response ->
+                val session = agentChatResponseAdapter.fromJson(requireSuccess(response))
+                    ?: throw SpeechKitApiException(response.code, "invalid_response", "empty chat response")
+                require(Regex("[A-Za-z0-9_-]{1,128}").matches(session.id))
+                RegisteredAgentTarget(harness.dispatch.agentId, session.id, harness.id, surface)
+            }
+    }
+
+    /** Reconcile server-owned turns even when their original socket event was lost. */
+    suspend fun listVoiceTurnReceipts(sessionId: String): List<VoiceTurnReceipt> = withContext(Dispatchers.IO) {
+        require(isVoiceSessionId(sessionId))
+        val request = authorized(Request.Builder().url(profile.endpoint("/v1/voiceagent/sessions/$sessionId/turns")).get()).build()
+        awaitParsed(client.newCall(request)) { response ->
+            val result = voiceTurnReceiptListAdapter.fromJson(requireSuccess(response))
+                ?: throw SpeechKitApiException(response.code, "invalid_response", "empty turn list")
+            require(result.sessionId == sessionId && result.turns.size <= 256)
+            result.turns.forEach { turn ->
+                require(turn.sessionId == sessionId && turn.turnId.startsWith("$sessionId:") && Regex("[A-Za-z0-9._:-]{1,256}").matches(turn.turnId) && turn.status in setOf("unknown", "dispatched", "completed"))
+            }
+            result.turns
+        }
+    }
+
+    /** Fetch a previously observed server turn; an unknown result is never replayed. */
+    suspend fun getVoiceTurnReceipt(sessionId: String, turnId: String): VoiceTurnReceipt = withContext(Dispatchers.IO) {
+        require(isVoiceSessionId(sessionId) && turnId.startsWith("$sessionId:") && Regex("[A-Za-z0-9._:-]{1,256}").matches(turnId))
+        val request = authorized(Request.Builder().url(profile.endpoint("/v1/voiceagent/sessions/$sessionId/turns/$turnId")).get()).build()
+        awaitParsed(client.newCall(request)) { response ->
+            val receipt = voiceTurnReceiptAdapter.fromJson(requireSuccess(response))
+                ?: throw SpeechKitApiException(response.code, "invalid_response", "empty turn receipt")
+            require(receipt.sessionId == sessionId && receipt.turnId == turnId && receipt.status in setOf("unknown", "dispatched", "completed"))
+            receipt
+        }
+    }
+
     /** Mints a realtime Voice Agent session ticket. */
-    suspend fun createVoiceAgentSession(): CreateVoiceAgentSessionResponse =
+    suspend fun createVoiceAgentSession(target: RegisteredAgentTarget? = null): CreateVoiceAgentSessionResponse =
         withContext(Dispatchers.IO) {
-            val request = authorized(
-                Request.Builder()
-                    .url(profile.endpoint("/v1/voiceagent/sessions"))
-                    .post(EMPTY_JSON.toRequestBody(JSON_MEDIA_TYPE)),
-                mintsSession = true,
-            ).build()
-            client.newCall(request).execute().use { response ->
+            val payload = if (target == null) EMPTY_JSON else voiceAgentRequestAdapter.toJson(
+                VoiceAgentSessionRequest("kombify-agent", target.agentId, target.aiSessionId, target.harnessId, target.composerSurface),
+            )
+            val builder = Request.Builder()
+                .url(profile.endpoint("/v1/voiceagent/sessions"))
+                .post(payload.toRequestBody(JSON_MEDIA_TYPE))
+            val request = authorized(builder, mintsSession = true).build()
+            awaitParsed(client.newCall(request)) { response ->
                 val body = requireSuccess(response)
                 voiceAgentSessionAdapter.fromJson(body)
                     ?: throw SpeechKitApiException(
@@ -169,42 +308,20 @@ class SpeechKitServerApi(
      *
      * Cancelling the caller aborts the in-flight call.
      */
-    suspend fun renewVoiceAgentSession(sessionId: String): RenewVoiceAgentSessionResponse {
+    suspend fun renewVoiceAgentSession(sessionId: String, target: RegisteredAgentTarget? = null): RenewVoiceAgentSessionResponse {
         require(isVoiceSessionId(sessionId)) { "invalid voice agent session id" }
         return withContext(Dispatchers.IO) {
             val request = authorized(
                 Request.Builder()
                     .url(profile.endpoint("/v1/voiceagent/sessions/$sessionId/renew"))
-                    .post(EMPTY_JSON.toRequestBody(JSON_MEDIA_TYPE)),
+                    .post((if (target == null) EMPTY_JSON else voiceAgentRequestAdapter.toJson(VoiceAgentSessionRequest(provider = "kombify-agent"))).toRequestBody(JSON_MEDIA_TYPE)),
             ).build()
-            suspendCancellableCoroutine { continuation ->
-                val renewalClient = client.newBuilder()
-                    .retryOnConnectionFailure(false)
-                    .followRedirects(false)
-                    .followSslRedirects(false)
-                    .build()
-                val call = renewalClient.newCall(request)
-                continuation.invokeOnCancellation { call.cancel() }
-                call.enqueue(object : Callback {
-                    override fun onFailure(call: Call, e: IOException) {
-                        continuation.resumeWith(Result.failure(e))
-                    }
-
-                    override fun onResponse(call: Call, response: Response) {
-                        val result = runCatching {
-                            response.use {
-                                val body = requireSuccess(it)
-                                renewVoiceAgentSessionAdapter.fromJson(body)
-                                    ?: throw SpeechKitApiException(
-                                        it.code,
-                                        "invalid_response",
-                                        "empty voice agent renewal response",
-                                    )
-                            }
-                        }
-                        continuation.resumeWith(result)
-                    }
-                })
+            val renewalClient = client.newBuilder().retryOnConnectionFailure(false)
+                .followRedirects(false).followSslRedirects(false).build()
+            awaitParsed(renewalClient.newCall(request)) { response ->
+                val body = requireSuccess(response)
+                renewVoiceAgentSessionAdapter.fromJson(body)
+                    ?: throw SpeechKitApiException(response.code, "invalid_response", "empty voice agent renewal response")
             }
         }
     }
@@ -217,7 +334,7 @@ class SpeechKitServerApi(
                     .url(profile.endpoint("/v1/dictation/stream/sessions/$sessionId"))
                     .delete(),
             ).build()
-            client.newCall(request).execute().use { requireSuccess(it) }
+            awaitParsed(client.newCall(request)) { requireSuccess(it) }
         }
 
     /** Batch transcription: one audio file in, one transcript out. */
@@ -253,7 +370,7 @@ class SpeechKitServerApi(
                     .url(profile.endpoint("/v1/dictation/transcribe"))
                     .post(multipart),
             ).build()
-            client.newCall(request).execute().use { response ->
+            awaitParsed(client.newCall(request)) { response ->
                 val body = requireSuccess(response)
                 batchAdapter.fromJson(body)
                     ?: throw SpeechKitApiException(response.code, "invalid_response", "empty transcribe response")
@@ -279,7 +396,7 @@ class SpeechKitServerApi(
                     .url(profile.endpoint("/v1/assist/process"))
                     .post(json.toRequestBody(JSON_MEDIA_TYPE)),
             ).build()
-            client.newCall(request).execute().use { response ->
+            awaitParsed(client.newCall(request)) { response ->
                 val body = requireSuccess(response)
                 assistResponseAdapter.fromJson(body)
                     ?: throw SpeechKitApiException(
@@ -292,14 +409,40 @@ class SpeechKitServerApi(
 
     /** True when GET /healthz answers 2xx. Connection-test convenience. */
     suspend fun healthy(): Boolean = withContext(Dispatchers.IO) {
-        runCatching {
-            val request = Request.Builder()
-                .url(profile.endpoint("/healthz"))
-                .get()
-                .build()
-            client.newCall(request).execute().use { it.isSuccessful }
-        }.getOrDefault(false)
+        try {
+            val request = Request.Builder().url(profile.endpoint("/healthz")).get().build()
+            awaitParsed(client.newCall(request)) { it.isSuccessful }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) { false }
     }
+
+    /** Cancelling the coroutine cancels the underlying HTTP request and body read. */
+    private suspend fun <T> awaitParsed(call: Call, parse: (Response) -> T): T =
+        suspendCancellableCoroutine { continuation ->
+            val admitted = try {
+                val track = { NetworkUseGuard.track(call) { call.cancel() } }
+                selection?.withCurrent(profile, track) ?: track()
+            } catch (error: Exception) {
+                continuation.resumeWith(Result.failure(error))
+                return@suspendCancellableCoroutine
+            }
+            if (!admitted) {
+                continuation.resumeWith(Result.failure(IllegalStateException("Network destination is not permitted")))
+                return@suspendCancellableCoroutine
+            }
+            continuation.invokeOnCancellation { call.cancel(); NetworkUseGuard.untrack(call) }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    NetworkUseGuard.untrack(call)
+                    if (continuation.isActive) continuation.resumeWith(Result.failure(e))
+                }
+                override fun onResponse(call: Call, response: Response) {
+                    val result = runCatching { response.use(parse) }
+                    NetworkUseGuard.untrack(call)
+                    if (continuation.isActive) continuation.resumeWith(result)
+                }
+            })
+        }
 
     /**
      * Adds the bearer. A cloud-session bearer close to expiry is renewed first
@@ -313,18 +456,22 @@ class SpeechKitServerApi(
         builder: Request.Builder,
         mintsSession: Boolean = false,
     ): Request.Builder {
-        val bearer = if (mintsSession) {
-            CloudBearer.freshForSession(profile.bearerToken, profile.cloudSessionGeneration)
-        } else {
-            CloudBearer.fresh(profile.bearerToken, profile.cloudSessionGeneration)
-        }
-        if (profile.cloudSessionGeneration != null && bearer == null) {
-            throw SpeechKitApiException(401, "cloud_session_changed", "The Cloud session is no longer current")
-        }
-        bearer?.takeIf { it.isNotBlank() }?.let {
-            builder.header("Authorization", "Bearer $it")
-        }
-        return builder
+        val job = checkNotNull(kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job])
+        val register = { NetworkUseGuard.listenIfAllowed { job.cancel(); listOf(job) } }
+        val listener = (if (selection != null) selection.withCurrent(profile, register) else register())
+            ?: throw IllegalStateException("Network destination is not permitted")
+        try {
+            val bearer = if (mintsSession) {
+                CloudBearer.freshForSession(profile.bearerToken, profile.cloudSessionGeneration)
+            } else {
+                CloudBearer.fresh(profile.bearerToken, profile.cloudSessionGeneration)
+            }
+            if (profile.cloudSessionGeneration != null && bearer == null) {
+                throw SpeechKitApiException(401, "cloud_session_changed", "The Cloud session is no longer current")
+            }
+            bearer?.takeIf { it.isNotBlank() }?.let { builder.header("Authorization", "Bearer $it") }
+            return builder
+        } finally { listener.close() }
     }
 
     /** Returns the response body on 2xx; throws [SpeechKitApiException] otherwise. */

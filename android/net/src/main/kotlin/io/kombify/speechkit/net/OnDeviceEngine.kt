@@ -29,6 +29,7 @@ import io.kombify.speechkit.stt.parakeet.ParakeetOnDevice
  */
 object OnDeviceEngine {
     enum class Choice(val wire: String) {
+        AUTO("auto"),
         SYSTEM("system"),
         PARAKEET("parakeet"),
         ;
@@ -40,10 +41,10 @@ object OnDeviceEngine {
 
     const val KEY_ON_DEVICE_ENGINE = "on_device_engine"
 
-    fun choice(context: Context): Choice = Choice.fromWire(
-        context.getSharedPreferences(StoredServerProfile.PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_ON_DEVICE_ENGINE, null),
-    )
+    fun choice(context: Context): Choice {
+        val stored = context.getSharedPreferences(StoredServerProfile.PREFS_NAME, Context.MODE_PRIVATE).getString(KEY_ON_DEVICE_ENGINE, null)
+        return if (stored == null && LocalSpeechAdapters.enabled) Choice.AUTO else Choice.fromWire(stored)
+    }
 
     /** Whether the person picked an engine (either chip); before that a finished download may pick for them. */
     fun hasChoice(context: Context): Boolean =

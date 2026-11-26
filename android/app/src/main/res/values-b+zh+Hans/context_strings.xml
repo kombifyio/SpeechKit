@@ -1,0 +1,31 @@
+<resources>
+    <string name="context_title">分析内容</string>
+    <string name="context_share_label">使用 SpeechKit 分析</string>
+    <string name="context_screen_action">分析屏幕</string>
+    <string name="context_preview_hint">处理前请检查内容。</string>
+    <string name="context_shared_text">分享的文本 · 无法访问聊天记录</string>
+    <string name="context_shared_image">分享的图片 · 仅限所选内容</string>
+    <string name="context_shared_audio">分享的音频 · 一个附件</string>
+    <string name="context_visible_screen">可见屏幕 · 并非完整对话</string>
+    <string name="context_text_input">分享的文本</string>
+    <string name="context_image_preview">图片预览</string>
+    <string name="context_audio_ready">音频文件已就绪</string>
+    <string name="context_crop_hint">仅分析高亮区域。请选择一条消息或保留完整图片。</string>
+    <string name="context_crop_horizontal">左右边缘</string>
+    <string name="context_crop_vertical">上下边缘</string>
+    <string name="context_summarize">总结</string>
+    <string name="context_transcribe">转写</string>
+    <string name="context_result">结果</string>
+    <string name="context_cancel">取消</string>
+    <string name="context_invalid_input">无法打开此内容。请分享一段文本、一张图片或一个音频文件。</string>
+    <string name="context_failed">无法分析内容。请检查所选连接和本地模型的可用性。</string>
+    <string name="context_local_only">仅在此设备上</string>
+    <string name="context_cloud_only">仅使用所选云连接</string>
+    <string name="context_local_first">本地优先 · 长按仅使用云端</string>
+    <string name="context_cloud_first">云端优先 · 长按仅使用设备</string>
+    <string name="context_audio_local">转写：设备端</string>
+    <string name="context_audio_cloud">转写：所选云连接</string>
+    <string name="context_capture_title">屏幕截图</string>
+    <string name="context_capture_body">正在截取一张图片供你查看</string>
+    <string name="context_capture_unavailable">屏幕截图不可用。请重试或分享一张截图。</string>
+</resources>

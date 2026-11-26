@@ -3,50 +3,11 @@ package claimstore
 import (
 	"context"
 	"database/sql"
-	"github.com/google/uuid"
-	"os"
-	"strconv"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
-
-func runCrashHelper() {
-	path := os.Getenv("SPEECHKIT_CLAIMSTORE_CRASH_PATH")
-	requestID := os.Getenv("SPEECHKIT_CLAIMSTORE_CRASH_REQUEST_ID")
-	nowMillis, err := strconv.ParseInt(os.Getenv("SPEECHKIT_CLAIMSTORE_CRASH_NOW"), 10, 64)
-	if err != nil {
-		os.Exit(91)
-	}
-	ledger, err := Open(context.Background(), Options{Path: path})
-	if err != nil {
-		os.Exit(92)
-	}
-	decision, err := ledger.Claim(
-		context.Background(),
-		Key{PairedDeviceID: "paired-crash", RequestID: requestID},
-		testDigest(7),
-		time.UnixMilli(nowMillis).UTC(),
-	)
-	if err != nil || decision.Disposition != DispatchNew {
-		os.Exit(93)
-	}
-	// Intentionally skip Close and all test cleanup to simulate a process
-	// disappearing immediately after the durable claim commit.
-	os.Exit(0)
-}
-
-func openTestLedger(t *testing.T, path string, overrides Options) *Ledger {
-	t.Helper()
-	overrides.Path = path
-	ledger, err := Open(context.Background(), overrides)
-	if err != nil {
-		t.Fatalf("Open(%s): %v", path, err)
-	}
-	t.Cleanup(func() {
-		_ = ledger.Close()
-	})
-	return ledger
-}
 
 func testDigest(seed byte) Digest {
 	var digest Digest

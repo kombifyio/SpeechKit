@@ -1,4 +1,5 @@
 import { SpeechKitElement } from "../core/element.js";
+import { SpeechKitVoiceOrbElement, registerSpeechKitVoiceOrb, type VoiceOrbCore, type VoiceOrbState, type VoiceOrbVariant } from "./voice-orb.js";
 import { SmoothedLevel } from "../core/level.js";
 import type { VoiceUiController } from "../core/controller.js";
 import { reduceVoiceAgentTurns, type VoiceAgentTurn } from "../core/turns.js";
@@ -10,16 +11,11 @@ import type { VoiceUiMessageCatalog } from "../i18n/index.js";
 import { voiceNoticeKind, voiceNoticeKindForDenial, voiceNoticeMessage } from "../core/notice.js";
 import { AssistantWaveformVisual, type WaveformLayout } from "./assistant-visuals/waveform.js";
 
+export type VoiceAssistantTranscriptTurns = 1 | 2 | 3;
 export type VoiceAssistantSize = "orb" | "compact" | "expanded";
 export type VoiceAssistantFrame = "overlay" | "keyboard" | "watch" | "phone" | "panel";
 
-/**
- * Visual variants (decision 2026-08-13): `aura` is the default Voice
- * Assistant look; `waveform` (the lab's "Glass Waveform") is the supported
- * customization preset. The variant swaps only the motif in the visual slot;
- * shells, status, transcript, and interaction are identical.
- */
-export type VoiceAssistantVariant = "aura" | "waveform";
+export type VoiceAssistantVariant = VoiceOrbVariant | "aura" | "waveform";
 
 /** `connecting` is the kit-local optimistic state (spec §Session status). */
 export type VoiceAssistantStatus = SpeechKitVoiceSessionStatus | "connecting";
@@ -29,15 +25,7 @@ export type VoiceAssistantStatus = SpeechKitVoiceSessionStatus | "connecting";
  * `settling` exist only in host FSMs richer than the surface contract (the
  * Device-Target prompter drives them directly via `aura-state`).
  */
-export type VoiceAuraState =
-  | "inactive"
-  | "connecting"
-  | "listening"
-  | "processing"
-  | "speaking"
-  | "recovering"
-  | "settling"
-  | "error";
+export type VoiceAuraState = VoiceOrbState;
 
 const AURA_STATES: readonly VoiceAuraState[] = [
   "inactive",
@@ -70,6 +58,11 @@ export function sessionStatusToAuraState(status: VoiceAssistantStatus): VoiceAur
 
 function isAuraState(value: string): value is VoiceAuraState {
   return (AURA_STATES as readonly string[]).includes(value);
+}
+
+function lastSentenceText(text: string): string {
+  const sentences = text.trim().split(/(?<=[.!?…])\s+/).filter((sentence) => sentence.length > 0);
+  return sentences[sentences.length - 1] ?? text;
 }
 
 const CSS = `
@@ -272,19 +265,18 @@ const CSS = `
 
 /* ── Expanded: hero + turn list ──────────────────────────────── */
 .expanded-shell { display: flex; flex-direction: column; height: 100%; width: 100%; background: var(--sk-surface, color-mix(in srgb, #ffffff 72%, transparent)); backdrop-filter: blur(var(--sk-blur, 16px)); -webkit-backdrop-filter: blur(var(--sk-blur, 16px)); }
-.hero { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 26px 16px 18px; }
+.hero { flex: none; display: flex; flex-direction: column; align-items: center; padding: 26px 16px 4px; }
 .hero :is(.orb, .wave-visual) { --sk-assistant-orb: var(--sk-assistant-orb-hero, 92px); }
-.status-pill {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 4px 12px; border-radius: var(--sk-radius-pill, 999px);
-  border: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent));
-  background: var(--sk-surface-strong, color-mix(in srgb, #ffffff 92%, transparent));
-  font-size: var(--sk-font-size-small, 11px);
+.status-announcement {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
 }
 .turns-wrap { position: relative; display: flex; flex: 1; min-height: 0; }
 .turns { flex: 1; overflow-y: auto; padding: 4px 18px 14px; display: flex; flex-direction: column; gap: 2px; scrollbar-width: thin; }
 .turn { padding: 9px 0; border-top: 1px solid var(--sk-border, color-mix(in srgb, currentColor 12%, transparent)); }
 .turn:first-child { border-top: none; }
+.turn[data-history] { opacity: 0.68; }
+.turn.departing { position: absolute; inset-inline: 18px; inset-block-start: 4px; pointer-events: none; }
 .turn-head { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
 .turn-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sk-assistant-user-dot, #8fa9ff); }
 .turn[data-role="agent"] .turn-dot { background: var(--sk-assistant-agent-dot, #47e3c1); }
@@ -309,20 +301,41 @@ const CSS = `
   padding: 4px 10px;
 }
 :host(:dir(rtl)) .jump { transform: translateX(50%); }
+.orb speechkit-voice-orb { inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.va:is([data-variant=opal],[data-variant=resonance],[data-variant=rosette]) .hero {
+  padding: 0; display: grid; place-items: center;
+}
+.va:is([data-variant=opal],[data-variant=resonance],[data-variant=rosette]) .hero .orb {
+  width: min(100%, var(--sk-voice-orb-hero-size, clamp(216px, 42vw, 264px))); height: auto;
+}
+.va:is([data-variant=opal],[data-variant=resonance],[data-variant=rosette]) .turns-wrap {
+  margin-block-start: -18px; overflow: hidden;
+}
+.va:is([data-variant=opal],[data-variant=resonance],[data-variant=rosette]) .turn {
+  border: 0; padding: 6px 0; min-height: 44px;
+}
+.va:is([data-variant=opal],[data-variant=resonance],[data-variant=rosette]) .turn[data-role=user] { text-align: end; }
+.va:is([data-variant=opal],[data-variant=resonance],[data-variant=rosette]) .turn[data-role=user] .turn-head { justify-content: flex-end; }
+.turn[data-role=user] .turn-role, .compact-line[data-role=user] .who { color: color-mix(in srgb, currentColor 70%, var(--sk-assistant-user-dot, #8fa9ff)); }
+.turn[data-role=agent] .turn-role, .compact-line[data-role=agent] .who { color: color-mix(in srgb, currentColor 70%, var(--sk-assistant-agent-dot, #47e3c1)); }
+.va[data-frame=keyboard] .compact-shell:has(speechkit-voice-orb) { padding: 2px 10px 2px 2px; gap: 6px; box-sizing: border-box; --sk-assistant-orb: 44px; }
+.compact-line { display: flex; align-items: center; }
+.compact-line .who { flex: none; }
+.compact-line .words { overflow: hidden; white-space: nowrap; min-width: 0; }
 .hidden { display: none !important; }
 `;
 
 /**
  * `<speechkit-voice-assistant>` — the default Voice Assistant surface
- * ("Aura Orb", decision 2026-08-10).
+ * with a reusable Opal visual.
  *
  * One element serves every kit frame: `size="orb"` renders the bare orb for
  * hosts that own their own chrome (Device-Target prompter, Android overlay);
  * `compact` renders the pill (overlay/phone/panel), inline bar (keyboard), or
- * watch face; `expanded` renders the hero orb with status pill and
+ * watch face; `expanded` renders the hero orb above the
  * teleprompter turn list. `transcript` toggles text rendering (compact shows
  * at most the last sentence). `variant` selects the motif in the visual slot:
- * the Aura orb (default) or the Glass Waveform (`waveform`); everything else
+ * Opal (default), Resonance, Rosette, Aura or Glass Waveform; the session contract
  * is identical across variants. `mark-src` places a host-provided brand image
  * in the orb centre, state-coupled (resting greys out, activity restores
  * colour, speech level breathes glow/scale) — the kit itself ships no brand
@@ -342,8 +355,11 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
       ...super.observedAttributes,
       "size",
       "transcript",
+      "transcript-turns",
       "frame",
       "variant",
+      "opal-core",
+      "agent-name",
       "mark-src",
       "aura-state",
     ];
@@ -364,15 +380,19 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
   #compactLine: HTMLElement | null = null;
   #watchLine: HTMLElement | null = null;
   #watchStatus: HTMLElement | null = null;
-  #statusPill: HTMLElement | null = null;
+  #statusAnnouncement: HTMLElement | null = null;
   #turnScroller: HTMLElement | null = null;
   #turnsWrap: HTMLElement | null = null;
   #jump: HTMLButtonElement | null = null;
+  #voiceOrb: SpeechKitVoiceOrbElement | null = null;
+  #lastSpeakerLabel = "";
+  #levels = { input: 0, output: 0 };
   #orbButtons: HTMLButtonElement[] = [];
   #waveforms: AssistantWaveformVisual[] = [];
   #skeletonKey = "";
   #renderedTurnsRef: unknown = null;
   #renderedTurnCount = -1;
+  #renderedTranscriptTurns = 0;
   #pinned = true;
   #programmaticScroll = false;
 
@@ -404,6 +424,16 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
     this.toggleAttribute("transcript", value);
   }
 
+  /** Number of expanded transcript entries, including the current turn. */
+  get transcriptTurns(): VoiceAssistantTranscriptTurns {
+    const value = this.getAttribute("transcript-turns");
+    return value === "1" ? 1 : value === "3" ? 3 : 2;
+  }
+
+  set transcriptTurns(value: VoiceAssistantTranscriptTurns) {
+    this.setAttribute("transcript-turns", String(value));
+  }
+
   get frame(): VoiceAssistantFrame {
     const value = this.getAttribute("frame");
     if (value === "overlay" || value === "keyboard" || value === "watch" || value === "phone") {
@@ -417,11 +447,26 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
   }
 
   get variant(): VoiceAssistantVariant {
-    return this.getAttribute("variant") === "waveform" ? "waveform" : "aura";
+    const value = this.getAttribute("variant");
+    switch (value) {
+      case "resonance": case "rosette": case "aura": case "waveform": return value;
+      default: return "opal";
+    }
   }
 
   set variant(value: VoiceAssistantVariant) {
     this.setAttribute("variant", value);
+  }
+
+  get opalCore(): VoiceOrbCore {
+    return this.getAttribute("opal-core") === "small" ? "small" : "original";
+  }
+  set opalCore(value: VoiceOrbCore) { this.setAttribute("opal-core", value); }
+
+  get agentName(): string { return this.getAttribute("agent-name")?.trim() || this.msgs()["sk.voice.agent.assistant"]; }
+  set agentName(value: string | null) {
+    if (value?.trim()) this.setAttribute("agent-name", value.trim());
+    else this.removeAttribute("agent-name");
   }
 
   /** Host-provided brand mark URL; absent renders the pure orb. */
@@ -468,11 +513,14 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
 
   /** Fast path for host-driven input level (0..1); no attribute churn. */
   set level(value: number) {
-    this.#inputLevel.target = value;
+    this.setLevel(value);
   }
 
   /** Host-driven level with an explicit source channel. */
   setLevel(value: number, source: "input" | "output" = "input"): void {
+    value = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+    this.#levels[source] = value;
+    this.#voiceOrb?.setLevel(value, source);
     if (source === "output") this.#outputLevel.target = value;
     else this.#inputLevel.target = value;
   }
@@ -484,8 +532,7 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
     this.#unsubscribeLevel = undefined;
     if (controller?.subscribeLevel) {
       this.#unsubscribeLevel = controller.subscribeLevel((level, source) => {
-        if (source === "output") this.#outputLevel.target = level;
-        else this.#inputLevel.target = level;
+        this.setLevel(level, source);
       });
     }
   }
@@ -516,6 +563,8 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
   }
 
   #loop = (now: number): void => {
+    this.#rafId = 0;
+    if (this.#voiceOrb && !this.markSrc) return;
     const input = this.#inputLevel.tick(now);
     const output = this.#outputLevel.tick(now);
     this.#wrap?.style.setProperty("--level", Math.max(input, output).toFixed(3));
@@ -532,11 +581,11 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
-    this.#rafId = requestAnimationFrame(this.#loop);
   }
 
   override disconnectedCallback(): void {
     cancelAnimationFrame(this.#rafId);
+    this.#rafId = 0;
     this.#unsubscribeLevel?.();
     this.#unsubscribeLevel = undefined;
     super.disconnectedCallback();
@@ -607,10 +656,22 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
     orb.className = "orb";
     orb.setAttribute("part", "orb");
     orb.addEventListener("click", () => this.#interrupt());
-    for (const layer of ["glow", "sweep", "sweep-inner", "halo", "core", "spark"]) {
-      const node = document.createElement("div");
-      node.className = layer;
-      orb.append(node);
+    const variant = this.variant;
+    if (variant === "opal" || variant === "resonance" || variant === "rosette") {
+      const tag = SpeechKitVoiceOrbElement.tagName;
+      registerSpeechKitVoiceOrb();
+      this.#voiceOrb = document.createElement(tag) as SpeechKitVoiceOrbElement;
+      this.#voiceOrb.variant = variant;
+      this.#voiceOrb.setLevel(this.#levels.input, "input");
+      this.#voiceOrb.setLevel(this.#levels.output, "output");
+      this.#voiceOrb.setAttribute("aria-hidden", "true");
+      orb.append(this.#voiceOrb);
+    } else {
+      for (const layer of ["glow", "sweep", "sweep-inner", "halo", "core", "spark"]) {
+        const node = document.createElement("div");
+        node.className = layer;
+        orb.append(node);
+      }
     }
     const markSrc = this.markSrc;
     if (markSrc) {
@@ -629,7 +690,7 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
   }
 
   /**
-   * The variant's motif for the visual slot: the Aura orb (default) or the
+   * The variant's motif for the visual slot: an orb or the
    * waveform canvas. `layout` only matters for the waveform — round slots
    * (bare orb, watch face, hero) draw the radial rim, the compact pill and
    * keyboard bar draw the linear strip.
@@ -649,6 +710,7 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
     const wrap = document.createElement("div");
     wrap.className = "va";
     wrap.setAttribute("part", "assistant");
+    this.#voiceOrb = null;
     this.#orbButtons = [];
     this.#waveforms = [];
 
@@ -664,17 +726,11 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
       hero.className = "hero";
       hero.setAttribute("part", "hero");
       hero.append(this.#visual("radial"));
-      this.#statusPill = document.createElement("span");
-      this.#statusPill.className = "status-pill";
-      this.#statusPill.setAttribute("part", "status");
-      this.#statusPill.setAttribute("role", "status");
-      const dot = document.createElement("span");
-      dot.className = "status-dot";
-      dot.setAttribute("aria-hidden", "true");
-      const text = document.createElement("span");
-      text.className = "status-text";
-      this.#statusPill.append(dot, text);
-      hero.append(this.#statusPill);
+      this.#statusAnnouncement = document.createElement("span");
+      this.#statusAnnouncement.className = "status-announcement";
+      this.#statusAnnouncement.setAttribute("part", "status");
+      this.#statusAnnouncement.setAttribute("role", "status");
+      hero.append(this.#statusAnnouncement);
 
       this.#turnsWrap = document.createElement("div");
       this.#turnsWrap.className = "turns-wrap";
@@ -729,21 +785,48 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
     const turns = this.turns;
     const turn = turns.length > 0 ? turns[turns.length - 1] : undefined;
     if (!turn || !turn.text) return null;
-    const sentences = turn.text.split(/(?<=[.!?…])\s+/).filter((s) => s.length > 0);
-    const text = sentences.length > 0 ? (sentences[sentences.length - 1] ?? turn.text) : turn.text;
+    const text = lastSentenceText(turn.text);
     return { role: turn.role, text };
   }
 
   #renderTurnList(messages: VoiceUiMessageCatalog): void {
     const scroller = this.#turnScroller;
     if (!scroller) return;
+    const animate = this.#pinned && this.#renderedTurnCount > 0 && this.turns.length === this.#renderedTurnCount + 1 &&
+      this.#renderedTranscriptTurns === this.transcriptTurns && !SpeechKitVoiceAssistantElement.#reducedMotion();
+    const previous = animate ? scroller.querySelector<HTMLElement>(".turn") : null;
+    const distance = previous?.offsetHeight ?? 0;
     scroller.replaceChildren();
-    for (const turn of this.turns) {
+    const turns = this.turns;
+    const current = turns.length - 1;
+    const selected: number[] = [];
+    if (current >= 0) {
+      // Reserve one history slot for the other speaker even if ASR produced
+      // adjacent turns for the current speaker.
+      if (this.transcriptTurns > 1) {
+        for (let i = current - 1; i >= 0; i -= 1) {
+          if (turns[i]?.role !== turns[current]?.role && turns[i]?.text) {
+            selected.push(i);
+            break;
+          }
+        }
+      }
+      for (let i = current - 1; i >= 0 && selected.length < this.transcriptTurns - 1; i -= 1) {
+        if (!selected.includes(i) && turns[i]?.text) selected.push(i);
+      }
+      selected.sort((a, b) => a - b);
+      selected.push(current);
+    }
+    for (const index of selected) {
+      const turn = turns[index];
+      if (!turn) continue;
       const item = document.createElement("article");
       item.className = "turn";
+      item.dataset["turnIndex"] = String(index);
       item.setAttribute("part", turn.role === "user" ? "turn turn-user" : "turn turn-agent");
       item.dataset["role"] = turn.role;
       if (!turn.final) item.dataset["draft"] = "";
+      if (index !== current) item.dataset["history"] = "";
       const head = document.createElement("header");
       head.className = "turn-head";
       const dot = document.createElement("span");
@@ -754,7 +837,7 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
       role.textContent =
         turn.role === "user"
           ? messages["sk.voice.agent.you"]
-          : messages["sk.voice.agent.assistant"];
+          : this.agentName;
       head.append(dot, role);
       if (turn.interrupted) {
         const flag = document.createElement("span");
@@ -764,9 +847,19 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
       }
       const text = document.createElement("p");
       text.className = "turn-text";
-      text.textContent = turn.text;
+      text.textContent = index === current ? turn.text : lastSentenceText(turn.text);
       item.append(head, text);
       scroller.append(item);
+    }
+    if (previous && distance && !selected.includes(Number(previous.dataset["turnIndex"])) && this.#turnsWrap) {
+      this.#turnsWrap.querySelector(".departing")?.remove();
+      previous.classList.add("departing");
+      previous.setAttribute("aria-hidden", "true");
+      this.#turnsWrap.append(previous);
+      const timing = { duration: 260, easing: "cubic-bezier(.2,0,.2,1)" };
+      const exit = previous.animate([{ opacity: 0.6 }, { opacity: 0, transform: `translateY(-${distance}px)` }], timing);
+      exit.oncancel = exit.onfinish = () => previous.remove();
+      scroller.animate([{ transform: `translateY(${distance}px)` }, { transform: "none" }], timing);
     }
   }
 
@@ -777,7 +870,7 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
       this.#wrap.remove();
       this.#wrap = null;
       this.#compactLine = this.#watchLine = this.#watchStatus = null;
-      this.#statusPill = this.#turnScroller = this.#turnsWrap = null;
+      this.#statusAnnouncement = this.#turnScroller = this.#turnsWrap = null;
       this.#jump = null;
       this.#renderedTurnsRef = null;
       this.#renderedTurnCount = -1;
@@ -795,6 +888,11 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
     this.#wrap.dataset["frame"] = this.frame;
     this.#wrap.dataset["variant"] = this.variant;
 
+    if (this.#voiceOrb) {
+      if (this.#voiceOrb.state !== this.auraState) this.#voiceOrb.state = this.auraState;
+      if (this.#voiceOrb.opalCore !== this.opalCore) this.#voiceOrb.opalCore = this.opalCore;
+    }
+    if (!this.#rafId && (!this.#voiceOrb || this.markSrc)) this.#rafId = requestAnimationFrame(this.#loop);
     const label = this.#statusLabel(status, messages);
     const speaking = status === "speaking";
     for (const orb of this.#orbButtons) {
@@ -812,11 +910,17 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
         who.textContent =
           sentence.role === "user"
             ? messages["sk.voice.agent.you"]
-            : messages["sk.voice.agent.assistant"];
-        this.#compactLine.append(who, document.createTextNode(sentence.text));
+            : this.agentName;
+        const words = document.createElement("span");
+        words.className = "words";
+        words.textContent = sentence.text;
+        this.#compactLine.dataset["role"] = sentence.role;
+        this.#compactLine.append(who, words);
+        words.scrollLeft = words.scrollWidth;
       } else {
         const who = document.createElement("span");
         who.className = "who";
+        delete this.#compactLine.dataset["role"];
         who.textContent = label;
         this.#compactLine.append(who);
       }
@@ -826,17 +930,19 @@ export class SpeechKitVoiceAssistantElement extends SpeechKitElement {
       this.#watchLine.classList.toggle("hidden", !this.transcriptEnabled);
       this.#watchLine.textContent = this.transcriptEnabled ? (sentence?.text ?? "") : "";
     }
-    if (this.#statusPill) {
-      const text = this.#statusPill.querySelector(".status-text");
-      if (text) text.textContent = label;
+    if (this.#statusAnnouncement && this.#statusAnnouncement.textContent !== label) {
+      this.#statusAnnouncement.textContent = label;
     }
     if (this.#turnsWrap && this.#turnScroller) {
       this.#turnsWrap.classList.toggle("hidden", !this.transcriptEnabled);
       const turns = this.turns;
-      if (turns !== this.#renderedTurnsRef || turns.length !== this.#renderedTurnCount) {
+      const speakerLabels = JSON.stringify([messages["sk.voice.agent.you"], this.agentName, messages["sk.voice.agent.interrupted"]]);
+      if (speakerLabels !== this.#lastSpeakerLabel || turns !== this.#renderedTurnsRef || turns.length !== this.#renderedTurnCount || this.transcriptTurns !== this.#renderedTranscriptTurns) {
         this.#renderTurnList(messages);
+        this.#lastSpeakerLabel = speakerLabels;
         this.#renderedTurnsRef = turns;
         this.#renderedTurnCount = turns.length;
+        this.#renderedTranscriptTurns = this.transcriptTurns;
       }
       if (this.#jump) this.#jump.textContent = messages["sk.voice.agent.jumpToLive"];
       if (this.#pinned) this.#scrollToLive();

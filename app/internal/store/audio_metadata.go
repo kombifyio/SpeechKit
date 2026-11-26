@@ -2,27 +2,9 @@ package store
 
 import (
 	"mime"
-	"os"
 	"path/filepath"
 	"strings"
 )
-
-func buildLocalAudioAsset(path string, durationMs int64) *AudioAsset {
-	if path == "" {
-		return nil
-	}
-
-	asset := &AudioAsset{
-		StorageKind: AudioStorageLocalFile,
-		Path:        path,
-		MimeType:    mimeTypeForAudioPath(path),
-		DurationMs:  durationMs,
-	}
-	if info, err := os.Stat(path); err == nil {
-		asset.SizeBytes = info.Size()
-	}
-	return normalizeAudioAsset(*asset)
-}
 
 func normalizeAudioAssetInput(audio AudioAssetInput) AudioAssetInput {
 	audio.MimeType = strings.TrimSpace(audio.MimeType)
@@ -105,8 +87,4 @@ func buildAudioAsset(storageKind, path, mimeType string, sizeBytes, durationMs i
 		SizeBytes:   sizeBytes,
 		DurationMs:  durationMs,
 	}
-}
-
-func normalizeAudioAsset(asset AudioAsset) *AudioAsset {
-	return buildAudioAsset(string(asset.StorageKind), asset.Path, asset.MimeType, asset.SizeBytes, asset.DurationMs)
 }

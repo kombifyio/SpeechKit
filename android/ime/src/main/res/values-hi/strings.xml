@@ -47,4 +47,15 @@
     <string name="speechkit_ime_agent_class_right">यह खाता वॉइस बातचीत का उपयोग नहीं कर सकता</string>
     <string name="speechkit_ime_agent_class_consent">SpeechKit ऐप में क्लाउड वॉइस की अनुमति दें</string>
     <string name="speechkit_ime_agent_class_expired">वॉइस सत्र समाप्त हो गया। नई बातचीत शुरू करें</string>
+
+    <!-- Opal conversation controls: capture is toggled by tapping. -->
+    <string name="speechkit_ime_agent_expand">बातचीत फैलाएँ</string>
+    <string name="speechkit_ime_agent_collapse">बातचीत समेटें</string>
+    <string name="speechkit_ime_agent_talk">बोलने के लिए टैप करें</string>
+    <string name="speechkit_ime_agent_send">अपनी बात भेजें</string>
+    <string name="speechkit_ime_agent_title">वॉइस एजेंट</string>
+    <string name="speechkit_ime_agent_setup_hint">वॉइस एजेंट सेट अप करें</string>
+    <string name="speechkit_ime_agent_setup">सेट अप करें</string>
+    <string name="speechkit_ime_agent_attention">विवरण देखें</string>
+    <string name="speechkit_ime_agent_setup_body">वॉइस बातचीत शुरू करने के लिए SpeechKit कनेक्ट करें।</string>
 </resources>

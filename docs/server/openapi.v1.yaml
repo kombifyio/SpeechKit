@@ -1584,6 +1584,58 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /v1/voiceagent/sessions/{id}/turns:
+    get:
+      operationId: listVoiceTurnReceipts
+      x-kombify-mcp: false
+      summary: Recover registered-agent turn identities and outcomes
+      description: |
+        Lists at most 256 receipts for the authenticated session owner and
+        organization, including after session teardown. Unknown and dispatched
+        are uncertain and must never be replayed. Dispatched records A2A 2xx
+        headers, not completion. Completed records an explicit terminal agent
+        status, not proof of each downstream side effect.
+        PostgreSQL fails closed without a signed admission for the separately
+        registered and governed subject-rights participant.
+      tags: [voiceagent]
+      parameters:
+        - { $ref: '#/components/parameters/SessionID' }
+      responses:
+        '200':
+          description: All known receipts; an unknown session returns an empty list.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session_id, turns]
+                properties:
+                  session_id: { type: string }
+                  turns:
+                    type: array
+                    maxItems: 256
+                    items: { $ref: '#/components/schemas/VoiceTurnReceipt' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '503': { description: Storage unavailable or session receipt limit exceeded. }
+
+  /v1/voiceagent/sessions/{id}/turns/{turn_id}:
+    get:
+      operationId: getVoiceTurnReceipt
+      x-kombify-mcp: false
+      summary: Read one owner-bound registered-agent turn receipt
+      tags: [voiceagent]
+      parameters:
+        - { $ref: '#/components/parameters/SessionID' }
+        - { name: turn_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The recorded turn status.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoiceTurnReceipt' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { description: Receipt absent or outside the caller's owner and organization. }
+        '503': { description: Receipt storage unavailable. }
+
   /v1/voiceagent/sessions/{id}:
     delete:
       operationId: deleteVoiceAgentSession
@@ -2380,6 +2432,14 @@ components:
             user_guidance:
               type: string
               description: What the person in the room should do about it.
+    VoiceTurnReceipt:
+      type: object
+      required: [session_id, turn_id, status]
+      properties:
+        session_id: { type: string }
+        turn_id: { type: string }
+        status: { type: string, enum: [unknown, dispatched, completed] }
+
     Error:
       type: object
       required: [error]

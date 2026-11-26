@@ -388,6 +388,9 @@ components:
             providers. v1 LiveKit media is limited to providers that advertise
             LiveKit support; cascaded providers stay on WebSocket audio until
             explicit transcoding is added.
+        turn_receipts:
+          type: boolean
+          description: Opt into durable registered-agent turn receipts; unsupported routes and PostgreSQL without a signed subject-rights admission fail closed.
         transcription_mode:
           type: string
           enum: [balanced, min_latency, max_accuracy]
@@ -642,6 +645,7 @@ components:
         - session_end
         - conversation_mode
         - route_switch
+        - turn_receipt
 
     EventFrameFields:
       type: object
@@ -779,6 +783,21 @@ components:
           $ref: '#/components/schemas/VoiceModeReceipt'
         route:
           $ref: '#/components/schemas/RouteSwitchReceipt'
+        turn:
+          type: object
+          required: [session_id, turn_id, status]
+          properties:
+            session_id: { type: string }
+            turn_id: { type: string }
+            status: { type: string, enum: [unknown, dispatched, completed] }
+          description: |
+            Unknown is persisted before dispatch and must never be replayed.
+            Dispatched records successful HTTP response headers from the bound
+            A2A endpoint; it is not evidence of completed effects and must not be replayed.
+            Completed requires an explicit completed A2A status on this turn's response;
+            it does not prove the outcome of each downstream side effect.
+            Authenticated owner and organization can query the same object at
+            GET /v1/voiceagent/sessions/{session_id}/turns/{turn_id} after disconnection.
         ai_session_id: { type: string }
         event_type:
           $ref: '#/components/schemas/LiveEventType'

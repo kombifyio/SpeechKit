@@ -31,6 +31,9 @@ import io.kombify.speechkit.coinstall.voiceagent.v1.IVoiceAgentService
 import io.kombify.speechkit.coinstall.voiceagent.v1.VoiceAgentCapability
 import io.kombify.speechkit.coinstall.voiceagent.v1.VoiceAgentContract
 import io.kombify.speechkit.coinstall.voiceagent.v1.VoiceAgentSessionRequest
+import io.kombify.speechkit.domain.ConnectionProfile
+import io.kombify.speechkit.net.StoredConnectionSelection
+import io.kombify.speechkit.net.NetworkUseGuard
 import io.kombify.speechkit.net.CreateVoiceAgentSessionResponse
 import io.kombify.speechkit.net.VoiceAgentAudio
 import io.kombify.speechkit.net.VoiceAgentEvent
@@ -60,20 +63,34 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
 /** One attested, ticket-only media handoff. The Companion continues to own account and chat. */
+@dagger.hilt.android.AndroidEntryPoint
 class CoinstallVoiceAgentService : Service() {
+    @javax.inject.Inject lateinit var profileSource: io.kombify.speechkit.domain.ConnectionProfileSource
+    private fun networkPermitted(profile: ConnectionProfile.Server? = profileSource.currentProfile() as? ConnectionProfile.Server): Boolean {
+        if (profile == null) return false
+        return runCatching {
+            StoredConnectionSelection(this).withCurrent(profile) {
+                NetworkUseGuard.checkAllowed()
+                val policy = io.kombify.speechkit.net.StoredExecutionPolicy(this).read(profile)
+                io.kombify.speechkit.net.StoredServerProfile.cloudSelected(this) &&
+                    policy.allowNetwork && policy.mode != io.kombify.speechkit.domain.ExecutionMode.DEVICE_ONLY
+            }
+        }.getOrDefault(false)
+    }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var identity: VoiceAgentCallerIdentity
     private lateinit var audioManager: AudioManager
     private var active: Running? = null
     private var pending: Prepared? = null
     private var lastStartId = 0
+    private var policyListener: java.io.Closeable? = null
 
     private class Prepared(
         val run: Running, val request: VoiceAgentSessionRequest,
         val identity: Uri, val intent: PendingIntent, val deadline: Long,
     ) { var expiry: Job? = null }
 
-    private class Running(val uid: Int, val id: String, val callback: IVoiceAgentCallback, val source: ParcelFileDescriptor?) {
+    private class Running(val uid: Int, val id: String, val callback: IVoiceAgentCallback, val source: ParcelFileDescriptor?, val profile: ConnectionProfile.Server) {
         val player = PcmStreamPlayer(VoiceAgentAudio.SERVER_SAMPLE_RATE)
         val engine = TurnEngine()
         var live: VoiceAgentSession? = null
@@ -93,6 +110,12 @@ class CoinstallVoiceAgentService : Service() {
         super.onCreate()
         identity = VoiceAgentCallerIdentity(packageManager)
         audioManager = getSystemService(AudioManager::class.java)
+        policyListener = io.kombify.speechkit.net.NetworkUseGuard.listen {
+            val run = active ?: pending?.run
+            val jobs = listOfNotNull(run?.capture, run?.work, run?.playback)
+            if (run != null) finish(run, "client")
+            jobs
+        }
     }
     private val binder = object : IVoiceAgentService.Stub() {
         override fun getContractVersion(): Int = VoiceAgentContract.VERSION
@@ -101,10 +124,11 @@ class CoinstallVoiceAgentService : Service() {
             val hosted = hostedOrigin() != null
             val mic = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
             return VoiceAgentCapability().apply {
-                available = trusted && hosted
+                available = trusted && hosted && networkPermitted()
                 unavailableReason = when {
                     !trusted -> VoiceAgentContract.ERROR_CALLER_NOT_ATTESTED
                     !hosted -> VoiceAgentContract.ERROR_HOSTED_ORIGIN_UNAVAILABLE
+                    !networkPermitted() -> VoiceAgentContract.ERROR_MEDIA_PROVIDER_UNAVAILABLE
                     else -> ""
                 }
                 microphonePermission = mic
@@ -112,25 +136,33 @@ class CoinstallVoiceAgentService : Service() {
         }
         override fun startSession(request: VoiceAgentSessionRequest, callback: IVoiceAgentCallback) {
             val uid = Binder.getCallingUid()
-            if (!admit(uid, request, callback)) return
+            val profile = admit(uid, request, callback) ?: return
             scope.launch {
                 if (active != null || pending != null) {
                     reject(callback, request.sessionId, VoiceAgentContract.ERROR_SESSION_BUSY)
                     request.audioSource?.close()
-                } else newRun(uid, request, callback)?.let { begin(it, request) }
+                } else if (!networkPermitted(profile)) {
+                    reject(callback, request.sessionId, VoiceAgentContract.ERROR_MEDIA_PROVIDER_UNAVAILABLE)
+                    request.audioSource?.close()
+                } else newRun(uid, request, callback, profile)?.let { begin(it, request) }
             }
         }
         override fun prepareSession(request: VoiceAgentSessionRequest, callback: IVoiceAgentCallback): PendingIntent? {
             // Capture Binder identity before dispatching to the single lifecycle owner.
             val uid = Binder.getCallingUid()
-            if (!admit(uid, request, callback)) return null
+            val profile = admit(uid, request, callback) ?: return null
             return runBlocking(Dispatchers.Main.immediate) {
                 if (active != null || pending != null) {
                     reject(callback, request.sessionId, VoiceAgentContract.ERROR_SESSION_BUSY)
                     request.audioSource?.close()
                     return@runBlocking null
                 }
-                val run = newRun(uid, request, callback) ?: return@runBlocking null
+                if (!networkPermitted(profile)) {
+                    reject(callback, request.sessionId, VoiceAgentContract.ERROR_MEDIA_PROVIDER_UNAVAILABLE)
+                    request.audioSource?.close()
+                    return@runBlocking null
+                }
+                val run = newRun(uid, request, callback, profile) ?: return@runBlocking null
                 try {
                     val nonce = Uri.Builder().scheme("speechkit-voice-start").authority(packageName)
                         .appendPath(UUID.randomUUID().toString()).build()
@@ -183,7 +215,7 @@ class CoinstallVoiceAgentService : Service() {
         reservation.intent.cancel()
         val run = reservation.run
         active = run
-        if (run.ended || SystemClock.elapsedRealtime() >= reservation.deadline || !validTicket(reservation.request)) {
+        if (run.ended || SystemClock.elapsedRealtime() >= reservation.deadline || !networkPermitted(run.profile) || !validTicket(reservation.request)) {
             finish(run, "expired")
             return START_NOT_STICKY
         }
@@ -204,27 +236,30 @@ class CoinstallVoiceAgentService : Service() {
     }
     override fun onDestroy() {
         (active ?: pending?.run)?.let { finish(it, "client") }
+        policyListener?.close(); policyListener = null
         scope.cancel(); super.onDestroy()
     }
     private fun attested(uid: Int): Boolean = Build.VERSION.SDK_INT >= 28 && identity.attested(uid)
 
-    private fun admit(uid: Int, request: VoiceAgentSessionRequest, callback: IVoiceAgentCallback): Boolean {
+    private fun admit(uid: Int, request: VoiceAgentSessionRequest, callback: IVoiceAgentCallback): ConnectionProfile.Server? {
+        val profile = profileSource.currentProfile() as? ConnectionProfile.Server
         val error = when {
             !attested(uid) -> VoiceAgentContract.ERROR_CALLER_NOT_ATTESTED
             !VoiceAgentContract.supportsMediaProvider(VoiceAgentContract.VERSION, request.mediaProvider) ->
                 VoiceAgentContract.ERROR_MEDIA_PROVIDER_UNAVAILABLE
+            !networkPermitted(profile) -> VoiceAgentContract.ERROR_MEDIA_PROVIDER_UNAVAILABLE
             !validTicket(request) -> VoiceAgentContract.ERROR_TICKET_INVALID
             request.audioSource == null && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED ->
                 VoiceAgentContract.ERROR_MICROPHONE_PERMISSION
             else -> null
         }
-        if (error == null) return true
+        if (error == null) return profile
         reject(callback, request.sessionId, error)
         request.audioSource?.close()
-        return false
+        return null
     }
-    private fun newRun(uid: Int, request: VoiceAgentSessionRequest, callback: IVoiceAgentCallback): Running? {
-        val run = Running(uid, request.sessionId, callback, request.audioSource)
+    private fun newRun(uid: Int, request: VoiceAgentSessionRequest, callback: IVoiceAgentCallback, profile: ConnectionProfile.Server): Running? {
+        val run = Running(uid, request.sessionId, callback, request.audioSource, profile)
         run.death = IBinder.DeathRecipient { scope.launch { finish(run, "client") } }
         try { callback.asBinder().linkToDeath(run.death, 0) } catch (_: Throwable) {
             request.audioSource?.close(); run.player.release(); return null
@@ -249,7 +284,8 @@ class CoinstallVoiceAgentService : Service() {
                 check(audioManager.requestAudioFocus(focus) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
                 run.focus = focus
                 val live = VoiceAgentWsClient().connect(CreateVoiceAgentSessionResponse(
-                    sessionId = request.sessionId, wsUrl = request.wsUrl, ticket = request.ticket))
+                    sessionId = request.sessionId, wsUrl = request.wsUrl, ticket = request.ticket),
+                    StoredConnectionSelection(this@CoinstallVoiceAgentService), run.profile)
                 run.live = live
                 notify(run) { it.onState(run.id, VoiceAgentContract.STATE_CONNECTING) }
                 if (run.ended) return@launch
@@ -320,6 +356,7 @@ class CoinstallVoiceAgentService : Service() {
                             }
                         }
                         VoiceAgentEvent.Interrupted -> stopPlayback(run)
+                        is VoiceAgentEvent.TurnReceipt -> Unit
                         is VoiceAgentEvent.Failure -> {
                             val code = safeVoiceAgentCode(event.code, VoiceAgentContract.ERROR_SERVER)
                             val terminal = event.fatal || code in TRANSPORT_FAILURES

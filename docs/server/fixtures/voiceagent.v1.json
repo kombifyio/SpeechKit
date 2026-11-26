@@ -63,6 +63,10 @@
       "type": "event", "event_type": "conversation_mode",
       "conversation": { "version": 1, "mode": "conversation", "voice_session_id": "voice-1", "conversation_session_id": "chat-2", "request_id": "mode-1", "status": "accepted" }
     },
+    "event_turn_receipt": {
+      "type": "event", "event_type": "turn_receipt",
+      "turn": { "session_id": "voice-1", "turn_id": "voice-1:1", "status": "unknown" }
+    },
     "state_session_ready": {
       "type": "state",
       "event_type": "session_ready",

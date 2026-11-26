@@ -14,6 +14,7 @@ import {
   semanticMarkRatio,
   type SemanticVoiceMark,
   type SpeechKitVoiceAssistantElement,
+  type VoiceAssistantTranscriptTurns,
   type VoiceAssistantVariant,
 } from "@kombifyio/speechkit-voice-ui";
 import {
@@ -31,26 +32,41 @@ const TOKEN_STORAGE_KEY = "speechkit.assistant.token";
 
 interface Appearance {
   variant: VoiceAssistantVariant;
+  opalCore: "original" | "small";
   mark: SemanticVoiceMark;
   transcript: boolean;
+  transcriptTurns: VoiceAssistantTranscriptTurns;
 }
 
-const FALLBACK_APPEARANCE: Appearance = { variant: "aura", mark: "rosette", transcript: true };
+const FALLBACK_APPEARANCE: Appearance = {
+  variant: "opal",
+  opalCore: "original",
+  mark: "none",
+  transcript: true,
+  transcriptTurns: 2,
+};
 
 function isVariant(value: unknown): value is VoiceAssistantVariant {
-  return value === "aura" || value === "waveform";
+  return (
+    value === "opal" || value === "aura" || value === "waveform" ||
+    value === "resonance" || value === "rosette"
+  );
 }
 
 function parseAppearance(value: unknown, base: Appearance): Appearance {
   if (typeof value !== "object" || value === null) return base;
   const record = value as Record<string, unknown>;
+  const depth = record["transcriptTurns"];
+  const opalCore = record["opalCore"];
   return {
     variant: isVariant(record["variant"]) ? record["variant"] : base.variant,
+    opalCore: opalCore === "small" || opalCore === "original" ? opalCore : base.opalCore,
     mark:
       typeof record["mark"] === "string" && isSemanticVoiceMark(record["mark"])
         ? (record["mark"] as SemanticVoiceMark)
         : base.mark,
     transcript: typeof record["transcript"] === "boolean" ? record["transcript"] : base.transcript,
+    transcriptTurns: depth === 1 || depth === 2 || depth === 3 ? depth : base.transcriptTurns,
   };
 }
 
@@ -66,6 +82,8 @@ const appearanceToggle = byId<HTMLButtonElement>("appearance-toggle");
 const appearancePanel = byId<HTMLElement>("appearance-panel");
 const appearanceReset = byId<HTMLButtonElement>("appearance-reset");
 const transcriptToggle = byId<HTMLInputElement>("transcript-toggle");
+const transcriptDepth = byId<HTMLSelectElement>("transcript-depth");
+const opalCoreSelect = byId<HTMLSelectElement>("opal-core");
 const connectionNote = byId<HTMLElement>("connection-note");
 const tokenRow = byId<HTMLElement>("token-row");
 const tokenInput = byId<HTMLInputElement>("token-input");
@@ -87,6 +105,7 @@ function storedOverride(): Partial<Appearance> | null {
 function applyAppearance(next: Appearance, persistOverride: boolean): void {
   appearance = next;
   assistant.setAttribute("variant", next.variant);
+  assistant.setAttribute("opal-core", next.opalCore);
   const markSrc = resolveMarkSrc(next.mark, MARK_ASSETS);
   if (markSrc) assistant.setAttribute("mark-src", markSrc);
   else assistant.removeAttribute("mark-src");
@@ -95,6 +114,11 @@ function applyAppearance(next: Appearance, persistOverride: boolean): void {
   else assistant.style.removeProperty("--sk-assistant-mark-ratio");
   assistant.toggleAttribute("transcript", next.transcript);
   transcriptToggle.checked = next.transcript;
+  assistant.transcriptTurns = next.transcriptTurns;
+  transcriptDepth.value = String(next.transcriptTurns);
+  transcriptDepth.disabled = !next.transcript;
+  opalCoreSelect.value = next.opalCore;
+  opalCoreSelect.disabled = next.variant !== "opal";
   for (const button of document.querySelectorAll<HTMLButtonElement>("#variant-chips button")) {
     button.dataset["active"] = String(button.dataset["variant"] === next.variant);
   }
@@ -179,6 +203,18 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("#mark-chips b
 }
 transcriptToggle.addEventListener("change", () => {
   applyAppearance({ ...appearance, transcript: transcriptToggle.checked }, true);
+});
+transcriptDepth.addEventListener("change", () => {
+  const depth = Number(transcriptDepth.value);
+  if (depth === 1 || depth === 2 || depth === 3) {
+    applyAppearance({ ...appearance, transcriptTurns: depth }, true);
+  }
+});
+opalCoreSelect.addEventListener("change", () => {
+  const opalCore = opalCoreSelect.value;
+  if (opalCore === "original" || opalCore === "small") {
+    applyAppearance({ ...appearance, opalCore }, true);
+  }
 });
 appearanceReset.addEventListener("click", () => {
   try {

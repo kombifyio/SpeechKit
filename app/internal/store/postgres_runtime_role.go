@@ -128,6 +128,24 @@ func grantPostgresRuntimeRole(ctx context.Context, db *sql.DB, role string) erro
 			}
 		}
 	}
+	var voiceTurnMarker bool
+	if err := tx.QueryRowContext(ctx, `SELECT to_regclass($1) IS NOT NULL`, schema+".voice_turn_feature_used").Scan(&voiceTurnMarker); err != nil {
+		return err
+	}
+	if voiceTurnMarker {
+		if _, err := tx.ExecContext(ctx, `REVOKE UPDATE, DELETE ON TABLE `+s+`.voice_turn_feature_used FROM `+r); err != nil {
+			return err
+		}
+	}
+	var voiceTurnIdentity bool
+	if err := tx.QueryRowContext(ctx, `SELECT to_regclass($1) IS NOT NULL`, schema+".voice_turn_database_identity").Scan(&voiceTurnIdentity); err != nil {
+		return err
+	}
+	if voiceTurnIdentity {
+		if _, err := tx.ExecContext(ctx, `REVOKE INSERT, UPDATE, DELETE ON TABLE `+s+`.voice_turn_database_identity FROM `+r); err != nil {
+			return err
+		}
+	}
 	return tx.Commit()
 }
 
@@ -288,7 +306,12 @@ const userSchemas = `n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'`
 // a member of no role (no SET ROLE) and no SET ROLE is active, has no TRUNCATE
 // or TRIGGER on any table, and no policy in the database reads the retired
 // app.service_scope escape.
-func assertPostgresRuntimeRole(ctx context.Context, db *sql.DB) error {
+type postgresRuntimeQuery interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func assertPostgresRuntimeRole(ctx context.Context, db postgresRuntimeQuery) error {
 	var (
 		current, session                          string
 		super, bypass, createRole, createDB, repl bool
@@ -372,7 +395,7 @@ func assertPostgresRuntimeRole(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-func queryStringList(ctx context.Context, db *sql.DB, query string) ([]string, error) {
+func queryStringList(ctx context.Context, db postgresRuntimeQuery, query string) ([]string, error) {
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("store: role assertion query: %w", err)
@@ -396,4 +419,9 @@ func queryStringList(ctx context.Context, db *sql.DB, query string) ([]string, e
 // optional storage feature. It performs no DDL and widens no privileges.
 func AssertPostgresRuntimeRole(ctx context.Context, db *sql.DB) error {
 	return assertPostgresRuntimeRole(ctx, db)
+}
+
+// AssertPostgresRuntimeRoleTx validates the exact transaction used by an operation.
+func AssertPostgresRuntimeRoleTx(ctx context.Context, tx *sql.Tx) error {
+	return assertPostgresRuntimeRole(ctx, tx)
 }

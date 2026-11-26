@@ -98,6 +98,9 @@ var postgresMigration029 string
 //go:embed migrations/postgres/030_voice_execution_journal.sql
 var postgresMigration030 string
 
+//go:embed migrations/postgres/031_voice_turn_receipts.sql
+var postgresMigration031 string
+
 // PostgresStore implements Store using PostgreSQL for metadata and the local
 // filesystem for optional raw WAV persistence. All query logic lives in the
 // embedded *sqlStore; this type only owns connection setup and migrations.
@@ -143,21 +146,30 @@ func NewPostgresStore(cfg StoreConfig) (*PostgresStore, error) {
 		return nil, err
 	}
 	store := &PostgresStore{sqlStore: &sqlStore{
-		db:                      db,
-		dialect:                 dialectPostgres,
-		audioDir:                filepath.Join(contentDir, "audio"),
-		snapshotDir:             filepath.Join(contentDir, "snapshots"),
-		maxStorageMB:            cfg.MaxAudioStorageMB,
-		saveAudio:               cfg.SaveAudio,
-		audioRetentionDays:      cfg.AudioRetentionDays,
-		meetingRetentionDays:    cfg.MeetingRetentionDays,
-		transcriptRetentionDays: cfg.TranscriptRetentionDays,
-		transcriptionModelHints: normalizeTranscriptionModelHints(cfg.TranscriptionModelHints),
-		defaultScope:            speechstorage.NormalizeScope(cfg.DefaultScope),
-		scopePolicy:             normalizedScopePolicy(cfg.ScopePolicy),
-		retentionScope:          normalizeStoreRetentionScope(cfg.RetentionScope),
-		retentionTTLDays:        max(cfg.RetentionTTLDays, 0),
-		onRetentionSweep:        cfg.OnRetentionSweep,
+		db:                          db,
+		voiceTurnCustodyProof:       cfg.VoiceTurnCustodyProof,
+		voiceTurnAdmission:          cfg.VoiceTurnAdmission,
+		voiceTurnAdmissionPublicKey: cfg.VoiceTurnAdmissionPublicKey,
+		voiceTurnEnvironment:        cfg.VoiceTurnEnvironment,
+		voiceTurnIssuer:             cfg.VoiceTurnIssuer,
+		voiceTurnAudience:           cfg.VoiceTurnAudience,
+		voiceTurnParticipant:        cfg.VoiceTurnParticipant,
+		voiceTurnRoute:              cfg.VoiceTurnRoute,
+		voiceTurnSubjectReference:   cfg.VoiceTurnSubjectReference,
+		dialect:                     dialectPostgres,
+		audioDir:                    filepath.Join(contentDir, "audio"),
+		snapshotDir:                 filepath.Join(contentDir, "snapshots"),
+		maxStorageMB:                cfg.MaxAudioStorageMB,
+		saveAudio:                   cfg.SaveAudio,
+		audioRetentionDays:          cfg.AudioRetentionDays,
+		meetingRetentionDays:        cfg.MeetingRetentionDays,
+		transcriptRetentionDays:     cfg.TranscriptRetentionDays,
+		transcriptionModelHints:     normalizeTranscriptionModelHints(cfg.TranscriptionModelHints),
+		defaultScope:                speechstorage.NormalizeScope(cfg.DefaultScope),
+		scopePolicy:                 normalizedScopePolicy(cfg.ScopePolicy),
+		retentionScope:              normalizeStoreRetentionScope(cfg.RetentionScope),
+		retentionTTLDays:            max(cfg.RetentionTTLDays, 0),
+		onRetentionSweep:            cfg.OnRetentionSweep,
 	}}
 	store.startMaintenance()
 	return store, nil

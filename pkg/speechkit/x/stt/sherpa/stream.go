@@ -79,7 +79,7 @@ type streamSegment struct {
 func streamSegments(in []Segment) []streamSegment {
 	out := make([]streamSegment, len(in))
 	for i, s := range in {
-		out[i] = streamSegment{Start: s.Start, End: s.End, Text: s.Text}
+		out[i] = streamSegment(s)
 	}
 	return out
 }

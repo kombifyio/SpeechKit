@@ -1,0 +1,31 @@
+<resources>
+    <string name="context_title">تحليل المحتوى</string>
+    <string name="context_share_label">التحليل باستخدام SpeechKit</string>
+    <string name="context_screen_action">تحليل الشاشة</string>
+    <string name="context_preview_hint">راجع المحتوى قبل معالجته.</string>
+    <string name="context_shared_text">نص مشارك · دون الوصول إلى سجل المحادثة</string>
+    <string name="context_shared_image">صورة مشاركة · المحتوى المحدد فقط</string>
+    <string name="context_shared_audio">صوت مشارك · مرفق واحد</string>
+    <string name="context_visible_screen">الشاشة المرئية · ليست المحادثة كاملة</string>
+    <string name="context_text_input">النص المشارك</string>
+    <string name="context_image_preview">معاينة الصورة</string>
+    <string name="context_audio_ready">الملف الصوتي جاهز</string>
+    <string name="context_crop_hint">سيتم تحليل المنطقة المضيئة فقط. حدد رسالة أو احتفظ بالصورة كاملة.</string>
+    <string name="context_crop_horizontal">الحافتان اليمنى واليسرى</string>
+    <string name="context_crop_vertical">الحافتان العليا والسفلى</string>
+    <string name="context_summarize">تلخيص</string>
+    <string name="context_transcribe">تحويل إلى نص</string>
+    <string name="context_result">النتيجة</string>
+    <string name="context_cancel">إلغاء</string>
+    <string name="context_invalid_input">تعذر فتح هذا المحتوى. شارك نصًا أو صورة أو ملفًا صوتيًا واحدًا.</string>
+    <string name="context_failed">تعذر تحليل المحتوى. تحقق من الاتصال المحدد وتوفر النماذج المحلية.</string>
+    <string name="context_local_only">على هذا الجهاز فقط</string>
+    <string name="context_cloud_only">اتصال السحابة المحدد فقط</string>
+    <string name="context_local_first">الجهاز أولًا · اضغط مطولًا لاستخدام السحابة فقط</string>
+    <string name="context_cloud_first">السحابة أولًا · اضغط مطولًا لاستخدام الجهاز فقط</string>
+    <string name="context_audio_local">التحويل إلى نص: على الجهاز</string>
+    <string name="context_audio_cloud">التحويل إلى نص: اتصال السحابة المحدد</string>
+    <string name="context_capture_title">التقاط الشاشة</string>
+    <string name="context_capture_body">جارٍ التقاط صورة واحدة لمراجعتها</string>
+    <string name="context_capture_unavailable">التقاط الشاشة غير متاح. حاول مجددًا أو شارك لقطة شاشة.</string>
+</resources>

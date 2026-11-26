@@ -58,10 +58,6 @@ func (p *Provider) waitForInferenceReady(ctx context.Context) error {
 	return p.waitForInferenceReadyWithClient(warmupCtx, warmupClient, whisperWarmupRetries, whisperWarmupInterval)
 }
 
-func (p *Provider) waitForInferenceReadyWithRetry(ctx context.Context, retries int, interval time.Duration) error {
-	return p.waitForInferenceReadyWithClient(ctx, p.client, retries, interval)
-}
-
 func (p *Provider) waitForInferenceReadyWithClient(ctx context.Context, client *http.Client, retries int, interval time.Duration) error {
 	if retries <= 0 {
 		retries = 1

@@ -255,10 +255,6 @@ type oaiResponse struct {
 	} `json:"usage"`
 }
 
-func callOpenAICompatible(ctx context.Context, client *http.Client, baseURL, authToken, model string, input Request) (Response, error) {
-	return callOpenAICompatibleWithOptions(ctx, client, baseURL, model, input, AICallValidation, oaiCallOptions{AuthToken: authToken})
-}
-
 func callOpenAICompatibleWithOptions(
 	ctx context.Context,
 	client *http.Client,

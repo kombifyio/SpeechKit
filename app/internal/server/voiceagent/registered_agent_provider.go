@@ -17,6 +17,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/netsec"
@@ -80,7 +81,7 @@ func (p *RegisteredAgentProvider) Connect(ctx context.Context, cfg LiveConfigFra
 	// Companion cannot serve (unavailable, failed), with a spoken notice that the Companion did not answer. A
 	// session without a signed mode binding keeps the typed error.
 	var fallback publiccascaded.Agent
-	if cfg.hasMode() {
+	if cfg.hasMode() && cfg.TurnReceiptStart == nil {
 		modeAgent, modeErr := newModeChatAgent(cfg, nil, nil)
 		if modeErr != nil {
 			cancel()
@@ -88,7 +89,12 @@ func (p *RegisteredAgentProvider) Connect(ctx context.Context, cfg LiveConfigFra
 		}
 		fallback = modeAgent
 	}
-	deps.Agent = &disclosingAgent{inner: agent, fallback: fallback, ack: companionAckEnabled()}
+	if cfg.TurnReceiptStart != nil {
+		agent.OnDispatchAcknowledged = cfg.TurnReceiptDispatched
+		deps.Agent = &receiptCascadedAgent{agent: agent, sessionID: cfg.VoiceSessionID, start: cfg.TurnReceiptStart, done: cfg.TurnReceiptDone, disclosure: &disclosingAgent{ack: companionAckEnabled()}}
+	} else {
+		deps.Agent = &disclosingAgent{inner: agent, fallback: fallback, ack: companionAckEnabled()}
+	}
 	if warm := gatewayPolicyWarmer(cfg.AgentEndpoint, client); warm != nil {
 		// The Gateway reads the agent plugin policy before every turn; asking for that read when the session opens and
 		// when the user starts speaking has it under way (and the agent host awake) by the time the turn arrives.
@@ -249,6 +255,44 @@ type disclosingAgent struct {
 	done bool
 }
 
+// receiptCascadedAgent assigns the server turn ID at the actual streamed
+// agent boundary, after STT and before any A2A I/O. Its ID is passed unchanged
+// as the downstream idempotency key; a failed turn is never replayed.
+type receiptCascadedAgent struct {
+	agent      *a2a.Agent
+	sessionID  string
+	sequence   atomic.Uint64
+	start      func(context.Context, string) error
+	done       func(string)
+	disclosure *disclosingAgent
+}
+
+func (a *receiptCascadedAgent) Run(ctx context.Context, input publiccascaded.AgentInput) (publiccascaded.AgentOutput, error) {
+	return a.Stream(ctx, input, nil)
+}
+
+func (a *receiptCascadedAgent) Stream(ctx context.Context, input publiccascaded.AgentInput, emit func(string) error) (publiccascaded.AgentOutput, error) {
+	sequence := a.sequence.Add(1)
+	if sequence > 256 {
+		return publiccascaded.AgentOutput{}, errors.New("voiceagent: receipt turn limit reached")
+	}
+	turnID := fmt.Sprintf("%s:%d", a.sessionID, sequence)
+	if err := a.start(ctx, turnID); err != nil {
+		return publiccascaded.AgentOutput{}, err
+	}
+	disclosure := ""
+	if a.disclosure.takeFirst() {
+		disclosure = disclosureFor(input.Locale)
+	}
+	out, err := a.disclosure.streamTurn(ctx, input, disclosure, a.disclosure.ack, func(guarded func(string) error) (publiccascaded.AgentOutput, error) {
+		return a.agent.StreamTurn(ctx, input, turnID, guarded)
+	}, emit)
+	if err == nil && a.done != nil && a.agent.VerifiedCompletion(turnID) {
+		a.done(turnID)
+	}
+	return out, err
+}
+
 // companionAckDelay is how long a turn waits for the Companion's first words before it says it is on it.
 // The Companion needs 3 to 8 s to its first sentence (model first token 2 to 5 s, run setup 1 to 3 s,
 // measured 2026-11-02); silence for that long reads as a device that did not hear.
@@ -391,7 +435,6 @@ type nativeCompanionAgent struct {
 	inner  a2a.TurnStreamer
 	turns  *disclosingAgent // fallback and ack only; its inner agent is unused
 	called sync.Once
-	first  bool
 }
 
 // ack is false for a vendor that receives the whole answer at once (a delegated function result):

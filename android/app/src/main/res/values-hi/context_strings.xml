@@ -1,0 +1,31 @@
+<resources>
+    <string name="context_title">सामग्री का विश्लेषण</string>
+    <string name="context_share_label">SpeechKit से विश्लेषण करें</string>
+    <string name="context_screen_action">स्क्रीन का विश्लेषण</string>
+    <string name="context_preview_hint">प्रक्रिया शुरू करने से पहले सामग्री देखें।</string>
+    <string name="context_shared_text">साझा टेक्स्ट · चैट इतिहास तक पहुँच नहीं</string>
+    <string name="context_shared_image">साझा चित्र · केवल चुनी गई सामग्री</string>
+    <string name="context_shared_audio">साझा ऑडियो · एक अटैचमेंट</string>
+    <string name="context_visible_screen">दिख रही स्क्रीन · पूरी बातचीत नहीं</string>
+    <string name="context_text_input">साझा टेक्स्ट</string>
+    <string name="context_image_preview">चित्र का पूर्वावलोकन</string>
+    <string name="context_audio_ready">ऑडियो फ़ाइल तैयार है</string>
+    <string name="context_crop_hint">केवल उजले भाग का विश्लेषण होगा। कोई संदेश चुनें या पूरा चित्र रखें।</string>
+    <string name="context_crop_horizontal">बायाँ और दायाँ किनारा</string>
+    <string name="context_crop_vertical">ऊपरी और निचला किनारा</string>
+    <string name="context_summarize">सारांश बनाएँ</string>
+    <string name="context_transcribe">लिप्यंतरण करें</string>
+    <string name="context_result">परिणाम</string>
+    <string name="context_cancel">रद्द करें</string>
+    <string name="context_invalid_input">यह सामग्री नहीं खुल सकती। एक टेक्स्ट, चित्र या ऑडियो फ़ाइल साझा करें।</string>
+    <string name="context_failed">सामग्री का विश्लेषण नहीं हो सका। चुना कनेक्शन और स्थानीय मॉडल की उपलब्धता जाँचें।</string>
+    <string name="context_local_only">केवल इस डिवाइस पर</string>
+    <string name="context_cloud_only">केवल चुना हुआ क्लाउड कनेक्शन</string>
+    <string name="context_local_first">पहले स्थानीय · केवल क्लाउड के लिए दबाकर रखें</string>
+    <string name="context_cloud_first">पहले क्लाउड · केवल डिवाइस के लिए दबाकर रखें</string>
+    <string name="context_audio_local">लिप्यंतरण: डिवाइस पर</string>
+    <string name="context_audio_cloud">लिप्यंतरण: चुना हुआ क्लाउड कनेक्शन</string>
+    <string name="context_capture_title">स्क्रीन कैप्चर</string>
+    <string name="context_capture_body">आपके देखने के लिए एक चित्र लिया जा रहा है</string>
+    <string name="context_capture_unavailable">स्क्रीन कैप्चर उपलब्ध नहीं है। दोबारा कोशिश करें या स्क्रीनशॉट साझा करें।</string>
+</resources>

@@ -14,6 +14,9 @@ import android.view.inputmethod.InputConnection
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -21,6 +24,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.Modifier
+import io.kombify.speechkit.BuildConfig
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import helium314.keyboard.latin.common.ColorType
+import helium314.keyboard.latin.settings.Settings
 import androidx.core.content.ContextCompat
 import helium314.keyboard.latin.R
 import helium314.keyboard.latin.SpeechKitVoiceBridge
@@ -39,14 +50,19 @@ import io.kombify.speechkit.ime.MicPermissionTrampolineActivity
 import io.kombify.speechkit.ime.VoicePanelController
 import io.kombify.speechkit.ime.host.isDictationBlocked
 import io.kombify.speechkit.ime.ui.VoiceAgentPanelUi
+import io.kombify.speechkit.ime.ui.VoiceAgentOpalPanel
 import io.kombify.speechkit.ime.ui.VoicePanelUi
 import io.kombify.speechkit.domain.ConnectionProfile
+import io.kombify.speechkit.domain.ExecutionMode
+import io.kombify.speechkit.domain.forInvocation
 import io.kombify.speechkit.domain.ConnectionProfileSource
 import io.kombify.speechkit.net.DictationController
 import io.kombify.speechkit.net.OnDeviceEngine
 import io.kombify.speechkit.net.SpeechKitApiException
 import io.kombify.speechkit.net.VoiceAgentAudio
-import io.kombify.speechkit.net.VoiceAgentController
+import io.kombify.speechkit.net.voiceAgentDriver
+import io.kombify.speechkit.net.VoiceAgentSessionDriver
+import io.kombify.speechkit.net.VoiceAgentUiState
 import io.kombify.speechkit.net.VoiceRenewalProfileSource
 import io.kombify.speechkit.stt.streaming.StreamingSttSession
 import io.kombify.speechkit.ui.ServiceWindowOwner
@@ -57,6 +73,19 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.lang.ref.WeakReference
 import timber.log.Timber
+
+@Composable
+private fun KeyboardPanelTheme(content: @Composable () -> Unit) {
+    val colors = Settings.getValues().mColors
+    val background = Color(colors.get(ColorType.STRIP_BACKGROUND))
+    val foreground = Color(colors.get(ColorType.TOOL_BAR_KEY))
+    val scheme = if (background.luminance() < 0.5f) darkColorScheme() else lightColorScheme()
+    MaterialTheme(colorScheme = scheme.copy(
+        surface = background, background = background, onSurface = foreground,
+        onBackground = foreground, onSurfaceVariant = foreground.copy(alpha = 0.8f),
+        primary = foreground, onPrimary = background,
+    ), content = content)
+}
 
 /**
  * Answers the keyboard's voice key in place, and hosts SpeechKit's own action
@@ -78,13 +107,14 @@ import timber.log.Timber
  * ## Where the panel is mounted
  *
  * Inside the keyboard's own input view, in the container the fork's
- * `input_view.xml` provides, with the keyboard frame turned INVISIBLE behind
- * it. Not via [InputMethodService.setInputView]: LatinIME derives both the
+ * `input_view.xml` provides. Dictation retains the invisible keyboard frame;
+ * Opal occupies the existing shortcut slot, or hides the expanded
+ * frame's pixels and accessibility descendants while preserving its insets.
+ * Not via [InputMethodService.setInputView]: LatinIME derives both the
  * window height and the touchable region from its own keyboard frame, so
  * replacing that frame produced a full-screen window whose upper half was
- * rendered but did not receive touches. Mounting inside keeps every one of
- * those calculations valid, and INVISIBLE rather than GONE keeps the frame
- * contributing its height.
+ * rendered but did not receive touches. Keeping the frame measured and the
+ * Opal touch area within LatinIME's strip and wrapper geometry preserves both.
  *
  * The panel's controllers, scope and views are built per activation and torn
  * down in [hidePanel]; the action row is built per input view and torn down in
@@ -145,6 +175,7 @@ class InlineVoicePanel(
     private var agentController: ImeVoiceAgentController? = null
     private var agentPlayer: PcmStreamPlayer? = null
     private var keyboard: InputMethodService? = null
+    private var panelLayout: InlineVoicePanelLayout? = null
 
     private var windowOwner: ServiceWindowOwner? = null
     private var windowRoot: WeakReference<View>? = null
@@ -158,6 +189,7 @@ class InlineVoicePanel(
     private var resumeAfterGrant: PendingActivation? = null
 
     private var showingShortcuts = false
+    private var heldShortcutView: View? = null
 
     init {
         hostScope.launch {
@@ -194,8 +226,16 @@ class InlineVoicePanel(
      */
     override fun onInputViewStarted(service: InputMethodService) {
         currentService = service
+        KeyboardTextActions.applyPending(service)
         runCatching { resumeMicGrant(service) }
             .onFailure { Timber.w(it, "Could not resume the interrupted voice panel") }
+    }
+
+    /** Opens the conversation surface for the active editor, including actionable setup errors. */
+    fun showVoiceAgent(provider: String? = null): Boolean {
+        val service = currentService ?: return false
+        return open(service, service.currentInputConnection ?: return false,
+            service.currentInputEditorInfo ?: return false, null, true, provider)
     }
 
     /**
@@ -222,16 +262,29 @@ class InlineVoicePanel(
 
     override fun onToolbarAction(action: String): String? {
         val service = keyboard ?: currentService ?: return null
+        val profile = profileSource.currentProfile()
         val chosen = keyboardActionForToolbarKey(
             action,
-            KeyboardAgentPreferences.action(service),
+            KeyboardAction.SelectedAgent,
         ) ?: return null
         val items = keyboardActionRowItems(
-            profileSource.currentProfile(),
-            companionSession = companion.currentSession() != null,
+            profile,
+            companionSession = io.kombify.speechkit.net.StoredServerProfile.cloudSelected(service) && companion.currentSession() != null,
         )
+        if (chosen.opensVoiceAgentInIme() && BuildConfig.CONNECTION_SETUP_ENABLED && BuildConfig.HYBRID_ENABLED) {
+            val selection = io.kombify.speechkit.net.StoredConnectionSelection(service).snapshot()
+            if (selection.mode == io.kombify.speechkit.domain.ConnectionMode.ON_DEVICE && selection.revision > 0) {
+                hidePanel()
+                io.kombify.speechkit.app.hybrid.HybridActivity.open(service)
+                return null
+            }
+        }
         val blocker = items.firstOrNull { it.action == chosen }?.blocker
-        if (blocker != null) return service.getString(blocker.reasonResource())
+        // Missing setup opens the actionable Opal surface. The conversation
+        // controller still requires a configured endpoint before using it.
+        val opensSetup = BuildConfig.VOICE_AGENT_OPAL_ENABLED && chosen.opensVoiceAgentInIme() &&
+            blocker == KeyboardActionBlocker.NoServer
+        if (blocker != null && !opensSetup) return service.getString(blocker.reasonResource())
         runCatching { service.perform(chosen) }
             .onFailure { Timber.w(it, "Toolbar action %s failed", action) }
         return null
@@ -247,47 +300,138 @@ class InlineVoicePanel(
         keyboard = service
         showingShortcuts = true
         val owner = windowOwner(service) ?: return false
+        val selection = io.kombify.speechkit.net.StoredConnectionSelection(service)
+        val route = selection.snapshot(io.kombify.speechkit.app.build.ShippedDefaults.shippedProfile())
+        val profile = route.profile
+        val policy = route.policy
+        fun routeStillCurrent(): Boolean = selection.snapshot(io.kombify.speechkit.app.build.ShippedDefaults.shippedProfile()).revision == route.revision
+        val exclusive = policy.mode == ExecutionMode.DEVICE_ONLY || policy.mode == ExecutionMode.ENDPOINT_ONLY
+        fun openShortcut(agent: Boolean, alternate: Boolean, hold: Boolean = false) {
+            if (!routeStillCurrent()) { Toast.makeText(service, service.getString(io.kombify.speechkit.R.string.hybrid_failed), Toast.LENGTH_SHORT).show(); return }
+            val invocation = policy.forInvocation(alternate)
+            if (agent && !hold && invocation.mode == ExecutionMode.DEVICE_ONLY) {
+                hidePanel(); io.kombify.speechkit.app.hybrid.HybridActivity.open(service); return
+            }
+            val connection = service.currentInputConnection ?: return
+            val editor = service.currentInputEditorInfo ?: return
+            val agentChoice = KeyboardAgentPreferences.choice(service, profile)
+            if (open(service, connection, editor, profile, agent,
+                    if (agent) agentChoice.provider else null,
+                    if (agent) agentChoice.model.ifBlank { null } else null,
+                    invocation, preserveShortcut = hold)) {
+                if (hold) { if (agent) agentController?.beginTurn() else controller?.toggleMic() }
+            }
+        }
+        var localVoiceHold = false
+        var localVoiceReleased = false
+        var localVoiceText: String? = null
+        var localVoiceReadiness: kotlinx.coroutines.Job? = null
+        fun deliverLocalVoice() {
+            val text = localVoiceText?.trim().orEmpty()
+            if (!localVoiceReleased || text.isBlank() || !routeStillCurrent()) return
+            localVoiceText = null
+            localVoiceReleased = false
+            hidePanel()
+            io.kombify.speechkit.app.hybrid.HybridActivity.openLocalVoiceText(service, text, route.revision)
+        }
+        fun startLocalVoiceHold() {
+            if (!routeStillCurrent()) { Toast.makeText(service, service.getString(io.kombify.speechkit.R.string.hybrid_failed), Toast.LENGTH_SHORT).show(); return }
+            localVoiceHold = true
+            localVoiceReleased = false
+            localVoiceText = null
+            localVoiceReadiness = hostScope.launch {
+                if (!io.kombify.speechkit.app.hybrid.HybridRuntime.localVoiceReady(service)) {
+                    if (localVoiceHold) Toast.makeText(service, service.getString(io.kombify.speechkit.R.string.keyboard_local_voice_unavailable), Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                if (!localVoiceHold || !routeStillCurrent()) return@launch
+                val target = service.currentInputConnection ?: return@launch
+                val editor = service.currentInputEditorInfo ?: return@launch
+                // Voice-agent transcripts never enter the editor; only a final released turn reaches the foreground agent.
+                val privateTranscript = object : android.view.inputmethod.InputConnectionWrapper(target, false) {
+                    override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean = true
+                    override fun finishComposingText(): Boolean = true
+                    override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
+                        localVoiceText = text?.toString()
+                        deliverLocalVoice()
+                        return true
+                    }
+                }
+                if (open(service, privateTranscript, editor, profile, false, null,
+                        policyOverride = policy.forInvocation(false), preserveShortcut = true)) controller?.toggleMic()
+            }
+        }
+        fun finishHeldShortcut(agent: Boolean, completed: Boolean) {
+            if (agent && policy.mode == ExecutionMode.DEVICE_ONLY) {
+                localVoiceHold = false
+                localVoiceReadiness?.cancel(); localVoiceReadiness = null
+                localVoiceReleased = completed
+                val c = controller
+                if (completed && !localVoiceText.isNullOrBlank()) {
+                    deliverLocalVoice()
+                } else if (completed && c?.state?.value is io.kombify.speechkit.ime.VoicePanelState.Listening) {
+                    c.toggleMic()
+                } else {
+                    localVoiceReleased = false; localVoiceText = null
+                    micRequest = null; resumeAfterGrant = null
+                    if (c != null) hidePanel()
+                }
+            } else if (!completed) {
+                agentController?.cancelPendingHoldPermission()
+                controller?.cancelAndDiscard()
+                micRequest = null; resumeAfterGrant = null; hidePanel()
+            } else if (agent) {
+                micRequest = null; resumeAfterGrant = null
+                agentController?.cancelPendingHoldPermission()
+                agentController?.endTurn()
+            }
+            else {
+                val c = controller
+                if (c?.state?.value is io.kombify.speechkit.ime.VoicePanelState.Listening) c.toggleMic()
+                else { micRequest = null; resumeAfterGrant = null; hidePanel() }
+            }
+            val retained = heldShortcutView
+            heldShortcutView = null
+            retained?.post { (retained.parent as? android.view.ViewGroup)?.removeView(retained) }
+        }
         val view = ComposeView(service).also { composeView ->
             owner.attachTo(composeView)
             composeView.setContent {
                 MaterialTheme {
                     ShortcutsPage(
-                        onTranscribe = {
-                            val connection = service.currentInputConnection
-                            val editor = service.currentInputEditorInfo
-                            if (connection != null && editor != null) {
-                                open(
-                                    service = service,
-                                    inputConnection = connection,
-                                    editorInfo = editor,
-                                    tier = null,
-                                    agent = false,
-                                    agentProvider = null,
-                                )
-                            }
+                        onAnalyzeScreen = { alternate ->
+                            if (routeStillCurrent()) {
+                                hidePanel()
+                                service.requestHideSelf(0)
+                                io.kombify.speechkit.app.context.ContextActions.capture(service, policy.forInvocation(alternate), route.revision)
+                            } else Toast.makeText(service, io.kombify.speechkit.R.string.keyboard_text_changed, Toast.LENGTH_SHORT).show()
                         },
-                        onVoiceAgent = {
-                            val connection = service.currentInputConnection
-                            val editor = service.currentInputEditorInfo
-                            if (connection != null && editor != null) {
-                                val action = KeyboardAgentPreferences.action(service)
-                                open(
-                                    service = service,
-                                    inputConnection = connection,
-                                    editorInfo = editor,
-                                    tier = profileSource.currentProfile(),
-                                    agent = true,
-                                    agentProvider = action.agentProvider,
-                                )
-                            }
+                        onHybrid = { io.kombify.speechkit.app.hybrid.HybridActivity.open(service) },
+                        alternativeSymbol = if (policy.mode == ExecutionMode.PREFER_DEVICE || policy.mode == ExecutionMode.ENDPOINT_ONLY) "☁" else "🔒",
+                        onTranscribe = { alternate -> openShortcut(false, alternate) },
+                        onVoiceAgent = { alternate -> openShortcut(true, alternate) },
+                        onTextAction = { action, alternate ->
+                            if (routeStillCurrent()) {
+                                hidePanel(); KeyboardTextActions.launch(service, action, policy.forInvocation(alternate), route.revision)
+                            } else Toast.makeText(service, service.getString(io.kombify.speechkit.R.string.hybrid_failed), Toast.LENGTH_SHORT).show()
                         },
-                        onTranscribeAudio = {
-                            hidePanel()
-                            TranscribeAudioActivity.launchPicker(service)
+                        onVoiceHoldStart = if (exclusive) ({ if (policy.mode == ExecutionMode.DEVICE_ONLY) startLocalVoiceHold() else openShortcut(true, false, true) }) else null,
+                        onVoiceHoldEnd = if (exclusive) ({ completed -> finishHeldShortcut(true, completed) }) else null,
+                        onDictationHoldStart = if (exclusive) ({ openShortcut(false, false, true) }) else null,
+                        onDictationHoldEnd = if (exclusive) ({ completed -> finishHeldShortcut(false, completed) }) else null,
+                        onTranscribeAudio = { alternate ->
+                            if (!BuildConfig.CONNECTION_SETUP_ENABLED || !BuildConfig.HYBRID_ENABLED) {
+                                hidePanel(); TranscribeAudioActivity.launchPicker(service)
+                            } else if (routeStillCurrent()) {
+                                hidePanel(); TranscribeAudioActivity.launchPicker(service, policy = policy.forInvocation(alternate), expectedRevision = route.revision)
+                            } else Toast.makeText(service, service.getString(io.kombify.speechkit.R.string.hybrid_failed), Toast.LENGTH_SHORT).show()
                         },
-                        onSummarizeAudio = {
-                            hidePanel()
-                            TranscribeAudioActivity.launchPicker(service, summarize = true)
+                        onSummarizeAudio = { alternate ->
+                            if (!BuildConfig.CONNECTION_SETUP_ENABLED || !BuildConfig.HYBRID_ENABLED) {
+                                hidePanel(); TranscribeAudioActivity.launchPicker(service, summarize = true)
+                            } else if (routeStillCurrent()) {
+                                hidePanel(); TranscribeAudioActivity.launchPicker(service, summarize = true, policy = policy.forInvocation(alternate), expectedRevision = route.revision)
+                            } else Toast.makeText(service, service.getString(io.kombify.speechkit.R.string.hybrid_failed), Toast.LENGTH_SHORT).show()
                         },
                         onKeyboardSettings = {
                             service.startActivity(
@@ -318,6 +462,8 @@ class InlineVoicePanel(
 
     override fun hidePanel() {
         val service = keyboard ?: currentService ?: return
+        panelLayout?.close()
+        panelLayout = null
         controller?.hidePanel()
         agentController?.stop()
         agentPlayer?.release()
@@ -340,6 +486,7 @@ class InlineVoicePanel(
         agentPlayer = null
         keyboard = null
         showingShortcuts = false
+        heldShortcutView = null
     }
 
     /**
@@ -375,10 +522,11 @@ class InlineVoicePanel(
     private fun onMicPermissionResult(granted: Boolean) {
         val request = micRequest
         micRequest = null
+        if (request == null) return // A held gesture never resumes after the permission prompt.
         val live = controller
         live?.onMicPermissionResult(granted)
         agentController?.onMicPermissionResult(granted)
-        if (live != null || request == null || !granted) return
+        if (live != null || !granted) return
         // The panel that asked is gone. Nothing can be reopened from here —
         // there is no editor to bind to until the input view comes back — so
         // the request is parked for the next one.
@@ -417,6 +565,8 @@ class InlineVoicePanel(
             tier = pending.tier,
             agent = pending.agent,
             agentProvider = pending.agentProvider,
+            agentModel = pending.agentModel,
+            policyOverride = pending.policyOverride,
         )
         // The user had already asked to speak, and the dialog is the only
         // reason nothing happened; reopening a panel that then sits idle would
@@ -443,6 +593,9 @@ class InlineVoicePanel(
         tier: ConnectionProfile?,
         agent: Boolean,
         agentProvider: String?,
+        agentModel: String? = null,
+        policyOverride: io.kombify.speechkit.domain.ExecutionPolicy? = null,
+        preserveShortcut: Boolean = false,
     ): Boolean {
         // Refusing here rather than showing a dead panel lets the bridge fall
         // back to upstream's behaviour, which is still better than nothing.
@@ -450,13 +603,23 @@ class InlineVoicePanel(
             Timber.i("Inline dictation refused for this editor")
             return false
         }
-        if (controller != null || showingShortcuts) hidePanel()
+        val retainShortcut = preserveShortcut && showingShortcuts && controller == null && agentController == null
+        if (!retainShortcut && (controller != null || showingShortcuts)) hidePanel()
+        if (retainShortcut) showingShortcuts = false
         // An explicit activation supersedes anything a previous one was still
         // waiting on.
         micRequest = null
         resumeAfterGrant = null
 
         val profile = tier ?: profileSource.currentProfile()
+        // Setup is a presentation state, not an attempted conversation. In
+        // particular it must not request audio access or invoke local handoff.
+        val needsAgentSetup = BuildConfig.VOICE_AGENT_OPAL_ENABLED && when (profile) {
+            is ConnectionProfile.Server -> !profile.credentialAvailable
+            is ConnectionProfile.Byok -> !profile.hasUsableKey
+            is ConnectionProfile.Firebase -> false
+            else -> true
+        }
         val panelScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         // Which mode is on screen when the trampoline takes focus: the panel
         // can switch between dictation and the agent while it is open, so this
@@ -475,30 +638,42 @@ class InlineVoicePanel(
                 // focus and this panel may be gone, and the resume has to know
                 // which field it is allowed to come back to.
                 val target = service.currentInputEditorInfo
-                micRequest = PendingActivation(
+                // A hold ends when focus leaves for the dialog; a late grant requires a fresh hold.
+                micRequest = if (!retainShortcut) PendingActivation(
                     tier = profile,
                     agent = requestedAgent,
                     agentProvider = agentProvider,
+                    agentModel = agentModel,
+                    policyOverride = policyOverride,
                     editorPackage = target?.packageName,
                     editorFieldId = target?.fieldId ?: View.NO_ID,
                     requestedAtMs = SystemClock.elapsedRealtime(),
-                )
+                ) else null
                 MicPermissionTrampolineActivity.launch(service)
             }
         }
         val panelController = VoicePanelController(
             scope = panelScope,
-            sessionFactory = { openSession(profile) },
+            sessionFactory = { options -> openSession(profile, options, policyOverride) },
             audioCapture = MicAudioCapture(),
             micPermission = gate,
         )
         val panelAgent = ImeVoiceAgentController(
             scope = panelScope,
             controllerFactory = {
-                VoiceAgentController(
+                voiceAgentDriver(
                     profile,
                     renewalProfile = { voiceRenewalProfiles.profileForRenewal(profile) },
                     renewalClaimNamespace = voiceRenewalProfiles.claimNamespace,
+                    context = service,
+                    policyOverride = policyOverride,
+                    localReady = { io.kombify.speechkit.app.hybrid.HybridRuntime.localVoiceReady(service) },
+                    target = io.kombify.speechkit.net.StoredVoiceAgentTarget(service).read(profile),
+                    localHandoff = {
+                        val handoff = android.content.Intent().setClassName(service.packageName, "io.kombify.speechkit.app.hybrid.HybridActivity")
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        if (handoff.resolveActivity(service.packageManager) != null) service.startActivity(handoff)
+                    },
                 )
             },
             audioCapture = MicAudioCapture(),
@@ -512,6 +687,19 @@ class InlineVoicePanel(
             return false
         }
 
+        val decor = service.window?.window?.decorView
+        val container = decor?.findViewById<FrameLayout>(R.id.speechkit_voice_panel)
+        val keys = decor?.findViewById<View>(R.id.main_keyboard_frame)
+        val strip = decor?.findViewById<View>(R.id.strip_container)
+        val suggestions = decor?.findViewById<View>(R.id.suggestions_strip)
+        if (container == null || keys == null || strip == null || suggestions == null) {
+            panelScope.cancel()
+            return false
+        }
+        var layout: InlineVoicePanelLayout? = null
+        var compactAvailable by mutableStateOf(suggestions.visibility == View.VISIBLE && suggestions.width > 0)
+        var expanded by mutableStateOf(!compactAvailable || retainShortcut)
+
         val view = ComposeView(service).also { composeView ->
             owner.attachTo(composeView)
             composeView.setContent {
@@ -520,9 +708,19 @@ class InlineVoicePanel(
                     // commits into the editor, the agent never touches it.
                     var agentMode by remember { mutableStateOf(agent) }
                     var holding by remember { mutableStateOf(false) }
+                    // Read state during composition: a read only inside SideEffect
+                    // does not subscribe this host to the child's layout changes.
+                    val compactAgent = agentMode && BuildConfig.VOICE_AGENT_OPAL_ENABLED && !expanded
+                    val boundedAgent = agentMode && BuildConfig.VOICE_AGENT_OPAL_ENABLED
+                    SideEffect {
+                        layout?.show(compact = compactAgent, bounded = boundedAgent)
+                    }
 
                     if (agentMode) {
-                        val agentState by panelAgent.state.collectAsState()
+                        val sessionState by panelAgent.state.collectAsState()
+                        val agentState = if (needsAgentSetup) {
+                            VoiceAgentUiState(errorCode = ImeVoiceAgentController.ERROR_NO_SERVER)
+                        } else sessionState
                         // One collector for the whole agent session rather than
                         // an effect keyed on the newest frame: the queue is
                         // ordered and every frame has to be played, while an
@@ -537,11 +735,7 @@ class InlineVoicePanel(
                                 player.release()
                             }
                         }
-                        VoiceAgentPanelUi(
-                            state = agentState,
-                            holding = holding,
-                            provider = agentProvider,
-                            onHoldChange = { hold ->
+                        val onHoldChange: (Boolean) -> Unit = { hold ->
                                 holding = hold
                                 if (hold) {
                                     // Taking the turn is the barge-in: drop the
@@ -554,21 +748,40 @@ class InlineVoicePanel(
                                 } else {
                                     panelAgent.endTurn()
                                 }
-                            },
+                            }
                             // End returns to the keys, the way Gboard leaves
                             // voice typing. Dictation is a separate strip key.
-                            onEnd = {
+                        val onEnd: () -> Unit = {
                                 holding = false
                                 hidePanel()
-                            },
-                            onSwitchToDictation = {
+                            }
+                        val onDictation: () -> Unit = {
                                 holding = false
                                 panelAgent.stop()
                                 player.release()
                                 agentMode = false
                                 requestedAgent = false
-                            },
-                        )
+                            }
+                        if (BuildConfig.VOICE_AGENT_OPAL_ENABLED) {
+                            val inputLevel by panelAgent.inputLevel.collectAsState()
+                            val outputLevel by panelAgent.outputLevel.collectAsState()
+                            KeyboardPanelTheme { VoiceAgentOpalPanel(
+                                state = agentState, holding = holding, expanded = expanded, compactAvailable = compactAvailable,
+                                onExpandedChange = { expanded = it }, onHoldChange = onHoldChange,
+                                onEnd = onEnd, onSwitchToDictation = onDictation,
+                                onSetup = {
+                                    hidePanel()
+                                    service.startActivity(Intent(service, MainActivity::class.java)
+                                        .putExtra(MainActivity.EXTRA_OPEN_CONNECTION, true)
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+                                },
+                                inputLevel = inputLevel, outputLevel = outputLevel, provider = agentProvider,
+                                modifier = Modifier.fillMaxSize(),
+                            ) }
+                        } else {
+                            VoiceAgentPanelUi(state = agentState, holding = holding, provider = agentProvider,
+                                onHoldChange = onHoldChange, onEnd = onEnd, onSwitchToDictation = onDictation)
+                        }
                     } else {
                         val state by panelController.state.collectAsState()
                         val language by panelController.language.collectAsState()
@@ -593,7 +806,7 @@ class InlineVoicePanel(
                                     // server default: coming back from one
                                     // conversation and starting another must
                                     // not silently change which agent answers.
-                                    panelAgent.start(agentProvider)
+                                    panelAgent.start(agentProvider, agentModel)
                                 }
                             } else {
                                 null
@@ -610,21 +823,21 @@ class InlineVoicePanel(
         agentPlayer = player
         keyboard = service
 
-        val decor = service.window?.window?.decorView
-        val container = decor?.findViewById<FrameLayout>(R.id.speechkit_voice_panel)
-        if (container == null) {
-            Timber.w("Keyboard input view has no panel container; falling back")
-            panelScope.cancel()
-            return false
+        if (retainShortcut) heldShortcutView = container.getChildAt(0) else container.removeAllViews()
+        val mountedLayout = InlineVoicePanelLayout(keys, strip, suggestions, container, view) { available ->
+            compactAvailable = available
+            if (!available) expanded = true
         }
-        container.removeAllViews()
+        layout = mountedLayout
+        panelLayout = mountedLayout
         container.addView(view)
         container.visibility = View.VISIBLE
-        decor.findViewById<View>(R.id.main_keyboard_frame)?.visibility = View.INVISIBLE
+        mountedLayout.show(compact = agent && BuildConfig.VOICE_AGENT_OPAL_ENABLED && !expanded,
+            bounded = agent && BuildConfig.VOICE_AGENT_OPAL_ENABLED)
 
         owner.onResume()
         panelController.showPanel(inputConnection, editorInfo)
-        if (agent) panelAgent.start(agentProvider)
+        if (agent && !needsAgentSetup) panelAgent.start(agentProvider, agentModel)
         return true
     }
 
@@ -641,9 +854,11 @@ class InlineVoicePanel(
             // The row disables these without a paired server, so the cast is
             // the one the user's choice implies rather than a guess.
             KeyboardAction.ServerDictation,
+            KeyboardAction.SelectedAgent,
             KeyboardAction.AgentDeepgram,
             KeyboardAction.AgentAssemblyAi,
             KeyboardAction.AgentOpenAi,
+            KeyboardAction.AgentGemini,
             KeyboardAction.AgentXai,
             -> profileSource.currentProfile()
 
@@ -653,25 +868,30 @@ class InlineVoicePanel(
                 return
             }
         }
+        val agentChoice = KeyboardAgentPreferences.choice(this, tier)
         open(
             service = this,
             inputConnection = connection,
             editorInfo = editor,
             tier = tier,
             agent = action.opensVoiceAgentInIme(),
-            agentProvider = action.agentProvider,
+            agentProvider = if (action == KeyboardAction.SelectedAgent) agentChoice.provider else action.agentProvider,
+            agentModel = if (action == KeyboardAction.SelectedAgent) agentChoice.model.ifBlank { null } else null,
         )
     }
 
 
     private fun InputMethodService.askCompanion(connection: InputConnection) {
+        if (!io.kombify.speechkit.net.StoredServerProfile.cloudSelected(this)) return
+        val policy = io.kombify.speechkit.net.StoredExecutionPolicy(this).read(profileSource.currentProfile())
+        if (!policy.allowNetwork || policy.mode == io.kombify.speechkit.domain.ExecutionMode.DEVICE_ONLY) return
         val selected = connection.getSelectedText(0)?.toString()
         val extracted = connection.getExtractedText(ExtractedTextRequest(), 0)?.text?.toString()
         val text = selected?.trim()?.ifEmpty { null }
             ?: extracted?.trim()?.ifEmpty { null }
             ?: return
         val service = this
-        hostScope.launch {
+        val turn = hostScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
             // The turn binds and waits off the main thread (startTurnResult); only the result lands here.
             val outcome = companionTurns.startTurnResult(text)
             if (outcome is CoinstallTurnResult.Complete && outcome.text.isNotBlank()) {
@@ -686,14 +906,23 @@ class InlineVoicePanel(
                 Toast.LENGTH_SHORT,
             ).show()
         }
+        val listener = io.kombify.speechkit.net.NetworkUseGuard.listenIfAllowed { turn.cancel(); listOf(turn) }
+            ?: run { turn.cancel(); return }
+        turn.invokeOnCompletion { listener.close() }
+        turn.start()
     }
 
-    private suspend fun openSession(profile: ConnectionProfile): StreamingSttSession {
+    private suspend fun openSession(
+        profile: ConnectionProfile,
+        options: io.kombify.speechkit.stt.streaming.DictationSegmentOptions,
+        policyOverride: io.kombify.speechkit.domain.ExecutionPolicy? = null,
+    ): StreamingSttSession {
         return try {
             DictationController(
                 profile = profile,
                 context = application,
-            ).openSession()
+                policyOverride = policyOverride,
+            ).openSession(options)
         } catch (e: SpeechKitApiException) {
             if (e.httpStatus != 401) throw e
             // Companion first, then this device's own refresh token.
@@ -703,7 +932,8 @@ class InlineVoicePanel(
             DictationController(
                 profile = next,
                 context = application,
-            ).openSession()
+                policyOverride = policyOverride,
+            ).openSession(options)
         }
     }
 
@@ -712,6 +942,8 @@ class InlineVoicePanel(
         val tier: ConnectionProfile,
         val agent: Boolean,
         val agentProvider: String?,
+        val agentModel: String?,
+        val policyOverride: io.kombify.speechkit.domain.ExecutionPolicy?,
         /** Application the microphone was pressed in, per [EditorInfo.packageName]. */
         val editorPackage: String?,
         /** Field it was pressed in, per [EditorInfo.fieldId]. */

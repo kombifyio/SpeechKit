@@ -88,6 +88,7 @@ func runSQLiteMigrations(ctx context.Context, db *sql.DB) error {
 		sqliteSQLMigration("sqlite:031_recording_session_exports", sqliteMigration031),
 		{version: "sqlite:032_notebooks", run: runSQLiteNotebooksMigration},
 		{version: "sqlite:033_notebook_site", run: runSQLiteNotebookSiteMigration},
+		{version: "sqlite:034_voice_turn_receipts", run: runVoiceTurnReceiptsMigration},
 	}
 	for _, migration := range migrations {
 		if err := applyMigration(ctx, db, "sqlite", migration); err != nil {
@@ -169,6 +170,7 @@ func postgresMigrations() []storeMigration {
 		postgresSQLMigration("postgres:028_notebooks", postgresMigration028),
 		postgresSQLMigration("postgres:029_notebook_site", postgresMigration029),
 		postgresTransactionalMigration("postgres:030_voice_execution_journal", postgresMigration030),
+		postgresTransactionalMigration("postgres:031_voice_turn_receipts", postgresMigration031),
 	}
 }
 

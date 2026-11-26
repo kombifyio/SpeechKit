@@ -41,6 +41,10 @@ type OpenAIHandler struct {
 	// Denial must revoke media; a callback whose own request ended is refused
 	// without implying a denial.
 	Revalidate func(context.Context) error
+	// BeforeTurn records and delivers the bound identity before any dispatch.
+	// Failure refuses the turn. AfterTurn is called only after a successful return.
+	BeforeTurn func(context.Context, string) error
+	AfterTurn  func(string)
 	// FirstResponsePrefix is trusted host disclosure, spoken once before the
 	// first successful answer starts. It is never supplied by the vendor.
 	FirstResponsePrefix string
@@ -222,6 +226,12 @@ func (h *OpenAIHandler) begin(parent context.Context, turnID string) (context.Co
 		release()
 		return nil, nil, http.StatusConflict
 	}
+	if h.BeforeTurn != nil {
+		if err := h.BeforeTurn(ctx, turnID); err != nil {
+			release()
+			return nil, nil, http.StatusServiceUnavailable
+		}
+	}
 	return ctx, release, 0
 }
 
@@ -281,6 +291,9 @@ func (h *OpenAIHandler) Answer(ctx context.Context, utterance string) (string, e
 		return "", err
 	}
 	text := answer.String()
+	if h.AfterTurn != nil {
+		h.AfterTurn(turnID)
+	}
 	if !h.disclosed.Load() && h.FirstResponsePrefix != "" {
 		text = h.FirstResponsePrefix + text
 		h.disclosed.Store(true)
@@ -407,6 +420,9 @@ func (h *OpenAIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprintf(w, "data: %s\n\n", failure)
 		_ = controller.Flush()
 		return
+	}
+	if h.AfterTurn != nil {
+		h.AfterTurn(turnID)
 	}
 	if write(map[string]string{}, "stop") != nil {
 		return

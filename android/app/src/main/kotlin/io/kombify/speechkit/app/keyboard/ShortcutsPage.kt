@@ -26,13 +26,21 @@ import io.kombify.speechkit.R
  */
 @Composable
 fun ShortcutsPage(
-    onTranscribe: () -> Unit,
-    onVoiceAgent: () -> Unit,
-    onTranscribeAudio: () -> Unit,
-    onSummarizeAudio: () -> Unit,
+    onTranscribe: (Boolean) -> Unit,
+    onVoiceAgent: (Boolean) -> Unit,
+    onTextAction: (KeyboardTextAction, Boolean) -> Unit,
+    onAnalyzeScreen: (Boolean) -> Unit,
+    alternativeSymbol: String,
+    onVoiceHoldStart: (() -> Unit)? = null,
+    onVoiceHoldEnd: ((Boolean) -> Unit)? = null,
+    onDictationHoldStart: (() -> Unit)? = null,
+    onDictationHoldEnd: ((Boolean) -> Unit)? = null,
+    onTranscribeAudio: (Boolean) -> Unit,
+    onSummarizeAudio: (Boolean) -> Unit,
     onKeyboardSettings: () -> Unit,
     onSpeechKitSettings: () -> Unit,
     onClose: () -> Unit,
+    onHybrid: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -63,13 +71,36 @@ fun ShortcutsPage(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (io.kombify.speechkit.BuildConfig.CONNECTION_SETUP_ENABLED && io.kombify.speechkit.BuildConfig.HYBRID_ENABLED) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    ShortcutChip(stringResource(R.string.shortcut_transcribe), Modifier.weight(1f), onTranscribe)
-                    ShortcutChip(stringResource(R.string.shortcut_voice_agent), Modifier.weight(1f), onVoiceAgent)
+                    ExecutionShortcut(stringResource(R.string.shortcut_transcribe), stringResource(R.string.speechkit_ime_shortcut_alternative), alternativeSymbol, Modifier.weight(1f), { onTranscribe(false) }, { onTranscribe(true) }, onDictationHoldStart, onDictationHoldEnd)
+                    ExecutionShortcut(stringResource(R.string.shortcut_voice_agent), stringResource(R.string.speechkit_ime_shortcut_alternative), alternativeSymbol, Modifier.weight(1f), { onVoiceAgent(false) }, { onVoiceAgent(true) }, onVoiceHoldStart, onVoiceHoldEnd)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    ShortcutChip(stringResource(R.string.shortcut_transcribe_audio), Modifier.weight(1f), onTranscribeAudio)
-                    ShortcutChip(stringResource(R.string.shortcut_summarize_audio), Modifier.weight(1f), onSummarizeAudio)
+                    ExecutionShortcut(stringResource(R.string.speechkit_ime_shortcut_summarize), stringResource(R.string.speechkit_ime_shortcut_alternative), alternativeSymbol, Modifier.weight(1f), { onTextAction(KeyboardTextAction.SUMMARIZE, false) }, { onTextAction(KeyboardTextAction.SUMMARIZE, true) })
+                    ExecutionShortcut(stringResource(R.string.speechkit_ime_shortcut_rewrite), stringResource(R.string.speechkit_ime_shortcut_alternative), alternativeSymbol, Modifier.weight(1f), { onTextAction(KeyboardTextAction.REWRITE, false) }, { onTextAction(KeyboardTextAction.REWRITE, true) })
+                    ExecutionShortcut(stringResource(R.string.speechkit_ime_shortcut_correct), stringResource(R.string.speechkit_ime_shortcut_alternative), alternativeSymbol, Modifier.weight(1f), { onTextAction(KeyboardTextAction.CORRECT, false) }, { onTextAction(KeyboardTextAction.CORRECT, true) })
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    ExecutionShortcut(stringResource(R.string.shortcut_transcribe_audio), stringResource(R.string.speechkit_ime_shortcut_alternative), alternativeSymbol, Modifier.weight(1f), { onTranscribeAudio(false) }, { onTranscribeAudio(true) })
+                    ExecutionShortcut(stringResource(R.string.shortcut_summarize_audio), stringResource(R.string.speechkit_ime_shortcut_alternative), alternativeSymbol, Modifier.weight(1f), { onSummarizeAudio(false) }, { onSummarizeAudio(true) })
+                }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        ShortcutChip(stringResource(R.string.shortcut_transcribe), Modifier.weight(1f)) { onTranscribe(false) }
+                        ShortcutChip(stringResource(R.string.shortcut_voice_agent), Modifier.weight(1f)) { onVoiceAgent(false) }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        ShortcutChip(stringResource(R.string.shortcut_transcribe_audio), Modifier.weight(1f)) { onTranscribeAudio(false) }
+                        ShortcutChip(stringResource(R.string.shortcut_summarize_audio), Modifier.weight(1f)) { onSummarizeAudio(false) }
+                    }
+                }
+                if (io.kombify.speechkit.BuildConfig.HYBRID_ENABLED) {
+                    if (io.kombify.speechkit.BuildConfig.CONTEXT_ACTIONS_ENABLED) {
+                        ExecutionShortcut(stringResource(R.string.context_screen_action), stringResource(R.string.speechkit_ime_shortcut_alternative), alternativeSymbol,
+                            Modifier.fillMaxWidth(), { onAnalyzeScreen(false) }, { onAnalyzeScreen(true) })
+                    }
+                    ShortcutChip(stringResource(R.string.hybrid_title), Modifier.fillMaxWidth(), onHybrid)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     ShortcutChip(stringResource(R.string.shortcut_keyboard_settings), Modifier.weight(1f), onKeyboardSettings)

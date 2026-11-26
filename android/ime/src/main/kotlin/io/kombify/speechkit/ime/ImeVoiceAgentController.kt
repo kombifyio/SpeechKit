@@ -45,6 +45,10 @@ class ImeVoiceAgentController(
 
     private val _state = MutableStateFlow(VoiceAgentUiState())
     val state: StateFlow<VoiceAgentUiState> = _state.asStateFlow()
+    private val _inputLevel = MutableStateFlow(0f)
+    val inputLevel: StateFlow<Float> = _inputLevel.asStateFlow()
+    private val _outputLevel = MutableStateFlow(0f)
+    val outputLevel: StateFlow<Float> = _outputLevel.asStateFlow()
 
     // Controls never wait for the loudspeaker. The shared bound includes active playback.
     private val playback = PcmPlaybackQueue(VoiceAgentAudio.SERVER_SAMPLE_RATE)
@@ -53,13 +57,16 @@ class ImeVoiceAgentController(
     private var controller: VoiceAgentSessionDriver? = null
     private var eventsJob: Job? = null
     private var captureJob: Job? = null
+    private var policyListener: java.io.Closeable? = null
     private var ready = false
+    private var holdRequested = false
 
     // The permission answer comes back asynchronously through a trampoline
     // activity, so the provider the user picked before the dialog appeared has
     // to survive until the grant arrives.
     private var awaitingPermission = false
     private var pendingProvider: String? = null
+    private var pendingModel: String? = null
 
     val isLive: Boolean get() = controller != null
 
@@ -67,7 +74,10 @@ class ImeVoiceAgentController(
     suspend fun consumeAudio(flush: () -> Unit = {}, play: suspend (ByteArray) -> Unit) {
         playbackFlush = flush
         try {
-            playback.consume(play)
+            playback.consume { pcm ->
+                _outputLevel.value = pcmLevel(pcm)
+                try { play(pcm) } finally { _outputLevel.value = 0f }
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: PcmPlaybackException) {
@@ -87,16 +97,23 @@ class ImeVoiceAgentController(
      * for whatever that server configured as its default. No-op while a
      * conversation is already live.
      */
-    fun start(provider: String? = null) {
+    fun start(provider: String? = null, model: String? = null) {
         if (controller != null) return
+        policyListener?.close()
+        policyListener = io.kombify.speechkit.net.NetworkUseGuard.listen {
+            val jobs = listOfNotNull(captureJob, eventsJob)
+            stop()
+            jobs
+        }
         if (!micPermission.isGranted()) {
             awaitingPermission = true
             pendingProvider = provider
+            pendingModel = model
             micPermission.request()
             return
         }
         awaitingPermission = false
-        open(provider)
+        open(provider, model)
     }
 
     /**
@@ -110,9 +127,11 @@ class ImeVoiceAgentController(
         if (!awaitingPermission) return
         awaitingPermission = false
         val provider = pendingProvider
+        val model = pendingModel
         pendingProvider = null
+        pendingModel = null
         if (granted) {
-            open(provider)
+            open(provider, model)
         } else {
             _state.value = _state.value.copy(
                 phase = VoiceAgentUiState.Phase.Ended,
@@ -125,38 +144,58 @@ class ImeVoiceAgentController(
 
     /** Streams the microphone while the user holds the talk control. */
     fun beginTurn() {
+        holdRequested = true
         val live = controller ?: return
         if (!ready) return
         captureJob?.cancel()
         captureJob = scope.launch {
             runCatching {
-                audioCapture.frames().collect { frame -> live.sendAudio(frame) }
+                if (_state.value.phase == VoiceAgentUiState.Phase.Speaking) live.cancelReply()
+                audioCapture.frames().collect { frame ->
+                    _inputLevel.value = pcmLevel(frame)
+                    live.sendAudio(frame)
+                }
             }.onFailure { error ->
                 if (error is CancellationException) throw error
                 if (controller !== live) return@launch
                 VoiceLog.e(VoiceLog.AUDIO, "ime voice agent capture failed")
                 fail("capture_failed", "Voice capture failed")
             }
+            _inputLevel.value = 0f
         }
+    }
+
+    /** A held gesture cannot resume automatically after its permission dialog. */
+    fun cancelPendingHoldPermission() {
+        awaitingPermission = false
+        pendingProvider = null
+        pendingModel = null
+        holdRequested = false
     }
 
     /** Release: the user's turn ends, the agent answers, the session stays. */
     fun endTurn() {
+        holdRequested = false
         captureJob?.cancel()
         captureJob = null
+        _inputLevel.value = 0f
         val live = controller ?: return
         scope.launch { runCatching { live.endTurn() } }
     }
 
     /** Ends the conversation and releases the socket. */
     fun stop() {
+        policyListener?.close(); policyListener = null
         ready = false
+        holdRequested = false
+        _inputLevel.value = 0f
         captureJob?.cancel()
         captureJob = null
         eventsJob?.cancel()
         eventsJob = null
         awaitingPermission = false
         pendingProvider = null
+        pendingModel = null
         discardPendingAudio()
         val live = controller ?: return
         controller = null
@@ -176,6 +215,7 @@ class ImeVoiceAgentController(
      * Cancels active and queued speech, then flushes the registered host player.
      */
     fun discardPendingAudio() {
+        _outputLevel.value = 0f
         playback.clear()
         playbackFlush?.invoke()
     }
@@ -186,7 +226,7 @@ class ImeVoiceAgentController(
         stop()
     }
 
-    private fun open(provider: String?) {
+    private fun open(provider: String?, model: String?) {
         // A new conversation starts from nothing: transcripts, queued speech
         // and the error of the previous one must not surface while this one
         // connects.
@@ -197,9 +237,10 @@ class ImeVoiceAgentController(
         ready = false
         val collecting = scope.launch(start = CoroutineStart.LAZY) {
             runCatching {
-                val events = live.start(VoiceAgentStartFrame(provider = provider))
+                val events = live.start(VoiceAgentStartFrame(provider = provider, model = model))
                 if (controller !== live) return@launch
                 ready = true
+                if (holdRequested) beginTurn()
                 events.collect { event ->
                     if (controller !== live) return@collect
                     live.accept(event)
@@ -255,6 +296,17 @@ class ImeVoiceAgentController(
     }
 
     companion object {
+        /** PCM16 little-endian RMS; silence stays zero and no activity is synthesized. */
+        private fun pcmLevel(pcm: ByteArray): Float {
+            if (pcm.size < 2) return 0f
+            var sum = 0.0
+            for (i in 0 until pcm.size - 1 step 2) {
+                val sample = ((pcm[i].toInt() and 255) or (pcm[i + 1].toInt() shl 8)).toShort().toDouble() / 32768.0
+                sum += sample * sample
+            }
+            return kotlin.math.sqrt(sum / (pcm.size / 2)).toFloat().coerceIn(0f, 1f)
+        }
+
         /** The conversation never opened: no server is paired. */
         const val ERROR_NO_SERVER = "no_server"
 

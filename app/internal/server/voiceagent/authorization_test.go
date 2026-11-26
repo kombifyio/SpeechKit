@@ -4,17 +4,104 @@ package voiceagent
 
 import (
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/kombifyio/SpeechKit/app/internal/server/middleware"
+	"github.com/kombifyio/SpeechKit/app/internal/store"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/a2a"
 )
+
+func TestTurnReceiptSurvivesReopenAndIsOwnerScoped(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "receipts.db")
+	open := func() *store.SQLiteStore {
+		s, err := store.NewSQLiteStore(store.StoreConfig{SQLitePath: path, MaxAudioStorageMB: 100})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	s := open()
+	receipt := store.VoiceTurnReceipt{SessionID: "voice-1", TurnID: "voice-1:1", Status: "unknown"}
+	if err := s.BeginVoiceTurn(context.Background(), "alice", "org-a", receipt); err != nil {
+		t.Fatal(err)
+	}
+	otherOrg := store.VoiceTurnReceipt{SessionID: "voice-2", TurnID: "voice-2:1", Status: "unknown"}
+	if err := s.BeginVoiceTurn(context.Background(), "alice", "org-b", otherOrg); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.BeginVoiceTurn(context.Background(), "bob", "org-b", otherOrg); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.BeginVoiceTurn(context.Background(), "alice", "org-a", receipt); err == nil {
+		t.Fatal("duplicate dispatch admitted")
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s = open()
+	defer s.Close()
+	h := &Handler{store: s}
+	request := func(user, org, source string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodGet, "/v1/voiceagent/sessions/voice-1/turns/voice-1:1", nil)
+		r = r.WithContext(middleware.InjectIdentityForTest(r.Context(), middleware.Identity{UserID: user, OrgID: org, Source: source}))
+		w := httptest.NewRecorder()
+		h.itemHandler(w, r)
+		return w
+	}
+	if w := request("alice", "org-a", "bearer"); w.Code != 200 || !strings.Contains(w.Body.String(), `"status":"unknown"`) {
+		t.Fatalf("owner: %d %s", w.Code, w.Body.String())
+	}
+	listRequest := httptest.NewRequest(http.MethodGet, "/v1/voiceagent/sessions/voice-1/turns", nil)
+	listRequest = listRequest.WithContext(middleware.InjectIdentityForTest(listRequest.Context(), middleware.Identity{UserID: "alice", OrgID: "org-a", Source: "bearer"}))
+	list := httptest.NewRecorder()
+	h.itemHandler(list, listRequest)
+	if list.Code != 200 || !strings.Contains(list.Body.String(), `"turn_id":"voice-1:1"`) {
+		t.Fatalf("list: %d %s", list.Code, list.Body.String())
+	}
+	if w := request("bob", "org-a", "bearer"); w.Code != 404 {
+		t.Fatalf("other user: %d", w.Code)
+	}
+	if w := request("alice", "org-b", "bearer"); w.Code != 404 {
+		t.Fatalf("other organization: %d", w.Code)
+	}
+	if w := request("alice", "org-a", "none"); w.Code != 401 {
+		t.Fatalf("anonymous: %d", w.Code)
+	}
+	if err := s.MarkVoiceTurnDispatched(context.Background(), "alice", "org-a", receipt); err != nil {
+		t.Fatal(err)
+	}
+	if w := request("alice", "org-a", "bearer"); w.Code != 200 || !strings.Contains(w.Body.String(), `"status":"dispatched"`) {
+		t.Fatalf("dispatched: %d %s", w.Code, w.Body.String())
+	}
+	if err := s.CompleteVoiceTurn(context.Background(), "alice", "org-a", receipt); err != nil {
+		t.Fatal(err)
+	}
+	if w := request("alice", "org-a", "bearer"); w.Code != 200 || !strings.Contains(w.Body.String(), `"status":"completed"`) {
+		t.Fatalf("completed: %d %s", w.Code, w.Body.String())
+	}
+	if _, err := s.DeleteSubject(context.Background(), "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if w := request("alice", "org-a", "bearer"); w.Code != 404 {
+		t.Fatalf("erased: %d", w.Code)
+	}
+	if _, err := s.GetVoiceTurn(context.Background(), "alice", "org-b", "voice-2", "voice-2:1"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("other org not erased: %v", err)
+	}
+	if _, err := s.GetVoiceTurn(context.Background(), "bob", "org-b", "voice-2", "voice-2:1"); err != nil {
+		t.Fatalf("unrelated owner lost: %v", err)
+	}
+}
 
 func boundTestToken(expiresAt int64) string {
 	payload, _ := json.Marshal(map[string]any{"exp": expiresAt, "capabilities": []string{"agent.conversation"}})

@@ -81,6 +81,14 @@ button.subtle { border: 0; background: transparent; color: var(--page-text-muted
   background: color-mix(in srgb, var(--page-accent) 18%, transparent);
 }
 .field-inline { font-size: 13px; gap: 6px; }
+.field-inline select {
+  color: var(--page-text);
+  background: var(--page-bg);
+  border: 1px solid var(--page-border);
+  border-radius: 8px;
+  font: inherit;
+  padding: 4px 6px;
+}
 .assistant-host {
   flex: 1;
   min-height: 0;
@@ -89,7 +97,11 @@ button.subtle { border: 0; background: transparent; color: var(--page-text-muted
   background: var(--page-panel);
   overflow: hidden;
 }
-.assistant-host speechkit-voice-assistant { display: block; height: 100%; }
+.assistant-host speechkit-voice-assistant {
+  display: block;
+  height: 100%;
+  --sk-assistant-orb-hero: clamp(92px, min(42vw, 30dvh), 264px);
+}
 .statusbar {
   display: flex;
   align-items: center;

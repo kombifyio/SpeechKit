@@ -47,4 +47,15 @@
     <string name="speechkit_ime_agent_class_right">لا يمكن لهذا الحساب استخدام المحادثة الصوتية</string>
     <string name="speechkit_ime_agent_class_consent">اسمح بالصوت السحابي في تطبيق SpeechKit</string>
     <string name="speechkit_ime_agent_class_expired">انتهت الجلسة الصوتية. ابدأ محادثة جديدة</string>
+
+    <!-- Opal conversation controls: capture is toggled by tapping. -->
+    <string name="speechkit_ime_agent_expand">توسيع المحادثة</string>
+    <string name="speechkit_ime_agent_collapse">طي المحادثة</string>
+    <string name="speechkit_ime_agent_talk">انقر للتحدث</string>
+    <string name="speechkit_ime_agent_send">إرسال المداخلة</string>
+    <string name="speechkit_ime_agent_title">المساعد الصوتي</string>
+    <string name="speechkit_ime_agent_setup_hint">إعداد المساعد الصوتي</string>
+    <string name="speechkit_ime_agent_setup">إعداد</string>
+    <string name="speechkit_ime_agent_attention">عرض التفاصيل</string>
+    <string name="speechkit_ime_agent_setup_body">اربط SpeechKit لبدء محادثة صوتية.</string>
 </resources>

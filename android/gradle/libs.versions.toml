@@ -35,6 +35,13 @@ espresso = "3.7.0"
 androidxTest = "1.7.0"
 
 [libraries]
+firebase-ai = { module = "com.google.firebase:firebase-ai", version = "18.2.0" }
+firebase-ai-ondevice = { module = "com.google.firebase:firebase-ai-ondevice", version = "16.0.0-beta08" }
+firebase-appcheck-playintegrity = { module = "com.google.firebase:firebase-appcheck-playintegrity", version = "20.1.0" }
+mlkit-genai-agent = { module = "com.google.mlkit:genai-agent", version = "1.0.0-alpha1" }
+mlkit-genai-speech = { module = "com.google.mlkit:genai-speech-recognition", version = "1.0.0-alpha2" }
+androidx-appfunctions = { module = "androidx.appfunctions:appfunctions", version = "1.0.0-alpha13" }
+androidx-appfunctions-compiler = { module = "androidx.appfunctions:appfunctions-compiler", version = "1.0.0-alpha13" }
 # Kotlin & Coroutines
 kotlin-stdlib = { group = "org.jetbrains.kotlin", name = "kotlin-stdlib", version.ref = "kotlin" }
 coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -84,6 +91,7 @@ onnxruntime = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android
 commons-compress = { group = "org.apache.commons", name = "commons-compress", version.ref = "commons-compress" }
 
 # Networking
+okhttp-bom = { group = "com.squareup.okhttp3", name = "okhttp-bom", version.ref = "okhttp" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
 retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }

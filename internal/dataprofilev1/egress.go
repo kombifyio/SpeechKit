@@ -216,8 +216,10 @@ func LocalResolver() *net.Resolver {
 func GuardTransport(t *http.Transport) {
 	t.Proxy = nil
 	t.DialTLSContext = nil
+	//lint:ignore SA1019 deprecated hook, cleared so it cannot bypass the guard
 	t.DialTLS = nil //nolint:staticcheck // deprecated hook, cleared so it cannot bypass the guard
-	t.Dial = nil    //nolint:staticcheck // deprecated hook, cleared so it cannot bypass the guard
+	//lint:ignore SA1019 deprecated hook, cleared so it cannot bypass the guard
+	t.Dial = nil //nolint:staticcheck // deprecated hook, cleared so it cannot bypass the guard
 	t.DialContext = GuardDial(t.DialContext)
 	t.CloseIdleConnections()
 }

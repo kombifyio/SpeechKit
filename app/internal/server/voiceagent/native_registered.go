@@ -23,6 +23,7 @@ import (
 )
 
 type nativeVoiceSessions struct {
+	turnReceipts  store.VoiceTurnReceiptStore
 	publicURL     string
 	journal       store.VoiceProviderResourceStore
 	agents        assemblyai.Agents
@@ -36,7 +37,8 @@ type nativeVoiceSessions struct {
 
 func newNativeVoiceSessions(publicURL string, storage store.Store, assemblyKey string, signingSecret func() string, consentReader NativeConsentReader, callbackHeaders map[string]string) *nativeVoiceSessions {
 	journal, _ := storage.(store.VoiceProviderResourceStore)
-	return &nativeVoiceSessions{publicURL: publicURL, journal: journal, agents: assemblyai.Agents{APIKey: assemblyKey}, signingSecret: signingSecret, consentReader: consentReader, callbackHeaders: callbackHeaders, callbacks: make(map[string]*a2a.OpenAIHandler)}
+	turnReceipts, _ := storage.(store.VoiceTurnReceiptStore)
+	return &nativeVoiceSessions{publicURL: publicURL, journal: journal, turnReceipts: turnReceipts, agents: assemblyai.Agents{APIKey: assemblyKey}, signingSecret: signingSecret, consentReader: consentReader, callbackHeaders: callbackHeaders, callbacks: make(map[string]*a2a.OpenAIHandler)}
 }
 
 func (s *nativeVoiceSessions) serveCallback(w http.ResponseWriter, r *http.Request, id string) {
@@ -201,7 +203,11 @@ func (p *registeredNativeProvider) Connect(ctx context.Context, cfg LiveConfigFr
 	}
 	p.timer, _ = agent.(nativeTurnTimer)
 	p.mu.Unlock()
-	if cfg.DirectEndpoint == nil && !mode {
+	registeredAgent, _ := agent.(*a2a.Agent)
+	if registeredAgent != nil {
+		registeredAgent.OnDispatchAcknowledged = cfg.TurnReceiptDispatched
+	}
+	if cfg.DirectEndpoint == nil && !mode && cfg.TurnReceiptStart == nil {
 		// A Companion turn the Companion cannot serve is answered by the session's mode reasoner
 		// after a spoken notice (nil keeps the typed error when no mode binding was signed).
 		var fallback publiccascaded.Agent
@@ -235,6 +241,14 @@ func (p *registeredNativeProvider) Connect(ctx context.Context, cfg LiveConfigFr
 	}
 	p.turns = a2a.NewFinalTurnBinding(cfg.VoiceSessionID)
 	callback.BindTurn = p.turns.Resolve
+	callback.BeforeTurn = cfg.TurnReceiptStart
+	if registeredAgent != nil && cfg.TurnReceiptDone != nil {
+		callback.AfterTurn = func(turnID string) {
+			if registeredAgent.VerifiedCompletion(turnID) {
+				cfg.TurnReceiptDone(turnID)
+			}
+		}
+	}
 	callback.Revalidate = func(turnCtx context.Context) error {
 		if err := p.validateConsent(turnCtx, cfg); err != nil {
 			if turnCtx.Err() != nil && ctx.Err() == nil {

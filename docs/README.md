@@ -10,6 +10,7 @@ server, or wiring agent tooling against the public API.
 - [Framework API](./speechkit-framework-api.md) — local-first Go backend API, mode contracts, provider catalog, readiness, and local control API.
 - [SDK surface boundary](./architecture/sdk-surface-boundary.md) — public `pkg/speechkit/...` package boundary for embedders.
 - [Android SDK surface boundary](./architecture/android-sdk-surface-boundary.md) — which `android/` modules a host may depend on.
+- [Android context actions](./client/android-context-actions.md) — screen capture, shared text/image/audio, preview and execution policy.
 - [Voice Companion](./voice-companion.md) — Hands-Free target model, Assist companion architecture, and embed targets.
 - [Wake word](./wakeword.md) — wake activation contracts, model policy, and SDK notes.
 - [Words And Replacements](./words-and-replacements-standard.md) — customization primitives for recognition knowledge and deterministic transformations.
@@ -35,6 +36,9 @@ server, or wiring agent tooling against the public API.
 
 ## Project
 
+- [Hybrid features and evidence](./hackathon/hybrid-features.md)
+- [Hybrid build and acceptance guide](./hackathon/build-hybrid-ai-2026.md)
+- [Devpost project draft](./hackathon/devpost-submission.md)
 - [Repository README](../README.md)
 - [Examples](../examples/README.md)
 - [Changelog](../CHANGELOG.md)

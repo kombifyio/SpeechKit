@@ -52,4 +52,15 @@
     <string name="speechkit_ime_agent_class_right">This account cannot use voice conversation</string>
     <string name="speechkit_ime_agent_class_consent">Allow cloud voice in the SpeechKit app</string>
     <string name="speechkit_ime_agent_class_expired">Voice session expired. Start a new conversation</string>
+
+    <!-- Opal conversation controls: capture is toggled by tapping. -->
+    <string name="speechkit_ime_agent_expand">Expand conversation</string>
+    <string name="speechkit_ime_agent_collapse">Collapse conversation</string>
+    <string name="speechkit_ime_agent_talk">Tap to speak</string>
+    <string name="speechkit_ime_agent_send">Send turn</string>
+    <string name="speechkit_ime_agent_title">Voice Agent</string>
+    <string name="speechkit_ime_agent_setup_hint">Set up Voice Agent</string>
+    <string name="speechkit_ime_agent_setup">Set up</string>
+    <string name="speechkit_ime_agent_attention">View details</string>
+    <string name="speechkit_ime_agent_setup_body">Connect SpeechKit to start a voice conversation.</string>
 </resources>

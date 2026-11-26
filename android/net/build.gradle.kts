@@ -92,6 +92,10 @@ dependencies {
     api(project(":domain"))
 
     implementation(libs.kotlin.stdlib)
+    implementation(platform(libs.okhttp.bom))
+    api(libs.firebase.ai)
+    implementation(libs.firebase.appcheck.playintegrity)
+    debugImplementation("com.google.firebase:firebase-appcheck-debug:20.1.0")
     implementation(libs.coroutines.core)
     implementation(libs.okhttp)
     implementation(libs.moshi)

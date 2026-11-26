@@ -22,18 +22,27 @@ import (
 // so their backend-specific helpers in other files keep accessing these fields
 // via Go's field promotion.
 type sqlStore struct {
-	db                      *sql.DB
-	dialect                 sqlDialect
-	audioDir                string
-	snapshotDir             string
-	maxStorageMB            int
-	saveAudio               bool
-	audioRetentionDays      int
-	meetingRetentionDays    int
-	transcriptRetentionDays int
-	transcriptionModelHints map[string]string
-	defaultScope            speechstorage.Scope
-	scopePolicy             speechstorage.ScopePolicy
+	db                          *sql.DB
+	voiceTurnCustodyProof       string
+	voiceTurnAdmission          string
+	voiceTurnAdmissionPublicKey string
+	voiceTurnEnvironment        string
+	voiceTurnIssuer             string
+	voiceTurnAudience           string
+	voiceTurnParticipant        string
+	voiceTurnRoute              string
+	voiceTurnSubjectReference   func(string) string
+	dialect                     sqlDialect
+	audioDir                    string
+	snapshotDir                 string
+	maxStorageMB                int
+	saveAudio                   bool
+	audioRetentionDays          int
+	meetingRetentionDays        int
+	transcriptRetentionDays     int
+	transcriptionModelHints     map[string]string
+	defaultScope                speechstorage.Scope
+	scopePolicy                 speechstorage.ScopePolicy
 	// retentionScope and retentionTTLDays enforce the [privacy] retention
 	// axis; onRetentionSweep reports each sweep (see retention_sweep.go).
 	retentionScope   framework.RetentionScope

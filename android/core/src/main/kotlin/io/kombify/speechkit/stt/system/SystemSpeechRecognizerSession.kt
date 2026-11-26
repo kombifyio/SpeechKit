@@ -47,8 +47,8 @@ class SystemSpeechRecognizerSession internal constructor(
     private val mainDispatcher: CoroutineDispatcher,
 ) : StreamingSttSession {
 
-    constructor(context: Context, preferOffline: Boolean = true) : this(
-        handleFactory = AndroidSpeechRecognizerHandle.factory(context),
+    constructor(context: Context, preferOffline: Boolean = true, requireOnDevice: Boolean = false) : this(
+        handleFactory = AndroidSpeechRecognizerHandle.factory(context, requireOnDevice),
         preferOffline = preferOffline,
         mainDispatcher = Dispatchers.Main.immediate,
     )

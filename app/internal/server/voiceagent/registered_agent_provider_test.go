@@ -23,6 +23,39 @@ import (
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/a2a"
 )
 
+func TestReceiptCompletionRequiresExplicitBoundTerminalStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name, response string
+		completed      bool
+	}{
+		{"text alone", `{"result":{"parts":[{"kind":"text","text":"answer"}]}}`, false},
+		{"foreign id", `{"id":"other","result":{"status":{"state":"completed"},"parts":[{"kind":"text","text":"answer"}]}}`, false},
+		{"terminal on bound response", `{"result":{"status":{"state":"completed"},"parts":[{"kind":"text","text":"answer"}]}}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = io.WriteString(w, "data: "+tc.response+"\n\n")
+			}))
+			defer s.Close()
+			agent, err := a2a.New(a2a.Config{Endpoint: s.URL, TargetAgentID: "agent-1", SessionID: "conversation-1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = agent.StreamTurn(context.Background(), publiccascaded.AgentInput{Utterance: "hello"}, "voice-1:1", func(string) error { return nil })
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := agent.VerifiedCompletion("voice-1:1"); got != tc.completed {
+				t.Fatalf("completion=%v, want %v", got, tc.completed)
+			}
+			if agent.VerifiedCompletion("voice-1:2") {
+				t.Fatal("completion leaked across turns")
+			}
+		})
+	}
+}
+
 // Sensitive boundary: only an operator-supplied signer admits native media
 // and authorizes the resulting canonical agent request.
 func TestVoiceAgentNativeSignerRequiredBeforeProviderConnect(t *testing.T) {

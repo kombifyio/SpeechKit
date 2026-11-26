@@ -32,9 +32,6 @@ const (
 	// streaming model for live conversation and dictation; it replaces
 	// Universal-Streaming and Universal-3.6 Pro Realtime.
 	modelAssemblyAISTT37Realtime = "assemblyai-stt-3-7-realtime"
-	// modelAssemblyAISTT37RealtimeAgent is AssemblyAI-STT-3.7-Realtime-Agent,
-	// the streaming model for voice agents built on AssemblyAI speech in.
-	modelAssemblyAISTT37RealtimeAgent = "assemblyai-stt-3-7-realtime-agent"
 	// modelAssemblyAIVoiceAgent is SpeechKit's own id for the AssemblyAI Voice
 	// Agent API, which has no vendor model name.
 	modelAssemblyAIVoiceAgent = "assemblyai-voice-agent"

@@ -26,6 +26,7 @@ rootProject.name = "speechkit-android"
 
 include(":core")
 include(":domain")
+include(":hybrid")
 include(":voice-ui-compose")
 include(":assistant")
 include(":ime")

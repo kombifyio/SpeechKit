@@ -228,6 +228,8 @@ class KombifyCloudAuth(
     }
 
     companion object {
+        const val DEFAULT_CLAIM_NAMESPACE = "https://kombify.io/"
+
         const val DEFAULT_DOMAIN: String = "login.kombify.io"
         const val DEFAULT_AUDIENCE: String = "https://api.kombify.io"
         const val DEFAULT_SERVER_URL: String = "https://api.kombify.io/v1/speechkit"

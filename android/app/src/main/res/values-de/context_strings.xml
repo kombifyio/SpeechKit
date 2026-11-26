@@ -1,0 +1,31 @@
+<resources>
+    <string name="context_title">Inhalt auswerten</string>
+    <string name="context_share_label">Mit SpeechKit auswerten</string>
+    <string name="context_screen_action">Bildschirm auswerten</string>
+    <string name="context_preview_hint">Prüfe den Inhalt vor der Verarbeitung.</string>
+    <string name="context_shared_text">Geteilter Text · kein Zugriff auf den Chatverlauf</string>
+    <string name="context_shared_image">Geteiltes Bild · nur ausgewählter Inhalt</string>
+    <string name="context_shared_audio">Geteilte Audiodatei · ein Anhang</string>
+    <string name="context_visible_screen">Sichtbarer Bildschirm · nicht der gesamte Chat</string>
+    <string name="context_text_input">Geteilter Text</string>
+    <string name="context_image_preview">Bildvorschau</string>
+    <string name="context_audio_ready">Audiodatei bereit</string>
+    <string name="context_crop_hint">Nur der helle Bereich wird ausgewertet. Wähle eine Nachricht aus oder behalte das gesamte Bild.</string>
+    <string name="context_crop_horizontal">Linker und rechter Rand</string>
+    <string name="context_crop_vertical">Oberer und unterer Rand</string>
+    <string name="context_summarize">Zusammenfassen</string>
+    <string name="context_transcribe">Transkribieren</string>
+    <string name="context_result">Ergebnis</string>
+    <string name="context_cancel">Abbrechen</string>
+    <string name="context_invalid_input">Dieser Inhalt lässt sich nicht öffnen. Teile einen Text, ein Bild oder eine Audiodatei.</string>
+    <string name="context_failed">Der Inhalt konnte nicht ausgewertet werden. Prüfe die gewählte Verbindung und die Verfügbarkeit lokaler Modelle.</string>
+    <string name="context_local_only">Nur auf diesem Gerät</string>
+    <string name="context_cloud_only">Nur die gewählte Cloud-Verbindung</string>
+    <string name="context_local_first">Zuerst lokal · gedrückt halten für nur Cloud</string>
+    <string name="context_cloud_first">Zuerst Cloud · gedrückt halten für nur lokal</string>
+    <string name="context_audio_local">Transkription: auf dem Gerät</string>
+    <string name="context_audio_cloud">Transkription: gewählte Cloud-Verbindung</string>
+    <string name="context_capture_title">Bildschirmaufnahme</string>
+    <string name="context_capture_body">Ein Bild wird zur Vorschau aufgenommen</string>
+    <string name="context_capture_unavailable">Die Bildschirmaufnahme ist nicht verfügbar. Versuche es erneut oder teile einen Screenshot.</string>
+</resources>

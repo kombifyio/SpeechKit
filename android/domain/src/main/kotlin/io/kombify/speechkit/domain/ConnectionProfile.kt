@@ -7,6 +7,8 @@ package io.kombify.speechkit.domain
  * Tier order: system on-device recognizer → own speechkit-server → BYOK
  * (B-M6) → local in-app models (B-M7).
  */
+enum class DirectProvider { GEMINI }
+
 sealed interface ConnectionProfile {
     /**
      * Zero-config default floor (B-M2b): the platform `SpeechRecognizer`,
@@ -31,6 +33,11 @@ sealed interface ConnectionProfile {
         val bearerToken: String? = null,
         /** Persistent identity of an independently signed-in Cloud session. */
         val cloudSessionGeneration: String? = null,
+        /** Local, non-secret custody identity, stable across bearer refresh. */
+        val custodyId: String? = null,
+        val selectionRevision: Long? = null,
+        /** False if a saved credential exists but cannot be recovered from secure custody. */
+        val credentialAvailable: Boolean = true,
     ) : ConnectionProfile {
         /** Base URL without trailing slashes, ready for path concatenation. */
         val normalizedBaseUrl: String get() = baseUrl.trim().trimEnd('/')
@@ -52,7 +59,31 @@ sealed interface ConnectionProfile {
     }
 
     /** Direct provider streaming with user-supplied keys. Lands in B-M6. */
-    data object Byok : ConnectionProfile
+    data class Byok(
+        val apiKey: String,
+        val model: String = "gemini-3.8-live",
+        val voice: String = "Kore",
+        val credentialId: String,
+        val provider: DirectProvider = DirectProvider.GEMINI,
+        val selectionRevision: Long? = null,
+    ) : ConnectionProfile {
+        val hasUsableKey: Boolean get() = apiKey.isNotBlank()
+        override fun toString(): String = "Byok(apiKey=[redacted], model=$model, voice=$voice, credentialId=$credentialId, provider=$provider, selectionRevision=$selectionRevision)"
+    }
+
+    /** Public Firebase client configuration; provider credentials remain in Firebase. */
+    data class Firebase(
+        val applicationId: String,
+        val projectId: String,
+        val apiKey: String,
+        val cloudModel: String = "gemini-3.5-flash-lite",
+        val liveModel: String = "gemini-3.8-live",
+        val voice: String = "Kore",
+        val debugAppCheck: Boolean = false,
+        val selectionRevision: Long? = null,
+    ) : ConnectionProfile {
+        override fun toString(): String = "Firebase(projectId=$projectId, cloudModel=$cloudModel, liveModel=$liveModel, selectionRevision=$selectionRevision)"
+    }
 
     /**
      * Fully on-device recognition with a downloaded Parakeet model (B-M7):
@@ -72,7 +103,15 @@ fun ConnectionProfile.serverDisplayToken(): String =
 fun ConnectionProfile.describe(): String = when (this) {
     is ConnectionProfile.SystemOnDevice -> "on_device offline=$preferOffline"
     is ConnectionProfile.Server ->
-        "server url=$normalizedBaseUrl token=${if (bearerToken.isNullOrBlank()) "absent" else "present"}"
-    ConnectionProfile.Byok -> "byok"
+        "server url=$normalizedBaseUrl credential=${if (!credentialAvailable) "unavailable" else if (bearerToken.isNullOrBlank()) "absent" else "present"}"
+    is ConnectionProfile.Byok -> "byok model=$model voice=$voice"
+    is ConnectionProfile.Firebase -> "firebase project=$projectId model=$liveModel"
     ConnectionProfile.Local -> "local"
+}
+
+/** Stable, non-secret local storage partition for a captured endpoint identity. */
+fun ConnectionProfile.Server.storageScope(): String {
+    val identity = normalizedBaseUrl + "\u0000" + (custodyId ?: cloudSessionGeneration ?: bearerToken.orEmpty())
+    val digest = java.security.MessageDigest.getInstance("SHA-256").digest(identity.toByteArray())
+    return "endpoint:" + digest.joinToString("") { "%02x".format(it) }
 }

@@ -33,7 +33,7 @@ class PhononModelFiles private constructor(override val dir: File, val englishOn
     override fun supports(language: String?): Boolean {
         if (!englishOnly) return ParakeetLanguages.supports(language)
         val code = language?.trim()?.lowercase().orEmpty().substringBefore('-').substringBefore('_')
-        return code.isEmpty() || code == "auto" || code == "multi" || code == "en"
+        return code == "en"
     }
 
     companion object {

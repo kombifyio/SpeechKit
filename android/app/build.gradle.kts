@@ -31,9 +31,29 @@ android {
         applicationId = "io.kombify.speechkit"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8106
-        versionName = "0.81.6"
+        versionCode = 8108
+        versionName = "0.81.8"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        val hybridEnabled = speechKitBuildValue("speechkitHybridEnabled", "SPEECHKIT_HYBRID_ENABLED").equals("true", ignoreCase = true)
+        val firebaseCloud = speechKitBuildValue("speechkitFirebaseAllowCloud", "SPEECHKIT_FIREBASE_ALLOW_CLOUD").equals("true", ignoreCase = true)
+        buildConfigField("boolean", "HYBRID_ENABLED", hybridEnabled.toString())
+        val contextActions = hybridEnabled && speechKitBuildValue("speechkitContextActionsEnabled", "SPEECHKIT_CONTEXT_ACTIONS_ENABLED").equals("true", ignoreCase = true)
+        buildConfigField("boolean", "CONTEXT_ACTIONS_ENABLED", contextActions.toString())
+        manifestPlaceholders["contextActionsEnabled"] = contextActions.toString()
+        buildConfigField("boolean", "CONNECTION_SETUP_ENABLED",
+            speechKitBuildValue("speechkitConnectionSetupEnabled", "SPEECHKIT_CONNECTION_SETUP_ENABLED").equals("true", ignoreCase = true).toString())
+        // Public OAuth application identifier; credentials are obtained only after explicit Connect.
+        buildConfigField("String", "CLOUD_AUTH_CLIENT_ID",
+            "\"" + speechKitBuildValue("speechkit.cloudAuthClientId", "SPEECHKIT_CLOUD_AUTH_CLIENT_ID") + "\"")
+        buildConfigField("boolean", "VOICE_AGENT_OPAL_ENABLED",
+            speechKitBuildValue("speechkitVoiceAgentOpalEnabled", "SPEECHKIT_VOICE_AGENT_OPAL_ENABLED").equals("true", ignoreCase = true).toString())
+        buildConfigField("boolean", "FIREBASE_CLOUD_ENABLED", firebaseCloud.toString())
+        for ((field, names) in mapOf(
+            "FIREBASE_APPLICATION_ID" to ("speechkitFirebaseApplicationId" to "SPEECHKIT_FIREBASE_APPLICATION_ID"),
+            "FIREBASE_PROJECT_ID" to ("speechkitFirebaseProjectId" to "SPEECHKIT_FIREBASE_PROJECT_ID"),
+            "FIREBASE_API_KEY" to ("speechkitFirebaseApiKey" to "SPEECHKIT_FIREBASE_API_KEY"),
+            "FIREBASE_CLOUD_MODEL" to ("speechkitFirebaseCloudModel" to "SPEECHKIT_FIREBASE_CLOUD_MODEL"),
+        )) buildConfigField("String", field, "\"" + speechKitBuildValue(names.first, names.second) + "\"")
         // An OSS installation has no admitted hosted media origin.
         buildConfigField("String", "HOSTED_VOICE_ORIGIN", "\"\"")
     }
@@ -120,12 +140,6 @@ android {
                 "String",
                 "DEFAULT_SERVER_TOKEN",
                 "\"" + speechKitBuildValue("speechkit.defaultServerToken", "SPEECHKIT_DEFAULT_SERVER_TOKEN") + "\"",
-            )
-            // Public OAuth client id for the RFC 8628 device grant. Not a secret.
-            buildConfigField(
-                "String",
-                "CLOUD_AUTH_CLIENT_ID",
-                "\"" + speechKitBuildValue("speechkit.cloudAuthClientId", "SPEECHKIT_CLOUD_AUTH_CLIENT_ID") + "\"",
             )
         }
     }
@@ -224,6 +238,7 @@ val trimSherpaOnnxAar = tasks.register<Zip>("trimSherpaOnnxAar") {
 
 dependencies {
     implementation(project(":core"))
+    implementation(project(":hybrid"))
     implementation(project(":domain"))
     implementation(project(":assistant"))
     // Manifest merger lifts the voice IME service (`android.view.InputMethod`)
@@ -267,8 +282,12 @@ dependencies {
     implementation(libs.timber)
 
     // Testing
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.espresso.core)
+    // Firebase discovers the test-secret component from the target app manifest.
+    debugImplementation("com.google.firebase:firebase-appcheck-debug-testing:20.1.0")
 }
 
 // Kotlin 2.4 turned the kotlinOptions DSL from deprecated into an error.

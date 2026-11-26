@@ -13,11 +13,12 @@
     "internal/editionv1/edition.go": "f746e0b9de5c6ba542c90512c70a2ec26c7f13bd16c394be6ab1be2e5ceb9762",
     "internal/denialv1/envelope.go": "4f0aba66ca8981e9019f0335b3988969cd0041123465d5222decdea61bc68485",
     "internal/dataprofilev1/dataprofile.go": "1529b61bd4195250c2ad71d2a20f9598a75f7d0b864d6072651f4453cdcfd999",
-    "internal/dataprofilev1/egress.go": "8e66ab7474c7bb348c4edfa75f1fda78340cbc30f91f499f4887998e2f6c0da5",
+    "internal/dataprofilev1/egress.go": "48740ba9b3e3a2882a1a96f4b6b09be08086c436bcf0e64202b59f1f5d2fce40",
     "internal/dataprofilev1/LICENSE": "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff"
   },
   "transformations": [
     "comment-only lines removed",
+    "standalone SA1019 directives added for legacy transport hook resets",
     "canonical import paths rewritten",
     "generated provenance header",
     "LF line endings",

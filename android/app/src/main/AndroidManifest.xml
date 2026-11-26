@@ -21,6 +21,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- allowBackup=false: the app persists server bearer tokens in
@@ -69,6 +70,28 @@
             tools:node="merge">
             <intent-filter tools:node="removeAll" />
         </activity>
+
+        <activity android:name=".app.hybrid.HybridActivity" android:exported="false" android:theme="@style/Theme.SpeechKit" />
+        <activity android:name=".app.context.ContentAnalysisActivity" android:exported="true"
+            android:enabled="${contextActionsEnabled}" android:excludeFromRecents="true"
+            android:label="@string/context_share_label" android:theme="@style/Theme.SpeechKit">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="application/ogg" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".app.context.capture.ScreenCaptureActivity" android:exported="false"
+            android:enabled="${contextActionsEnabled}" android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.SpeechKit.Capture" />
+        <service android:name=".app.context.capture.ScreenCaptureService" android:exported="false"
+            android:enabled="${contextActionsEnabled}" android:foregroundServiceType="mediaProjection" />
+        <activity android:name=".app.keyboard.KeyboardTextActivity" android:exported="false"
+            android:excludeFromRecents="true" android:theme="@android:style/Theme.Material.Light.Dialog.NoActionBar" />
 
         <!-- Main Activity -->
         <service android:name=".app.companion.CoinstallVoiceAgentService"

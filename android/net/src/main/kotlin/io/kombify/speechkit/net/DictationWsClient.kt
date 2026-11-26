@@ -1,6 +1,7 @@
 package io.kombify.speechkit.net
 
 import io.kombify.speechkit.log.VoiceLog
+import io.kombify.speechkit.domain.ConnectionProfile
 import io.kombify.speechkit.stt.streaming.DictationSegmentOptions
 import io.kombify.speechkit.stt.streaming.StreamingSttSession
 import io.kombify.speechkit.stt.streaming.TranscriptEvent
@@ -34,7 +35,12 @@ class DictationWsClient(
      * Failures surface as [TranscriptEvent.Failure] + [TranscriptEvent.Closed]
      * on the event flow, not as exceptions.
      */
-    fun connect(session: CreateStreamSessionResponse): StreamingSttSession {
+    fun connect(
+        session: CreateStreamSessionResponse,
+        selection: StoredConnectionSelection? = null,
+        profile: ConnectionProfile.Server? = null,
+    ): StreamingSttSession {
+        require((selection == null) == (profile == null)) { "Selection and captured profile must be supplied together" }
         val events = Channel<TranscriptEvent>(Channel.UNLIMITED)
 
         val requestBuilder = Request.Builder().url(httpUrlFor(session.wsUrl))
@@ -97,6 +103,7 @@ class DictationWsClient(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                NetworkUseGuard.untrack(webSocket)
                 VoiceLog.e(
                     VoiceLog.DICTATION,
                     "ws_failure http=${response?.code ?: "-"}",
@@ -125,12 +132,19 @@ class DictationWsClient(
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                NetworkUseGuard.untrack(webSocket)
                 events.trySend(TranscriptEvent.Closed(reason.ifEmpty { StreamEndReasons.CLIENT }))
                 events.close()
             }
         }
 
-        val webSocket = client.newWebSocket(requestBuilder.build(), listener)
+        val openSocket = {
+            NetworkUseGuard.create(
+                { client.newWebSocket(requestBuilder.build(), listener) },
+                { it.cancel() },
+            )
+        }
+        val webSocket = if (selection != null && profile != null) selection.withCurrent(profile, openSocket) else openSocket()
         return WsStreamingSession(webSocket, codec, events)
     }
 

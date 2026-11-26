@@ -1,0 +1,11 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <meta-data android:name="firebase_data_collection_default_enabled" android:value="false" />
+        <service android:name="io.kombify.speechkit.hybrid.NoteAppFunctionService"
+            android:permission="android.permission.BIND_APP_FUNCTION_SERVICE" android:exported="true" tools:targetApi="36">
+            <property android:name="android.app.appfunctions.schema" android:value="app_functions_schema.xsd" />
+            <property android:name="android.app.appfunctions.v2" android:value="speechkit_note_functions.xml" />
+            <intent-filter><action android:name="android.app.appfunctions.AppFunctionService" /></intent-filter>
+        </service>
+    </application>
+</manifest>

@@ -17,11 +17,12 @@ This file maps Kotlin types to Go.
 | Module | Owns | Must not |
 |---|---|---|
 | `:core` | PCM capture/playback (`AudioCapture`, `MicAudioCapture`, `PcmStreamPlayer`), engine, STT, VAD, `TurnEngine` (duplex turn-taking), store, `AudioSession` (start/stop buffer over the same capture), `VoiceLog` (`sk.voice`) | Compose UI, network transport |
-| `:net` | Dictation/VA WebSocket, REST, `StoredServerProfile`, `VoiceAgentUiState` | Compose, `AudioRecord`, owning the connection algebra |
-| `:voice-ui-compose` | Orb drawing (`VoiceAuraOrb`) | `:net` — session phases stay out so a protocol change does not force a visual module |
+| `:net` | Dictation/VA transports, Firebase SDK initialization, Live and cloud audio adapters, catalog projection, encrypted connection selection and network admission | Compose, `AudioRecord`, owning the connection algebra |
+| `:voice-ui-compose` | Orb drawing (`VoiceAuraOrb`, `VoiceOpal`) | `:net` — session phases stay out so a protocol change does not force a visual module |
 | `:ime` | Keyboard FSM/UI and the one adapter `VoiceAgentUiState.Phase.toAuraState()` | HeliBoard (`:heliboard`) |
 | `:assistant` | Overlay, intent router, Assist `processAssist` via `GeneralQueryExecutor`; listen via `UtteranceTranscriber` + `DictationController` | Keyboard layout, a second Assist HTTP path, a private AudioRecord+batch STT stack |
 | `:domain` | Connection contract: `ConnectionProfile`, `ConnectionMode`, resolve/infer, `ConnectionProfileSource` | Transport, Android prefs, invented placeholders |
+| `:hybrid` | Optional Firebase hybrid text and ML Kit speech adapters, observed inference source, AICore readiness and bounded local note tools; reuses `:net` Firebase initialization | Endpoint selection, managed cloud admission, Compose UI |
 | `:app` | GPL glue: HeliBoard, Settings, test screens | Reimplementing capture, playback, orb mapping, or Assist |
 
 Hosts that need PCM import `io.kombify.speechkit.audio`.
@@ -39,6 +40,16 @@ transcript text. Empty listen, no speech, timeout, and stream failure are
 distinct overlay reasons so a device test can tell them apart.
 
 ## Type Mapping Conventions
+
+Android hybrid adapters are platform-specific extensions. `ExecutionPolicy` in
+`:domain` separates destination permission from preferred execution location;
+`StoredExecutionPolicy` in `:net` persists the Android choice. `HybridAi`,
+`ImportedAudio` and `LocalNoteAgent` in `:hybrid` wrap Android SDKs and have no
+Go model-runtime counterpart. They reuse the existing Store and media contracts.
+Their SDK types do not cross the public Android facade. Device-only operation
+admits verified local STT/TTS; typed authorization, safety and cancellation
+outcomes do not cause a provider retry. A dispatched agent turn is outside the
+side-effect-free generation fallback contract.
 
 | Go | Kotlin |
 |---|---|
@@ -235,9 +246,12 @@ These interfaces have no Go counterpart (Android-specific):
 | `net/DictationWsClient.kt` | present | Client of the server's streaming Dictation WS (`docs/server/asyncapi.dictation-stream.v1.yaml`); implements `StreamingSttSession`, mirrors Go `speechkit.DictationStream` |
 | `core/stt/system/SystemSpeechRecognizerSession.kt` | present | System on-device STT tier (B-M2b): platform `SpeechRecognizer` behind `StreamingSttSession` (`capturesOwnAudio = true`); API 31+ on-device recognizer when available, `EXTRA_PREFER_OFFLINE` fallback below; unit-testable via the `SpeechRecognizerHandle` seam |
 | `core/stt/system/SystemSttSupport.kt` | present | API 33+ `checkRecognitionSupport` / `triggerModelDownload` surface for the B-M4 onboarding language downloads (null / no-op below 33) |
-| `domain/ConnectionProfile.kt` + `ConnectionMode.kt` | present | Shared connection contract. Flavor-bound resolution lives in `:app` DI; `:net` `StoredServerProfile` is the prefs adapter. `oss` = on-device; the hosted flavor uses persisted `connection_mode`, applied only after an explicit Connect. |
-| Pairing/auth provisioning | present | A build may ship a default server URL and a revocable bearer through build properties; a companion app supplies a user token only after an explicit Connect. Homelab: Settings can browse `_speechkit._tcp` and override. OSS stays local-only. |
-| Voice budget renewal account check | present | `:net` `sameVoiceRenewalAccount` lets a renewal swap the bearer only when the issuer, subject, organization and tenant claims of both tokens match. The claim namespace is a required argument; the flavor's `ShippedDefaults.tokenClaimNamespace` supplies it through the injected `VoiceRenewalProfileSource.claimNamespace`. The `kombify` flavor reads its login's namespaced claims (a namespaced claim wins over the plain one). The `oss` flavor passes "" and reads only plain `tenant_id`, `org_id` and `organization_id`. With an issuer that sends these claims only namespaced, `oss` therefore compares issuer and subject alone, so a fork that renews against such an issuer sets its namespace in its flavor's `ShippedDefaults`. |
+| `domain/ConnectionProfile.kt` + `ConnectionMode.kt` | present | Both distributions resolve the same explicit connection selection. `StoredConnectionSelection` owns mode, execution policy and revision; remote admission checks the captured revision atomically. Fresh OSS installs are device-only. |
+| Pairing/auth provisioning | present | Settings supports local-only, an own connection, and Kombify account connection. The own connection selects a canonical catalog profile and uses Firebase AI Logic, a supported direct key, or a SpeechKit endpoint. The new setup is gated by `speechkitConnectionSetupEnabled` (default off). A Companion session is applied only after explicit Connect. Homelab discovery and pairing remain available. |
+| Android catalog projection | present | `VoiceAgentCatalog` consumes the existing ProviderProfile JSON contract, generated by `examples/provider-catalog` before endpoint setup and fetched through the authenticated catalog/readiness routes afterward. Profile identity remains local metadata; Voice Agent start frames carry the selected provider and exact model. |
+| Firebase AI Logic and execution gestures | present | `:net` owns shared Firebase initialization, SDK Live transport and cloud audio transcription; `:hybrid` reuses them and delegates text inference modes to the official on-device extension. `ExecutionPolicy.forInvocation` maps long presses without changing stored preferences. Both exclusive modes stay exclusive. |
+| Local speech adapters | present | `:core` owns `LocalSpeechAdapter`, bounded PCM/container input and the native Phonon/Parakeet adapter. `:net` composes local retries independently of destination policy. Optional published `:hybrid` supplies Google ML Kit, without a reverse dependency. Hosts pass the same segment options to `openSession` and `startSegment`; system-owned capture never changes family mid-recording. Model readiness and actual adapter provenance remain explicit. Consuming applications must recompile for the new pre-1.0 JVM signatures. |
+| Voice budget renewal account check | present | `:net` `sameVoiceRenewalAccount` lets a renewal swap the bearer only when the issuer, subject, organization and tenant claims of both tokens match. The claim namespace is a required argument; the flavor's `ShippedDefaults.tokenClaimNamespace` supplies it through the injected `VoiceRenewalProfileSource.claimNamespace`. Both distributions use the hosted account's namespace, with namespaced claims taking precedence over plain `tenant_id`, `org_id` and `organization_id`. A fork that connects to another issuer supplies that issuer's namespace in its flavor's `ShippedDefaults`. |
 
 ## Drift Detection
 

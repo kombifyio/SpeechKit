@@ -75,19 +75,19 @@ internal class AndroidSpeechRecognizerHandle private constructor(
         private const val MAX_BIASING_STRINGS = 100
 
         /** Deferred creation: the recognizer is built on first use, on main. */
-        fun factory(context: Context): SpeechRecognizerHandle.Factory {
+        fun factory(context: Context, requireOnDevice: Boolean = false): SpeechRecognizerHandle.Factory {
             val appContext = context.applicationContext
             return SpeechRecognizerHandle.Factory {
-                AndroidSpeechRecognizerHandle(createBestRecognizer(appContext))
+                AndroidSpeechRecognizerHandle(createBestRecognizer(appContext, requireOnDevice))
             }
         }
 
-        private fun createBestRecognizer(context: Context): SpeechRecognizer = when {
+        private fun createBestRecognizer(context: Context, requireOnDevice: Boolean): SpeechRecognizer = when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
                 SpeechRecognizer.isOnDeviceRecognitionAvailable(context) ->
                 SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
 
-            SpeechRecognizer.isRecognitionAvailable(context) ->
+            !requireOnDevice && SpeechRecognizer.isRecognitionAvailable(context) ->
                 SpeechRecognizer.createSpeechRecognizer(context)
 
             else -> throw IllegalStateException(

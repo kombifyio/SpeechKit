@@ -27,8 +27,9 @@ IPC through the `:coinstall` AIDL contract, never a Gradle dependency on
 |---|---|---|
 | `:domain` | Connection algebra: `ConnectionProfile`, `ConnectionMode`, resolve/infer, `ConnectionProfileSource` | nothing else in `android/` |
 | `:core` | PCM capture/playback, engine, STT, VAD, `TurnEngine`, store, `AudioSession`, `VoiceLog` (`sk.voice`) | nothing else in `android/` |
-| `:net` | Dictation/VA WebSocket, REST, `StoredServerProfile`, `VoiceAgentUiState` | `:core`, `:domain` |
-| `:voice-ui-compose` | Aura orb drawing only. Published as `io.kombify.aiplatform.speechkit:voice-ui-compose` | Compose only — never `:net` |
+| `:net` | Dictation/VA transports, Firebase SDK initialization and cloud adapters, catalog projection, encrypted connection selection and network admission | `:core`, `:domain` |
+| `:hybrid` | Optional Firebase hybrid inference, local ML Kit speech and bounded local note tools | `:core`, `:domain`, `:net` |
+| `:voice-ui-compose` | Aura and Opal artwork. Published as `io.kombify.aiplatform.speechkit:voice-ui-compose` | Compose only — never `:net` |
 | `:ime` | Keyboard FSM/UI and the one adapter `VoiceAgentUiState.Phase.toAuraState()` | `:core`, `:domain`, `:net`, `:voice-ui-compose` — never `:assistant` |
 | `:assistant` | Overlay, intent router, Assist `processAssist`, listen via `UtteranceTranscriber` + `DictationController` | `:core`, `:domain`, `:net`, `:voice-ui-compose` — never `:ime` |
 | `:coinstall` | AIDL `speechkit.coinstall.v1` and constants. Published as `io.kombify.aiplatform.speechkit:coinstall-contract` | nothing else in `android/` |
@@ -46,6 +47,7 @@ from `.kombify/VERSION` like every other release artifact:
 | `io.kombify.aiplatform.speechkit:domain` | `:domain` | A host resolves which server to talk to with the same algebra the reference app uses |
 | `io.kombify.aiplatform.speechkit:core` | `:core` | One microphone capture, one PCM player, one turn engine — the parts every voice surface needs |
 | `io.kombify.aiplatform.speechkit:net` | `:net` | The dictation and Voice Agent wire clients, so a host does not re-implement the protocol |
+| `io.kombify.aiplatform.speechkit:hybrid` | `:hybrid` | Optional Firebase and ML Kit adapters shared by Android hosts |
 | `io.kombify.aiplatform.speechkit:voice-ui-compose` | `:voice-ui-compose` | One orb for every surface, including hosts outside this repository |
 | `io.kombify.aiplatform.speechkit:coinstall-contract` | `:coinstall` | Both apps must compile the same wire contract without linking each other across the GPL boundary |
 
@@ -97,6 +99,13 @@ into their own `.aidl`.
 | `:app` | GPL glue: Settings, onboarding, test screens, `InlineVoicePanel` (the only class that imports both SpeechKit and HeliBoard) |
 | `:heliboard` | HeliBoard fork. No SpeechKit module imports; the voice key calls `SpeechKitVoiceBridge` |
 | `:test-shared` | Test helpers |
+
+The optional Apache-2.0 `:hybrid` artifact owns Firebase hybrid text,
+ML Kit local speech, model readiness and bounded local note tools. It depends
+on `:core`, `:domain` and `:net`; shared Firebase project/App Check initialization
+belongs to `:net`, alongside the SDK Live and cloud audio adapters. No SDK type
+crosses the SpeechKit transport facade. The host supplies the selected profile
+and the invocation policy; it does not implement another Firebase transport.
 
 `:app` may depend on every public module plus `:heliboard`. A new host that is
 not this APK starts from the public modules, not by copying `:app`.
@@ -151,8 +160,11 @@ not this APK starts from the public modules, not by copying `:app`.
 5. `:domain` does not import Android prefs, OkHttp, or placeholders. Flavor
    wiring and `StoredServerProfile` stay in `:app` / `:net`.
 6. Public modules must not import `:heliboard` or `helium314.keyboard.*`.
-7. Public binds and cloud paths fail closed in the host; OSS flavor stays
-   local-only.
+7. Public binds and cloud paths fail closed in the host. The OSS flavor starts
+   local-only and can explicitly enable its own endpoint, key or configured
+   Firebase project behind the connection setup flag. It has no implicit
+   managed account route. Catalog choices belong to the admitted endpoint's
+   custody identity; another route receives no stale provider/model override.
 8. Do not log PCM, bearer tokens, or transcript text. Diagnosis is
    `adb logcat -s sk.voice`.
 9. On-device dictation (`ConnectionProfile.Local`, B-M7) lives in `:core`

@@ -1,7 +1,12 @@
 package io.kombify.speechkit.net
 
+import android.content.Context
+import io.kombify.speechkit.domain.ExecutionMode
+import io.kombify.speechkit.domain.restrictTo
 import io.kombify.speechkit.domain.ConnectionProfile
 import io.kombify.speechkit.domain.describe
+import io.kombify.speechkit.domain.storageScope
+import kotlinx.coroutines.currentCoroutineContext
 import io.kombify.speechkit.log.VoiceLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -42,6 +47,8 @@ data class VoiceAgentUiState(
     val errorCode: String? = null,
     /** Server-supplied reason class for localized presentation. */
     val errorClass: VoiceErrorClass? = null,
+    /** Last transcript event, independent of subsequent listening/processing phases. */
+    val latestSpeaker: Speaker? = null,
 ) {
     /**
      * The conversation phases a surface has to render. Deliberately the
@@ -49,6 +56,7 @@ data class VoiceAgentUiState(
      * maps these, so a visual change never forces a protocol change.
      */
     enum class Phase { Inactive, Connecting, Listening, Processing, Speaking, Ended }
+    enum class Speaker { USER, AGENT }
 
     val isLive: Boolean
         get() = phase == Phase.Connecting ||
@@ -84,6 +92,10 @@ interface VoiceAgentSessionDriver {
     fun accept(event: VoiceAgentEvent)
     suspend fun sendAudio(pcm: ByteArray)
     suspend fun endTurn()
+    suspend fun sendText(text: String)
+    suspend fun respondToTool(id: String, name: String, response: Map<String, Any?>)
+    suspend fun advanceStep(reason: String? = null)
+    suspend fun cancelReply()
     suspend fun stop()
 }
 
@@ -104,6 +116,11 @@ class VoiceAgentController(
      * Required, so each caller chooses the issuer's claims explicitly.
      */
     private val renewalClaimNamespace: String,
+    private val target: RegisteredAgentTarget? = null,
+    private val context: Context? = null,
+    private val localHandoff: (() -> Unit)? = null,
+    private val localReady: suspend () -> Boolean = { false },
+    private val policyOverride: io.kombify.speechkit.domain.ExecutionPolicy? = null,
 ) : VoiceAgentSessionDriver {
 
     private val _state = MutableStateFlow(VoiceAgentUiState())
@@ -124,26 +141,76 @@ class VoiceAgentController(
      *   conversation has no on-device tier to fall back to, unlike dictation.
      */
     override suspend fun start(options: VoiceAgentStartFrame): Flow<VoiceAgentEvent> {
+        if (profile is ConnectionProfile.Server) context?.let { StoredConnectionSelection(it).requireCurrent(profile) }
+        val policy = (context?.let { StoredExecutionPolicy(it).read(profile) }
+            ?: io.kombify.speechkit.domain.ExecutionPolicy.fromLegacy(profile)).restrictTo(policyOverride)
+        if (policy.mode == ExecutionMode.DEVICE_ONLY || !policy.allowNetwork) {
+            localHandoff?.invoke()
+            throw localVoiceHandoffFailure()
+        }
+        if (policy.mode == ExecutionMode.PREFER_DEVICE && localHandoff != null && localReady()) {
+            localHandoff.invoke()
+            throw localVoiceHandoffFailure()
+        }
         val server = profile as? ConnectionProfile.Server
-            ?: run {
-                VoiceLog.w(VoiceLog.AGENT, "no server ${profile.describe()}")
-                throw IllegalStateException(
-                    "The Voice Agent needs a configured SpeechKit server: the realtime " +
-                        "conversation has no on-device tier. Pair a server first.",
-                )
-            }
-
+            ?: throw IllegalStateException("No selected SpeechKit endpoint")
+        require(target == null || context != null) { "Registered voice sessions require durable receipt storage" }
+        if (target != null) {
+            val job = checkNotNull(currentCoroutineContext()[Job])
+            check(StoredServerProfile.withActiveProfile(requireNotNull(context), server) {
+                ScopedRemoteJobs.register(server.storageScope(), job)
+            }) { "Account session changed" }
+        }
         VoiceLog.i(VoiceLog.AGENT, "start ${profile.describe()}")
         cancelRenewal()
         _state.value = VoiceAgentUiState(phase = VoiceAgentUiState.Phase.Connecting)
-        val mint = SpeechKitServerApi(server, okHttp).createVoiceAgentSession()
-        val live = client.connect(mint)
+        val mint = try {
+            SpeechKitServerApi(server, okHttp, context = context).createVoiceAgentSession(target)
+        } catch (failure: java.io.IOException) {
+            if (failure is SpeechKitApiException && (failure.denial != null || failure.httpStatus < 500)) throw failure
+            if (policy.mode == ExecutionMode.PREFER_ENDPOINT && localHandoff != null && localReady()) {
+                localHandoff.invoke()
+                throw localVoiceHandoffFailure()
+            }
+            throw failure
+        }
+        require(target == null || mint.aiSessionId == target.aiSessionId) { "Voice session does not match the selected chat" }
+        require(sameVoiceOrigin(server.normalizedBaseUrl, mint.wsUrl)) { "Voice session URL does not match the selected origin" }
+        if (target != null) {
+            val store = io.kombify.speechkit.store.RoomStore(requireNotNull(context))
+            try {
+                // Persist before opening media: recovery can list server-owned turns
+                // even if the socket closes before its first receipt reaches Room.
+                store.saveScopedOperation(io.kombify.speechkit.store.OperationReceipt(server.storageScope(), "session:${mint.sessionId}", "remote_session", "created", mint.sessionId, System.currentTimeMillis()))
+            } finally { store.close() }
+        }
+        val live = client.connect(mint, context?.let { StoredConnectionSelection(it) }, server.takeIf { context != null })
         session = live
-        live.start(options)
+        try {
+            live.start(if (target != null) options.copy(turnReceipts = true) else options)
+        } catch (failure: Throwable) {
+            session = null
+            runCatching { live.close() }
+            if (failure is VoiceAgentSetupException && failure.code in setOf(
+                    VoiceAgentWsClient.SETUP_TIMEOUT_CODE, VoiceAgentWsClient.SEND_FAILURE_CODE,
+                ) && policy.mode == ExecutionMode.PREFER_ENDPOINT && localHandoff != null && localReady()) {
+                localHandoff.invoke()
+                throw localVoiceHandoffFailure()
+            }
+            throw failure
+        }
         return flow {
             val renewing = if (session === live) scheduleRenewal(server, mint) else null
             try {
                 live.events.collect { event ->
+                    if (event is VoiceAgentEvent.TurnReceipt && target != null) {
+                        val turn = event.turn
+                        require(turn.sessionId == mint.sessionId && turn.turnId.startsWith("${mint.sessionId}:") && turn.status in setOf("unknown", "dispatched", "completed"))
+                        val store = context?.let { io.kombify.speechkit.store.RoomStore(it) }
+                        try {
+                            store?.saveRemoteTurnReceipt(server.storageScope(), turn.sessionId, turn.turnId, turn.status)
+                        } finally { store?.close() }
+                    }
                     if (event is VoiceAgentEvent.Closed) cancelRenewal(renewing)
                     emit(event)
                 }
@@ -174,11 +241,11 @@ class VoiceAgentController(
                 delay(remaining - minOf(RENEW_LEAD_MS, remaining / 2))
 
                 val currentServer = renewalServer(server) ?: return@launch
-                val api = SpeechKitServerApi(currentServer, okHttp)
+                val api = SpeechKitServerApi(currentServer, okHttp, context = context)
                 val renewed = try {
                     // The deadline bounds the attempt: past it there is nothing left to extend.
                     withTimeoutOrNull((deadlineMs - System.currentTimeMillis()).coerceAtLeast(1L)) {
-                        api.renewVoiceAgentSession(sessionId)
+                        api.renewVoiceAgentSession(sessionId, target)
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -231,33 +298,7 @@ class VoiceAgentController(
      * receives; audio frames pass through untouched for the caller to play.
      */
     override fun accept(event: VoiceAgentEvent) {
-        _state.value = when (event) {
-            is VoiceAgentEvent.State -> _state.value.copy(phase = event.state.toPhase())
-
-            is VoiceAgentEvent.Transcript -> if (event.input) {
-                _state.value.copy(userText = event.text)
-            } else {
-                _state.value.copy(agentText = event.text)
-            }
-
-            // A cut answer is not a partial answer: keep what was said, but do
-            // not let the next turn append to it.
-            VoiceAgentEvent.Interrupted -> _state.value.copy(agentText = "")
-
-            is VoiceAgentEvent.Failure -> {
-                VoiceLog.e(VoiceLog.AGENT, "session failure")
-                _state.value.copy(
-                    error = event.message,
-                    errorCode = event.code,
-                    errorClass = event.errorClass,
-                )
-            }
-
-            is VoiceAgentEvent.Closed -> _state.value.copy(phase = VoiceAgentUiState.Phase.Ended)
-
-            // Tool calls are host business, and audio is played by the caller.
-            is VoiceAgentEvent.ToolCall, is VoiceAgentEvent.Audio -> _state.value
-        }
+        _state.value = reduceVoiceAgentState(_state.value, event)
     }
 
     /** Streams captured microphone PCM to the agent. */
@@ -270,16 +311,18 @@ class VoiceAgentController(
      * the conversation continues; it does not end the session.
      */
     override suspend fun endTurn() {
-        session?.endTurn()
+        val live = session ?: return
+        live.endTurn()
     }
 
     /** Injects a typed turn instead of speech. */
-    suspend fun sendText(text: String) {
-        session?.sendText(text)
+    override suspend fun sendText(text: String) {
+        val live = session ?: return
+        live.sendText(text)
     }
 
     /** Answers a tool call the host executed. */
-    suspend fun respondToTool(id: String, name: String, response: Map<String, Any?>) {
+    override suspend fun respondToTool(id: String, name: String, response: Map<String, Any?>) {
         session?.respondToTool(id, name, response)
     }
 
@@ -288,12 +331,12 @@ class VoiceAgentController(
      * server acknowledges with an interrupted event, which drives the phase
      * back to listening.
      */
-    suspend fun cancelReply() {
+    override suspend fun cancelReply() {
         session?.cancelReply()
     }
 
     /** Moves a running sequence to its next step. */
-    suspend fun advanceStep(reason: String? = null) {
+    override suspend fun advanceStep(reason: String?) {
         session?.advanceStep(reason)
     }
 
@@ -306,22 +349,58 @@ class VoiceAgentController(
         _state.value = _state.value.copy(phase = VoiceAgentUiState.Phase.Ended)
     }
 
-    private fun String.toPhase(): VoiceAgentUiState.Phase = when (this) {
-        VoiceAgentStates.CONNECTING -> VoiceAgentUiState.Phase.Connecting
-        VoiceAgentStates.LISTENING -> VoiceAgentUiState.Phase.Listening
-        VoiceAgentStates.PROCESSING -> VoiceAgentUiState.Phase.Processing
-        VoiceAgentStates.SPEAKING -> VoiceAgentUiState.Phase.Speaking
-        // Recovering is a live state, not a dead one: the session is coming
-        // back and the surface must not look ended while it does.
-        VoiceAgentStates.RECOVERING -> VoiceAgentUiState.Phase.Connecting
-        VoiceAgentStates.DEACTIVATING, VoiceAgentStates.INACTIVE ->
-            VoiceAgentUiState.Phase.Ended
-
-        else -> _state.value.phase // forward-compatible: unknown states hold
-    }
-
     private companion object {
         /** How long before the budget deadline a renewal is requested, at most. */
         const val RENEW_LEAD_MS = 60_000L
     }
 }
+
+private fun sameVoiceOrigin(baseUrl: String, wsUrl: String): Boolean = try {
+    val base = java.net.URI(baseUrl)
+    val ws = java.net.URI(wsUrl)
+    val expectedScheme = when (base.scheme?.lowercase()) { "https" -> "wss"; "http" -> "ws"; else -> "" }
+    fun port(uri: java.net.URI): Int = if (uri.port >= 0) uri.port else if (uri.scheme.equals("https", true) || uri.scheme.equals("wss", true)) 443 else 80
+    ws.scheme.equals(expectedScheme, true) && base.host != null && ws.host.equals(base.host, true) &&
+        ws.userInfo == null && ws.fragment == null && port(ws) == port(base)
+} catch (_: Exception) { false }
+
+internal fun reduceVoiceAgentState(state: VoiceAgentUiState, event: VoiceAgentEvent): VoiceAgentUiState = when (event) {
+            is VoiceAgentEvent.State -> state.copy(phase = event.state.toPhase(state.phase))
+
+            is VoiceAgentEvent.Transcript -> if (event.input) {
+                state.copy(userText = event.text, latestSpeaker = VoiceAgentUiState.Speaker.USER)
+            } else {
+                state.copy(agentText = event.text, latestSpeaker = VoiceAgentUiState.Speaker.AGENT)
+            }
+
+            // A cut answer is not a partial answer: keep what was said, but do
+            // not let the next turn append to it.
+            VoiceAgentEvent.Interrupted -> state.copy(agentText = "", latestSpeaker = null)
+
+            is VoiceAgentEvent.Failure -> {
+                VoiceLog.e(VoiceLog.AGENT, "session failure")
+                state.copy(
+                    error = event.message,
+                    errorCode = event.code,
+                    errorClass = event.errorClass,
+                )
+            }
+
+            is VoiceAgentEvent.Closed -> state.copy(phase = VoiceAgentUiState.Phase.Ended)
+
+            // Tool calls are host business, and audio is played by the caller.
+            is VoiceAgentEvent.ToolCall, is VoiceAgentEvent.Audio, is VoiceAgentEvent.TurnReceipt -> state
+        }
+
+private fun String.toPhase(current: VoiceAgentUiState.Phase): VoiceAgentUiState.Phase = when (this) {
+    VoiceAgentStates.CONNECTING, VoiceAgentStates.RECOVERING -> VoiceAgentUiState.Phase.Connecting
+    VoiceAgentStates.LISTENING -> VoiceAgentUiState.Phase.Listening
+    VoiceAgentStates.PROCESSING -> VoiceAgentUiState.Phase.Processing
+    VoiceAgentStates.SPEAKING -> VoiceAgentUiState.Phase.Speaking
+    VoiceAgentStates.DEACTIVATING, VoiceAgentStates.INACTIVE -> VoiceAgentUiState.Phase.Ended
+    else -> current
+}
+
+internal fun localVoiceHandoffFailure() = io.kombify.speechkit.domain.ExecutionFailure(
+    io.kombify.speechkit.domain.ExecutionFailureKind.UNAVAILABLE, "Continue with local voice in SpeechKit",
+)

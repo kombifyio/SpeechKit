@@ -35,6 +35,7 @@ import io.kombify.speechkit.R
 import io.kombify.speechkit.app.build.ShippedDefaults
 import io.kombify.speechkit.domain.ConnectionMode
 import io.kombify.speechkit.net.OnDeviceEngine
+import io.kombify.speechkit.net.LocalSpeechAdapters
 import io.kombify.speechkit.net.StoredServerProfile
 import io.kombify.speechkit.stt.parakeet.ParakeetDownloads
 import io.kombify.speechkit.stt.parakeet.ParakeetLanguages
@@ -48,7 +49,7 @@ import kotlinx.coroutines.withContext
 /**
  * Chooses the on-device recognizer and the offline model, and manages the model download.
  *
- * The system recognizer stays the default; the offline model becomes selectable once the device can run one, and
+ * Hybrid hosts default to automatic local selection; existing explicit preferences remain. The offline model becomes selectable once the device can run one, and
  * is used for on-device dictation (keyboard, assistant, Voice IME) only after it is downloaded. The models offered
  * are the ones this device can run ([ParakeetOnDevice.supportedModels]): Phonon-2.5 (recommended), Parakeet Ultra
  * on phones with enough memory, and Phonon-2.5 English. The download runs in the background ([ParakeetDownloads])
@@ -93,7 +94,7 @@ internal fun OnDeviceModelCard(onModeChanged: () -> Unit = {}) {
             // and not when it cannot serve the language they dictate in (Phonon-2.5 English only English).
             val language = java.util.Locale.getDefault().language
             val fits = ParakeetLanguages.supports(language) && (model?.englishOnly != true || language == "en")
-            if (!OnDeviceEngine.hasChoice(context) && fits) OnDeviceEngine.setChoice(context, OnDeviceEngine.Choice.PARAKEET)
+            if (!OnDeviceEngine.hasChoice(context) && choice != OnDeviceEngine.Choice.AUTO && fits) OnDeviceEngine.setChoice(context, OnDeviceEngine.Choice.PARAKEET)
             choice = OnDeviceEngine.choice(context)
         }
     }
@@ -111,6 +112,42 @@ internal fun OnDeviceModelCard(onModeChanged: () -> Unit = {}) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (LocalSpeechAdapters.enabled) {
+                    FilterChip(
+                        selected = choice == OnDeviceEngine.Choice.AUTO,
+                        onClick = {
+                            choice = OnDeviceEngine.Choice.AUTO
+                            OnDeviceEngine.setChoice(context, choice)
+                        },
+                        label = { Text(stringResource(R.string.settings_on_device_engine_auto)) },
+                    )
+                }
+                FilterChip(
+                    selected = choice == OnDeviceEngine.Choice.SYSTEM,
+                    onClick = {
+                        choice = OnDeviceEngine.Choice.SYSTEM
+                        OnDeviceEngine.setChoice(context, choice)
+                    },
+                    label = { Text(stringResource(R.string.settings_on_device_engine_system)) },
+                )
+                FilterChip(
+                    selected = choice == OnDeviceEngine.Choice.PARAKEET,
+                    enabled = model != null,
+                    onClick = {
+                        choice = OnDeviceEngine.Choice.PARAKEET
+                        OnDeviceEngine.setChoice(context, choice)
+                    },
+                    label = { Text(stringResource(R.string.settings_on_device_engine_parakeet)) },
+                )
+            }
+            if (LocalSpeechAdapters.enabled && choice == OnDeviceEngine.Choice.AUTO) {
+                Text(stringResource(R.string.settings_on_device_auto_detail), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             if (probe == null) return@Column
             val current = model
             if (current == null) {
@@ -122,28 +159,6 @@ internal fun OnDeviceModelCard(onModeChanged: () -> Unit = {}) {
                     color = MaterialTheme.colorScheme.error,
                 )
                 return@Column
-            }
-
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                FilterChip(
-                    selected = choice == OnDeviceEngine.Choice.SYSTEM,
-                    onClick = {
-                        choice = OnDeviceEngine.Choice.SYSTEM
-                        OnDeviceEngine.setChoice(context, choice)
-                    },
-                    label = { Text(stringResource(R.string.settings_on_device_engine_system)) },
-                )
-                FilterChip(
-                    selected = choice == OnDeviceEngine.Choice.PARAKEET,
-                    onClick = {
-                        choice = OnDeviceEngine.Choice.PARAKEET
-                        OnDeviceEngine.setChoice(context, choice)
-                    },
-                    label = { Text(stringResource(R.string.settings_on_device_engine_parakeet)) },
-                )
             }
 
             if (offered.size > 1) {
@@ -196,10 +211,10 @@ internal fun OnDeviceModelCard(onModeChanged: () -> Unit = {}) {
                     if (installed) {
                         Text(
                             stringResource(
-                                if (choice == OnDeviceEngine.Choice.PARAKEET) {
-                                    R.string.settings_on_device_ready_active
-                                } else {
-                                    R.string.settings_on_device_ready_inactive
+                                when (choice) {
+                                    OnDeviceEngine.Choice.PARAKEET -> R.string.settings_on_device_ready_active
+                                    OnDeviceEngine.Choice.AUTO -> R.string.settings_on_device_ready_auto
+                                    OnDeviceEngine.Choice.SYSTEM -> R.string.settings_on_device_ready_inactive
                                 },
                                 current.name,
                             ),
@@ -215,9 +230,11 @@ internal fun OnDeviceModelCard(onModeChanged: () -> Unit = {}) {
                             )
                             Button(
                                 onClick = {
-                                    StoredServerProfile.saveMode(context, ConnectionMode.ON_DEVICE)
-                                    modeTick += 1
-                                    onModeChanged()
+                                    scope.launch {
+                                        io.kombify.speechkit.net.StoredConnectionSelection(context).selectLocal()
+                                        modeTick += 1
+                                        onModeChanged()
+                                    }
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Text(stringResource(R.string.settings_on_device_use_device)) }

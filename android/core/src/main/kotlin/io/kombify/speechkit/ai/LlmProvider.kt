@@ -1,5 +1,8 @@
 package io.kombify.speechkit.ai
 
+import io.kombify.speechkit.domain.ExecutionFailure
+import io.kombify.speechkit.domain.ExecutionFailureKind
+
 /**
  * LLM provider interface for AI text actions.
  *
@@ -55,14 +58,16 @@ class LlmRegistry(
     }
 
     suspend fun generate(prompt: String, opts: GenerateOpts = GenerateOpts()): GenerateResult {
+        var unavailable: ExecutionFailure? = null
         for (provider in providers) {
-            return try {
-                provider.generate(prompt, opts)
-            } catch (e: Exception) {
-                continue
+            try {
+                return provider.generate(prompt, opts)
+            } catch (failure: ExecutionFailure) {
+                if (failure.kind != ExecutionFailureKind.UNAVAILABLE && failure.kind != ExecutionFailureKind.TRANSIENT) throw failure
+                unavailable = failure
             }
         }
-        error("No LLM provider available")
+        throw unavailable ?: ExecutionFailure(ExecutionFailureKind.UNAVAILABLE, "No LLM provider available")
     }
 
     fun availableProviders(): List<String> = providers.map { it.name }

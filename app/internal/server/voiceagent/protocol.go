@@ -3,6 +3,7 @@
 package voiceagent
 
 import (
+	"github.com/kombifyio/SpeechKit/app/internal/store"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/x/voiceagent/a2a"
 )
@@ -109,6 +110,7 @@ type StartFrame struct {
 	// defaults to "websocket" for existing clients. "livekit" keeps this
 	// WebSocket as the control channel and moves audio through LiveKit tracks.
 	MediaTransport string `json:"media_transport,omitempty"`
+	TurnReceipts   bool   `json:"turn_receipts,omitempty"`
 	Voice          string `json:"voice,omitempty"`
 	Locale         string `json:"locale,omitempty"`
 	// Timezone is the user's IANA zone (e.g. "Europe/Berlin") for the
@@ -272,8 +274,9 @@ type SequenceStepFrame struct {
 type EventFrame struct {
 	Type string `json:"type"` // "event"
 	EventFrameFields
-	Conversation *a2a.VoiceModeReceipt `json:"conversation,omitempty"`
-	Route        *RouteSwitchReceipt   `json:"route,omitempty"`
+	Conversation *a2a.VoiceModeReceipt   `json:"conversation,omitempty"`
+	Route        *RouteSwitchReceipt     `json:"route,omitempty"`
+	Turn         *store.VoiceTurnReceipt `json:"turn,omitempty"`
 }
 
 type InterruptedFrame struct {

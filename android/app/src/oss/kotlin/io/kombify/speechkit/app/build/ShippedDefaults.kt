@@ -10,12 +10,12 @@ object ShippedDefaults {
 
     val serverUrl: String? get() = null
     val serverToken: String? get() = null
-    val cloudConnectSupported: Boolean get() = false
+    val cloudConnectSupported: Boolean get() = io.kombify.speechkit.BuildConfig.CONNECTION_SETUP_ENABLED
 
-    val cloudAuthClientId: String get() = ""
+    val cloudAuthClientId: String get() = io.kombify.speechkit.BuildConfig.CLOUD_AUTH_CLIENT_ID.trim()
 
-    /** Self-hosted bearers carry plain tenant_id/org_id claims. */
-    val tokenClaimNamespace: String get() = ""
+    /** Claims used by an explicitly connected Kombify account. */
+    val tokenClaimNamespace: String get() = io.kombify.speechkit.net.KombifyCloudAuth.DEFAULT_CLAIM_NAMESPACE
 
     val showLabTabs: Boolean get() = true
 

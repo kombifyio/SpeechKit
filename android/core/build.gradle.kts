@@ -159,6 +159,8 @@ publishing {
 }
 
 dependencies {
+    implementation(project(":domain"))
+
     // Kotlin & Coroutines
     implementation(libs.kotlin.stdlib)
     implementation(libs.coroutines.core)

@@ -41,7 +41,8 @@ import io.kombify.speechkit.domain.ConnectionProfile
 import io.kombify.speechkit.domain.ConnectionProfileSource
 import io.kombify.speechkit.log.VoiceLog
 import io.kombify.speechkit.net.VoiceAgentAudio
-import io.kombify.speechkit.net.VoiceAgentController
+import io.kombify.speechkit.net.voiceAgentDriver
+import io.kombify.speechkit.net.VoiceAgentSessionDriver
 import io.kombify.speechkit.net.VoiceAgentEvent
 import io.kombify.speechkit.net.VoiceAgentStartFrame
 import io.kombify.speechkit.net.VoiceAgentUiState
@@ -50,6 +51,8 @@ import io.kombify.speechkit.net.safeVoiceAgentCode
 import io.kombify.speechkit.domain.serverDisplayToken
 import io.kombify.speechkit.domain.serverDisplayUrl
 import io.kombify.speechkit.domain.testSurfaceConnectProfile
+import io.kombify.speechkit.app.keyboard.KeyboardAgentPreferences
+import io.kombify.speechkit.net.StoredExecutionPolicy
 import io.kombify.speechkit.voiceui.VoiceAuraOrb
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
@@ -94,7 +97,7 @@ fun VoiceAgentTestScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    var controller by remember { mutableStateOf<VoiceAgentController?>(null) }
+    var controller by remember { mutableStateOf<VoiceAgentSessionDriver?>(null) }
     var status by remember { mutableStateOf(resources.getString(R.string.dev_status_disconnected)) }
     var holding by remember { mutableStateOf(false) }
     var recordJob by remember { mutableStateOf<Job?>(null) }
@@ -105,14 +108,20 @@ fun VoiceAgentTestScreen(
     val state = controller?.state?.collectAsState()?.value ?: VoiceAgentUiState()
 
     DisposableEffect(Unit) {
+        val policyListener = io.kombify.speechkit.net.NetworkUseGuard.listen {
+            val jobs = listOfNotNull(recordJob, connectJob)
+            recordJob?.cancel(); connectJob?.cancel(); player.flush()
+            jobs
+        }
         onDispose {
+            policyListener.close()
             recordJob?.cancel()
             connectJob?.cancel()
             player.release()
         }
     }
 
-    fun startCapture(live: VoiceAgentController) {
+    fun startCapture(live: VoiceAgentSessionDriver) {
         recordJob = scope.launch {
             runCatching {
                 capture.frames().collect { live.sendAudio(it) }
@@ -129,7 +138,7 @@ fun VoiceAgentTestScreen(
         if (connectJob?.isActive == true || controller != null) return
         val connecting = scope.launch(start = CoroutineStart.LAZY) {
             val owner = coroutineContext[Job]
-            var live: VoiceAgentController? = null
+            var live: VoiceAgentSessionDriver? = null
             val playback = PcmPlaybackQueue(VoiceAgentAudio.SERVER_SAMPLE_RATE)
             try {
                 val profile = testSurfaceConnectProfile(
@@ -137,17 +146,32 @@ fun VoiceAgentTestScreen(
                     serverUrl,
                     token,
                 )
-                if (profile !is ConnectionProfile.Server) {
-                    status = "Voice Agent needs a SpeechKit server (tester origin, Cloud, or self-host)."
+                if (profile !is ConnectionProfile.Server && profile !is ConnectionProfile.Byok && profile !is ConnectionProfile.Firebase) {
+                    status = "Choose a Voice Agent connection in connection settings first."
                     return@launch
                 }
                 status = resources.getString(R.string.dev_status_connecting)
                 // No renewal source: the session keeps its first bearer, so no
                 // renewal bearer is ever compared and the namespace is unused.
-                val session = VoiceAgentController(profile, renewalClaimNamespace = "")
+                val session = voiceAgentDriver(
+                    profile,
+                    renewalClaimNamespace = "",
+                    context = context,
+                    localReady = { io.kombify.speechkit.app.hybrid.HybridRuntime.localVoiceReady(context) },
+                    target = io.kombify.speechkit.net.StoredVoiceAgentTarget(context).read(profile),
+                    localHandoff = { io.kombify.speechkit.app.hybrid.HybridActivity.open(context) },
+                    policyOverride = StoredExecutionPolicy(context).read(profile),
+                )
                 live = session
                 controller = session
-                val events = session.start(VoiceAgentStartFrame())
+                // profile ID is catalog metadata; the public start contract
+                // selects its exact endpoint through provider + model.
+                val choice = KeyboardAgentPreferences.choice(context, profile)
+                val startFrame = if (choice.profileId.isBlank()) VoiceAgentStartFrame() else VoiceAgentStartFrame(
+                    provider = choice.provider,
+                    model = choice.model.ifBlank { null },
+                )
+                val events = session.start(startFrame)
                 status = resources.getString(R.string.dev_status_connected)
                 coroutineScope {
                     val playing = launch { playback.consume { player.play(it) } }
