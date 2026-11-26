@@ -121,6 +121,20 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.81.12 (2026-11-26)
+
+### Highlights
+
+- **Choose where AI runs**: Android setup brings together local processing, your own keys or endpoints, Firebase AI Logic, and kombify Cloud through a connected Companion. New installations start in local-only mode.
+- **Switch processing with a hold**: Under Local First or Cloud First, tap a supported shortcut to use your selected policy, or hold it to request the alternative route. Local-only and cloud-only policies keep their boundary.
+- **Work with shared messages**: Preview text, images and voice messages shared with SpeechKit, then request a summary or an audio transcript. Results stay in the preview until you choose to copy them.
+- **Use local and cloud capabilities**: Firebase AI Logic connects supported cloud and on-device features. Local availability depends on the device and downloaded models; unsupported actions report that limitation.
+- **Use the keyboard voice panel**: Supported realtime connections use the compact panel or expanded voice-agent view with the selected compatible endpoint. Shortcuts remain available when voice is inactive; local conversations open the foreground voice screen.
+
+### Bug Fixes
+
+* **speechkit:** align NSIS download with the desktop publisher
+
 ## 0.81.11 (2026-11-26)
 
 ### Highlights
