@@ -65,7 +65,7 @@ RUN go build \
 # sherpa-onnx libraries the go.sum-pinned sherpa-onnx-go-linux module ships,
 # which bring their own ONNX Runtime. They go to a private directory found
 # through the binary's runpath, never into /usr/local/lib, so they cannot
-# shadow the ONNX Runtime 1.17.1 the server loads for Silero VAD.
+# shadow the ONNX Runtime 1.29.0 the server loads for Silero VAD.
 RUN go build \
         -ldflags="-s -w -X main.version=${VERSION} -extldflags=-Wl,-rpath,/usr/local/lib/sherpa-onnx" \
         -o /out/speechkit-stt-sherpa \
@@ -147,21 +147,24 @@ RUN apt-get update \
         unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# ONNX Runtime shared lib for the Silero VAD kernel. Pinned version must stay
-# in sync with `github.com/yalue/onnxruntime_go` in go.mod.
-ARG ONNX_VERSION=1.17.1
-# Download to a file with retries instead of streaming `curl | tar`: a piped
-# stream that drops mid-transfer (a recurring GitHub-release-asset flake)
-# would otherwise fail the whole release build with no retry. --retry-all-errors
-# also retries on transient 5xx/connection resets, not just curl's own errors.
+# The Go binding v1.36.0 requests ONNX C API 29. Use the same official NuGet
+# package as scripts/prepare-onnx-runtime.ps1; the GitHub archives return 404.
+# Verify both the package and its Linux libraries before installing them.
+ARG ONNX_VERSION=1.29.0
 RUN set -eux; \
     curl -fL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 30 \
-      -o /tmp/onnxruntime.tgz \
-      "https://github.com/microsoft/onnxruntime/releases/download/v${ONNX_VERSION}/onnxruntime-linux-x64-${ONNX_VERSION}.tgz"; \
-    tar -xzf /tmp/onnxruntime.tgz -C /tmp; \
-    cp -a "/tmp/onnxruntime-linux-x64-${ONNX_VERSION}/lib/." /usr/local/lib/; \
+      -o /tmp/onnxruntime.nupkg \
+      "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/${ONNX_VERSION}/microsoft.ml.onnxruntime.${ONNX_VERSION}.nupkg"; \
+    echo '4557021fec4da3924e2e12ff44b1cc50b176de0d2c5c7daa89ab11c208b3a454  /tmp/onnxruntime.nupkg' | sha256sum -c -; \
+    unzip -j /tmp/onnxruntime.nupkg 'runtimes/linux-x64/native/*.so' -d /usr/local/lib; \
+    printf '%s  %s\n' \
+      5715f06d8992ca8eeeddcce43df3a7d38f97d537052126f558e912cb312460ca /usr/local/lib/libonnxruntime.so \
+      086ec1d5388f64153d9c63470d126693db9a182c8ce236d3a1119068471b8a0d /usr/local/lib/libonnxruntime_providers_shared.so \
+      | sha256sum -c -; \
+    mkdir -p /usr/local/share/licenses/onnxruntime; \
+    unzip -j /tmp/onnxruntime.nupkg LICENSE ThirdPartyNotices.txt -d /usr/local/share/licenses/onnxruntime; \
     ldconfig; \
-    rm -rf /tmp/onnxruntime.tgz "/tmp/onnxruntime-linux-x64-${ONNX_VERSION}"
+    rm /tmp/onnxruntime.nupkg
 
 # Non-root runtime user with a fixed UID so persistent volumes keep stable
 # ownership across container restarts.
