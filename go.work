@@ -7,5 +7,4 @@ use (
 	./app
 	./pkg/speechkit/x
 	./examples
-	./scripts/full-local-lab
 )
