@@ -51,9 +51,10 @@ func (r routerRecognizer) OpenRecognition(ctx context.Context, opts cascaded.Rec
 		Language:          strings.TrimSpace(opts.Locale),
 		EndpointingMs:     voiceEndpointingMs,
 		ProviderProfileID: r.profileID,
-		// The session's vocabulary (product terms such as Homelab or kombify): without it the
-		// Companion's live recognition heard them as ordinary words.
-		Keyterms: opts.Keyterms,
+		// The session's vocabulary (product terms and custom domain words):
+		// without it live recognition hears coined terms as ordinary words.
+		Keyterms:   opts.Keyterms,
+		PromptHint: opts.Prompt,
 	}, speaker.AudioFormat{Encoding: speaker.AudioEncodingLinear16, SampleRateHz: 16000, Channels: 1})
 	if err != nil {
 		return nil, err

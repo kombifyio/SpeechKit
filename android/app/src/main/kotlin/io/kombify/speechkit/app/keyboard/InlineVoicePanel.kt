@@ -40,6 +40,8 @@ import io.kombify.speechkit.app.companion.CoinstallTurnClient
 import io.kombify.speechkit.app.companion.CoinstallTurnResult
 import io.kombify.speechkit.app.companion.recoverCloudSession
 import io.kombify.speechkit.app.companion.CompanionProvisioner
+import io.kombify.speechkit.app.hybrid.HybridActivity
+import io.kombify.speechkit.app.hybrid.HybridRuntime
 import io.kombify.speechkit.app.ui.MainActivity
 import io.kombify.speechkit.audio.MicAudioCapture
 import io.kombify.speechkit.audio.PcmStreamPlayer
@@ -272,10 +274,11 @@ class InlineVoicePanel(
             companionSession = io.kombify.speechkit.net.StoredServerProfile.cloudSelected(service) && companion.currentSession() != null,
         )
         if (chosen.opensVoiceAgentInIme() && BuildConfig.CONNECTION_SETUP_ENABLED && BuildConfig.HYBRID_ENABLED) {
-            val selection = io.kombify.speechkit.net.StoredConnectionSelection(service).snapshot()
-            if (selection.mode == io.kombify.speechkit.domain.ConnectionMode.ON_DEVICE && selection.revision > 0) {
+            val selection = io.kombify.speechkit.net.StoredConnectionSelection(service)
+                .snapshot(io.kombify.speechkit.app.build.ShippedDefaults.shippedProfile())
+            if (selection.policy.mode == ExecutionMode.DEVICE_ONLY && selection.revision > 0) {
                 hidePanel()
-                io.kombify.speechkit.app.hybrid.HybridActivity.open(service)
+                HybridActivity.openLocalVoice(service, selection.revision)
                 return null
             }
         }
@@ -304,22 +307,27 @@ class InlineVoicePanel(
         val route = selection.snapshot(io.kombify.speechkit.app.build.ShippedDefaults.shippedProfile())
         val profile = route.profile
         val policy = route.policy
+        val executionShortcuts = BuildConfig.CONNECTION_SETUP_ENABLED && BuildConfig.HYBRID_ENABLED
         fun routeStillCurrent(): Boolean = selection.snapshot(io.kombify.speechkit.app.build.ShippedDefaults.shippedProfile()).revision == route.revision
         val exclusive = policy.mode == ExecutionMode.DEVICE_ONLY || policy.mode == ExecutionMode.ENDPOINT_ONLY
         fun openShortcut(agent: Boolean, alternate: Boolean, hold: Boolean = false) {
             if (!routeStillCurrent()) { Toast.makeText(service, service.getString(io.kombify.speechkit.R.string.hybrid_failed), Toast.LENGTH_SHORT).show(); return }
             val invocation = policy.forInvocation(alternate)
-            if (agent && !hold && invocation.mode == ExecutionMode.DEVICE_ONLY) {
-                hidePanel(); io.kombify.speechkit.app.hybrid.HybridActivity.open(service); return
-            }
             val connection = service.currentInputConnection ?: return
             val editor = service.currentInputEditorInfo ?: return
+            if (isDictationBlocked(editor.inputType)) return
+            if (agent && !hold && BuildConfig.HYBRID_ENABLED && invocation.mode == ExecutionMode.DEVICE_ONLY) {
+                hidePanel()
+                HybridActivity.openLocalVoice(service, route.revision)
+                return
+            }
             val agentChoice = KeyboardAgentPreferences.choice(service, profile)
             if (open(service, connection, editor, profile, agent,
                     if (agent) agentChoice.provider else null,
                     if (agent) agentChoice.model.ifBlank { null } else null,
                     invocation, preserveShortcut = hold)) {
-                if (hold) { if (agent) agentController?.beginTurn() else controller?.toggleMic() }
+                if (!agent && (hold || executionShortcuts)) controller?.toggleMic()
+                else if (hold) agentController?.beginTurn()
             }
         }
         var localVoiceHold = false
@@ -332,33 +340,37 @@ class InlineVoicePanel(
             localVoiceText = null
             localVoiceReleased = false
             hidePanel()
-            io.kombify.speechkit.app.hybrid.HybridActivity.openLocalVoiceText(service, text, route.revision)
+            HybridActivity.openLocalVoiceText(service, text, route.revision)
         }
         fun startLocalVoiceHold() {
             if (!routeStillCurrent()) { Toast.makeText(service, service.getString(io.kombify.speechkit.R.string.hybrid_failed), Toast.LENGTH_SHORT).show(); return }
+            val target = service.currentInputConnection ?: return
+            val editor = service.currentInputEditorInfo ?: return
+            if (isDictationBlocked(editor.inputType)) return
             localVoiceHold = true
             localVoiceReleased = false
             localVoiceText = null
             localVoiceReadiness = hostScope.launch {
-                if (!io.kombify.speechkit.app.hybrid.HybridRuntime.localVoiceReady(service)) {
+                val language = java.util.Locale.getDefault().toLanguageTag()
+                if (!HybridRuntime.localVoiceReady(service)) {
                     if (localVoiceHold) Toast.makeText(service, service.getString(io.kombify.speechkit.R.string.keyboard_local_voice_unavailable), Toast.LENGTH_SHORT).show()
                     return@launch
                 }
-                if (!localVoiceHold || !routeStillCurrent()) return@launch
-                val target = service.currentInputConnection ?: return@launch
-                val editor = service.currentInputEditorInfo ?: return@launch
+                if (!localVoiceHold || !routeStillCurrent() || service.currentInputConnection !== target) return@launch
                 // Voice-agent transcripts never enter the editor; only a final released turn reaches the foreground agent.
                 val privateTranscript = object : android.view.inputmethod.InputConnectionWrapper(target, false) {
                     override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean = true
                     override fun finishComposingText(): Boolean = true
                     override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
+                        if (service.currentInputConnection !== target) return false
                         localVoiceText = text?.toString()
                         deliverLocalVoice()
                         return true
                     }
                 }
                 if (open(service, privateTranscript, editor, profile, false, null,
-                        policyOverride = policy.forInvocation(false), preserveShortcut = true)) controller?.toggleMic()
+                        policyOverride = policy.forInvocation(false), preserveShortcut = true,
+                        initialLanguage = language)) controller?.toggleMic()
             }
         }
         fun finishHeldShortcut(agent: Boolean, completed: Boolean) {
@@ -596,6 +608,7 @@ class InlineVoicePanel(
         agentModel: String? = null,
         policyOverride: io.kombify.speechkit.domain.ExecutionPolicy? = null,
         preserveShortcut: Boolean = false,
+        initialLanguage: String = io.kombify.speechkit.stt.LANGUAGE_MULTI,
     ): Boolean {
         // Refusing here rather than showing a dead panel lets the bridge fall
         // back to upstream's behaviour, which is still better than nothing.
@@ -612,6 +625,7 @@ class InlineVoicePanel(
         resumeAfterGrant = null
 
         val profile = tier ?: profileSource.currentProfile()
+        val connectionRevision = io.kombify.speechkit.net.StoredConnectionSelection(service).revision()
         // Setup is a presentation state, not an attempted conversation. In
         // particular it must not request audio access or invoke local handoff.
         val needsAgentSetup = BuildConfig.VOICE_AGENT_OPAL_ENABLED && when (profile) {
@@ -657,6 +671,7 @@ class InlineVoicePanel(
             sessionFactory = { options -> openSession(profile, options, policyOverride) },
             audioCapture = MicAudioCapture(),
             micPermission = gate,
+            initialLanguage = initialLanguage,
         )
         val panelAgent = ImeVoiceAgentController(
             scope = panelScope,
@@ -667,13 +682,11 @@ class InlineVoicePanel(
                     renewalClaimNamespace = voiceRenewalProfiles.claimNamespace,
                     context = service,
                     policyOverride = policyOverride,
-                    localReady = { io.kombify.speechkit.app.hybrid.HybridRuntime.localVoiceReady(service) },
+                    localReady = { HybridRuntime.localVoiceReady(service) },
                     target = io.kombify.speechkit.net.StoredVoiceAgentTarget(service).read(profile),
-                    localHandoff = {
-                        val handoff = android.content.Intent().setClassName(service.packageName, "io.kombify.speechkit.app.hybrid.HybridActivity")
-                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                        if (handoff.resolveActivity(service.packageManager) != null) service.startActivity(handoff)
-                    },
+                    localHandoff = if (BuildConfig.HYBRID_ENABLED) ({
+                        HybridActivity.openLocalVoice(service, connectionRevision)
+                    }) else null,
                 )
             },
             audioCapture = MicAudioCapture(),

@@ -43,7 +43,9 @@ class SpeechKitApplication : App() {
     }
 
     override fun onCreate() {
+        runCatching { io.kombify.speechkit.app.telemetry.CrashDiagnostics.initialize(this) }
         super.onCreate()
+        runCatching { io.kombify.speechkit.app.telemetry.CrashDiagnostics.installOuterHandler() }
         // On-device diagnosis: `adb logcat -s sk.voice`. VoiceLog always uses
         // that tag. DebugTree in debug; INFO+ on release so a tester APK still
         // shows mint/WS/capture failures without debug verbosity.

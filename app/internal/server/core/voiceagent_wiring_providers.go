@@ -195,8 +195,10 @@ func (b *openaiLiveBridge) Connect(ctx context.Context, cfg vsserver.LiveConfigF
 		Voice:            cfg.Voice,
 		FrameworkPrompt:  cfg.SystemPrompt,
 		RefinementPrompt: cfg.RefinementPrompt,
+		VocabularyHint:   cfg.VocabularyHint,
 		Locale:           cfg.Locale,
 		Speaker:          cfg.Speaker,
+		Options:          vocabularyOptions(cfg.Keyterms, cfg.VocabularyPrompt),
 		Tools:            kernelToolDefinitions(cfg.Tools),
 		Policies: live.LivePolicies{
 			EnableInputAudioTranscription:  true,
@@ -314,8 +316,10 @@ func (b *gptLiveBridge) Connect(ctx context.Context, cfg vsserver.LiveConfigFram
 		Voice:            cfg.Voice,
 		FrameworkPrompt:  cfg.SystemPrompt,
 		RefinementPrompt: cfg.RefinementPrompt,
+		VocabularyHint:   cfg.VocabularyHint,
 		Locale:           cfg.Locale,
 		Speaker:          cfg.Speaker,
+		Options:          vocabularyOptions(cfg.Keyterms, cfg.VocabularyPrompt),
 		Tools:            kernelToolDefinitions(cfg.Tools),
 	}
 	if err := b.inner.Connect(ctx, liveCfg); err != nil {
@@ -387,6 +391,7 @@ func (b *assemblyAILiveBridge) Connect(ctx context.Context, cfg vsserver.LiveCon
 		Voice:             cfg.Voice,
 		FrameworkPrompt:   cfg.SystemPrompt,
 		RefinementPrompt:  cfg.RefinementPrompt,
+		VocabularyHint:    cfg.VocabularyHint,
 		Locale:            cfg.Locale,
 		Speaker:           cfg.Speaker,
 		Policies: live.LivePolicies{
@@ -403,7 +408,7 @@ func (b *assemblyAILiveBridge) Connect(ctx context.Context, cfg vsserver.LiveCon
 			},
 		},
 	}
-	liveCfg.Options = keytermOptions(cfg.Keyterms)
+	liveCfg.Options = vocabularyOptions(cfg.Keyterms, cfg.VocabularyPrompt)
 	if err := b.inner.Connect(ctx, liveCfg); err != nil {
 		slog.Warn("voiceagent: AssemblyAI Voice Agent connect failed", "err", err)
 		return err
@@ -583,10 +588,11 @@ func (b *deepgramLiveBridge) Connect(ctx context.Context, cfg vsserver.LiveConfi
 		Voice:            cfg.Voice,
 		FrameworkPrompt:  cfg.SystemPrompt,
 		RefinementPrompt: cfg.RefinementPrompt,
+		VocabularyHint:   cfg.VocabularyHint,
 		Locale:           cfg.Locale,
 		Speaker:          cfg.Speaker,
 	}
-	liveCfg.Options = keytermOptions(cfg.Keyterms)
+	liveCfg.Options = vocabularyOptions(cfg.Keyterms, cfg.VocabularyPrompt)
 	if err := b.inner.Connect(ctx, liveCfg); err != nil {
 		return err
 	}

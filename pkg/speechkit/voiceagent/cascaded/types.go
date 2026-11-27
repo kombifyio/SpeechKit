@@ -32,6 +32,13 @@ type SessionConfig struct {
 	// Keyterms bias speech recognition (live and batch) towards the session's
 	// vocabulary; nil sends none.
 	Keyterms []string
+	// Prompt carries a transcript-style vocabulary hint for prompt-biased
+	// STT providers (for example Whisper-family models); empty sends none.
+	Prompt string
+	// NormalizeTranscript optionally rewrites finalized user transcripts
+	// (post-STT synonym/substitution rules) before they are emitted and
+	// sent to the agent. Nil leaves transcripts unchanged.
+	NormalizeTranscript func(string) string
 }
 
 // AgentInput is the request passed to the Agent (LLM) for one turn. It mirrors

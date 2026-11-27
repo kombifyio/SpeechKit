@@ -211,6 +211,40 @@ each other across that line. See [GPL-NOTICE.md](GPL-NOTICE.md).
 
 ## Diagnose on device
 
+HeliBoard records crashes locally. The managed Firebase tester flavor also has
+a technical Sentry reporter, enabled only by its delivery configuration, with
+a persistent on/off setting. Device-only execution blocks it and cancels
+active and queued reports. The OSS flavor has no Sentry SDK dependency or
+company DSN. Crash reports start with the managed version that includes the
+reporter. Earlier versions keep their crash files on the device.
+
+Managed reports contain exception types, source frames, fresh diagnostic trace
+IDs and bounded build/OS/model metadata. They exclude raw messages, audio, text,
+logs, screenshots, requests, credentials and account/device identifiers. The
+transport uses the existing network cancellation guard, refuses redirects and
+has no disk replay. A persistent hourly failure budget survives restarts.
+
+Delivery sets `SPEECHKIT_SENTRY_ENABLED`, `SPEECHKIT_SENTRY_DSN`, the full commit
+SHA in `SPEECHKIT_SENTRY_RELEASE`, and environment `preview`. The mapping-only
+Sentry Gradle plugin generates the managed APK's ProGuard identity; CI verifies
+it against the mapping uploader's identity before uploading the R8 mapping.
+Only the upload step receives `SENTRY_AUTH_TOKEN`. No source context is uploaded.
+The pinned uploader `@sentry/cli@2.58.6` accepts the Gradle plugin's explicit
+UUID; CLI 3 removed that option and computes a different identity. Delivery
+checks the packaged UUID against the merged R8/Compose mapping header before
+uploading that exact mapping. Runtime uses `SentryAndroidOptions` with core
+initialization and explicit collection exclusions; generic Java options are
+rejected by the Android SDK.
+The dedicated project enables `scrubIPAddresses` and applies the advanced rule
+`$user.geo.** -> @anything:remove`; IP removal alone does not remove Sentry's
+inferred geography. Verify this on a new event, since scrubbing is not retroactive.
+
+Verify a controlled managed-debug JVM crash at the dedicated EU project
+`speechkit-android`, then separately prove the minified release's source frames
+and the no-send behavior for disabled, device-only and OSS cases. The debug
+probe receiver is absent from release manifests. A server-side event or a test
+without a DSN is not evidence of Android reporting.
+
 ```
 adb logcat -s sk.voice
 ```
@@ -218,6 +252,78 @@ adb logcat -s sk.voice
 One tag, owned by `:core`'s `VoiceLog`. Lines carry HTTP status, WebSocket
 failure, capture codes and `token=present|absent` — never PCM, bearer secrets
 or transcript text.
+
+### Verify installations side by side
+
+The minified keyboard must also be opened in a real text field. Firebase
+`0.81.12` reproduced an `ExceptionInInitializerError` in `LatinIME.onCreate`
+on the Pixel: R8 moved `AccessibilityUtils` into the unnamed package, making
+its reflective `getPackage()!!` fail. The shared ProGuard rule preserves this
+class's package in both flavors. A launcher-only Robo pass does not exercise
+that initialization. Verify typing after cold start and after hiding and
+reopening the keyboard; a debug build without minification is insufficient.
+
+The OSS app derives its clipboard and gesture-sharing provider authorities from
+the final application ID. A custom preview ID receives its own authorities too.
+The managed app retains HeliBoard's historical authorities so an upgrade keeps
+its existing sharing identity. Manifest registration and generated content URIs
+read the same resources.
+
+For an Android release acceptance journey:
+
+1. Keep the managed app installed and preserve its data. Install the published
+   OSS APK without uninstalling either existing app.
+2. Verify that Android registered `<oss-application-id>.clipprovider` and
+   `<oss-application-id>.provider` for the OSS app, while the managed authorities
+   remain `helium314.keyboard.clipprovider` and `helium314.keyboard.provider`.
+3. Open the OSS keyboard in a synthetic text field, paste a synthetic image from
+   its clipboard history, and share a gesture-data ZIP through Android's chooser.
+4. Repeat with the custom preview application ID, then restore the original
+   default keyboard. Record installation, keyboard startup and both sharing
+   results separately; installation success alone does not prove these actions.
+
+Existing OSS clipboard files remain in app-private storage; their content URIs
+are generated when used. A URI already handed to another app before an authority
+change can expire. The change does not delete clipboard history.
+
+## Contextual settings
+
+The settings screen shows configuration for the selected connection only.
+Local recognizer/model details are expandable. The Hybrid AI screen selects one
+task at a time (text, transcription, voice agent or local notes), keeps model
+probes/downloads and history collapsed, and hides remote execution preferences
+until a remote route exists. Switching to device-only stops LAN discovery and
+invalidates outstanding nearby-device permission requests.
+
+### Connection and task behavior
+
+Opening another remote setup form leaves the current connection active until
+the new connection is saved or authorized. Choosing device-only takes effect
+immediately. Updating a configured endpoint's voice, model or credentials
+keeps its execution preference. Optional voice parameters, server pairing and
+LAN discovery expand separately. Keyboard appearance, vocabulary and playback
+voice sit under personalization. Managed crash reporting stays directly
+accessible. Local model controls appear for the selected hybrid task.
+
+A local Voice Agent shortcut opens local Notes at the captured connection
+revision. Its microphone uses device-only transcription. Finishing a recording
+submits the captured segment and cancelling discards it. Imported audio carries
+the selected language into local recognizer selection. When Google Basic
+requires microphone permission for a file, the grant resumes that same file
+only while its connection revision is current.
+
+| Capability | Current boundary |
+| --- | --- |
+| Firebase text | The Firebase adapter passes the destination policy to the SDK and reads the actual inference location. On-device output requires a supported, ready device model. |
+| Local transcription | Local recognizer availability depends on device, model, audio source and language. A system recognizer that owns the microphone cannot replay buffered audio after a mid-turn endpoint failure. |
+| Direct Gemini | The direct adapter provides live voice and text. File transcription requires a different eligible adapter. |
+| Local voice agent | The local Notes agent requires local speech and note-model readiness. It handles local notes and does not resume an existing remote conversation. |
+
+The app still owns two transitions separately in the keyboard and in the
+foreground activity: handing an imported URI back after a permission grant,
+and reconciling an editor draft with the saved connection. If either transition
+changes, exercise both entry points. Current history combines device and
+endpoint-scoped records. Erasing device history leaves the endpoint scope intact.
 
 ## Read next
 

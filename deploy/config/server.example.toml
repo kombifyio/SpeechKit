@@ -296,13 +296,17 @@ api_key_env    = "GROQ_API_KEY"
 stt_model      = "whisper-large-v3-turbo"
 
 # Vocabulary of your own deployment (product and place names, jargon). Each term
-# is a recognition hint for the providers; each sounds_like entry is a common
-# mishearing that is replaced by the term after recognition.
+# is a recognition hint for STT and Voice Agent providers (native keyterms,
+# transcription prompt, or Voice Agent context prompt); each sounds_like entry
+# is a common mishearing that is replaced by the term after recognition
+# (Dictation, Assist, and cascaded Voice Agent turns).
 # vocabulary_ref is an optional second name of this vocabulary for signed
 # vocabulary preferences (x-speechkit-pref-vocabulary); "operator-terms"
-# always names it.
+# always names it. Built-in opt-in packs such as "speechkit-terms" and
+# "developer-de-en" can also be activated via active_template_ids.
 # [customization]
 # vocabulary_ref = "acme.product"
+# active_template_ids = ["standard-punctuation-de-en", "speechkit-terms"]
 #
 # [[customization.terms]]
 # term = "Acme Cloud"

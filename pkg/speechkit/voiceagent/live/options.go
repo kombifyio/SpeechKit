@@ -18,6 +18,7 @@ type ResolvedLiveOptions struct {
 	Locale              string
 	Voice               string
 	ContextPrompt       string
+	PromptHint          string
 	LanguageHints       []string
 	Keyterms            []string
 	ReasoningEffort     string
@@ -79,12 +80,30 @@ func ResolveLiveOptions(provider, profileID string, cfg LiveConfig, providerDefa
 	if opt, ok := effective.Options[provideropts.OptionEndpointingMs]; ok {
 		endpointingSource = opt.Source
 	}
+	keyterms := effective.StringList(provideropts.OptionKeyterms)
+	promptHint := strings.TrimSpace(effective.String(provideropts.OptionPromptHint))
+	if promptHint == "" && len(keyterms) > 0 {
+		if sup, ok := manifest.SupportByID()[provideropts.OptionPromptHint]; ok && sup.Status != provideropts.SupportUnsupported {
+			promptHint = strings.Join(keyterms, " ")
+		}
+	}
+	contextPrompt := strings.TrimSpace(effective.String(provideropts.OptionContextPrompt))
+	if vocabHint := strings.TrimSpace(cfg.VocabularyHint); vocabHint != "" {
+		if sup, ok := manifest.SupportByID()[provideropts.OptionContextPrompt]; ok && sup.Status != provideropts.SupportUnsupported {
+			if contextPrompt == "" {
+				contextPrompt = vocabHint
+			} else if !strings.Contains(contextPrompt, vocabHint) {
+				contextPrompt = contextPrompt + "\n\n" + vocabHint
+			}
+		}
+	}
 	return ResolvedLiveOptions{
 		Locale:              effective.String(provideropts.OptionLanguage),
 		Voice:               effective.String(provideropts.OptionVoice),
-		ContextPrompt:       effective.String(provideropts.OptionContextPrompt),
+		ContextPrompt:       contextPrompt,
+		PromptHint:          promptHint,
 		LanguageHints:       effective.StringList(provideropts.OptionLanguageHints),
-		Keyterms:            effective.StringList(provideropts.OptionKeyterms),
+		Keyterms:            keyterms,
 		ReasoningEffort:     effective.String(provideropts.OptionReasoningEffort),
 		Resume:              effective.Bool(provideropts.OptionResume),
 		TurnDetection:       effective.Bool(provideropts.OptionTurnDetection),

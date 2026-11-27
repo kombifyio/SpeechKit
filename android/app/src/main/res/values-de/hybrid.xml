@@ -47,4 +47,22 @@
     <string name="hybrid_receipts_checked">Entfernte Ergebnisse geprüft</string>
     <string name="hybrid_run_selected">Gewählten Sprachagenten öffnen</string>
     <string name="hybrid_send_selected">Text senden</string>
+    <string name="hybrid_local_route_detail">Nur dieses Gerät wird verwendet. Für externe Verarbeitung eine Verbindung einrichten.</string>
+    <string name="hybrid_connection_settings">Verbindungseinstellungen</string>
+    <string name="hybrid_task_label">Aufgabe</string>
+    <string name="hybrid_task_text">Text bearbeiten oder fragen</string>
+    <string name="hybrid_task_audio">Audio transkribieren</string>
+    <string name="hybrid_task_voice_agent">Sprachagent</string>
+    <string name="hybrid_task_notes">Lokaler Notizagent</string>
+    <string name="hybrid_details_show">Modelle und Verlauf</string>
+    <string name="hybrid_details_hide">Modelle und Verlauf ausblenden</string>
+    <string name="hybrid_agent_choice">Sprachagent</string>
+    <string name="hybrid_choose_agent">Agent auswählen</string>
+    <string name="hybrid_voice_needs_connection">Für einen Sprachagenten sind eine externe Verbindung und Netzwerkfreigabe nötig.</string>
+    <string name="hybrid_voice_remote_processing">Wähle oben %1$s oder %2$s und erlaube den Netzwerkzugriff, um hier einen Sprachagenten zu öffnen.</string>
+    <string name="hybrid_voice_keyboard">Öffne ein Textfeld und tippe auf der SpeechKit-Tastatur auf „Sprachagent“, um diese Verbindung zu nutzen.</string>
+    <string name="hybrid_audio_language">Sprache der Audiodatei</string>
+    <string name="hybrid_audio_permission_required">Erlaube den Mikrofonzugriff, um diese Datei mit der Google-Spracherkennung auf diesem Gerät zu transkribieren.</string>
+    <string name="hybrid_audio_model_unavailable">Für diese Sprache ist auf diesem Gerät kein Google-Sprachmodell zum Download verfügbar.</string>
+    <string name="hybrid_audio_local_required">Für Transkription mit einem eigenen Gemini-Schlüssel wähle einen Modus, der die Verarbeitung auf dem Gerät erlaubt.</string>
 </resources>

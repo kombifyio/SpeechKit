@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kombifyio/SpeechKit/pkg/speechkit/customize"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/internal/logutil"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/speaker"
 	"github.com/kombifyio/SpeechKit/pkg/speechkit/stt"
@@ -88,7 +89,12 @@ func (p *Provider) processOneTurn(ctx context.Context) {
 		}
 	}
 	if sttResult == nil {
-		sttResult, err = p.stt.Route(ctx, pcm, duration, stt.TranscribeOpts{Language: p.locale, Keyterms: p.keyterms, Speaker: p.speaker})
+		sttResult, err = p.stt.Route(ctx, pcm, duration, stt.TranscribeOpts{
+			Language:        p.locale,
+			Keyterms:        p.keyterms,
+			VocabularyHints: customize.RecognitionHints{Prompt: p.prompt, Keyterms: p.keyterms},
+			Speaker:         p.speaker,
+		})
 	}
 	p.noteSTT(time.Since(sttStarted), streamed)
 	if err != nil {
@@ -103,6 +109,11 @@ func (p *Provider) processOneTurn(ctx context.Context) {
 	if sttResult == nil || strings.TrimSpace(sttResult.Text) == "" {
 		// Silent or empty turn - drop quietly.
 		return
+	}
+	if p.normalizeTranscript != nil {
+		if normalized := strings.TrimSpace(p.normalizeTranscript(sttResult.Text)); normalized != "" {
+			sttResult.Text = normalized
+		}
 	}
 	emit(inputTranscriptMessage(sttResult))
 

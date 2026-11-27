@@ -216,7 +216,7 @@
     <string name="connection_setup_local">Solo local</string>
     <string name="connection_setup_own">Claves API / endpoints propios</string>
     <string name="connection_setup_account">Conectar cuenta kombify</string>
-    <string name="connection_setup_local_detail">Usa las funciones disponibles en el dispositivo. Algunas requieren hardware compatible o modelos instalados.</string>
+    <string name="connection_setup_local_detail">SpeechKit procesa en este dispositivo. El reconocedor del sistema puede tener sus propios ajustes de red.</string>
     <string name="connection_setup_gemini">Gemini Live</string>
     <string name="connection_setup_server">Endpoint de agente SpeechKit</string>
     <string name="connection_setup_gemini_detail">Conecta directamente con Gemini Live mediante tu clave API de Google.</string>
@@ -276,4 +276,18 @@
     <string name="audio_language_multi">Multilingüe</string>
     <string name="audio_language_hint">Elige un idioma para usar el reconocimiento de Google en el dispositivo.</string>
     <string name="audio_start_transcription">Transcribir</string>
+    <string name="crash_reporting_title">Informes de fallos</string>
+    <string name="crash_reporting_description">Enviar detalles técnicos de fallos a kombify Sentry cuando se permita la red. No se envían texto escrito ni audio.</string>
+    <string name="crash_reporting_local_blocked">En pausa mientras esté activo el modo solo local.</string>
+    <string name="crash_reporting_save_failed">No se pudo guardar el ajuste. Los informes están desactivados en esta sesión y la elección podría no conservarse.</string>
+    <string name="crash_reporting_unavailable">Los informes de fallos no están disponibles.</string>
+    <string name="connection_setup_mode">Conexión</string>
+    <string name="settings_on_device_engine_label">Motor de reconocimiento</string>
+    <string name="settings_on_device_show_details">Gestionar modelos</string>
+    <string name="settings_on_device_hide_details">Ocultar detalles del modelo</string>
+    <string name="settings_personalization">Personalizar el teclado y la voz</string>
+    <string name="settings_voice_options">Opciones de voz</string>
+    <string name="settings_pair_or_discover">Vincular o buscar un servidor</string>
+    <string name="settings_expanded">Expandido</string>
+    <string name="settings_collapsed">Contraído</string>
 </resources>

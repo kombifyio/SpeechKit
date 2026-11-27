@@ -18,12 +18,16 @@ data class HybridTextResult(val text: String, val source: HybridTextSource)
 object HybridRuntime {
     suspend fun localVoiceReady(context: Context): Boolean {
         if (!BuildConfig.HYBRID_ENABLED || android.os.Build.VERSION.SDK_INT < 36) return false
-        if (LocalSpeechAdapters.router(context)?.available(io.kombify.speechkit.stt.streaming.DictationSegmentOptions(language = Locale.getDefault().toLanguageTag())) != true && !android.speech.SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) return false
-        val store = io.kombify.speechkit.store.RoomStore(context)
-        return try { LocalNoteAgent(context, store).readiness() == DeviceReadiness.AVAILABLE }
+        return try {
+            val options = io.kombify.speechkit.stt.streaming.DictationSegmentOptions(language = Locale.getDefault().toLanguageTag())
+            if (LocalSpeechAdapters.router(context)?.available(options) != true &&
+                !android.speech.SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) return false
+            val store = io.kombify.speechkit.store.RoomStore(context)
+            try { LocalNoteAgent(context, store).readiness() == DeviceReadiness.AVAILABLE }
+            finally { store.close() }
+        }
         catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
         catch (_: Exception) { false }
-        finally { store.close() }
     }
 
     fun model(context: Context, cloud: Boolean = false): HybridAi {

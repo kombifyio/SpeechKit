@@ -196,6 +196,11 @@ V1 ships with built-in examples:
 - `developer-de-en` is opt-in and contains developer vocabulary plus technical
   spoken replacements for API, SDK, JSON, YAML, GitHub, TypeScript, PowerShell,
   Wails, Auth0, Cloudflare, dot, slash, underscore, dash, arrow, and equals.
+- `speechkit-terms` is opt-in and contains SpeechKit's own product-neutral
+  framework terms (`SpeechKit`, `Phonon`, `Parakeet`, `Sherpa`, `Wakeword`,
+  `Voice Agent`, `Dictation`, `LiveKit`) with common `sounds_like` mishearings
+  for testing and verifying vocabulary biasing and post-STT normalization
+  without any deployment-specific dictionary.
 
 An operator can add one more template of its own, `operator-terms`, with
 `[[customization.terms]]` entries (`term`, `sounds_like`, optional `language`)
@@ -292,8 +297,14 @@ Per-mode wiring:
 - Assist: Words bias STT; substitutions/synonyms clean transcripts before the
   existing shortcuts/LLM path. `command` Replacements are typed and storable,
   while the runtime command resolver remains a separate implementation detail.
-- Voice Agent: Words bias Live recognition and system context. Output
-  replacements wait for a streaming-safe follow-up contract.
+- Voice Agent: Words bias Live recognition and system context across all
+  supported providers (native keyterms on Deepgram and AssemblyAI, input
+  transcription prompt on OpenAI Realtime, and context-prompt vocabulary hints
+  on OpenAI Realtime, GPT-Live, xAI Grok Voice, and Gemini Live). Cascaded and
+  registered-agent Voice Agent pipelines additionally apply `post_stt`
+  substitutions and synonyms to finalized user transcripts before they reach
+  the agent. Streaming output replacements wait for a streaming-safe follow-up
+  contract.
 
 The key property: a mode does not own customization logic. It consumes the same
 Customization Service with a different context.
@@ -305,13 +316,14 @@ options.
 
 | Provider family | Biasing mechanism |
 | --- | --- |
-| whisper.cpp, OpenAI-compatible, VPS, Ollama | Prompt text through `TranscribeOpts.Prompt`. |
-| Deepgram | Keyterm/keyword options. |
+| whisper.cpp, OpenAI-compatible, VPS, Ollama | Prompt text through `TranscribeOpts.Prompt` (and `keywords[]` on OpenAI `gpt-transcribe`). |
+| Deepgram (STT & Voice Agent) | Native `keyterm` / `agent.listen.provider.keyterms` options plus context prompt hint. |
 | Google Cloud STT (opt-in BYOK) | `speechContexts.phrases` with boost where available. |
-| AssemblyAI | `word_boost` and boost-level options. |
+| AssemblyAI (STT & Voice Agent) | Native `keyterms_prompt` / `session.input.keyterms` options plus context prompt hint. |
+| OpenAI Realtime Voice Agent | Native `audio.input.transcription.prompt` (derived from keyterms when no explicit prompt hint is set) plus `instructions` context hint. |
+| OpenAI GPT-Live, xAI Grok Voice, Gemini Live | System/context instruction vocabulary hint (`BuildVoiceAgentHint`). |
+| Cascaded / Registered-Agent Voice Agent | Underlying STT keyterms + prompt hint plus `post_stt` synonym/substitution normalization on finalized user transcripts. |
 | HuggingFace | Prompt where the selected model supports it. |
-| Gemini Live (opt-in BYOK) | Recognition/system prompt hint. |
-| Other native Voice Agents | Provider-neutral context prompt where supported. |
 
 Weights map to provider-native boost scales where possible and are ignored
 explicitly where no provider equivalent exists.

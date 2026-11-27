@@ -48,9 +48,11 @@ func (b *geminiLiveBridge) Connect(ctx context.Context, cfg vsserver.LiveConfigF
 		Voice:            cfg.Voice,
 		FrameworkPrompt:  cfg.SystemPrompt,
 		RefinementPrompt: cfg.RefinementPrompt,
+		VocabularyHint:   cfg.VocabularyHint,
 		Locale:           cfg.Locale,
 		Region:           b.region,
 		Speaker:          cfg.Speaker,
+		Options:          vocabularyOptions(cfg.Keyterms, cfg.VocabularyPrompt),
 		Tools:            kernelToolDefinitions(cfg.Tools),
 		Policies: live.LivePolicies{
 			EnableInputAudioTranscription:  true,

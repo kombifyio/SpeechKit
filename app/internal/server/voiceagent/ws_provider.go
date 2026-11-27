@@ -132,6 +132,16 @@ type LiveConfigFrame struct {
 	// session's vocabulary (see VocabularyResolver); providers without a
 	// keyterm field ignore them.
 	Keyterms []string
+	// VocabularyPrompt carries a transcript-style vocabulary hint for
+	// prompt-biased transcription providers (OpenAI Realtime input
+	// transcription, Whisper-family cascaded STT).
+	VocabularyPrompt string
+	// VocabularyHint carries a model-facing recognition/response vocabulary
+	// hint for native Voice Agents that accept system/context instructions.
+	VocabularyHint string
+	// NormalizeTranscript rewrites finalized user transcripts with the
+	// session's post-STT synonym/substitution rules on cascaded pipelines.
+	NormalizeTranscript func(string) string `json:"-"`
 	// Tools are server-executed control tool definitions merged in by the
 	// adapter (server_tools.go). Provider bridges that support
 	// session tools map these onto the kernel's LiveConfig.Tools; providers
@@ -207,12 +217,24 @@ type ToolCall struct {
 	Args map[string]any
 }
 
-// VocabularyResolver returns the recognition keyterms for one session: the
+// SessionVocabulary bundles the resolved vocabulary artifacts for one Voice
+// Agent session: canonical keyterms for native keyterm providers (Deepgram,
+// AssemblyAI, cascaded STT), a transcript-style prompt for prompt-biased
+// transcription (OpenAI Realtime, Whisper-class STT), an instruction-level
+// hint for native Voice Agents (Gemini Live, GPT-Live, xAI Grok Voice, OpenAI
+// Realtime), and an optional post-STT transcript normalizer for cascaded turns.
+type SessionVocabulary struct {
+	Keyterms  []string
+	Prompt    string
+	Hint      string
+	Normalize func(string) string
+}
+
+// VocabularyResolver returns the resolved vocabulary for one session: the
 // deployment's customization (builtin templates, operator vocabulary and the
 // owner's own words) for the session owner, narrowed by the signed vocabulary
-// preference captured at session mint. Providers with a keyterm field on
-// their listen leg (Deepgram, AssemblyAI) bias input transcription with them.
-type VocabularyResolver func(ctx context.Context, userID, orgID string, prefs VoicePrefs, locale string) []string
+// preference captured at session mint.
+type VocabularyResolver func(ctx context.Context, userID, orgID string, prefs VoicePrefs, locale string) SessionVocabulary
 
 // PersonaResolver derives a LiveConfigFrame from a StartFrame. The server's
 // persona registry implements this in M5; for M4 a stub resolver is used

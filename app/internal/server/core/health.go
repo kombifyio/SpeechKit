@@ -166,13 +166,15 @@ func statusRank(s ComponentStatus) int {
 	}
 }
 
-// registerHealth wires /healthz and /readyz handlers onto the app mux.
+// registerHealth wires /healthz, /livez and /readyz handlers onto the app mux.
 //
-// /healthz is a pure liveness probe: returns 200 as long as the process is up.
+// /healthz and /livez are pure liveness probes: they return 200 as long as the
+// process is up. /livez exists as an alias for Google Frontend / Cloud Run
+// origins where /healthz is intercepted by the edge proxy.
 // /readyz reflects mode readiness: 200 when every blocking component reports
 // StatusOK. /readyz/strict requires every registered component to report OK.
 func registerHealth(app *App) {
-	app.Mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	liveHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		// The process reports its revision, so a release can read back what it
@@ -191,7 +193,9 @@ func registerHealth(app *App) {
 			body["schema"] = reporter.SchemaStatus(r.Context())
 		}
 		_ = json.NewEncoder(w).Encode(body)
-	})
+	}
+	app.Mux.HandleFunc("/healthz", liveHandler)
+	app.Mux.HandleFunc("/livez", liveHandler)
 
 	readyHandler := func(w http.ResponseWriter, r *http.Request) {
 		strict := r.URL.Query().Get("strict") == "true"

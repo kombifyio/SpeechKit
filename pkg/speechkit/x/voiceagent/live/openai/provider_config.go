@@ -20,9 +20,13 @@ func buildOpenAISession(cfg live.LiveConfig) map[string]any {
 		inputAudio["turn_detection"] = turnDetection
 	}
 	if cfg.Policies.EnableInputAudioTranscription {
-		inputAudio["transcription"] = map[string]any{
+		transcription := map[string]any{
 			"model": defaultInputTranscriptionModel,
 		}
+		if prompt := strings.TrimSpace(resolved.PromptHint); prompt != "" {
+			transcription["prompt"] = prompt
+		}
+		inputAudio["transcription"] = transcription
 	}
 	session := map[string]any{
 		"type":              "realtime",

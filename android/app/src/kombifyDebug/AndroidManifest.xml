@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <receiver android:name="io.kombify.speechkit.app.telemetry.CrashDiagnosticsProbe"
+            android:exported="true" android:permission="android.permission.DUMP">
+            <intent-filter><action android:name="io.kombify.speechkit.debug.CRASH_DIAGNOSTICS" /></intent-filter>
+        </receiver>
+    </application>
+</manifest>

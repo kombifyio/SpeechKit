@@ -186,14 +186,13 @@ func buildVoiceNoticeTTS(app *App) vsserver.CascadedTTS {
 	return vsserver.NewDownlinkTTS(app.TTSRouter)
 }
 
-// buildVoiceAgentVocabulary resolves a session's recognition keyterms (the
-// canonical terms; providers cap them to their own limits) with
+// buildVoiceAgentVocabulary resolves a session's recognition vocabulary with
 // the same customization resolver Dictation and Assist use: the configured
 // templates, the operator vocabulary ([[customization.terms]]) and the
 // owner's own words, narrowed by the signed vocabulary preference.
 func buildVoiceAgentVocabulary(cfg *config.Config, app *App) vsserver.VocabularyResolver {
 	active := append([]string(nil), cfg.Customization.ActiveTemplateIDs...)
-	return func(ctx context.Context, userID, orgID string, prefs vsserver.VoicePrefs, locale string) []string {
+	return func(ctx context.Context, userID, orgID string, prefs vsserver.VoicePrefs, locale string) vsserver.SessionVocabulary {
 		scope := speechstorage.ScopeFromContext(ctx)
 		scope.UserID, scope.TenantID = userID, orgID
 		ctx = speechstorage.WithScope(ctx, scope)
@@ -206,26 +205,48 @@ func buildVoiceAgentVocabulary(cfg *config.Config, app *App) vsserver.Vocabulary
 		resolved, err := service.Resolve(ctx, speechcustomize.Context{
 			Mode:              speechcustomize.ModeVoiceAgent,
 			Language:          locale,
+			Stage:             speechcustomize.StagePostSTT,
 			ActiveTemplateIDs: active,
 		})
 		if err != nil {
 			slog.Debug("voiceagent: resolve vocabulary failed", "err", err)
-			return nil
+			return vsserver.SessionVocabulary{}
 		}
-		// Canonical terms only: the Voice Agent has no post-STT replacement,
-		// so a boosted mishearing would reach the conversation as written.
-		return internalcustomize.CanonicalTerms(resolved.Words)
+		var normalize func(string) string
+		if resolved.Applier != nil && len(resolved.Replacements) > 0 {
+			applier := resolved.Applier
+			normalize = func(text string) string {
+				return applier.Apply(text).Text
+			}
+		}
+		// Canonical terms only for native keyterms: native voice agents have no
+		// post-STT replacement, so a boosted mishearing would reach the
+		// conversation as written. Cascaded pipelines additionally apply
+		// post-STT replacements via Normalize.
+		return vsserver.SessionVocabulary{
+			Keyterms:  internalcustomize.CanonicalTerms(resolved.Words),
+			Prompt:    resolved.Prompt,
+			Hint:      resolved.VoiceAgentHint,
+			Normalize: normalize,
+		}
 	}
 }
 
-// keytermOptions carries session keyterms as the provider option layer of a
-// LiveConfig; providers whose manifest maps keyterms send them on their
-// listen leg.
-func keytermOptions(keyterms []string) provideropts.Values {
-	if len(keyterms) == 0 {
+// vocabularyOptions carries session keyterms and prompt hints as the provider
+// option layer of a LiveConfig; providers whose manifest maps keyterms or
+// prompt_hint send them on their listen/transcription leg.
+func vocabularyOptions(keyterms []string, prompt string) provideropts.Values {
+	opts := provideropts.Values{}
+	if len(keyterms) > 0 {
+		opts[provideropts.OptionKeyterms] = append([]string(nil), keyterms...)
+	}
+	if trimmed := strings.TrimSpace(prompt); trimmed != "" {
+		opts[provideropts.OptionPromptHint] = trimmed
+	}
+	if len(opts) == 0 {
 		return nil
 	}
-	return provideropts.Values{provideropts.OptionKeyterms: append([]string(nil), keyterms...)}
+	return opts
 }
 
 // buildWakeVerifier backs the two-stage wake word check. With a Parakeet

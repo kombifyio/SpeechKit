@@ -222,7 +222,7 @@
     <string name="connection_setup_local">Nur lokal</string>
     <string name="connection_setup_own">Eigene API-Keys / Endpunkte</string>
     <string name="connection_setup_account">Kombify-Konto verbinden</string>
-    <string name="connection_setup_local_detail">Nutzt verfügbare Gerätefunktionen. Manche Funktionen benötigen kompatible Hardware oder installierte Modelle.</string>
+    <string name="connection_setup_local_detail">SpeechKit verarbeitet auf diesem Gerät. Die Systemerkennung kann eigene Netzwerkeinstellungen haben.</string>
     <string name="connection_setup_gemini">Gemini Live</string>
     <string name="connection_setup_server">SpeechKit-Agent-Endpunkt</string>
     <string name="connection_setup_gemini_detail">Mit deinem Google API-Key direkt mit Gemini Live verbinden.</string>
@@ -282,4 +282,18 @@
     <string name="audio_language_multi">Mehrsprachig</string>
     <string name="audio_language_hint">Wähle eine Sprache, um die Google-Erkennung auf dem Gerät zu nutzen.</string>
     <string name="audio_start_transcription">Transkribieren</string>
+    <string name="crash_reporting_title">Absturzberichte</string>
+    <string name="crash_reporting_description">Technische Absturzdetails an kombify Sentry senden, wenn die Netzwerknutzung erlaubt ist. Texteingaben und Audio werden nicht gesendet.</string>
+    <string name="crash_reporting_local_blocked">Im Nur-lokal-Modus pausiert.</string>
+    <string name="crash_reporting_save_failed">Die Einstellung konnte nicht gespeichert werden. Absturzberichte sind für diese Sitzung aus; die Auswahl bleibt möglicherweise nicht erhalten.</string>
+    <string name="crash_reporting_unavailable">Absturzberichte sind nicht verfügbar.</string>
+    <string name="connection_setup_mode">Verbindung</string>
+    <string name="settings_on_device_engine_label">Erkennung</string>
+    <string name="settings_on_device_show_details">Modelle verwalten</string>
+    <string name="settings_on_device_hide_details">Modelldetails ausblenden</string>
+    <string name="settings_personalization">Tastatur und Stimme anpassen</string>
+    <string name="settings_voice_options">Sprachoptionen</string>
+    <string name="settings_pair_or_discover">Server koppeln oder suchen</string>
+    <string name="settings_expanded">Ausgeklappt</string>
+    <string name="settings_collapsed">Eingeklappt</string>
 </resources>

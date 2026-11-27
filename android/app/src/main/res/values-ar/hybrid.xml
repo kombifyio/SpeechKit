@@ -47,4 +47,22 @@
     <string name="hybrid_receipts_checked">تم التحقق من النتائج البعيدة</string>
     <string name="hybrid_run_selected">فتح الوكيل الصوتي المحدد</string>
     <string name="hybrid_send_selected">إرسال النص</string>
+    <string name="hybrid_local_route_detail">يُستخدم هذا الجهاز فقط. أعدّ اتصالاً للمعالجة عن بُعد.</string>
+    <string name="hybrid_connection_settings">إعدادات الاتصال</string>
+    <string name="hybrid_task_label">المهمة</string>
+    <string name="hybrid_task_text">تحرير النص أو طرح سؤال</string>
+    <string name="hybrid_task_audio">تفريغ الصوت</string>
+    <string name="hybrid_task_voice_agent">الوكيل الصوتي</string>
+    <string name="hybrid_task_notes">وكيل الملاحظات المحلي</string>
+    <string name="hybrid_details_show">النماذج والسجل</string>
+    <string name="hybrid_details_hide">إخفاء النماذج والسجل</string>
+    <string name="hybrid_agent_choice">الوكيل الصوتي</string>
+    <string name="hybrid_choose_agent">اختيار الوكيل</string>
+    <string name="hybrid_voice_needs_connection">يحتاج الوكيل الصوتي إلى اتصال عن بُعد وإذن الشبكة.</string>
+    <string name="hybrid_voice_remote_processing">لفتح وكيل صوتي هنا، اختر %1$s أو %2$s أعلاه واسمح بالوصول إلى الشبكة.</string>
+    <string name="hybrid_voice_keyboard">لاستخدام هذا الاتصال، افتح حقل نص واضغط على الوكيل الصوتي في لوحة مفاتيح SpeechKit.</string>
+    <string name="hybrid_audio_language">لغة الملف الصوتي</string>
+    <string name="hybrid_audio_permission_required">اسمح بالوصول إلى الميكروفون لتحويل هذا الملف إلى نص باستخدام ميزة التعرّف على الكلام من Google على هذا الجهاز.</string>
+    <string name="hybrid_audio_model_unavailable">لا يتوفر نموذج للتعرّف على الكلام من Google لتنزيله بهذه اللغة على هذا الجهاز.</string>
+    <string name="hybrid_audio_local_required">للنسخ باستخدام مفتاح Gemini الخاص بك، اختر وضعًا يسمح بالمعالجة على الجهاز.</string>
 </resources>

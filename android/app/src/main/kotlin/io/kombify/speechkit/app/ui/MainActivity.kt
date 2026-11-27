@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.Alignment
@@ -28,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -571,12 +573,50 @@ private fun SettingsTab(
         }
         OnDeviceModelCard(onModeChanged = { modeVersion += 1 })
 
-        NeuralVoiceCard()
-
-        VocabularyCard()
-
-
-        KeyboardIconsCard()
+        if (io.kombify.speechkit.app.telemetry.CrashDiagnostics.available()) {
+            val diagnosticsContext = LocalContext.current
+            var diagnosticsEnabled by remember {
+                mutableStateOf(io.kombify.speechkit.app.telemetry.CrashDiagnostics.enabled(diagnosticsContext))
+            }
+            var diagnosticsStatus by remember {
+                mutableStateOf(io.kombify.speechkit.app.telemetry.CrashDiagnostics.status(diagnosticsContext))
+            }
+            var diagnosticsSaveFailed by remember { mutableStateOf(false) }
+            DisposableEffect(diagnosticsContext) {
+                val preferences = diagnosticsContext.getSharedPreferences(StoredServerProfile.PREFS_NAME, Context.MODE_PRIVATE)
+                val handler = android.os.Handler(android.os.Looper.getMainLooper())
+                val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+                    handler.post { diagnosticsStatus = io.kombify.speechkit.app.telemetry.CrashDiagnostics.status(diagnosticsContext) }
+                }
+                preferences.registerOnSharedPreferenceChangeListener(listener)
+                onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+            }
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.crash_reporting_title), style = MaterialTheme.typography.titleSmall)
+                        Text(stringResource(R.string.crash_reporting_description), style = MaterialTheme.typography.bodySmall)
+                        if (diagnosticsSaveFailed) {
+                            Text(stringResource(R.string.crash_reporting_save_failed), style = MaterialTheme.typography.bodySmall)
+                        } else if (diagnosticsStatus == "local") {
+                            Text(stringResource(R.string.crash_reporting_local_blocked), style = MaterialTheme.typography.bodySmall)
+                        } else if (diagnosticsStatus == "error") {
+                            Text(stringResource(R.string.crash_reporting_unavailable), style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    Switch(checked = diagnosticsEnabled, onCheckedChange = {
+                        diagnosticsSaveFailed = !io.kombify.speechkit.app.telemetry.CrashDiagnostics.setEnabled(diagnosticsContext, it)
+                        diagnosticsEnabled = io.kombify.speechkit.app.telemetry.CrashDiagnostics.enabled(diagnosticsContext)
+                        diagnosticsStatus = io.kombify.speechkit.app.telemetry.CrashDiagnostics.status(diagnosticsContext)
+                    })
+                }
+            }
+        }
+        SettingsDisclosure(R.string.settings_personalization) {
+            NeuralVoiceCard()
+            VocabularyCard()
+            KeyboardIconsCard()
+        }
 
         // Keyboard Setup
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -623,6 +663,20 @@ private fun SettingsTab(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsDisclosure(label: Int, content: @Composable () -> Unit) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val disclosureState = stringResource(if (expanded) R.string.settings_expanded else R.string.settings_collapsed)
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth().semantics { stateDescription = disclosureState }) {
+            Text(stringResource(label), modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
+            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+        }
+        if (expanded) content()
+    }
+}
+
 // --- Server connection ---
 
 /**
@@ -651,7 +705,6 @@ private fun ServerConnectionCard(
     // Resolved off the main thread and again on every resume (modeTick), so an install or update of the
     // Companion shows up without leaving Settings; null until the first answer.
     var companionInstalled by remember { mutableStateOf<Boolean?>(null) }
-    LaunchedEffect(modeVersion) { if (modeVersion > 0) modeTick += 1 }
     LaunchedEffect(modeTick) {
         companionInstalled = withContext(Dispatchers.IO) { provisioner.isCompanionInstalled() }
     }
@@ -682,31 +735,65 @@ private fun ServerConnectionCard(
     var testing by remember { mutableStateOf(false) }
     var finding by remember { mutableStateOf(false) }
     var lanServers by remember { mutableStateOf<List<LanServer>>(emptyList()) }
+    // Null means no outstanding request. False keeps an invalidated request
+    // outstanding until Android returns its result, so a new scan cannot reuse it.
+    var pendingLanPermission by remember { mutableStateOf<Boolean?>(null) }
     val finder = remember { NsdLanFinder(context) }
-    DisposableEffect(finder) {
-        onDispose { finder.stop() }
+
+    fun showsOwnServer(): Boolean = if (BuildConfig.CONNECTION_SETUP_ENABLED) {
+        choice == 1 && remoteKind == 1
+    } else {
+        showSelfHost
     }
-    val nearbyPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted || Build.VERSION.SDK_INT < 33) {
-            finding = true
-            lanServers = emptyList()
-            finder.start { lanServers = it }
+
+    fun stopLanFind() {
+        if (pendingLanPermission != null) pendingLanPermission = false
+        finder.stop()
+        finding = false
+        lanServers = emptyList()
+    }
+
+    fun beginLanFind() {
+        finding = true
+        lanServers = emptyList()
+        finder.start { if (finding && showsOwnServer()) lanServers = it }
+    }
+
+    LaunchedEffect(modeVersion) {
+        if (modeVersion == 0) return@LaunchedEffect
+        modeTick += 1
+        if (StoredServerProfile.loadMode(context) == ConnectionMode.ON_DEVICE) {
+            stopLanFind()
+            if (BuildConfig.CONNECTION_SETUP_ENABLED && choice != 0) {
+                generation += 1
+                connectJob?.cancel()
+                connecting = false
+                choice = 0
+                status = null
+            }
+            if (connectCloudRequested) onConnectAbandoned()
         }
     }
 
+    val nearbyPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        val shouldStart = pendingLanPermission == true
+        pendingLanPermission = null
+        if (shouldStart && granted && showsOwnServer()) beginLanFind()
+    }
+
     fun startLanFind() {
+        if (!showsOwnServer() || pendingLanPermission != null) return
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.NEARBY_WIFI_DEVICES)
             != PackageManager.PERMISSION_GRANTED
         ) {
+            pendingLanPermission = true
             nearbyPermission.launch(Manifest.permission.NEARBY_WIFI_DEVICES)
             return
         }
-        finding = true
-        lanServers = emptyList()
-        finder.start { lanServers = it }
+        beginLanFind()
     }
 
     val saved = remember(url, token, modeTick) { StoredServerProfile.load(context) }
@@ -715,12 +802,14 @@ private fun ServerConnectionCard(
     val cloudConnectSupported = remember { ShippedDefaults.cloudConnectSupported }
     val snapshot = remember(modeTick, saved, shippedProfile) { selection.snapshot(shippedProfile) }
     val mode = snapshot.mode
+    // Editing an active destination keeps the user's current privacy preference.
+    fun preferenceFor(destination: ConnectionMode) =
+        if (destination == mode) snapshot.policy.mode else ExecutionMode.PREFER_ENDPOINT
     val byokProfile = snapshot.profile as? ConnectionProfile.Byok
-    var restoredByokDetails by remember { mutableStateOf(false) }
-    if (!restoredByokDetails && byokProfile != null) {
-        model = byokProfile.model
-        voice = byokProfile.voice
-        restoredByokDetails = true
+    val firebaseProfile = snapshot.profile as? ConnectionProfile.Firebase
+    LaunchedEffect(byokProfile?.credentialId, firebaseProfile?.liveModel, firebaseProfile?.voice) {
+        if (byokProfile != null) { model = byokProfile.model; voice = byokProfile.voice }
+        if (firebaseProfile != null) { model = firebaseProfile.liveModel; voice = firebaseProfile.voice }
     }
     val firebaseConfigured = BuildConfig.HYBRID_ENABLED && BuildConfig.FIREBASE_CLOUD_ENABLED &&
         BuildConfig.FIREBASE_APPLICATION_ID.isNotBlank() && BuildConfig.FIREBASE_PROJECT_ID.isNotBlank() && BuildConfig.FIREBASE_API_KEY.isNotBlank()
@@ -925,7 +1014,10 @@ private fun ServerConnectionCard(
 
     LaunchedEffect(connectCloudRequested) {
         if (!connectCloudRequested) return@LaunchedEffect
-        if (BuildConfig.CONNECTION_SETUP_ENABLED) choice = 2
+        if (BuildConfig.CONNECTION_SETUP_ENABLED) {
+            choice = 2
+            stopLanFind()
+        }
         connectCloud()
     }
     DisposableEffect(Unit) { onDispose { connectJob?.cancel() } }
@@ -960,51 +1052,64 @@ private fun ServerConnectionCard(
                 fontWeight = FontWeight.Medium,
             )
             if (BuildConfig.CONNECTION_SETUP_ENABLED) {
-                listOf(R.string.connection_setup_local, R.string.connection_setup_own, R.string.connection_setup_account).forEachIndexed { index, label ->
-                    FilterChip(selected = choice == index, onClick = {
+                SetupDropdown(
+                    label = stringResource(R.string.connection_setup_mode),
+                    selected = choice,
+                    options = listOf(
+                        0 to stringResource(R.string.connection_setup_local),
+                        1 to stringResource(R.string.connection_setup_own),
+                        2 to stringResource(R.string.connection_setup_account),
+                    ),
+                    onSelect = { index ->
                         if (choice != index) {
                             generation += 1
                             connectJob?.cancel()
                             connecting = false
                             choice = index
+                            if (!showsOwnServer()) stopLanFind()
                             status = null
-                            if (index != 2) scope.launch { selection.selectLocal(); modeTick += 1 }
+                            if (index == 0) scope.launch { saveSelection { selection.selectLocal() } }
                         } else if (index == 0) {
-                            scope.launch { selection.selectLocal(); modeTick += 1 }
+                            if (mode != ConnectionMode.ON_DEVICE) scope.launch { saveSelection { selection.selectLocal() } }
                         }
-                    }, label = { Text(stringResource(label)) })
-                }
+                    },
+                )
                 if (choice == 0) Text(stringResource(R.string.connection_setup_local_detail), style = MaterialTheme.typography.bodySmall)
             }
-            Text(
-                when (mode) {
-                    ConnectionMode.KOMBIFY_CLOUD -> stringResource(R.string.settings_connection_mode_cloud)
-                    ConnectionMode.SELF_HOST -> stringResource(R.string.settings_connection_mode_self_host)
-                    ConnectionMode.SPEECHKIT_ORIGIN -> stringResource(R.string.settings_connection_mode_origin)
-                    ConnectionMode.ON_DEVICE -> stringResource(R.string.settings_connection_mode_on_device)
-                    ConnectionMode.BYOK -> stringResource(R.string.connection_setup_gemini)
-                    ConnectionMode.FIREBASE -> stringResource(R.string.connection_setup_firebase)
-                },
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Medium,
-            )
-            Text(
-                when {
-                    mode == ConnectionMode.KOMBIFY_CLOUD && cloudSession != null ->
-                        stringResource(R.string.settings_connection_cloud_connected)
-                    mode == ConnectionMode.KOMBIFY_CLOUD ->
-                        stringResource(R.string.settings_connection_cloud_session_ended)
-                    mode == ConnectionMode.BYOK && byokProfile?.hasUsableKey == true -> stringResource(R.string.connection_setup_key_saved)
-                    mode == ConnectionMode.BYOK -> stringResource(R.string.connection_setup_key_required)
-                    mode == ConnectionMode.FIREBASE -> stringResource(R.string.connection_setup_firebase)
-                    mode == ConnectionMode.SELF_HOST && saved != null -> stringResource(R.string.settings_connection_state_server)
-                    mode == ConnectionMode.SPEECHKIT_ORIGIN && shippedUrl != null && shippedProfile != null ->
-                        stringResource(R.string.settings_connection_state_shipped, shippedUrl)
-                    shippedUrl != null -> stringResource(R.string.settings_connection_state_on_device)
-                    else -> stringResource(R.string.settings_connection_state_on_device)
-                },
-                style = MaterialTheme.typography.bodySmall,
-            )
+            if (!BuildConfig.CONNECTION_SETUP_ENABLED || choice != 0 || mode != ConnectionMode.ON_DEVICE) {
+                Text(
+                    when (mode) {
+                        ConnectionMode.KOMBIFY_CLOUD -> stringResource(R.string.settings_connection_mode_cloud)
+                        ConnectionMode.SELF_HOST -> stringResource(R.string.settings_connection_mode_self_host)
+                        ConnectionMode.SPEECHKIT_ORIGIN -> stringResource(R.string.settings_connection_mode_origin)
+                        ConnectionMode.ON_DEVICE -> stringResource(R.string.settings_connection_mode_on_device)
+                        ConnectionMode.BYOK -> stringResource(R.string.connection_setup_gemini)
+                        ConnectionMode.FIREBASE -> stringResource(R.string.connection_setup_firebase)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    when {
+                        mode == ConnectionMode.KOMBIFY_CLOUD && cloudSession != null ->
+                            stringResource(R.string.settings_connection_cloud_connected)
+                        mode == ConnectionMode.KOMBIFY_CLOUD ->
+                            stringResource(R.string.settings_connection_cloud_session_ended)
+                        mode == ConnectionMode.BYOK && byokProfile?.hasUsableKey == true -> stringResource(R.string.connection_setup_key_saved)
+                        mode == ConnectionMode.BYOK -> stringResource(R.string.connection_setup_key_required)
+                        mode == ConnectionMode.FIREBASE -> stringResource(R.string.connection_setup_firebase)
+                        mode == ConnectionMode.SELF_HOST && saved != null -> stringResource(R.string.settings_connection_state_server)
+                        mode == ConnectionMode.SPEECHKIT_ORIGIN && shippedUrl != null && shippedProfile != null ->
+                            stringResource(R.string.settings_connection_state_shipped, shippedUrl)
+                        shippedUrl != null -> stringResource(R.string.settings_connection_state_on_device)
+                        else -> stringResource(R.string.settings_connection_state_on_device)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            if (BuildConfig.CONNECTION_SETUP_ENABLED && choice == 0 && mode != ConnectionMode.ON_DEVICE) {
+                status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
             if ((!BuildConfig.CONNECTION_SETUP_ENABLED || choice == 2) && mode == ConnectionMode.KOMBIFY_CLOUD && cloudSession != null) {
                 CloudAccountSection(
                     provisioner = provisioner,
@@ -1059,7 +1164,7 @@ private fun ServerConnectionCard(
                     status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 }
             }
-            if (BuildConfig.CONNECTION_SETUP_ENABLED && choice == 2) {
+            if (BuildConfig.CONNECTION_SETUP_ENABLED && choice == 2 && mode == ConnectionMode.KOMBIFY_CLOUD && cloudSession != null) {
                 val profiles = (bundledProfiles + serverProfiles).distinctBy { it.id }
                 SetupDropdown(label = stringResource(R.string.connection_setup_profile), selected = selectedProfileId,
                     options = profiles.map { it.id to it.name }, onSelect = { id ->
@@ -1091,6 +1196,7 @@ private fun ServerConnectionCard(
                         model = profile.variants.firstOrNull { it.recommended }?.modelId
                             ?: profile.variants.firstOrNull()?.modelId ?: profile.modelId.orEmpty()
                         remoteKind = if (profile.adapterKind == "gemini_live") { if (firebaseConfigured) 2 else 0 } else 1
+                        if (!showsOwnServer()) stopLanFind()
                         status = null
                     },
                 )
@@ -1099,22 +1205,29 @@ private fun ServerConnectionCard(
                         listOf(profile.modelId.orEmpty() to profile.modelId.orEmpty())
                     }
                     if (model !in variants.map { it.first }) model = variants.first().first
-                    SetupDropdown(
-                        label = stringResource(R.string.connection_setup_variant),
-                        selected = model,
-                        options = variants,
-                        onSelect = { variant -> model = variant },
-                    )
                     val methods = buildList {
                         if (profile.adapterKind == "gemini_live") {
-                            add(2 to context.getString(R.string.connection_setup_firebase))
+                            if (firebaseConfigured) add(2 to context.getString(R.string.connection_setup_firebase))
                             add(0 to context.getString(R.string.connection_setup_own_key))
                         }
                         add(1 to context.getString(R.string.connection_setup_server_method))
                     }
                     if (methods.none { it.first == remoteKind }) remoteKind = 1
-                    SetupDropdown(label = stringResource(R.string.connection_setup_method), selected = remoteKind,
-                        options = methods, onSelect = { remoteKind = it; status = null })
+                    if (methods.size > 1) SetupDropdown(label = stringResource(R.string.connection_setup_method), selected = remoteKind,
+                        options = methods, onSelect = {
+                            remoteKind = it
+                            if (!showsOwnServer()) stopLanFind()
+                            status = null
+                        })
+                    if (variants.size > 1 || remoteKind != 1) key(profile.id, remoteKind) {
+                        SettingsDisclosure(R.string.settings_voice_options) {
+                            if (variants.size > 1) SetupDropdown(label = stringResource(R.string.connection_setup_variant),
+                                selected = model, options = variants, onSelect = { model = it })
+                            if (remoteKind != 1) OutlinedTextField(value = voice, onValueChange = { voice = it },
+                                label = { Text(stringResource(R.string.connection_setup_voice)) },
+                                singleLine = true, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
                     if (remoteKind == 1 && mode == ConnectionMode.SELF_HOST) {
                         Text(stringResource(if (profile.id in readyProfileIds) R.string.connection_setup_available else R.string.connection_setup_not_ready), style = MaterialTheme.typography.bodySmall)
                     }
@@ -1122,7 +1235,6 @@ private fun ServerConnectionCard(
                 if (remoteKind == 0) {
                     Text(stringResource(R.string.connection_setup_gemini_detail), style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(value = apiKey, onValueChange = { apiKey = it }, label = { Text(stringResource(R.string.connection_setup_key)) }, visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = voice, onValueChange = { voice = it }, label = { Text(stringResource(R.string.connection_setup_voice)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     if (mode != ConnectionMode.BYOK && selection.hasSavedByok()) {
                         OutlinedButton(onClick = { scope.launch {
                             if (saveSelection { check(selection.restoreByok()) }) {
@@ -1141,13 +1253,13 @@ private fun ServerConnectionCard(
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(enabled = apiKey.isNotBlank() && model.isNotBlank() && voice.isNotBlank(), onClick = {
-                            val replacement = apiKey
+                        Button(enabled = (apiKey.isNotBlank() || byokProfile?.hasUsableKey == true) && model.isNotBlank(), onClick = {
+                            val replacement = apiKey.ifBlank { byokProfile?.apiKey.orEmpty() }
                             val selectedModel = model.trim()
-                            val selectedVoice = voice.trim()
+                            val selectedVoice = voice.trim().ifBlank { "Kore" }
                             val chosenProfile = selectedProfile
                             scope.launch {
-                                if (saveSelection { selection.selectByok(replacement, selectedModel, selectedVoice) }) {
+                                if (saveSelection { selection.selectByok(replacement, selectedModel, selectedVoice, preferenceFor(ConnectionMode.BYOK)) }) {
                                     val active = selection.snapshot(shippedProfile).profile as? ConnectionProfile.Byok
                                     if (active != null && active.model == selectedModel && active.voice == selectedVoice && active.apiKey == replacement.trim()) {
                                         chosenProfile?.let { KeyboardAgentPreferences.setProfile(context, it, selectedModel, active) }
@@ -1156,7 +1268,7 @@ private fun ServerConnectionCard(
                                 }
                             }
                         }) { Text(stringResource(R.string.settings_connection_save)) }
-                        OutlinedButton(enabled = !testing && mode == ConnectionMode.BYOK && byokProfile?.hasUsableKey == true, onClick = {
+                        OutlinedButton(enabled = !testing && byokProfile?.hasUsableKey == true && snapshot.policy.allowNetwork && apiKey.isBlank() && model == byokProfile.model && voice.trim().ifBlank { "Kore" } == byokProfile.voice, onClick = {
                             val profile = byokProfile ?: return@OutlinedButton
                             testing = true
                             scope.launch {
@@ -1171,18 +1283,17 @@ private fun ServerConnectionCard(
                 } else if (remoteKind == 2) {
                     val configured = firebaseConfigured
                     if (!configured) Text(stringResource(R.string.connection_setup_firebase_unavailable), style = MaterialTheme.typography.bodySmall)
-                    OutlinedTextField(value = voice, onValueChange = { voice = it }, label = { Text(stringResource(R.string.connection_setup_voice)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    Button(enabled = configured && model.isNotBlank() && voice.isNotBlank(), onClick = {
+                    Button(enabled = configured && model.isNotBlank(), onClick = {
                         val firebase = ConnectionProfile.Firebase(
                             applicationId = BuildConfig.FIREBASE_APPLICATION_ID,
                             projectId = BuildConfig.FIREBASE_PROJECT_ID,
                             apiKey = BuildConfig.FIREBASE_API_KEY,
                             cloudModel = BuildConfig.FIREBASE_CLOUD_MODEL.ifBlank { "gemini-3.5-flash-lite" },
-                            liveModel = model, voice = voice.trim(), debugAppCheck = BuildConfig.DEBUG,
+                            liveModel = model, voice = voice.trim().ifBlank { "Kore" }, debugAppCheck = BuildConfig.DEBUG,
                         )
                         val chosenProfile = selectedProfile
                         scope.launch {
-                            if (saveSelection { selection.selectFirebase(firebase) }) {
+                            if (saveSelection { selection.selectFirebase(firebase, preferenceFor(ConnectionMode.FIREBASE)) }) {
                                 val active = selection.snapshot(shippedProfile).profile as? ConnectionProfile.Firebase
                                 if (active != null && active.copy(selectionRevision = null) == firebase) {
                                     chosenProfile?.let { KeyboardAgentPreferences.setProfile(context, it, firebase.liveModel, active) }
@@ -1190,8 +1301,7 @@ private fun ServerConnectionCard(
                             }
                         }
                     }) { Text(stringResource(R.string.connection_setup_firebase_activate)) }
-                    val firebaseProfile = snapshot.profile as? ConnectionProfile.Firebase
-                    OutlinedButton(enabled = !testing && mode == ConnectionMode.FIREBASE && firebaseProfile != null, onClick = {
+                    OutlinedButton(enabled = !testing && firebaseProfile != null && snapshot.policy.allowNetwork && model == firebaseProfile.liveModel && voice.trim().ifBlank { "Kore" } == firebaseProfile.voice, onClick = {
                         val active = firebaseProfile ?: return@OutlinedButton
                         testing = true
                         scope.launch {
@@ -1204,7 +1314,10 @@ private fun ServerConnectionCard(
                     status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 } else Text(stringResource(R.string.connection_setup_server_detail), style = MaterialTheme.typography.bodySmall)
             }
-            if (!BuildConfig.CONNECTION_SETUP_ENABLED) TextButton(onClick = { showSelfHost = !showSelfHost }) {
+            if (!BuildConfig.CONNECTION_SETUP_ENABLED) TextButton(onClick = {
+                showSelfHost = !showSelfHost
+                if (!showsOwnServer()) stopLanFind()
+            }) {
                 Text(
                     stringResource(
                         if (showSelfHost) R.string.settings_connection_self_host_hide
@@ -1212,7 +1325,7 @@ private fun ServerConnectionCard(
                     ),
                 )
             }
-            if ((!BuildConfig.CONNECTION_SETUP_ENABLED && showSelfHost) || (BuildConfig.CONNECTION_SETUP_ENABLED && choice == 1 && remoteKind == 1)) {
+            if (showsOwnServer()) {
             if (!BuildConfig.CONNECTION_SETUP_ENABLED) {
                 val profiles = (bundledProfiles + serverProfiles).distinctBy { it.id }
                 SetupDropdown(label = stringResource(R.string.connection_setup_profile), selected = selectedProfileId,
@@ -1246,84 +1359,83 @@ private fun ServerConnectionCard(
             )
             if (saved?.credentialAvailable == false) Text(stringResource(R.string.connection_setup_server_key_required), style = MaterialTheme.typography.bodySmall)
             else if (!saved?.bearerToken.isNullOrBlank()) Text(stringResource(R.string.connection_setup_key_saved), style = MaterialTheme.typography.bodySmall)
-            OutlinedTextField(
-                value = pairingPayload,
-                onValueChange = { pairingPayload = it },
-                label = { Text(stringResource(R.string.settings_connection_pairing)) },
-                visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 2,
-            )
-            OutlinedButton(
-                onClick = {
-                    val selected = PairingRecords.consume(pairingPayload)
-                    if (selected == null) {
-                        status = context.getString(R.string.settings_connection_pairing_invalid)
-                        return@OutlinedButton
-                    }
-                    val chosenProfile = selectedProfile
-                    val chosenModel = model
-                    scope.launch {
-                        if (saveSelection { selection.selectServer(selected.profile.baseUrl, selected.profile.bearerToken) }) {
-                            persistReadyEndpointProfile(chosenProfile, chosenModel, selected.profile.baseUrl)
-                            url = selected.profile.baseUrl
-                            token = ""
-                            pairingPayload = ""
+            SettingsDisclosure(R.string.settings_pair_or_discover) {
+                DisposableEffect(finder) { onDispose { stopLanFind() } }
+                OutlinedTextField(
+                    value = pairingPayload,
+                    onValueChange = { pairingPayload = it },
+                    label = { Text(stringResource(R.string.settings_connection_pairing)) },
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2,
+                )
+                OutlinedButton(
+                    onClick = {
+                        val selected = PairingRecords.consume(pairingPayload)
+                        if (selected == null) {
+                            status = context.getString(R.string.settings_connection_pairing_invalid)
+                            return@OutlinedButton
                         }
-                    }
-                },
-                enabled = pairingPayload.isNotBlank(),
-            ) {
-                Text(stringResource(R.string.settings_connection_pairing_apply))
-            }
-            OutlinedButton(
-                onClick = {
-                    if (finding) {
-                        finder.stop()
-                        finding = false
-                    } else {
-                        startLanFind()
-                    }
-                },
-            ) {
-                Text(
-                    stringResource(
-                        if (finding) R.string.settings_connection_stop_lan
-                        else R.string.settings_connection_find_lan,
-                    ),
-                )
-            }
-            if (finding) {
-                Text(
-                    stringResource(R.string.settings_connection_finding_lan),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        val chosenProfile = selectedProfile
+                        val chosenModel = model
+                        scope.launch {
+                            if (saveSelection { selection.selectServer(selected.profile.baseUrl, selected.profile.bearerToken, preferenceFor(ConnectionMode.SELF_HOST)) }) {
+                                persistReadyEndpointProfile(chosenProfile, chosenModel, selected.profile.baseUrl)
+                                url = selected.profile.baseUrl
+                                token = ""
+                                pairingPayload = ""
+                            }
+                        }
+                    },
+                    enabled = pairingPayload.isNotBlank(),
                 ) {
-                    lanServers.forEach { server ->
-                        FilterChip(
-                            selected = url == server.url,
-                            onClick = {
-                                val sameEndpoint = saved?.normalizedBaseUrl == server.url.trim().trimEnd('/')
-                                val replacement = token.trim().ifEmpty { saved?.bearerToken?.takeIf { sameEndpoint } }
-                                if (sameEndpoint && saved?.credentialAvailable == false && replacement.isNullOrEmpty()) {
-                                    status = context.getString(R.string.connection_setup_server_key_required)
-                                } else {
-                                    val chosenProfile = selectedProfile
-                                    val chosenModel = model
-                                    scope.launch {
-                                    if (saveSelection { selection.selectServer(server.url, replacement) }) {
-                                        persistReadyEndpointProfile(chosenProfile, chosenModel, server.url)
-                                        url = server.url
-                                        token = ""
+                    Text(stringResource(R.string.settings_connection_pairing_apply))
+                }
+                OutlinedButton(
+                    enabled = mode != ConnectionMode.SELF_HOST || snapshot.policy.allowNetwork,
+                    onClick = {
+                        if (finding) stopLanFind() else startLanFind()
+                    },
+                ) {
+                    Text(
+                        stringResource(
+                            if (finding) R.string.settings_connection_stop_lan
+                            else R.string.settings_connection_find_lan,
+                        ),
+                    )
+                }
+                if (finding) {
+                    Text(
+                        stringResource(R.string.settings_connection_finding_lan),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        lanServers.forEach { server ->
+                            FilterChip(
+                                selected = url == server.url,
+                                onClick = {
+                                    val sameEndpoint = saved?.normalizedBaseUrl == server.url.trim().trimEnd('/')
+                                    val replacement = token.trim().ifEmpty { saved?.bearerToken?.takeIf { sameEndpoint } }
+                                    if (sameEndpoint && saved?.credentialAvailable == false && replacement.isNullOrEmpty()) {
+                                        status = context.getString(R.string.connection_setup_server_key_required)
+                                    } else {
+                                        val chosenProfile = selectedProfile
+                                        val chosenModel = model
+                                        scope.launch {
+                                        if (saveSelection { selection.selectServer(server.url, replacement, preferenceFor(ConnectionMode.SELF_HOST)) }) {
+                                            persistReadyEndpointProfile(chosenProfile, chosenModel, server.url)
+                                            url = server.url
+                                            token = ""
+                                        }
+                                        }
                                     }
-                                    }
-                                }
-                            },
-                            label = { Text(server.instanceName) },
-                        )
+                                },
+                                label = { Text(server.instanceName) },
+                            )
+                        }
                     }
                 }
             }
@@ -1339,7 +1451,7 @@ private fun ServerConnectionCard(
                             val chosenProfile = selectedProfile
                             val chosenModel = model
                             scope.launch {
-                                if (saveSelection { selection.selectServer(endpoint, replacement) }) {
+                                if (saveSelection { selection.selectServer(endpoint, replacement, preferenceFor(ConnectionMode.SELF_HOST)) }) {
                                     persistReadyEndpointProfile(chosenProfile, chosenModel, endpoint)
                                     token = ""
                                 }
@@ -1402,7 +1514,10 @@ private fun ServerConnectionCard(
                     label = stringResource(R.string.connection_setup_preference),
                     selected = snapshot.policy.mode,
                     options = preferences,
-                    onSelect = { preference -> scope.launch { saveSelection { selection.updatePreference(preference) } } },
+                    onSelect = { preference ->
+                        if (preference == ExecutionMode.DEVICE_ONLY) stopLanFind()
+                        scope.launch { saveSelection { selection.updatePreference(preference) } }
+                    },
                 )
             }
         }
@@ -1420,7 +1535,7 @@ private fun ServerConnectionCard(
  */
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun <T> SetupDropdown(label: String, selected: T, options: List<Pair<T, String>>, onSelect: (T) -> Unit) {
+internal fun <T> SetupDropdown(label: String, selected: T, options: List<Pair<T, String>>, onSelect: (T) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(label, style = MaterialTheme.typography.bodySmall)

@@ -2,16 +2,12 @@ package io.kombify.speechkit.app.ui
 
 import android.content.Context
 import android.net.ConnectivityManager
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -72,6 +68,7 @@ internal fun OnDeviceModelCard(onModeChanged: () -> Unit = {}) {
     val store = remember { ParakeetOnDevice.modelStore(context) }
     val download by ParakeetDownloads.state.collectAsState()
     var choice by remember { mutableStateOf(OnDeviceEngine.choice(context)) }
+    var expanded by remember { mutableStateOf(false) }
     // Bumped after a download finishes or the model is deleted, so the
     // installed state is read again.
     var storeTick by remember { mutableIntStateOf(0) }
@@ -107,43 +104,36 @@ internal fun OnDeviceModelCard(onModeChanged: () -> Unit = {}) {
                 fontWeight = FontWeight.Medium,
             )
             Text(
-                stringResource(R.string.settings_on_device_subtitle),
+                stringResource(when (choice) {
+                    OnDeviceEngine.Choice.AUTO -> R.string.settings_on_device_engine_auto
+                    OnDeviceEngine.Choice.SYSTEM -> R.string.settings_on_device_engine_system
+                    OnDeviceEngine.Choice.PARAKEET -> R.string.settings_on_device_engine_parakeet
+                }),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (LocalSpeechAdapters.enabled) {
-                    FilterChip(
-                        selected = choice == OnDeviceEngine.Choice.AUTO,
-                        onClick = {
-                            choice = OnDeviceEngine.Choice.AUTO
-                            OnDeviceEngine.setChoice(context, choice)
-                        },
-                        label = { Text(stringResource(R.string.settings_on_device_engine_auto)) },
-                    )
-                }
-                FilterChip(
-                    selected = choice == OnDeviceEngine.Choice.SYSTEM,
-                    onClick = {
-                        choice = OnDeviceEngine.Choice.SYSTEM
-                        OnDeviceEngine.setChoice(context, choice)
-                    },
-                    label = { Text(stringResource(R.string.settings_on_device_engine_system)) },
-                )
-                FilterChip(
-                    selected = choice == OnDeviceEngine.Choice.PARAKEET,
-                    enabled = model != null,
-                    onClick = {
-                        choice = OnDeviceEngine.Choice.PARAKEET
-                        OnDeviceEngine.setChoice(context, choice)
-                    },
-                    label = { Text(stringResource(R.string.settings_on_device_engine_parakeet)) },
-                )
+            TextButton(onClick = { expanded = !expanded }) {
+                Text(stringResource(if (expanded) R.string.settings_on_device_hide_details else R.string.settings_on_device_show_details))
             }
+            if (!expanded) return@Column
+            Text(stringResource(R.string.settings_on_device_subtitle), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val engineOptions = buildList {
+                if (LocalSpeechAdapters.enabled) add(OnDeviceEngine.Choice.AUTO to context.getString(R.string.settings_on_device_engine_auto))
+                add(OnDeviceEngine.Choice.SYSTEM to context.getString(R.string.settings_on_device_engine_system))
+                if (model != null || choice == OnDeviceEngine.Choice.PARAKEET) {
+                    add(OnDeviceEngine.Choice.PARAKEET to context.getString(R.string.settings_on_device_engine_parakeet))
+                }
+            }
+            SetupDropdown(
+                label = stringResource(R.string.settings_on_device_engine_label), selected = choice, options = engineOptions,
+                onSelect = { selected ->
+                    if (selected != OnDeviceEngine.Choice.PARAKEET || model != null) {
+                        choice = selected
+                        OnDeviceEngine.setChoice(context, selected)
+                    }
+                },
+            )
             if (LocalSpeechAdapters.enabled && choice == OnDeviceEngine.Choice.AUTO) {
                 Text(stringResource(R.string.settings_on_device_auto_detail), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -162,31 +152,19 @@ internal fun OnDeviceModelCard(onModeChanged: () -> Unit = {}) {
             }
 
             if (offered.size > 1) {
-                Text(
-                    stringResource(R.string.settings_on_device_model_title),
-                    style = MaterialTheme.typography.labelMedium,
+                SetupDropdown(
+                    label = stringResource(R.string.settings_on_device_model_title),
+                    selected = current,
+                    options = offered.map { option -> option to context.getString(
+                        R.string.settings_on_device_model_chip, option.name, option.sizeBytes / 1_000_000,
+                    ) },
+                    onSelect = { option ->
+                        chosen = option
+                        ParakeetOnDevice.setSelectedModel(context, option)
+                        ParakeetOnDevice.release()
+                    },
                 )
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    for (option in offered) {
-                        FilterChip(
-                            selected = option == current,
-                            onClick = {
-                                chosen = option
-                                ParakeetOnDevice.setSelectedModel(context, option)
-                                // The next segment loads the newly selected model.
-                                ParakeetOnDevice.release()
-                            },
-                            label = {
-                                Text(stringResource(R.string.settings_on_device_model_chip, option.name, option.sizeBytes / 1_000_000))
-                            },
-                        )
-                    }
-                }
             }
-
             val megabytes = current.sizeBytes / 1_000_000
             // A download or failure of another model does not belong under this model's chip.
             val state = download.takeIf { it.modelId == null || it.modelId == current.id } ?: ParakeetDownloads.State.Idle

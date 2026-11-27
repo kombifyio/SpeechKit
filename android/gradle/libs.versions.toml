@@ -35,6 +35,7 @@ espresso = "3.7.0"
 androidxTest = "1.7.0"
 
 [libraries]
+sentry-android-core = { module = "io.sentry:sentry-android-core", version = "8.66.0" }
 firebase-ai = { module = "com.google.firebase:firebase-ai", version = "18.2.0" }
 firebase-ai-ondevice = { module = "com.google.firebase:firebase-ai-ondevice", version = "16.0.0-beta08" }
 firebase-appcheck-playintegrity = { module = "com.google.firebase:firebase-appcheck-playintegrity", version = "20.1.0" }

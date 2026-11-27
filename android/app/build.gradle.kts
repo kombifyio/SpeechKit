@@ -4,12 +4,14 @@ import java.security.MessageDigest
 import java.io.FileInputStream
 import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import com.android.build.api.variant.ResValue
 
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    id("io.sentry.android.gradle") version "6.27.0"
 }
 
 /**
@@ -31,8 +33,8 @@ android {
         applicationId = "io.kombify.speechkit"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8112
-        versionName = "0.81.12"
+        versionCode = 8114
+        versionName = "0.81.14"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         val hybridEnabled = speechKitBuildValue("speechkitHybridEnabled", "SPEECHKIT_HYBRID_ENABLED").equals("true", ignoreCase = true)
         val firebaseCloud = speechKitBuildValue("speechkitFirebaseAllowCloud", "SPEECHKIT_FIREBASE_ALLOW_CLOUD").equals("true", ignoreCase = true)
@@ -116,6 +118,22 @@ android {
         }
         create("kombify") {
             dimension = "distribution"
+            // Company reporting is compiled only into the managed flavor and
+            // activated only by the Firebase delivery job.
+            val sentryEnabled = speechKitBuildValue("speechkitSentryEnabled", "SPEECHKIT_SENTRY_ENABLED") == "true"
+            val sentryDsn = speechKitBuildValue("speechkitSentryDsn", "SPEECHKIT_SENTRY_DSN")
+            val sentryRelease = speechKitBuildValue("speechkitSentryRelease", "SPEECHKIT_SENTRY_RELEASE")
+            val sentryEnvironment = speechKitBuildValue("speechkitSentryEnvironment", "SPEECHKIT_SENTRY_ENVIRONMENT")
+            if (sentryEnabled) {
+                require(sentryDsn.matches(Regex("https://[0-9a-f]{32}@o[0-9]+\\.ingest\\.de\\.sentry\\.io/4512500311523408"))) { "Managed Sentry requires an EU DSN" }
+                require(sentryRelease.matches(Regex("[a-f0-9]{40}"))) { "Managed Sentry requires the full source SHA" }
+                require(sentryEnvironment in setOf("dev", "preview", "prod")) { "Managed Sentry requires a known environment" }
+            }
+            buildConfigField("boolean", "SENTRY_ENABLED", sentryEnabled.toString())
+            buildConfigField("String", "SENTRY_DSN", "\"$sentryDsn\"")
+            buildConfigField("String", "SENTRY_RELEASE", "\"$sentryRelease\"")
+            buildConfigField("String", "SENTRY_ENVIRONMENT", "\"$sentryEnvironment\"")
+            proguardFile("src/kombify/proguard-rules.pro")
             // Distribution authority, never accepted from a Binder request.
             buildConfigField("String", "HOSTED_VOICE_ORIGIN",
                 "\"" + speechKitBuildValue("speechkit.hostedVoiceOrigin", "SPEECHKIT_HOSTED_VOICE_ORIGIN") + "\"")
@@ -153,6 +171,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        resValues = true
     }
 
     compileOptions {
@@ -160,6 +179,50 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+}
+
+// Generate a mapping identifier without auto-upload, instrumentation or SDK installation.
+sentry {
+    ignoredFlavors.set(setOf("oss"))
+    includeProguardMapping.set(true)
+    autoUploadProguardMapping.set(false)
+    uploadNativeSymbols.set(false)
+    autoUploadNativeSymbols.set(false)
+    includeNativeSources.set(false)
+    includeSourceContext.set(false)
+    includeDependenciesReport.set(false)
+    telemetry.set(false)
+    autoInstallation { enabled.set(false) }
+    tracingInstrumentation {
+        enabled.set(false)
+        logcat { enabled.set(false) }
+    }
+}
+// Sentry's UUID task finalizes Compose mapping, while packaging consumes the
+// UUID. Make the mapping a package input so Gradle schedules it before the
+// assemble finalizer; the collection is empty for non-minified variants.
+tasks.configureEach {
+    val match = Regex("package(Kombify(?:Debug|Release))").matchEntire(name)
+    if (match != null) {
+        val composeMapping = "merge${match.groupValues[1]}ComposeMapping"
+        if (composeMapping in tasks.names) dependsOn(tasks.named(composeMapping))
+    }
+}
+// HeliBoard uses these resources for both provider registration and URI
+// creation. Keep the managed flavor's historical authorities for upgrades;
+// namespace OSS by the final application ID, including any debug suffix.
+androidComponents {
+    onVariants(selector().withFlavor("distribution" to "oss")) { variant ->
+        for ((name, suffix) in mapOf(
+            "clipboard_provider_authority" to "clipprovider",
+            "gesture_data_provider_authority" to "provider",
+        )) {
+            variant.resValues.put(
+                variant.makeResValueKey("string", name),
+                variant.applicationId.map { applicationId -> ResValue("$applicationId.$suffix", null) },
+            )
+        }
+    }
 }
 
 // sherpa-onnx, the runtime of the on-device neural voices (io.kombify.speechkit.app.voice). The release's
@@ -277,6 +340,10 @@ dependencies {
     // DI
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+
+    // The public OSS artifact carries no company telemetry SDK.
+    add("kombifyImplementation", libs.sentry.android.core)
+    add("kombifyImplementation", libs.okhttp)
 
     // Logging
     implementation(libs.timber)

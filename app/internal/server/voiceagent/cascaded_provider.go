@@ -53,24 +53,28 @@ var NewAgentFlowAdapter = flowadapt.NewCascadedAgent
 // cascaded.SessionConfig and forwards.
 func (p *CascadedProvider) Connect(ctx context.Context, cfg LiveConfigFrame) error {
 	return p.inner.Connect(ctx, cascaded.SessionConfig{
-		Locale:           cfg.Locale,
-		Voice:            cfg.Voice,
-		SystemPrompt:     cfg.SystemPrompt,
-		RefinementPrompt: cfg.RefinementPrompt,
-		Speaker:          cfg.Speaker,
-		Keyterms:         cfg.Keyterms,
+		Locale:              cfg.Locale,
+		Voice:               cfg.Voice,
+		SystemPrompt:        cfg.SystemPrompt,
+		RefinementPrompt:    cfg.RefinementPrompt,
+		Speaker:             cfg.Speaker,
+		Keyterms:            cfg.Keyterms,
+		Prompt:              cfg.VocabularyPrompt,
+		NormalizeTranscript: cfg.NormalizeTranscript,
 	})
 }
 
 // UpdateInstructions translates rich LiveConfigFrame to SessionConfig.
 func (p *CascadedProvider) UpdateInstructions(ctx context.Context, cfg LiveConfigFrame) error {
 	return p.inner.UpdateInstructions(ctx, cascaded.SessionConfig{
-		Locale:           cfg.Locale,
-		Voice:            cfg.Voice,
-		SystemPrompt:     cfg.SystemPrompt,
-		RefinementPrompt: cfg.RefinementPrompt,
-		Speaker:          cfg.Speaker,
-		Keyterms:         cfg.Keyterms,
+		Locale:              cfg.Locale,
+		Voice:               cfg.Voice,
+		SystemPrompt:        cfg.SystemPrompt,
+		RefinementPrompt:    cfg.RefinementPrompt,
+		Speaker:             cfg.Speaker,
+		Keyterms:            cfg.Keyterms,
+		Prompt:              cfg.VocabularyPrompt,
+		NormalizeTranscript: cfg.NormalizeTranscript,
 	})
 }
 

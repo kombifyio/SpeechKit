@@ -418,7 +418,11 @@ func (a *Adapter) Run(parent context.Context) {
 			cfg.SystemPrompt, cfg.RefinementPrompt = "", ""
 		}
 		if a.Vocabulary != nil {
-			cfg.Keyterms = a.Vocabulary(ctx, a.Session.Owner.UserID, a.Session.Owner.OrgID, a.Session.VoicePrefs, cfg.Locale)
+			vocab := a.Vocabulary(ctx, a.Session.Owner.UserID, a.Session.Owner.OrgID, a.Session.VoicePrefs, cfg.Locale)
+			cfg.Keyterms = vocab.Keyterms
+			cfg.VocabularyPrompt = vocab.Prompt
+			cfg.VocabularyHint = vocab.Hint
+			cfg.NormalizeTranscript = vocab.Normalize
 		}
 	}
 	if start.TurnReceipts {

@@ -216,7 +216,7 @@
     <string name="connection_setup_local">محلي فقط</string>
     <string name="connection_setup_own">مفاتيح API / نقاط نهاية خاصة</string>
     <string name="connection_setup_account">ربط حساب kombify</string>
-    <string name="connection_setup_local_detail">يستخدم إمكانات الجهاز المتاحة. تحتاج بعض الميزات إلى أجهزة متوافقة أو نماذج مثبتة.</string>
+    <string name="connection_setup_local_detail">يعالج SpeechKit المحتوى على هذا الجهاز. قد تكون لمحرّك النظام إعدادات شبكة خاصة به.</string>
     <string name="connection_setup_gemini">Gemini Live</string>
     <string name="connection_setup_server">نقطة نهاية وكيل SpeechKit</string>
     <string name="connection_setup_gemini_detail">اتصل مباشرة بـ Gemini Live باستخدام مفتاح Google API الخاص بك.</string>
@@ -276,4 +276,18 @@
     <string name="audio_language_multi">متعدد اللغات</string>
     <string name="audio_language_hint">اختر لغة لاستخدام تعرّف Google على الجهاز.</string>
     <string name="audio_start_transcription">تفريغ النص</string>
+    <string name="crash_reporting_title">تقارير الأعطال</string>
+    <string name="crash_reporting_description">إرسال تفاصيل تقنية عن الأعطال إلى kombify Sentry عند السماح بالشبكة. لا يُرسل النص المكتوب أو الصوت.</string>
+    <string name="crash_reporting_local_blocked">متوقف مؤقتًا أثناء الوضع المحلي فقط.</string>
+    <string name="crash_reporting_save_failed">تعذر حفظ الإعداد. تقارير الأعطال متوقفة لهذه الجلسة وقد لا يستمر الاختيار.</string>
+    <string name="crash_reporting_unavailable">تقارير الأعطال غير متاحة.</string>
+    <string name="connection_setup_mode">الاتصال</string>
+    <string name="settings_on_device_engine_label">محرك التعرّف</string>
+    <string name="settings_on_device_show_details">إدارة النماذج</string>
+    <string name="settings_on_device_hide_details">إخفاء تفاصيل النموذج</string>
+    <string name="settings_personalization">تخصيص لوحة المفاتيح والصوت</string>
+    <string name="settings_voice_options">خيارات الصوت</string>
+    <string name="settings_pair_or_discover">إقران خادم أو البحث عنه</string>
+    <string name="settings_expanded">موسّع</string>
+    <string name="settings_collapsed">مطوي</string>
 </resources>

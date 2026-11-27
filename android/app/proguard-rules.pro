@@ -1,5 +1,10 @@
 # kombify SpeechKit ProGuard Rules
 
+# HeliBoard derives accessibility event names from this class's runtime package.
+# R8 repackaging into the unnamed package makes getPackage() null and crashes
+# LatinIME.onCreate before the keyboard opens. Both distribution flavors need it.
+-keepnames class helium314.keyboard.accessibility.AccessibilityUtils
+
 # Keep ONNX Runtime classes
 -keep class ai.onnxruntime.** { *; }
 

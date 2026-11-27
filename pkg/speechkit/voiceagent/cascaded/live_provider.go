@@ -113,6 +113,7 @@ func sessionConfigFromLive(cfg live.LiveConfig) SessionConfig {
 		RefinementPrompt: cfg.RefinementPrompt,
 		Speaker:          cfg.Speaker,
 		Keyterms:         resolved.Keyterms,
+		Prompt:           resolved.PromptHint,
 	}
 }
 

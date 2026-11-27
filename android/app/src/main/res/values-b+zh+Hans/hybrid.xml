@@ -47,4 +47,22 @@
     <string name="hybrid_receipts_checked">已检查远程结果</string>
     <string name="hybrid_run_selected">打开所选语音助手</string>
     <string name="hybrid_send_selected">发送文本</string>
+    <string name="hybrid_local_route_detail">仅使用此设备。如需远程处理，请设置连接。</string>
+    <string name="hybrid_connection_settings">连接设置</string>
+    <string name="hybrid_task_label">任务</string>
+    <string name="hybrid_task_text">编辑文本或提问</string>
+    <string name="hybrid_task_audio">转录音频</string>
+    <string name="hybrid_task_voice_agent">语音助手</string>
+    <string name="hybrid_task_notes">本地笔记助手</string>
+    <string name="hybrid_details_show">模型与历史记录</string>
+    <string name="hybrid_details_hide">隐藏模型与历史记录</string>
+    <string name="hybrid_agent_choice">语音助手</string>
+    <string name="hybrid_choose_agent">选择助手</string>
+    <string name="hybrid_voice_needs_connection">语音助手需要远程连接和网络权限。</string>
+    <string name="hybrid_voice_remote_processing">要在此处打开语音助手，请在上方选择「%1$s」或「%2$s」，并允许网络访问。</string>
+    <string name="hybrid_voice_keyboard">要使用此连接，请打开一个文本框，然后在 SpeechKit 键盘上点按「语音助手」。</string>
+    <string name="hybrid_audio_language">音频文件语言</string>
+    <string name="hybrid_audio_permission_required">请允许访问麦克风，以使用此设备上的 Google 语音识别来转写此文件。</string>
+    <string name="hybrid_audio_model_unavailable">此设备上没有可下载的相应语言的 Google 语音识别模型。</string>
+    <string name="hybrid_audio_local_required">使用自己的 Gemini 密钥转写时，请选择允许在设备上处理的模式。</string>
 </resources>

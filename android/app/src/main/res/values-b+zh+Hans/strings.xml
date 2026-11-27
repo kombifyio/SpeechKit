@@ -216,7 +216,7 @@
     <string name="connection_setup_local">仅本地</string>
     <string name="connection_setup_own">自己的 API 密钥 / 端点</string>
     <string name="connection_setup_account">连接 kombify 账户</string>
-    <string name="connection_setup_local_detail">使用设备上可用的功能。部分功能需要兼容硬件或已安装的模型。</string>
+    <string name="connection_setup_local_detail">SpeechKit 在此设备上处理。系统识别服务可能有自己的网络设置。</string>
     <string name="connection_setup_gemini">Gemini Live</string>
     <string name="connection_setup_server">SpeechKit 智能体端点</string>
     <string name="connection_setup_gemini_detail">使用 Google API 密钥直接连接 Gemini Live。</string>
@@ -276,4 +276,18 @@
     <string name="audio_language_multi">多语言</string>
     <string name="audio_language_hint">选择语言以使用设备上的 Google 识别。</string>
     <string name="audio_start_transcription">转录</string>
+    <string name="crash_reporting_title">崩溃报告</string>
+    <string name="crash_reporting_description">允许使用网络时向 kombify Sentry 发送技术崩溃详情。不会发送输入的文字或音频。</string>
+    <string name="crash_reporting_local_blocked">仅本地模式下已暂停。</string>
+    <string name="crash_reporting_save_failed">无法保存设置。本次会话已关闭崩溃报告；此选择可能无法保留。</string>
+    <string name="crash_reporting_unavailable">崩溃报告不可用。</string>
+    <string name="connection_setup_mode">连接</string>
+    <string name="settings_on_device_engine_label">识别引擎</string>
+    <string name="settings_on_device_show_details">管理模型</string>
+    <string name="settings_on_device_hide_details">隐藏模型详情</string>
+    <string name="settings_personalization">自定义键盘和语音</string>
+    <string name="settings_voice_options">语音选项</string>
+    <string name="settings_pair_or_discover">配对或查找服务器</string>
+    <string name="settings_expanded">已展开</string>
+    <string name="settings_collapsed">已收起</string>
 </resources>

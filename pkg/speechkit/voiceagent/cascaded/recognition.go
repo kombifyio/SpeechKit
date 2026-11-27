@@ -23,6 +23,9 @@ type RecognitionOptions struct {
 	// Keyterms bias recognition towards the session's vocabulary (product
 	// names and other coined words), the same terms batch recognition gets.
 	Keyterms []string
+	// Prompt carries a transcript-style vocabulary hint for prompt-biased
+	// streaming recognizers.
+	Prompt string
 }
 
 // Recognition is one live recognition of a single turn. onFinal (given to
@@ -84,7 +87,7 @@ func (p *Provider) startLiveTurnLocked(ctx context.Context, preRoll []byte) {
 	if len(preRoll) > 0 {
 		turn.chunks <- preRoll
 	}
-	opts := RecognitionOptions{Locale: p.locale, Keyterms: p.keyterms}
+	opts := RecognitionOptions{Locale: p.locale, Keyterms: p.keyterms, Prompt: p.prompt}
 	p.liveTurn = turn
 	go func() {
 		defer close(turn.worker)

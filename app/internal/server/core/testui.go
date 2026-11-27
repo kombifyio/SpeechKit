@@ -31,7 +31,7 @@ func operatorUIPublic() bool {
 }
 
 func serverPublicPaths() []string {
-	paths := []string{"/healthz"}
+	paths := []string{"/healthz", "/livez"}
 	if envBoolDefault(config.ServerDetailedReadinessPublicEnv, true) {
 		paths = append(paths, "/readyz", "/readyz/strict")
 	}

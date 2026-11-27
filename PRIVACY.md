@@ -1,7 +1,7 @@
 # Privacy Policy — kombify SpeechKit
 
 **Effective date:** 2026-03-30
-**Last updated:** 2026-10-01
+**Last updated:** 2026-11-27
 
 kombify SpeechKit ("SpeechKit", "the App") is a speech-to-text framework with a desktop host application and an Android companion app. This privacy policy explains what data SpeechKit processes, where it is stored, and what choices you have.
 
@@ -87,7 +87,8 @@ Whisper model only; without a local speech model it does not start.
 
 ## 2. Data We Do Not Collect
 
-The SpeechKit desktop host and Android app do **not** collect, transmit, or store:
+The SpeechKit desktop host and public OSS Android app do not send the following
+to kombify:
 
 - usage analytics or telemetry
 - crash reports
@@ -96,10 +97,42 @@ The SpeechKit desktop host and Android app do **not** collect, transmit, or stor
 - contact lists or personal files
 - advertising identifiers
 
-SpeechKit operates **local-first**. No data leaves your device unless you explicitly configure a cloud provider.
+Android can keep a crash report in the app's local files. That local report is
+not automatically uploaded. The public OSS Android app has no company Sentry SDK
+configuration. Audio, text and AI requests leave the device only through a
+connection you configure and a policy that permits it.
 
-The one network request SpeechKit makes on its own is the update check: by
-default the desktop app contacts the release host every few hours to look for a
+### Managed Firebase test-app diagnostics
+
+The managed SpeechKit test app distributed through Firebase has a separate
+technical crash-reporting setting, enabled by default for that distribution.
+Its settings identify **kombify Sentry** as the recipient and let you turn
+reporting off or on. This permission is separate from your selected AI provider.
+The dedicated Sentry project removes IP addresses and automatically inferred
+geographic fields before storing reports. The service necessarily receives the
+network connection when reporting is enabled.
+The public OSS app and ordinary local builds do not enable company reporting.
+
+Reports go to kombify's `speechkit-android` project in Sentry's EU region. They
+contain exception types and source-code frames, the app version and source
+revision, Android API level, a bounded device-model label, and new diagnostic
+event/trace identifiers. They exclude exception messages, keyboard input,
+clipboard content, audio, transcripts, screenshots, view hierarchies, logs,
+request contents, credentials and account or persistent device identifiers.
+The network service receives the connection information necessary for HTTPS.
+
+Device-only execution blocks reporting even while the saved diagnostic setting
+is on. Turning reporting off, or switching to device-only, cancels active
+requests and discards queued reports. There is no disk queue or later upload of
+crashes captured while reporting was disallowed; offline delivery is best effort.
+Repeated occurrences of the same failure are limited per hour. A failed setting
+save is shown as an error rather than confirmation that the choice was saved.
+
+The managed Android app sends these reports through its built-in reporter.
+Reporting starts with the first version that includes it.
+
+Apart from the managed test-app diagnostics described above, the desktop's
+automatic network request is its update check: by default it contacts the release host every few hours to look for a
 new version and sends no audio, text or identifiers beyond what any HTTPS
 request exposes. Turn automatic checks off with `[telemetry] update_check =
 false` (an explicit "check now" in Settings still works) or turn updates off

@@ -47,4 +47,22 @@
     <string name="hybrid_receipts_checked">Resultados remotos consultados</string>
     <string name="hybrid_run_selected">Abrir agente de voz elegido</string>
     <string name="hybrid_send_selected">Enviar texto</string>
+    <string name="hybrid_local_route_detail">Se usa solo este dispositivo. Configura una conexión para procesar fuera del dispositivo.</string>
+    <string name="hybrid_connection_settings">Ajustes de conexión</string>
+    <string name="hybrid_task_label">Tarea</string>
+    <string name="hybrid_task_text">Editar texto o preguntar</string>
+    <string name="hybrid_task_audio">Transcribir audio</string>
+    <string name="hybrid_task_voice_agent">Agente de voz</string>
+    <string name="hybrid_task_notes">Agente local de notas</string>
+    <string name="hybrid_details_show">Modelos e historial</string>
+    <string name="hybrid_details_hide">Ocultar modelos e historial</string>
+    <string name="hybrid_agent_choice">Agente de voz</string>
+    <string name="hybrid_choose_agent">Seleccionar agente</string>
+    <string name="hybrid_voice_needs_connection">Un agente de voz necesita una conexión remota y permiso de red.</string>
+    <string name="hybrid_voice_remote_processing">Para abrir aquí un agente de voz, elige %1$s o %2$s arriba y permite el acceso a la red.</string>
+    <string name="hybrid_voice_keyboard">Abre un campo de texto y toca Agente de voz en el teclado de SpeechKit para usar esta conexión.</string>
+    <string name="hybrid_audio_language">Idioma del archivo de audio</string>
+    <string name="hybrid_audio_permission_required">Permite el acceso al micrófono para transcribir este archivo con el reconocimiento de Google en este dispositivo.</string>
+    <string name="hybrid_audio_model_unavailable">No hay un modelo de reconocimiento de voz de Google disponible para descargar en este idioma en este dispositivo.</string>
+    <string name="hybrid_audio_local_required">Para transcribir con una clave propia de Gemini, selecciona un modo que permita procesar en el dispositivo.</string>
 </resources>

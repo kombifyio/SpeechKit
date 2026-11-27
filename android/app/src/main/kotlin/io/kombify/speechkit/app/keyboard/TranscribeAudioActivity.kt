@@ -1,9 +1,11 @@
 package io.kombify.speechkit.app.keyboard
 
+import android.Manifest
 import android.content.ClipboardManager
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -41,6 +43,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import io.kombify.speechkit.R
 import io.kombify.speechkit.BuildConfig
 import io.kombify.speechkit.app.hybrid.HybridRuntime
+import io.kombify.speechkit.hybrid.LocalAudioPermissionRequired
 import io.kombify.speechkit.hybrid.MlKitLocalSpeechAdapter
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.ensureActive
@@ -53,6 +56,7 @@ import io.kombify.speechkit.net.KombifyLinks
 import io.kombify.speechkit.net.R as NetR
 import io.kombify.speechkit.net.SpeechKitApiException
 import io.kombify.speechkit.net.SpeechKitServerApi
+import io.kombify.speechkit.net.StoredConnectionSelection
 import io.kombify.speechkit.net.userText
 import io.kombify.speechkit.stt.parakeet.ParakeetModels
 import io.kombify.speechkit.stt.parakeet.ParakeetLanguages
@@ -101,6 +105,8 @@ class TranscribeAudioActivity : ComponentActivity() {
     private var invocation: Invocation? = null
     private var invalidInvocation = false
     private val deviceLocale = Locale.getDefault()
+    private var pendingPermission: AudioImport? = null
+    private data class AudioImport(val uri: Uri, val language: String, val revision: Long)
 
     private val picker = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) {
@@ -108,6 +114,19 @@ class TranscribeAudioActivity : ComponentActivity() {
             return@registerForActivityResult
         }
         ui.value = Ui.Ready(uri)
+    }
+    private val audioPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val pending = pendingPermission
+        pendingPermission = null
+        if (pending != null && !isFinishing) {
+            if (StoredConnectionSelection(this).revision() != pending.revision) {
+                ui.value = Ui.Failed(getString(R.string.hybrid_failed))
+            } else if (granted) {
+                transcribe(pending.uri, pending.language, pending.revision)
+            } else {
+                ui.value = Ui.Ready(pending.uri, getString(R.string.hybrid_audio_permission_required))
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -161,6 +180,7 @@ class TranscribeAudioActivity : ComponentActivity() {
                                 }
                             }
                             Text(stringResource(R.string.audio_language_hint), style = MaterialTheme.typography.bodySmall)
+                            s.notice?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                             Button(onClick = { transcribe(s.uri, language) }) { Text(stringResource(R.string.audio_start_transcription)) }
                         }
                         is Ui.Done -> {
@@ -205,23 +225,24 @@ class TranscribeAudioActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        pendingPermission = null
         scope.cancel()
         super.onDestroy()
     }
 
-    private fun transcribe(uri: Uri, language: String) {
+    private fun transcribe(uri: Uri, language: String, permissionRevision: Long? = null) {
         if (BuildConfig.HYBRID_ENABLED) {
             ui.value = Ui.Working
-            val expectedRevision = invocation?.revision
-            val selection = io.kombify.speechkit.net.StoredConnectionSelection(this)
+            val selection = StoredConnectionSelection(this)
             val route = selection.snapshot(io.kombify.speechkit.app.build.ShippedDefaults.shippedProfile())
-            if (expectedRevision != null && route.revision != expectedRevision) {
+            val expectedRevision = permissionRevision ?: invocation?.revision ?: route.revision
+            if (route.revision != expectedRevision) {
                 ui.value = Ui.Failed(getString(R.string.hybrid_failed)); return
             }
             val policy = invocation?.policy
-            val profile = if (expectedRevision != null) route.profile else profileSource.currentProfile()
+            val profile = if (invocation != null) route.profile else profileSource.currentProfile()
             fun requireSameRoute() {
-                check(expectedRevision == null || selection.revision() == expectedRevision) { "Connection changed" }
+                check(selection.revision() == expectedRevision) { "Connection changed" }
             }
             val importJob = scope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
                 try {
@@ -273,9 +294,23 @@ class TranscribeAudioActivity : ComponentActivity() {
                     finally { store.close() }
                     ui.value = Ui.Done(resultText, listOfNotNull(speechSource, textSource).joinToString(" / "))
                 } catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: Exception) { ui.value = Ui.Failed(getString(R.string.hybrid_failed)) }
+                catch (failure: Exception) {
+                    val needsAudioPermission = checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED &&
+                        generateSequence(failure as Throwable?) { it.cause }.take(8).any { it is LocalAudioPermissionRequired }
+                    if (needsAudioPermission && !isFinishing && selection.revision() == expectedRevision) {
+                        pendingPermission = AudioImport(uri, language, expectedRevision)
+                        audioPermission.launch(Manifest.permission.RECORD_AUDIO)
+                    } else {
+                        ui.value = Ui.Failed(getString(R.string.hybrid_failed))
+                    }
+                }
             }
             HybridRuntime.track(this, profile, importJob)
+            importJob.invokeOnCompletion { failure ->
+                if (failure is CancellationException) scope.launch {
+                    if (ui.value == Ui.Working && pendingPermission == null) ui.value = Ui.Failed(getString(R.string.hybrid_failed))
+                }
+            }
             importJob.start()
             return
         }
@@ -374,7 +409,7 @@ class TranscribeAudioActivity : ComponentActivity() {
     private sealed class Ui {
         data object Idle : Ui()
         data object Working : Ui()
-        data class Ready(val uri: Uri) : Ui()
+        data class Ready(val uri: Uri, val notice: String? = null) : Ui()
         data class Done(val text: String, val source: String = "") : Ui()
         data class Failed(val reason: String) : Ui()
         data class PlanDenied(val title: String, val body: String) : Ui()

@@ -395,13 +395,17 @@ class HybridDeviceJourney {
             assertTrue("Could not reopen shortcuts after canceling text preview", host.showShortcuts(service))
             compose.onNodeWithText(shortcutTitle).assertExists()
 
-            // The regular Voice Agent tap in local-only opens the on-device
-            // Hybrid surface, never the endpoint setup screen.
+            // A local Voice Agent tap opens the dedicated on-device Notes entry.
             compose.onNodeWithText(voiceShortcut).performClick()
             val hybridTitle = context.getString(io.kombify.speechkit.R.string.hybrid_title)
-            waitUntil("Local-only Voice Agent tap did not open Hybrid") {
+            val localRouteDetail = context.getString(io.kombify.speechkit.R.string.hybrid_local_route_detail)
+            val taskLabel = context.getString(io.kombify.speechkit.R.string.hybrid_task_label)
+            waitUntil("Local-only Voice Agent tap did not open the dedicated local entry") {
                 val windows = automation.windows.mapNotNull { it.root } + listOfNotNull(automation.rootInActiveWindow)
-                windows.any { root -> hasVisibleText(root, hybridTitle) }
+                windows.any { root ->
+                    hasVisibleText(root, hybridTitle) && hasVisibleText(root, localRouteDetail) &&
+                        !hasVisibleText(root, taskLabel)
+                }
             }
             assertTrue("Local-only Voice Agent tap must not open connection setup", automation.windows.mapNotNull { it.root }
                 .plus(listOfNotNull(automation.rootInActiveWindow)).none { root -> hasVisibleText(root, connectionTitle) })

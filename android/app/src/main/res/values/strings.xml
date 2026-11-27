@@ -242,7 +242,7 @@
     <string name="connection_setup_local">Local only</string>
     <string name="connection_setup_own">Own API keys / endpoints</string>
     <string name="connection_setup_account">Connect kombify account</string>
-    <string name="connection_setup_local_detail">Uses available on-device capabilities. Some features need compatible hardware or installed models.</string>
+    <string name="connection_setup_local_detail">SpeechKit keeps processing on this device. Your system recognizer may have its own network settings.</string>
     <string name="connection_setup_gemini">Gemini Live</string>
     <string name="connection_setup_server">SpeechKit agent endpoint</string>
     <string name="connection_setup_gemini_detail">Connect directly to Gemini Live with your Google API key.</string>
@@ -302,4 +302,18 @@
     <string name="audio_language_multi">Multilingual</string>
     <string name="audio_language_hint">Choose a language to use Google on-device recognition.</string>
     <string name="audio_start_transcription">Transcribe</string>
+    <string name="crash_reporting_title">Crash reports</string>
+    <string name="crash_reporting_description">Send technical crash details to kombify Sentry when network use is allowed. No typed text or audio is sent.</string>
+    <string name="crash_reporting_local_blocked">Paused while local-only mode is active.</string>
+    <string name="crash_reporting_save_failed">Could not save this setting. Crash reporting is off for this session; the choice may not persist.</string>
+    <string name="crash_reporting_unavailable">Crash reporting is unavailable.</string>
+    <string name="connection_setup_mode">Connection</string>
+    <string name="settings_on_device_engine_label">Recognition engine</string>
+    <string name="settings_on_device_show_details">Manage models</string>
+    <string name="settings_on_device_hide_details">Hide model details</string>
+    <string name="settings_personalization">Personalize keyboard and voice</string>
+    <string name="settings_voice_options">Voice options</string>
+    <string name="settings_pair_or_discover">Pair or find a server</string>
+    <string name="settings_expanded">Expanded</string>
+    <string name="settings_collapsed">Collapsed</string>
 </resources>

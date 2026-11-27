@@ -27,37 +27,44 @@ class NsdLanFinder(
             onUpdate(emptyList())
             return
         }
-        val discovery = object : NsdManager.DiscoveryListener {
+        val session = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(regType: String) = Unit
             override fun onDiscoveryStopped(serviceType: String) = Unit
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) = Unit
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) = Unit
             override fun onServiceFound(service: NsdServiceInfo) {
                 if (!service.serviceType.contains("speechkit")) return
-                @Suppress("DEPRECATION")
-                nsd.resolveService(
-                    service,
-                    object : NsdManager.ResolveListener {
-                        override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) = Unit
-                        override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-                            val record = fromResolved(serviceInfo) ?: return
-                            main.post {
-                                found[record.instanceName] = record
-                                listener?.invoke(found.values.toList())
+                val owner = this
+                main.post {
+                    if (discovery !== owner) return@post
+                    @Suppress("DEPRECATION")
+                    nsd.resolveService(
+                        service,
+                        object : NsdManager.ResolveListener {
+                            override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) = Unit
+                            override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
+                                val record = fromResolved(serviceInfo) ?: return
+                                main.post publish@{
+                                    if (discovery !== owner) return@publish
+                                    found[record.instanceName] = record
+                                    listener?.invoke(found.values.toList())
+                                }
                             }
-                        }
-                    },
-                )
+                        },
+                    )
+                }
             }
             override fun onServiceLost(service: NsdServiceInfo) {
+                val owner = this
                 main.post {
+                    if (discovery !== owner) return@post
                     found.remove(service.serviceName)
                     listener?.invoke(found.values.toList())
                 }
             }
         }
-        this.discovery = discovery
-        nsd.discoverServices(LanDiscoveryRecords.SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discovery)
+        this.discovery = session
+        nsd.discoverServices(LanDiscoveryRecords.SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, session)
     }
 
     fun stop() {

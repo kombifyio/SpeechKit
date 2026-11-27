@@ -36,14 +36,16 @@ type Provider struct {
 	logger          *slog.Logger
 
 	// Per-session live config from Connect()
-	locale        string
-	voice         string
-	systemPrompt  string
-	refinement    string
-	speaker       speaker.Options
-	keyterms      []string
-	sessionCtx    context.Context
-	sessionCancel context.CancelFunc
+	locale              string
+	voice               string
+	systemPrompt        string
+	refinement          string
+	speaker             speaker.Options
+	keyterms            []string
+	prompt              string
+	normalizeTranscript func(string) string
+	sessionCtx          context.Context
+	sessionCancel       context.CancelFunc
 
 	// Turn state
 	pendingSTT  int64

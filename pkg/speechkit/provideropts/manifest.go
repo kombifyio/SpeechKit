@@ -483,6 +483,8 @@ func openAIVoiceAgentManifest() ProviderOptionManifest {
 		native(OptionTurnDetection, TypeBool, "Turn detection", "audio.input.turn_detection", "https://platform.openai.com/docs/guides/realtime"),
 		native(OptionEndpointingMs, TypeInt, "Silence duration", "silence_duration_ms", "https://platform.openai.com/docs/guides/realtime"),
 		native(OptionDetectLanguage, TypeBool, "Input transcription", "audio.input.transcription", "https://platform.openai.com/docs/guides/realtime-transcription"),
+		native(OptionPromptHint, TypeString, "Input transcription prompt", "audio.input.transcription.prompt", "https://platform.openai.com/docs/guides/realtime-transcription"),
+		derived(OptionKeyterms, TypeStringList, "Vocabulary terms", "Rendered into audio.input.transcription.prompt when no explicit prompt hint is set.", "https://platform.openai.com/docs/guides/realtime-transcription"),
 		native(OptionContextPrompt, TypeString, "Context prompt", "instructions", "https://platform.openai.com/docs/guides/realtime"),
 		native(OptionReasoningEffort, TypeString, "Reasoning effort", "reasoning.effort", "https://platform.openai.com/docs/guides/realtime-models-prompting"),
 		unsupported(OptionLanguageHints, TypeStringList, "Language hints", "OpenAI Realtime language hints are not exposed through the current SpeechKit adapter."),

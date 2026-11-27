@@ -47,4 +47,22 @@
     <string name="hybrid_receipts_checked">Remote outcomes checked</string>
     <string name="hybrid_run_selected">Open selected voice agent</string>
     <string name="hybrid_send_selected">Send text</string>
+    <string name="hybrid_local_route_detail">Using the device only. Configure a connection to use remote processing.</string>
+    <string name="hybrid_connection_settings">Connection settings</string>
+    <string name="hybrid_task_label">Task</string>
+    <string name="hybrid_task_text">Edit or ask about text</string>
+    <string name="hybrid_task_audio">Transcribe audio</string>
+    <string name="hybrid_task_voice_agent">Voice agent</string>
+    <string name="hybrid_task_notes">Local notes agent</string>
+    <string name="hybrid_details_show">Models and history</string>
+    <string name="hybrid_details_hide">Hide models and history</string>
+    <string name="hybrid_agent_choice">Voice agent</string>
+    <string name="hybrid_choose_agent">Select agent</string>
+    <string name="hybrid_voice_needs_connection">A remote connection and network permission are needed for a voice agent.</string>
+    <string name="hybrid_voice_remote_processing">To open a voice agent here, choose %1$s or %2$s above and allow network access.</string>
+    <string name="hybrid_voice_keyboard">Open a text field and tap Voice Agent on the SpeechKit keyboard to use this connection.</string>
+    <string name="hybrid_audio_language">Audio file language</string>
+    <string name="hybrid_audio_permission_required">Allow microphone access to transcribe this file with Google recognition on this device.</string>
+    <string name="hybrid_audio_model_unavailable">No Google speech model is available to download for this language on this device.</string>
+    <string name="hybrid_audio_local_required">For transcription with a direct Gemini key, choose a mode that allows on-device processing.</string>
 </resources>

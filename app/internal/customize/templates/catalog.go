@@ -13,6 +13,7 @@ import (
 const (
 	StandardPunctuationID = "standard-punctuation-de-en"
 	DeveloperID           = "developer-de-en"
+	SpeechKitTermsID      = "speechkit-terms"
 	VersionV1             = "v1"
 )
 
@@ -166,6 +167,19 @@ func staticDefinitions() map[string]templateDefinition {
 			},
 			factory: developerPack,
 		},
+		SpeechKitTermsID: {
+			meta: Template{
+				ID:          SpeechKitTermsID,
+				Version:     VersionV1,
+				Name:        "SpeechKit terms",
+				Description: "Framework-specific SpeechKit terminology and common mishearings for testing vocabulary biasing and post-STT normalization.",
+				Source:      source(SpeechKitTermsID, VersionV1),
+				Languages:   []string{"de", "en"},
+				Modes:       []speechcustomize.Mode{speechcustomize.ModeDictation, speechcustomize.ModeAssist, speechcustomize.ModeVoiceAgent},
+				BuiltIn:     true,
+			},
+			factory: speechkitTermsPack,
+		},
 	}
 }
 
@@ -267,6 +281,29 @@ func developerPack() speechcustomize.Pack {
 		Description:   "Native SpeechKit developer vocabulary and replacements.",
 		Words:         words,
 		Replacements:  replacements,
+	}
+}
+
+func speechkitTermsPack() speechcustomize.Pack {
+	templateID := SpeechKitTermsID
+	version := VersionV1
+	tag := templateTag(templateID)
+	words := []speechcustomize.Word{
+		word(templateID, version, "speechkit", "SpeechKit", "", tag, "speech kit", "speech-kit", "speech kid", "speech kids"),
+		word(templateID, version, "phonon", "Phonon", "", tag, "phonan", "fonon"),
+		word(templateID, version, "parakeet", "Parakeet", "", tag, "para keet"),
+		word(templateID, version, "sherpa", "Sherpa", "", tag, "sherpa onnx", "sherpa-onnx"),
+		word(templateID, version, "wakeword", "Wakeword", "", tag, "wake word", "wake-word"),
+		word(templateID, version, "voice-agent", "Voice Agent", "", tag, "voice-agent"),
+		word(templateID, version, "dictation", "Dictation", "", tag),
+		word(templateID, version, "livekit", "LiveKit", "", tag, "live kit", "live-kit"),
+	}
+	return speechcustomize.Pack{
+		SchemaVersion: speechcustomize.PackSchemaVersion,
+		ID:            templateID,
+		Name:          "SpeechKit terms",
+		Description:   "Product-neutral SpeechKit vocabulary pack for testing recognition biasing and post-STT normalization.",
+		Words:         words,
 	}
 }
 

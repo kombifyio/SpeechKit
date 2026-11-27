@@ -121,6 +121,24 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.81.14 (2026-11-27)
+
+### Features
+
+* **speechkit:** expose /livez liveness alias for GCP Cloud Run origins
+* **speechkit:** extend voice agent vocabulary biasing and kombify dictionary
+
+### Bug Fixes
+
+* **ci:** gate SpeechKit cron and Companion MSI deploys on the exact merged-main SHA
+* **speechkit:** honor local voice routes and simplify Android setup
+
+## 0.81.13 (2026-11-26)
+
+### Bug Fixes
+
+* **speechkit:** restore Android keyboard and focus hybrid settings
+
 ## 0.81.12 (2026-11-26)
 
 ### Highlights
