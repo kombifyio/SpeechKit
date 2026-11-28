@@ -121,6 +121,12 @@ Experimental integrations use a separate module. Voice agents now recognize
 their adapter names when resolving supported options. Command-line and MCP
 behavior is unchanged.
 
+## 0.81.15 (2026-11-28)
+
+### Features
+
+* **speechkit:** wire Companion Desktop MSI into SpeechKit Delivery with drift guard
+
 ## 0.81.14 (2026-11-27)
 
 ### Features

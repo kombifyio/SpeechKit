@@ -33,8 +33,8 @@ android {
         applicationId = "io.kombify.speechkit"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8114
-        versionName = "0.81.14"
+        versionCode = 8115
+        versionName = "0.81.15"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         val hybridEnabled = speechKitBuildValue("speechkitHybridEnabled", "SPEECHKIT_HYBRID_ENABLED").equals("true", ignoreCase = true)
         val firebaseCloud = speechKitBuildValue("speechkitFirebaseAllowCloud", "SPEECHKIT_FIREBASE_ALLOW_CLOUD").equals("true", ignoreCase = true)
